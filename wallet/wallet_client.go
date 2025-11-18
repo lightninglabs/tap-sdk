@@ -49,7 +49,7 @@ func (s *client) RawClientWithMacAuth(
 	return s.adminMac.WithMacaroonAuth(parentCtx), s.timeout, s.client
 }
 
-// Info contains info about the connected lnd node.
+// Info contains info about the connected tapd instance.
 type Info struct {
 	// Version is the version that tapd is running.
 	Version string
@@ -67,7 +67,7 @@ type Info struct {
 	// NodeAlias is the alias of the LND node tapd is connected to.
 	NodeAlias string
 
-	// BlockHeight is the best block height that lnd has knowledge of.
+	// BlockHeight is the best block height that tapd has knowledge of.
 	BlockHeight uint32
 
 	// BlockHash is the current block hash as seen by the LND node

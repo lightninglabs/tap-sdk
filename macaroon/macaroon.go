@@ -74,9 +74,9 @@ func (s SerializedMacaroon) WithMacaroonAuth(
 	return metadata.AppendToOutgoingContext(ctx, "macaroon", string(s))
 }
 
-// Pouch holds the set of macaroons we need to interact with lnd for
-// Loop. Each sub-server has its own macaroon, and for the remaining temporary
-// calls that directly hit lnd, we'll use the admin macaroon.
+// Pouch holds the set of macaroons we need to interact with tapd.
+// Each sub-server has its own macaroon, and for the remaining temporary
+// calls that directly hit tapd, we'll use the admin macaroon.
 type Pouch map[TaprpcServiceMac]SerializedMacaroon
 
 // NewPouch returns a new instance of a fully populated pouch

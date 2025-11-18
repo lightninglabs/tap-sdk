@@ -99,7 +99,6 @@ func NewTapdServices(cfg *Config) (*TapdServices, error) {
 		return nil, err
 	}
 
-	// If a custom timeout is not set, we'll use the default.
 	if cfg.RPCTimeout == 0 {
 		cfg.RPCTimeout = defaultRPCTimeout
 	}
@@ -127,15 +126,15 @@ func NewTapdServices(cfg *Config) (*TapdServices, error) {
 	}, nil
 }
 
+// getClientConn gets a client connection to the tapd host.
 func getClientConn(cfg *Config) (*grpc.ClientConn, error) {
-	creds, err := GetTLSCredentials(
+	creds, err := getTLSCredentials(
 		cfg.TLSData, cfg.TLSPath, cfg.Insecure, cfg.SystemCert,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get tls creds: %v", err)
 	}
 
-	// Create a dial options array.
 	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(creds),
 		grpc.WithDefaultCallOptions(maxMsgRecvSize),
@@ -149,9 +148,9 @@ func getClientConn(cfg *Config) (*grpc.ClientConn, error) {
 	return conn, nil
 }
 
-// GetTLSCredentials gets the tls credentials, whether provided as straight-up
+// getTLSCredentials gets the tls credentials, whether provided as straight-up
 // data or a path to a certificate file.
-func GetTLSCredentials(tlsData, tlsPath string, insecure,
+func getTLSCredentials(tlsData, tlsPath string, insecure,
 	systemCert bool) (credentials.TransportCredentials, error) {
 
 	// We'll determine if the tls certificate is passed in directly as
@@ -168,7 +167,7 @@ func GetTLSCredentials(tlsData, tlsPath string, insecure,
 
 	case insecure:
 		// If we don't need to use tls, such as if we're connecting to
-		// lnd via a bufconn, then we'll skip verification.
+		// tapd via a bufconn, then we'll skip verification.
 		creds = credentials.NewTLS(&tls.Config{
 			InsecureSkipVerify: true, // nolint:gosec
 		})
@@ -209,18 +208,18 @@ func GetTLSCredentials(tlsData, tlsPath string, insecure,
 
 	default:
 		// If neither tlsData nor tlsPath were set, we'll try the
-		// default lnd tls cert path.
+		// default tls cert path.
 		_, err := os.Stat(defaultTLSCertPath)
 		if err != nil {
 			return nil, fmt.Errorf("couldn't find out if default "+
-				"lnd TLS cert at %s exists: %v",
+				"TLS cert at %s exists: %v",
 				defaultTLSCertPath, err)
 		}
 		creds, err = credentials.NewClientTLSFromFile(
 			defaultTLSCertPath, "",
 		)
 		if err != nil {
-			return nil, fmt.Errorf("couldn't load default lnd "+
+			return nil, fmt.Errorf("couldn't load default "+
 				"TLS cert at %s: %v", defaultTLSCertPath, err)
 		}
 	}
