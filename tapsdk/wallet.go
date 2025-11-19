@@ -15,7 +15,8 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
-// Wallet constitutes the high level service giving access to most taproot assets functionality.
+// Wallet constitutes the high level service giving access to
+// Taproot Assets features.
 type Wallet struct {
 	Client    WalletClient
 	WalletKit WalletKitClient
@@ -123,6 +124,11 @@ func NewWallet(cfg *Config) (*Wallet, error) {
 		grpcConn:  conn,
 		macaroons: macaroons,
 	}, nil
+}
+
+// NewTxBuilder returns a new transaction builder.
+func (s *Wallet) NewTxBuilder() *TxBuilder {
+	return NewTxBuilder(s)
 }
 
 // getClientConn gets a client connection to the tapd host.
