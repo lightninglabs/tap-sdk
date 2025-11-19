@@ -26,12 +26,3 @@ type AssetPacket struct {
 	// PassiveAssetTransactions are the signed passive asset transactions.
 	PassiveAssetTransactions [][]byte
 }
-
-// Recipient represents a recipient of an asset transfer.
-type Recipient struct {
-	// Address is the Taproot Asset address of the recipient.
-	Address string
-
-	// Amount is the amount of asset units to send.
-	Amount uint64
-}
