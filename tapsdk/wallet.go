@@ -9,24 +9,23 @@ import (
 	"os"
 	"path/filepath"
 
+	grpcClients "github.com/lightninglabs/tap-sdk/grpc"
 	"github.com/lightninglabs/tap-sdk/macaroon"
-	"github.com/lightninglabs/tap-sdk/wallet"
-	"github.com/lightninglabs/tap-sdk/walletkit"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
 
-// TapdServices constitutes a set of required services.
-type TapdServices struct {
-	Wallet    wallet.Client
-	WalletKit walletkit.Client
+// Wallet constitutes the high level service giving access to most taproot assets functionality.
+type Wallet struct {
+	Client    WalletClient
+	WalletKit WalletKitClient
 
-	ClientConn *grpc.ClientConn
-	macaroons  macaroon.Pouch
+	grpcConn  *grpc.ClientConn
+	macaroons macaroon.Pouch
 }
 
-// NewTapdServices creates a new TapdServices instance.
-func NewTapdServices(cfg *Config) (*TapdServices, error) {
+// NewWallet creates a new Wallet instance.
+func NewWallet(cfg *Config) (*Wallet, error) {
 	// Of the macaroon directory, the custom macaroon path, and the custom
 	// macaroon hex, we only allow one to be set at once. If all are empty,
 	// that's fine, the default behavior is to use tapd's default directory
@@ -111,18 +110,18 @@ func NewTapdServices(cfg *Config) (*TapdServices, error) {
 		return nil, fmt.Errorf("failed to read macaroons: %v", err)
 	}
 
-	walletClient := wallet.NewClient(
+	walletClient := grpcClients.NewWalletClient(
 		conn, cfg.RPCTimeout, macaroons[macaroon.AdminServiceMac],
 	)
-	walletKitClient := walletkit.NewClient(
+	walletKitClient := grpcClients.NewWalletKitClient(
 		conn, cfg.RPCTimeout, macaroons[macaroon.WalletKitServiceMac],
 	)
 
-	return &TapdServices{
-		Wallet:     walletClient,
-		WalletKit:  walletKitClient,
-		ClientConn: conn,
-		macaroons:  macaroons,
+	return &Wallet{
+		Client:    walletClient,
+		WalletKit: walletKitClient,
+		grpcConn:  conn,
+		macaroons: macaroons,
 	}, nil
 }
 
