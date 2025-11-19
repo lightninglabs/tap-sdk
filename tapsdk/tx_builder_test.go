@@ -5,11 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lightninglabs/taproot-assets/taprpc"
+	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/lightninglabs/taproot-assets/taprpc/assetwalletrpc"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
 )
 
 // MockWalletKitClient is a mock for WalletKitClient.
@@ -26,142 +25,55 @@ func (m *MockWalletKitClient) RawClientWithMacAuth(
 		args.Get(2).(assetwalletrpc.AssetWalletClient)
 }
 
-// MockAssetWalletClient is a mock for assetwalletrpc.AssetWalletClient.
-type MockAssetWalletClient struct {
-	mock.Mock
-}
+func (m *MockWalletKitClient) FundTransfer(ctx context.Context,
+	recipients []entities.Recipient, inputs []entities.AssetInput) (
+	*entities.FundedTransfer, error) {
 
-func (m *MockAssetWalletClient) FundVirtualPsbt(ctx context.Context,
-	in *assetwalletrpc.FundVirtualPsbtRequest,
-	opts ...grpc.CallOption) (*assetwalletrpc.FundVirtualPsbtResponse,
-	error) {
-
-	args := m.Called(ctx, in, opts)
+	args := m.Called(ctx, recipients, inputs)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*assetwalletrpc.FundVirtualPsbtResponse), args.Error(1)
+	return args.Get(0).(*entities.FundedTransfer), args.Error(1)
 }
 
-func (m *MockAssetWalletClient) SignVirtualPsbt(ctx context.Context,
-	in *assetwalletrpc.SignVirtualPsbtRequest,
-	opts ...grpc.CallOption) (*assetwalletrpc.SignVirtualPsbtResponse,
-	error) {
+func (m *MockWalletKitClient) SignVirtualPsbt(ctx context.Context,
+	fundedPsbt []byte) ([]byte, error) {
 
-	args := m.Called(ctx, in, opts)
+	args := m.Called(ctx, fundedPsbt)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*assetwalletrpc.SignVirtualPsbtResponse), args.Error(1)
+	return args.Get(0).([]byte), args.Error(1)
 }
 
-func (m *MockAssetWalletClient) CommitVirtualPsbts(ctx context.Context,
-	in *assetwalletrpc.CommitVirtualPsbtsRequest,
-	opts ...grpc.CallOption) (*assetwalletrpc.CommitVirtualPsbtsResponse,
-	error) {
+func (m *MockWalletKitClient) CommitVirtualPsbts(ctx context.Context,
+	virtualPsbts [][]byte, passivePsbts [][]byte,
+	satPerVByte uint64) (*entities.CommittedTransfer, error) {
 
-	args := m.Called(ctx, in, opts)
+	args := m.Called(ctx, virtualPsbts, passivePsbts, satPerVByte)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*assetwalletrpc.CommitVirtualPsbtsResponse),
-		args.Error(1)
+	return args.Get(0).(*entities.CommittedTransfer), args.Error(1)
 }
 
-func (m *MockAssetWalletClient) PublishAndLogTransfer(ctx context.Context,
-	in *assetwalletrpc.PublishAndLogRequest,
-	opts ...grpc.CallOption) (*taprpc.SendAssetResponse, error) {
+func (m *MockWalletKitClient) PublishAndLogTransfer(ctx context.Context,
+	anchorPsbt []byte, virtualPsbts [][]byte, passivePsbts [][]byte,
+	skipAnchorTxBroadcast bool) (*entities.AssetPacket, error) {
 
-	args := m.Called(ctx, in, opts)
+	args := m.Called(ctx, anchorPsbt, virtualPsbts, passivePsbts,
+		skipAnchorTxBroadcast)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*taprpc.SendAssetResponse), args.Error(1)
-}
-
-// Stubs for other methods of AssetWalletClient.
-func (m *MockAssetWalletClient) AnchorVirtualPsbts(ctx context.Context,
-	in *assetwalletrpc.AnchorVirtualPsbtsRequest,
-	opts ...grpc.CallOption) (*taprpc.SendAssetResponse, error) {
-
-	return nil, nil
-}
-
-func (m *MockAssetWalletClient) NextInternalKey(ctx context.Context,
-	in *assetwalletrpc.NextInternalKeyRequest,
-	opts ...grpc.CallOption) (*assetwalletrpc.NextInternalKeyResponse,
-	error) {
-
-	return nil, nil
-}
-
-func (m *MockAssetWalletClient) NextScriptKey(ctx context.Context,
-	in *assetwalletrpc.NextScriptKeyRequest,
-	opts ...grpc.CallOption) (*assetwalletrpc.NextScriptKeyResponse, error) {
-
-	return nil, nil
-}
-
-func (m *MockAssetWalletClient) QueryInternalKey(ctx context.Context,
-	in *assetwalletrpc.QueryInternalKeyRequest,
-	opts ...grpc.CallOption) (*assetwalletrpc.QueryInternalKeyResponse,
-	error) {
-
-	return nil, nil
-}
-
-func (m *MockAssetWalletClient) QueryScriptKey(ctx context.Context,
-	in *assetwalletrpc.QueryScriptKeyRequest,
-	opts ...grpc.CallOption) (*assetwalletrpc.QueryScriptKeyResponse,
-	error) {
-
-	return nil, nil
-}
-
-func (m *MockAssetWalletClient) ProveAssetOwnership(ctx context.Context,
-	in *assetwalletrpc.ProveAssetOwnershipRequest,
-	opts ...grpc.CallOption) (*assetwalletrpc.ProveAssetOwnershipResponse,
-	error) {
-
-	return nil, nil
-}
-
-func (m *MockAssetWalletClient) VerifyAssetOwnership(ctx context.Context,
-	in *assetwalletrpc.VerifyAssetOwnershipRequest,
-	opts ...grpc.CallOption) (*assetwalletrpc.VerifyAssetOwnershipResponse,
-	error) {
-
-	return nil, nil
-}
-
-func (m *MockAssetWalletClient) RemoveUTXOLease(ctx context.Context,
-	in *assetwalletrpc.RemoveUTXOLeaseRequest,
-	opts ...grpc.CallOption) (*assetwalletrpc.RemoveUTXOLeaseResponse,
-	error) {
-
-	return nil, nil
-}
-
-func (m *MockAssetWalletClient) DeclareScriptKey(ctx context.Context,
-	in *assetwalletrpc.DeclareScriptKeyRequest,
-	opts ...grpc.CallOption) (*assetwalletrpc.DeclareScriptKeyResponse,
-	error) {
-
-	return nil, nil
+	return args.Get(0).(*entities.AssetPacket), args.Error(1)
 }
 
 func TestTxBuilder_Finish(t *testing.T) {
 	mockWalletKit := new(MockWalletKitClient)
-	mockAssetWallet := new(MockAssetWalletClient)
 	services := &Wallet{
 		WalletKit: mockWalletKit,
 	}
-
-	// Setup expectation: RawClientWithMacAuth should be called to get the
-	// client.
-	mockWalletKit.On("RawClientWithMacAuth", mock.Anything).Return(
-		context.Background(), time.Duration(0), mockAssetWallet,
-	)
 
 	// Test data
 	ctx := context.Background()
@@ -173,50 +85,36 @@ func TestTxBuilder_Finish(t *testing.T) {
 	anchorPsbt := []byte("anchor_psbt")
 	finalAnchorTx := []byte("final_anchor_tx")
 
-	// Response from PublishAndLogTransfer
-	sendResp := &taprpc.SendAssetResponse{
-		Transfer: &taprpc.AssetTransfer{
-			AnchorTx: finalAnchorTx,
-		},
-	}
-
 	// 1. Fund
-	mockAssetWallet.On("FundVirtualPsbt", ctx, mock.MatchedBy(
-		func(req *assetwalletrpc.FundVirtualPsbtRequest) bool {
-			raw := req.GetRaw()
-			return raw != nil &&
-				raw.AddressesWithAmounts[0].TapAddr == addr &&
-				raw.AddressesWithAmounts[0].Amount == amount
-		}), mock.Anything).Return(&assetwalletrpc.FundVirtualPsbtResponse{
+	mockWalletKit.On("FundTransfer", ctx, mock.MatchedBy(
+		func(recipients []entities.Recipient) bool {
+			return len(recipients) == 1 &&
+				recipients[0].Address == addr &&
+				recipients[0].Amount == amount
+		}), mock.Anything).Return(&entities.FundedTransfer{
 		FundedPsbt: fundedPsbt,
 	}, nil)
 
 	// 2. Sign
-	mockAssetWallet.On("SignVirtualPsbt", ctx, mock.MatchedBy(
-		func(req *assetwalletrpc.SignVirtualPsbtRequest) bool {
-			return string(req.FundedPsbt) == string(fundedPsbt)
-		}), mock.Anything).Return(&assetwalletrpc.SignVirtualPsbtResponse{
-		SignedPsbt: signedPsbt,
-	}, nil)
+	mockWalletKit.On("SignVirtualPsbt", ctx, fundedPsbt).Return(
+		signedPsbt, nil)
 
 	// 3. Commit
-	mockAssetWallet.On("CommitVirtualPsbts", ctx, mock.MatchedBy(
-		func(req *assetwalletrpc.CommitVirtualPsbtsRequest) bool {
-			return string(req.VirtualPsbts[0]) == string(signedPsbt) &&
-				req.GetSatPerVbyte() == feeRate
-		}), mock.Anything).Return(
-		&assetwalletrpc.CommitVirtualPsbtsResponse{
+	mockWalletKit.On("CommitVirtualPsbts", ctx, [][]byte{signedPsbt},
+		mock.Anything, feeRate).Return(
+		&entities.CommittedTransfer{
 			AnchorPsbt:   anchorPsbt,
 			VirtualPsbts: [][]byte{signedPsbt},
 		}, nil)
 
 	// 4. Finish
-	mockAssetWallet.On("PublishAndLogTransfer", ctx, mock.MatchedBy(
-		func(req *assetwalletrpc.PublishAndLogRequest) bool {
-			return string(req.AnchorPsbt) == string(anchorPsbt) &&
-				string(req.VirtualPsbts[0]) == string(signedPsbt) &&
-				!req.SkipAnchorTxBroadcast
-		}), mock.Anything).Return(sendResp, nil)
+	expectedPacket := &entities.AssetPacket{
+		AnchorTransaction:   finalAnchorTx,
+		VirtualTransactions: [][]byte{signedPsbt},
+	}
+	mockWalletKit.On("PublishAndLogTransfer", ctx, anchorPsbt,
+		[][]byte{signedPsbt}, mock.Anything, false).Return(
+		expectedPacket, nil)
 
 	// Execute all steps manually.
 	builder := NewTxBuilder(services)
@@ -242,5 +140,4 @@ func TestTxBuilder_Finish(t *testing.T) {
 	require.ErrorContains(t, err, "builder already finished")
 
 	mockWalletKit.AssertExpectations(t)
-	mockAssetWallet.AssertExpectations(t)
 }

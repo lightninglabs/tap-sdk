@@ -6,8 +6,6 @@ import (
 	"sync"
 
 	"github.com/lightninglabs/tap-sdk/entities"
-	"github.com/lightninglabs/taproot-assets/taprpc"
-	"github.com/lightninglabs/taproot-assets/taprpc/assetwalletrpc"
 )
 
 // TxBuilder is a builder for creating Taproot Asset transactions.
@@ -70,46 +68,7 @@ func (b *TxBuilder) Fund(ctx context.Context) error {
 		return fmt.Errorf("builder already finished")
 	}
 
-	// Map inputs to RPC inputs
-	rpcInputs := make([]*assetwalletrpc.PrevId, len(b.inputs))
-	for i, input := range b.inputs {
-		rpcInputs[i] = &assetwalletrpc.PrevId{
-			Outpoint: &taprpc.OutPoint{
-				Txid:        input.OutPoint.Hash[:],
-				OutputIndex: input.OutPoint.Index,
-			},
-			Id:        input.ID,
-			ScriptKey: input.ScriptKey,
-		}
-	}
-
-	// Map recipients to RPC recipients
-	rpcRecipients := make([]*taprpc.AddressWithAmount, len(b.recipients))
-	for i, recipient := range b.recipients {
-		rpcRecipients[i] = &taprpc.AddressWithAmount{
-			TapAddr: recipient.Address,
-			Amount:  recipient.Amount,
-		}
-	}
-
-	// Create the raw template.
-	rawTemplate := &assetwalletrpc.TxTemplate{
-		Recipients:           nil, // Deprecated
-		Inputs:               rpcInputs,
-		AddressesWithAmounts: rpcRecipients,
-	}
-
-	req := &assetwalletrpc.FundVirtualPsbtRequest{
-		Template: &assetwalletrpc.FundVirtualPsbtRequest_Raw{
-			Raw: rawTemplate,
-		},
-	}
-
-	// Get the raw client to make the call.
-	walletKit := b.wallet.WalletKit
-	authCtx, _, client := walletKit.RawClientWithMacAuth(ctx)
-
-	resp, err := client.FundVirtualPsbt(authCtx, req)
+	resp, err := b.wallet.WalletKit.FundTransfer(ctx, b.recipients, b.inputs)
 	if err != nil {
 		return fmt.Errorf("failed to fund virtual psbt: %w", err)
 	}
@@ -132,19 +91,12 @@ func (b *TxBuilder) Sign(ctx context.Context) error {
 		return fmt.Errorf("transaction not funded")
 	}
 
-	req := &assetwalletrpc.SignVirtualPsbtRequest{
-		FundedPsbt: b.fundedPsbt,
-	}
-
-	walletKit := b.wallet.WalletKit
-	authCtx, _, client := walletKit.RawClientWithMacAuth(ctx)
-
-	resp, err := client.SignVirtualPsbt(authCtx, req)
+	signedPsbt, err := b.wallet.WalletKit.SignVirtualPsbt(ctx, b.fundedPsbt)
 	if err != nil {
 		return fmt.Errorf("failed to sign virtual psbt: %w", err)
 	}
 
-	b.signedPsbt = resp.SignedPsbt
+	b.signedPsbt = signedPsbt
 	return nil
 }
 
@@ -160,21 +112,9 @@ func (b *TxBuilder) Commit(ctx context.Context) error {
 		return fmt.Errorf("transaction not signed")
 	}
 
-	req := &assetwalletrpc.CommitVirtualPsbtsRequest{
-		VirtualPsbts:      [][]byte{b.signedPsbt},
-		PassiveAssetPsbts: b.passivePsbts,
-		Fees: &assetwalletrpc.CommitVirtualPsbtsRequest_SatPerVbyte{
-			SatPerVbyte: b.feeRate,
-		},
-		AnchorChangeOutput: &assetwalletrpc.CommitVirtualPsbtsRequest_Add{
-			Add: true,
-		},
-	}
-
-	walletKit := b.wallet.WalletKit
-	authCtx, _, client := walletKit.RawClientWithMacAuth(ctx)
-
-	resp, err := client.CommitVirtualPsbts(authCtx, req)
+	resp, err := b.wallet.WalletKit.CommitVirtualPsbts(
+		ctx, [][]byte{b.signedPsbt}, b.passivePsbts, b.feeRate,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to commit virtual psbts: %w", err)
 	}
@@ -183,7 +123,9 @@ func (b *TxBuilder) Commit(ctx context.Context) error {
 
 	// CommitVirtualPsbts returns updated virtual PSBTs.
 	// These are the "proofs" effectively.
-	b.signedPsbt = resp.VirtualPsbts[0]
+	if len(resp.VirtualPsbts) > 0 {
+		b.signedPsbt = resp.VirtualPsbts[0]
+	}
 
 	// And passive assets might be updated too.
 	if len(resp.PassiveAssetPsbts) > 0 {
@@ -208,26 +150,15 @@ func (b *TxBuilder) Finish(ctx context.Context, skipBroadcast bool) (
 		return nil, fmt.Errorf("transaction not committed")
 	}
 
-	req := &assetwalletrpc.PublishAndLogRequest{
-		AnchorPsbt:            b.anchorPsbt,
-		VirtualPsbts:          [][]byte{b.signedPsbt},
-		PassiveAssetPsbts:     b.passivePsbts,
-		SkipAnchorTxBroadcast: skipBroadcast,
-	}
-
-	walletKit := b.wallet.WalletKit
-	authCtx, _, client := walletKit.RawClientWithMacAuth(ctx)
-
-	resp, err := client.PublishAndLogTransfer(authCtx, req)
+	packet, err := b.wallet.WalletKit.PublishAndLogTransfer(
+		ctx, b.anchorPsbt, [][]byte{b.signedPsbt}, b.passivePsbts,
+		skipBroadcast,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to publish and log transfer: %w", err)
 	}
 
 	b.finished = true
 
-	return &entities.AssetPacket{
-		AnchorTransaction:        resp.Transfer.AnchorTx,
-		VirtualTransactions:      [][]byte{b.signedPsbt},
-		PassiveAssetTransactions: b.passivePsbts,
-	}, nil
+	return packet, nil
 }
