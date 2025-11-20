@@ -33,6 +33,7 @@ func (m *MockWalletKitClient) FundTransfer(ctx context.Context,
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
+
 	return args.Get(0).(*entities.FundedTransfer), args.Error(1)
 }
 
@@ -43,6 +44,7 @@ func (m *MockWalletKitClient) SignVirtualPsbt(ctx context.Context,
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
+
 	return args.Get(0).([]byte), args.Error(1)
 }
 
@@ -54,6 +56,7 @@ func (m *MockWalletKitClient) CommitVirtualPsbts(ctx context.Context,
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
+
 	return args.Get(0).(*entities.CommittedTransfer), args.Error(1)
 }
 
@@ -66,10 +69,11 @@ func (m *MockWalletKitClient) PublishAndLogTransfer(ctx context.Context,
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
+
 	return args.Get(0).(*entities.AssetPacket), args.Error(1)
 }
 
-func TestTxBuilder_Finish(t *testing.T) {
+func TestTxBuilder_Execute(t *testing.T) {
 	mockWalletKit := new(MockWalletKitClient)
 	services := &Wallet{
 		WalletKit: mockWalletKit,
@@ -120,14 +124,18 @@ func TestTxBuilder_Finish(t *testing.T) {
 	builder := NewTxBuilder(services)
 	builder.AddRecipient(addr, amount).SetFeeRate(feeRate)
 
-	err := builder.Fund(ctx)
+	funded, err := builder.Fund(ctx)
 	require.NoError(t, err)
+	require.Equal(t, fundedPsbt, funded.FundedPsbt)
 
-	err = builder.Sign(ctx)
+	signed, err := builder.Sign(ctx)
 	require.NoError(t, err)
+	require.Equal(t, signedPsbt, signed)
 
-	err = builder.Commit(ctx)
+	committed, err := builder.Commit(ctx)
 	require.NoError(t, err)
+	require.Equal(t, anchorPsbt, committed.AnchorPsbt)
+	require.Equal(t, [][]byte{signedPsbt}, committed.VirtualPsbts)
 
 	packet, err := builder.Finish(ctx, false)
 	require.NoError(t, err)
@@ -138,6 +146,51 @@ func TestTxBuilder_Finish(t *testing.T) {
 	// Verify re-calling Finish fails
 	_, err = builder.Finish(ctx, false)
 	require.ErrorContains(t, err, "builder already finished")
+
+	mockWalletKit.AssertExpectations(t)
+}
+
+func TestTxBuilder_StateInjection(t *testing.T) {
+	mockWalletKit := new(MockWalletKitClient)
+	services := &Wallet{
+		WalletKit: mockWalletKit,
+	}
+
+	ctx := context.Background()
+	fundedPsbt := []byte("funded_psbt")
+	signedPsbt := []byte("signed_psbt")
+	anchorPsbt := []byte("anchor_psbt")
+	finalAnchorTx := []byte("final_anchor_tx")
+	passivePsbts := [][]byte{[]byte("passive_psbt")}
+
+	// Inject externally produced PSBTs to skip earlier steps.
+	builder := NewTxBuilder(services)
+	builder.SetFundedPsbt(fundedPsbt).
+		SetSignedPsbt(signedPsbt).
+		SetPassivePsbts(passivePsbts)
+
+	mockWalletKit.On("CommitVirtualPsbts", ctx, [][]byte{signedPsbt},
+		passivePsbts, uint64(1)).Return(
+		&entities.CommittedTransfer{
+			AnchorPsbt:        anchorPsbt,
+			VirtualPsbts:      [][]byte{signedPsbt},
+			PassiveAssetPsbts: passivePsbts,
+		}, nil)
+
+	expectedPacket := &entities.AssetPacket{
+		AnchorTransaction:   finalAnchorTx,
+		VirtualTransactions: [][]byte{signedPsbt},
+	}
+	mockWalletKit.On("PublishAndLogTransfer", ctx, anchorPsbt,
+		[][]byte{signedPsbt}, mock.Anything, false).Return(
+		expectedPacket, nil)
+
+	_, err := builder.Commit(ctx)
+	require.NoError(t, err)
+
+	packet, err := builder.Finish(ctx, false)
+	require.NoError(t, err)
+	require.Equal(t, expectedPacket, packet)
 
 	mockWalletKit.AssertExpectations(t)
 }

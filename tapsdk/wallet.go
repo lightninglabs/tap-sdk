@@ -131,6 +131,15 @@ func (s *Wallet) NewTxBuilder() *TxBuilder {
 	return NewTxBuilder(s)
 }
 
+// Close tears down the underlying gRPC connection.
+func (s *Wallet) Close() error {
+	if s.grpcConn != nil {
+		return s.grpcConn.Close()
+	}
+
+	return nil
+}
+
 // getClientConn gets a client connection to the tapd host.
 func getClientConn(cfg *Config) (*grpc.ClientConn, error) {
 	creds, err := getTLSCredentials(

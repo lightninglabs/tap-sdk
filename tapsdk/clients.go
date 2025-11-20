@@ -37,7 +37,7 @@ type WalletKitClient interface {
 
 	// CommitVirtualPsbts commits virtual transactions.
 	CommitVirtualPsbts(ctx context.Context, virtualPsbts [][]byte,
-		passivePsbts [][]byte, satPerVByte uint64) (*entities.CommittedTransfer, error)
+		passivePsbts [][]byte, feeRate uint64) (*entities.CommittedTransfer, error)
 
 	// PublishAndLogTransfer publishes the anchor transaction and logs the
 	// transfer.
