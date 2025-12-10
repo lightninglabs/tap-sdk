@@ -1,6 +1,7 @@
 package tapsdk
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/lightninglabs/tap-sdk/entities"
 	grpcClients "github.com/lightninglabs/tap-sdk/grpc"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 	"google.golang.org/grpc"
@@ -129,6 +131,29 @@ func NewWallet(cfg *Config) (*Wallet, error) {
 // NewTxBuilder returns a new transaction builder.
 func (s *Wallet) NewTxBuilder() *TxBuilder {
 	return NewTxBuilder(s)
+}
+
+// DeriveKeys derives a new script key and internal key for receiving assets.
+// The receiver calls this method and shares the result with the sender for
+// interactive transfers.
+//
+// This is a convenience method that combines DeriveScriptKey and
+// DeriveInternalKey into a single call.
+func (s *Wallet) DeriveKeys(ctx context.Context) (*entities.DerivedKeys, error) {
+	scriptKey, err := s.WalletKit.DeriveScriptKey(ctx)
+	if err != nil {
+		return nil, wrapErr("DeriveKeys", err)
+	}
+
+	internalKey, err := s.WalletKit.DeriveInternalKey(ctx)
+	if err != nil {
+		return nil, wrapErr("DeriveKeys", err)
+	}
+
+	return &entities.DerivedKeys{
+		ScriptKey:   *scriptKey,
+		InternalKey: *internalKey,
+	}, nil
 }
 
 // Close tears down the underlying gRPC connection.

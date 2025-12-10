@@ -28,6 +28,14 @@ type WalletClient interface {
 type WalletKitClient interface {
 	ServiceClient[assetwalletrpc.AssetWalletClient]
 
+	// DeriveScriptKey derives a new script key for receiving assets.
+	// The script key includes both the internal key and the tweaked
+	// Taproot output key.
+	DeriveScriptKey(ctx context.Context) (*entities.ScriptKey, error)
+
+	// DeriveInternalKey derives a new internal key for anchor outputs.
+	DeriveInternalKey(ctx context.Context) (*entities.InternalKey, error)
+
 	// FundTransfer funds a virtual transaction.
 	FundTransfer(ctx context.Context, recipients []entities.Recipient,
 		inputs []entities.AssetInput) (*entities.FundedTransfer, error)

@@ -73,6 +73,28 @@ func (m *MockWalletKitClient) PublishAndLogTransfer(ctx context.Context,
 	return args.Get(0).(*entities.AssetPacket), args.Error(1)
 }
 
+func (m *MockWalletKitClient) DeriveScriptKey(ctx context.Context) (
+	*entities.ScriptKey, error) {
+
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*entities.ScriptKey), args.Error(1)
+}
+
+func (m *MockWalletKitClient) DeriveInternalKey(ctx context.Context) (
+	*entities.InternalKey, error) {
+
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*entities.InternalKey), args.Error(1)
+}
+
 func TestTxBuilder_Execute(t *testing.T) {
 	mockWalletKit := new(MockWalletKitClient)
 	services := &Wallet{
