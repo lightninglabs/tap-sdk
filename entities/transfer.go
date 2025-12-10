@@ -70,3 +70,12 @@ type TransferOutput struct {
 	// For interactive sends, this must be delivered to the receiver.
 	ProofBlob []byte
 }
+
+// Outpoint represents a Bitcoin transaction outpoint.
+type Outpoint struct {
+	// Txid is the 32-byte transaction hash.
+	Txid [32]byte
+
+	// Index is the output index within the transaction.
+	Index uint32
+}
