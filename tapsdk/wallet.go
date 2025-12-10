@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/tap-sdk/entities"
 	grpcClients "github.com/lightninglabs/tap-sdk/grpc"
 	"github.com/lightninglabs/tap-sdk/macaroon"
@@ -23,6 +24,8 @@ import (
 type Wallet struct {
 	Client    WalletClient
 	WalletKit WalletKitClient
+	Proof     ProofClient
+	Universe  UniverseClient
 
 	grpcConn  *grpc.ClientConn
 	macaroons macaroon.Pouch
@@ -124,6 +127,12 @@ func NewWallet(cfg *Config) (*Wallet, error) {
 	walletKitClient := grpcClients.NewWalletKitClient(
 		conn, cfg.RPCTimeout, macaroons[macaroon.WalletKitServiceMac],
 	)
+	proofClient := grpcClients.NewProofClient(
+		conn, cfg.RPCTimeout, macaroons[macaroon.AdminServiceMac],
+	)
+	universeClient := grpcClients.NewUniverseClient(
+		conn, cfg.RPCTimeout, macaroons[macaroon.AdminServiceMac],
+	)
 
 	// Get network parameters for vPacket encoding.
 	networkHRP, coinType := getNetworkParams(cfg.Network)
@@ -131,6 +140,8 @@ func NewWallet(cfg *Config) (*Wallet, error) {
 	return &Wallet{
 		Client:     walletClient,
 		WalletKit:  walletKitClient,
+		Proof:      proofClient,
+		Universe:   universeClient,
 		grpcConn:   conn,
 		macaroons:  macaroons,
 		networkHRP: networkHRP,
@@ -190,6 +201,85 @@ func (s *Wallet) DeriveKeys(ctx context.Context) (*entities.DerivedKeys, error) 
 		ScriptKey:   *scriptKey,
 		InternalKey: *internalKey,
 	}, nil
+}
+
+// ExportProof exports a proof file for a specific asset output.
+// This is used by the sender in interactive transfers to export proofs
+// that must be delivered to the receiver out-of-band.
+func (s *Wallet) ExportProof(ctx context.Context, assetID [32]byte,
+	scriptKey [33]byte, outpoint entities.Outpoint) (*entities.ProofFile, error) {
+
+	proofFile, err := s.Proof.ExportProof(
+		ctx, assetID[:], scriptKey[:], outpoint,
+	)
+	if err != nil {
+		return nil, wrapErr("ExportProof", err)
+	}
+
+	return proofFile, nil
+}
+
+// ImportProof imports a proof file received from a sender during an
+// interactive transfer. This method handles the full import flow:
+// 1. Unpacks the proof file into individual proofs
+// 2. Inserts each proof into the local universe
+// 3. Registers the transfer so the wallet recognizes the new asset
+//
+// Returns the registered asset details.
+func (s *Wallet) ImportProof(ctx context.Context,
+	proofFile *entities.ProofFile) (*entities.RegisteredAsset, error) {
+
+	// Step 1: Unpack the proof file into individual proofs.
+	rawProofs, err := s.Proof.UnpackProofFile(ctx, proofFile.RawProofFile)
+	if err != nil {
+		return nil, wrapErr("ImportProof", err)
+	}
+
+	if len(rawProofs) == 0 {
+		return nil, wrapErr("ImportProof",
+			fmt.Errorf("proof file contains no proofs"))
+	}
+
+	// Step 2: Decode and insert each proof into the universe.
+	var lastDecoded *entities.DecodedProof
+	for _, rawProof := range rawProofs {
+		decoded, err := s.Proof.DecodeProof(ctx, rawProof)
+		if err != nil {
+			return nil, wrapErr("ImportProof", err)
+		}
+
+		err = s.Universe.InsertProof(ctx, rawProof, decoded)
+		if err != nil {
+			return nil, wrapErr("ImportProof", err)
+		}
+
+		lastDecoded = decoded
+	}
+
+	// Step 3: Register the transfer using the last proof's details.
+	// Parse the outpoint from the decoded proof.
+	wireOutpoint, err := wire.NewOutPointFromString(lastDecoded.Outpoint)
+	if err != nil {
+		return nil, wrapErr("ImportProof", err)
+	}
+
+	outpoint := entities.Outpoint{
+		Txid:  wireOutpoint.Hash,
+		Index: wireOutpoint.Index,
+	}
+
+	registered, err := s.Proof.RegisterTransfer(
+		ctx,
+		lastDecoded.AssetID[:],
+		lastDecoded.GroupKey,
+		lastDecoded.ScriptKey[:],
+		outpoint,
+	)
+	if err != nil {
+		return nil, wrapErr("ImportProof", err)
+	}
+
+	return registered, nil
 }
 
 // Close tears down the underlying gRPC connection.
