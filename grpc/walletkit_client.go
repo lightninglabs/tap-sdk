@@ -217,6 +217,90 @@ func (m *walletKitClient) DeriveInternalKey(ctx context.Context) (
 	}, nil
 }
 
+// FundInteractivePsbt funds a virtual PSBT for interactive sends.
+// The psbt parameter should be a serialized vPacket created for the
+// interactive transfer.
+func (m *walletKitClient) FundInteractivePsbt(ctx context.Context,
+	psbt []byte) (*entities.FundedTransfer, error) {
+
+	req := &assetwalletrpc.FundVirtualPsbtRequest{
+		Template: &assetwalletrpc.FundVirtualPsbtRequest_Psbt{
+			Psbt: psbt,
+		},
+	}
+
+	authCtx, _, client := m.RawClientWithMacAuth(ctx)
+	resp, err := client.FundVirtualPsbt(authCtx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return &entities.FundedTransfer{
+		FundedPsbt:        resp.FundedPsbt,
+		PassiveAssetPsbts: resp.PassiveAssetPsbts,
+	}, nil
+}
+
+// AnchorVirtualPsbts anchors signed virtual PSBTs in a single call.
+// This combines signing, committing, and publishing into one operation.
+// It returns the completed transfer result with transaction details and proofs.
+func (m *walletKitClient) AnchorVirtualPsbts(ctx context.Context,
+	signedPsbts [][]byte) (*entities.SendResult, error) {
+
+	req := &assetwalletrpc.AnchorVirtualPsbtsRequest{
+		VirtualPsbts: signedPsbts,
+	}
+
+	authCtx, _, client := m.RawClientWithMacAuth(ctx)
+	resp, err := client.AnchorVirtualPsbts(authCtx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.Transfer == nil {
+		return nil, fmt.Errorf("invalid transfer response")
+	}
+
+	return unmarshalSendResult(resp.Transfer)
+}
+
+// unmarshalSendResult converts an RPC AssetTransfer to an entities.SendResult.
+func unmarshalSendResult(transfer *taprpc.AssetTransfer) (
+	*entities.SendResult, error) {
+
+	result := &entities.SendResult{
+		AnchorTx: transfer.AnchorTx,
+		Outputs:  make([]entities.TransferOutput, 0, len(transfer.Outputs)),
+	}
+
+	// Copy the transaction hash.
+	if len(transfer.AnchorTxHash) == 32 {
+		copy(result.TransferTxid[:], transfer.AnchorTxHash)
+	}
+
+	// Convert each output.
+	for _, out := range transfer.Outputs {
+		output := entities.TransferOutput{
+			Amount:    out.Amount,
+			ProofBlob: out.NewProofBlob,
+		}
+
+		// Copy the script key.
+		if len(out.ScriptKey) == 33 {
+			copy(output.ScriptKey[:], out.ScriptKey)
+		}
+
+		// Copy the outpoint from anchor.
+		if out.Anchor != nil {
+			output.Outpoint = out.Anchor.Outpoint
+		}
+
+		result.Outputs = append(result.Outputs, output)
+	}
+
+	return result, nil
+}
+
 // unmarshalScriptKey converts an RPC ScriptKey to an entities.ScriptKey.
 func unmarshalScriptKey(rpcKey *taprpc.ScriptKey) (*entities.ScriptKey, error) {
 	if len(rpcKey.PubKey) != 33 {
