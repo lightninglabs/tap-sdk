@@ -95,6 +95,28 @@ func (m *MockWalletKitClient) DeriveInternalKey(ctx context.Context) (
 	return args.Get(0).(*entities.InternalKey), args.Error(1)
 }
 
+func (m *MockWalletKitClient) FundInteractivePsbt(ctx context.Context,
+	psbt []byte) (*entities.FundedTransfer, error) {
+
+	args := m.Called(ctx, psbt)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*entities.FundedTransfer), args.Error(1)
+}
+
+func (m *MockWalletKitClient) AnchorVirtualPsbts(ctx context.Context,
+	signedPsbts [][]byte) (*entities.SendResult, error) {
+
+	args := m.Called(ctx, signedPsbts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*entities.SendResult), args.Error(1)
+}
+
 func TestTxBuilder_Execute(t *testing.T) {
 	mockWalletKit := new(MockWalletKitClient)
 	services := &Wallet{
@@ -213,6 +235,129 @@ func TestTxBuilder_StateInjection(t *testing.T) {
 	packet, err := builder.Finish(ctx, false)
 	require.NoError(t, err)
 	require.Equal(t, expectedPacket, packet)
+
+	mockWalletKit.AssertExpectations(t)
+}
+
+func TestTxBuilder_InteractiveSend(t *testing.T) {
+	mockWalletKit := new(MockWalletKitClient)
+	services := &Wallet{
+		WalletKit: mockWalletKit,
+	}
+
+	ctx := context.Background()
+	interactivePsbt := []byte("interactive_vpacket_psbt")
+	fundedPsbt := []byte("funded_psbt")
+	signedPsbt := []byte("signed_psbt")
+
+	var transferTxid [32]byte
+	copy(transferTxid[:], []byte("txid_hash_32_bytes_long_enough!!"))
+
+	var scriptKey [33]byte
+	copy(scriptKey[:], []byte("script_key_33_bytes_long_enough"))
+
+	expectedResult := &entities.SendResult{
+		TransferTxid: transferTxid,
+		AnchorTx:     []byte("anchor_tx_bytes"),
+		Outputs: []entities.TransferOutput{
+			{
+				Outpoint:  "txid:0",
+				ScriptKey: scriptKey,
+				Amount:    1000,
+				ProofBlob: []byte("proof_blob"),
+			},
+		},
+	}
+
+	// 1. Fund interactive PSBT
+	mockWalletKit.On("FundInteractivePsbt", ctx, interactivePsbt).Return(
+		&entities.FundedTransfer{
+			FundedPsbt: fundedPsbt,
+		}, nil)
+
+	// 2. Sign
+	mockWalletKit.On("SignVirtualPsbt", ctx, fundedPsbt).Return(
+		signedPsbt, nil)
+
+	// 3. Anchor (Complete)
+	mockWalletKit.On("AnchorVirtualPsbts", ctx, [][]byte{signedPsbt}).Return(
+		expectedResult, nil)
+
+	// Execute interactive send
+	builder := NewTxBuilder(services)
+	builder.SetInteractivePsbt(interactivePsbt)
+
+	result, err := builder.ExecuteInteractive(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedResult.TransferTxid, result.TransferTxid)
+	require.Equal(t, expectedResult.AnchorTx, result.AnchorTx)
+	require.Len(t, result.Outputs, 1)
+	require.Equal(t, expectedResult.Outputs[0].Outpoint, result.Outputs[0].Outpoint)
+	require.Equal(t, expectedResult.Outputs[0].Amount, result.Outputs[0].Amount)
+
+	mockWalletKit.AssertExpectations(t)
+}
+
+func TestTxBuilder_InteractiveSend_StepByStep(t *testing.T) {
+	mockWalletKit := new(MockWalletKitClient)
+	services := &Wallet{
+		WalletKit: mockWalletKit,
+	}
+
+	ctx := context.Background()
+	interactivePsbt := []byte("interactive_vpacket_psbt")
+	fundedPsbt := []byte("funded_psbt")
+	signedPsbt := []byte("signed_psbt")
+
+	var transferTxid [32]byte
+	var scriptKey [33]byte
+
+	expectedResult := &entities.SendResult{
+		TransferTxid: transferTxid,
+		AnchorTx:     []byte("anchor_tx_bytes"),
+		Outputs: []entities.TransferOutput{
+			{
+				Outpoint:  "txid:0",
+				ScriptKey: scriptKey,
+				Amount:    1000,
+				ProofBlob: []byte("proof_blob"),
+			},
+		},
+	}
+
+	// Step-by-step execution
+	builder := NewTxBuilder(services)
+	builder.SetInteractivePsbt(interactivePsbt)
+
+	// 1. Fund
+	mockWalletKit.On("FundInteractivePsbt", ctx, interactivePsbt).Return(
+		&entities.FundedTransfer{
+			FundedPsbt: fundedPsbt,
+		}, nil)
+
+	funded, err := builder.Fund(ctx)
+	require.NoError(t, err)
+	require.Equal(t, fundedPsbt, funded.FundedPsbt)
+
+	// 2. Sign
+	mockWalletKit.On("SignVirtualPsbt", ctx, fundedPsbt).Return(
+		signedPsbt, nil)
+
+	signed, err := builder.Sign(ctx)
+	require.NoError(t, err)
+	require.Equal(t, signedPsbt, signed)
+
+	// 3. Complete (using AnchorVirtualPsbts)
+	mockWalletKit.On("AnchorVirtualPsbts", ctx, [][]byte{signedPsbt}).Return(
+		expectedResult, nil)
+
+	result, err := builder.Complete(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedResult.TransferTxid, result.TransferTxid)
+
+	// Verify builder is finished
+	_, err = builder.Complete(ctx)
+	require.ErrorIs(t, err, ErrBuilderFinished)
 
 	mockWalletKit.AssertExpectations(t)
 }

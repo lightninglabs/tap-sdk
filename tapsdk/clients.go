@@ -36,9 +36,13 @@ type WalletKitClient interface {
 	// DeriveInternalKey derives a new internal key for anchor outputs.
 	DeriveInternalKey(ctx context.Context) (*entities.InternalKey, error)
 
-	// FundTransfer funds a virtual transaction.
+	// FundTransfer funds a virtual transaction using addresses.
 	FundTransfer(ctx context.Context, recipients []entities.Recipient,
 		inputs []entities.AssetInput) (*entities.FundedTransfer, error)
+
+	// FundInteractivePsbt funds a virtual PSBT for interactive sends.
+	FundInteractivePsbt(ctx context.Context, psbt []byte) (
+		*entities.FundedTransfer, error)
 
 	// SignVirtualPsbt signs a virtual transaction.
 	SignVirtualPsbt(ctx context.Context, fundedPsbt []byte) ([]byte, error)
@@ -46,6 +50,11 @@ type WalletKitClient interface {
 	// CommitVirtualPsbts commits virtual transactions.
 	CommitVirtualPsbts(ctx context.Context, virtualPsbts [][]byte,
 		passivePsbts [][]byte, feeRate uint64) (*entities.CommittedTransfer, error)
+
+	// AnchorVirtualPsbts anchors signed virtual PSBTs in a single call.
+	// This combines committing and publishing into one operation.
+	AnchorVirtualPsbts(ctx context.Context, signedPsbts [][]byte) (
+		*entities.SendResult, error)
 
 	// PublishAndLogTransfer publishes the anchor transaction and logs the
 	// transfer.
