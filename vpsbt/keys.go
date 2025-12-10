@@ -1,10 +1,6 @@
-// Package vpsbt provides functionality for building virtual PSBTs (vPackets)
-// for Taproot Asset transfers. It implements the minimal serialization needed
-// to create vPackets that can be funded by the tapd daemon.
 package vpsbt
 
 // PSBT key prefixes for virtual transaction encoding.
-// These match the constants defined in taproot-assets/tappsbt/interface.go.
 var (
 	// Global keys
 	keyGlobalIsVirtualTx    = []byte{0x70}
@@ -15,15 +11,15 @@ var (
 	keyInputPrevID = []byte{0x70}
 
 	// Output keys
-	keyOutputType                            = []byte{0x70}
-	keyOutputIsInteractive                   = []byte{0x71}
-	keyOutputAnchorOutputIndex               = []byte{0x72}
-	keyOutputAnchorOutputInternalKey         = []byte{0x73}
-	keyOutputAnchorOutputBip32Derivation     = []byte{0x74}
-	keyOutputAnchorOutputTrBip32Derivation   = []byte{0x75}
-	keyOutputAssetVersion                    = []byte{0x79}
-	keyOutputLockTime                        = []byte{0x7c}
-	keyOutputRelativeLockTime                = []byte{0x7d}
+	keyOutputType                          = []byte{0x70}
+	keyOutputIsInteractive                 = []byte{0x71}
+	keyOutputAnchorOutputIndex             = []byte{0x72}
+	keyOutputAnchorOutputInternalKey       = []byte{0x73}
+	keyOutputAnchorOutputBip32Derivation   = []byte{0x74}
+	keyOutputAnchorOutputTrBip32Derivation = []byte{0x75}
+	keyOutputAssetVersion                  = []byte{0x79}
+	keyOutputLockTime                      = []byte{0x7c}
+	keyOutputRelativeLockTime              = []byte{0x7d}
 )
 
 // VPacket versions
@@ -56,8 +52,7 @@ const (
 
 // BIP-0043 purpose for key derivation (same as LND)
 const (
-	BIP0043Purpose        = 1017
-	HardenedKeyStart      = 0x80000000
+	BIP0043Purpose         = 1017
+	HardenedKeyStart       = 0x80000000
 	TaprootAssetsKeyFamily = 212
 )
-
