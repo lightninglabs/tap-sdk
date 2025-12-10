@@ -122,4 +122,16 @@ var (
 	// ErrNoRecipients is returned when attempting to fund a transaction
 	// with no recipients configured.
 	ErrNoRecipients = errors.New("no recipients configured")
+
+	// ErrNoReceiverKeys is returned when attempting to execute an
+	// interactive transfer without setting receiver keys.
+	ErrNoReceiverKeys = errors.New("receiver keys not set")
+
+	// ErrNoAssetID is returned when attempting to execute a transfer
+	// without specifying the asset ID.
+	ErrNoAssetID = errors.New("asset ID not set")
+
+	// ErrZeroAmount is returned when attempting to execute a transfer
+	// with zero amount.
+	ErrZeroAmount = errors.New("amount must be greater than zero")
 )

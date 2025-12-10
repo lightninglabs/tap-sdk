@@ -13,6 +13,7 @@ import (
 	"github.com/lightninglabs/tap-sdk/entities"
 	grpcClients "github.com/lightninglabs/tap-sdk/grpc"
 	"github.com/lightninglabs/tap-sdk/macaroon"
+	"github.com/lightninglabs/tap-sdk/vpsbt"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
@@ -25,6 +26,10 @@ type Wallet struct {
 
 	grpcConn  *grpc.ClientConn
 	macaroons macaroon.Pouch
+
+	// Network configuration for vPacket encoding.
+	networkHRP string
+	coinType   uint32
 }
 
 // NewWallet creates a new Wallet instance.
@@ -120,17 +125,48 @@ func NewWallet(cfg *Config) (*Wallet, error) {
 		conn, cfg.RPCTimeout, macaroons[macaroon.WalletKitServiceMac],
 	)
 
+	// Get network parameters for vPacket encoding.
+	networkHRP, coinType := getNetworkParams(cfg.Network)
+
 	return &Wallet{
-		Client:    walletClient,
-		WalletKit: walletKitClient,
-		grpcConn:  conn,
-		macaroons: macaroons,
+		Client:     walletClient,
+		WalletKit:  walletKitClient,
+		grpcConn:   conn,
+		macaroons:  macaroons,
+		networkHRP: networkHRP,
+		coinType:   coinType,
 	}, nil
 }
 
-// NewTxBuilder returns a new transaction builder.
+// getNetworkParams returns the HRP and coin type for a given network.
+func getNetworkParams(network Network) (string, uint32) {
+	switch network {
+	case NetworkMainnet:
+		return vpsbt.HRPMainnet, 0 // BIP-44 coin type 0 for mainnet
+	case NetworkTestnet:
+		return vpsbt.HRPTestnet, 1 // BIP-44 coin type 1 for testnet
+	case NetworkTestnet4:
+		return vpsbt.HRPTestnet4, 1
+	case NetworkSignet:
+		return vpsbt.HRPSignet, 1
+	case NetworkSimnet:
+		return vpsbt.HRPSimnet, 1
+	case NetworkRegtest:
+		return vpsbt.HRPRegtest, 1
+	default:
+		return vpsbt.HRPRegtest, 1 // Default to regtest
+	}
+}
+
+// NewTxBuilder returns a new transaction builder for address-based transfers.
 func (s *Wallet) NewTxBuilder() *TxBuilder {
 	return NewTxBuilder(s)
+}
+
+// NewInteractiveTxBuilder returns a new builder for interactive transfers
+// where the receiver provides their keys directly.
+func (s *Wallet) NewInteractiveTxBuilder() *InteractiveTxBuilder {
+	return newInteractiveTxBuilder(s)
 }
 
 // DeriveKeys derives a new script key and internal key for receiving assets.
