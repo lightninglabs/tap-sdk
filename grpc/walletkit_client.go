@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/lightninglabs/tap-sdk/entities"
@@ -157,4 +158,115 @@ func (m *walletKitClient) PublishAndLogTransfer(ctx context.Context,
 		VirtualTransactions:      virtualPsbts,
 		PassiveAssetTransactions: passivePsbts,
 	}, nil
+}
+
+// DeriveScriptKey derives a new script key for receiving assets.
+// The script key includes both the internal key and the tweaked Taproot
+// output key.
+func (m *walletKitClient) DeriveScriptKey(ctx context.Context) (
+	*entities.ScriptKey, error) {
+
+	req := &assetwalletrpc.NextScriptKeyRequest{
+		KeyFamily: entities.TaprootAssetsKeyFamily,
+	}
+
+	authCtx, _, client := m.RawClientWithMacAuth(ctx)
+	resp, err := client.NextScriptKey(authCtx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.ScriptKey == nil {
+		return nil, fmt.Errorf("invalid script key response")
+	}
+
+	scriptKey, err := unmarshalScriptKey(resp.ScriptKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal script key: %w", err)
+	}
+
+	return scriptKey, nil
+}
+
+// DeriveInternalKey derives a new internal key for anchor outputs.
+func (m *walletKitClient) DeriveInternalKey(ctx context.Context) (
+	*entities.InternalKey, error) {
+
+	req := &assetwalletrpc.NextInternalKeyRequest{
+		KeyFamily: entities.TaprootAssetsKeyFamily,
+	}
+
+	authCtx, _, client := m.RawClientWithMacAuth(ctx)
+	resp, err := client.NextInternalKey(authCtx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.InternalKey == nil {
+		return nil, fmt.Errorf("invalid internal key response")
+	}
+
+	internalKey, err := unmarshalKeyDescriptor(resp.InternalKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal internal key: %w", err)
+	}
+
+	return &entities.InternalKey{
+		PubKey:     internalKey.RawKeyBytes,
+		KeyLocator: internalKey.KeyLocator,
+	}, nil
+}
+
+// unmarshalScriptKey converts an RPC ScriptKey to an entities.ScriptKey.
+func unmarshalScriptKey(rpcKey *taprpc.ScriptKey) (*entities.ScriptKey, error) {
+	if len(rpcKey.PubKey) != 33 {
+		return nil, fmt.Errorf("invalid public key length: %d",
+			len(rpcKey.PubKey))
+	}
+
+	var pubKey [33]byte
+	copy(pubKey[:], rpcKey.PubKey)
+
+	scriptKey := &entities.ScriptKey{
+		PubKey:   pubKey,
+		TapTweak: rpcKey.TapTweak,
+	}
+
+	if rpcKey.KeyDesc != nil {
+		keyDesc, err := unmarshalKeyDescriptor(rpcKey.KeyDesc)
+		if err != nil {
+			return nil, err
+		}
+
+		scriptKey.KeyDesc = *keyDesc
+	}
+
+	return scriptKey, nil
+}
+
+// unmarshalKeyDescriptor converts an RPC KeyDescriptor to an
+// entities.KeyDescriptor.
+func unmarshalKeyDescriptor(rpcKey *taprpc.KeyDescriptor) (
+	*entities.KeyDescriptor, error) {
+
+	if len(rpcKey.RawKeyBytes) != 33 {
+		return nil, fmt.Errorf("invalid raw key bytes length: %d",
+			len(rpcKey.RawKeyBytes))
+	}
+
+	var rawKeyBytes [33]byte
+	copy(rawKeyBytes[:], rpcKey.RawKeyBytes)
+
+	keyDesc := &entities.KeyDescriptor{
+		RawKeyBytes: rawKeyBytes,
+	}
+
+	if rpcKey.KeyLoc != nil {
+		keyDesc.KeyLocator = entities.KeyLocator{
+			Family: uint32(rpcKey.KeyLoc.KeyFamily),
+			Index:  uint32(rpcKey.KeyLoc.KeyIndex),
+		}
+	}
+
+	return keyDesc, nil
 }
