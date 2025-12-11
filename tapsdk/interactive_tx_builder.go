@@ -22,6 +22,7 @@ type InteractiveTxBuilder struct {
 	receiverKeys     *entities.DerivedKeys
 	lockTime         uint64
 	relativeLockTime uint64
+	altLeaves        map[[33]byte][][]byte
 
 	// Internal state
 	vPacketBytes []byte
@@ -74,6 +75,27 @@ func (b *InteractiveTxBuilder) SetRelativeLockTime(relativeLockTime uint64) *Int
 	defer b.mu.Unlock()
 
 	b.relativeLockTime = relativeLockTime
+	return b
+}
+
+// WithAltLeaves attaches auxiliary Taproot leaves that should be committed to
+// the receiver's output.
+func (b *InteractiveTxBuilder) WithAltLeaves(scriptKey [33]byte,
+	leaves [][]byte) *InteractiveTxBuilder {
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.altLeaves == nil {
+		b.altLeaves = make(map[[33]byte][][]byte)
+	}
+
+	cloned := make([][]byte, len(leaves))
+	for i := range leaves {
+		cloned[i] = append([]byte(nil), leaves[i]...)
+	}
+
+	b.altLeaves[scriptKey] = cloned
 	return b
 }
 
@@ -137,12 +159,18 @@ func (b *InteractiveTxBuilder) validate() error {
 
 // buildVPacket creates the virtual PSBT for the interactive send.
 func (b *InteractiveTxBuilder) buildVPacket() error {
+	var leaves [][]byte
+	if b.altLeaves != nil && b.receiverKeys != nil {
+		leaves = b.altLeaves[b.receiverKeys.ScriptKey.PubKey]
+	}
+
 	vPkt := &vpsbt.InteractiveVPacket{
 		AssetID:           b.assetID,
 		Amount:            b.amount,
 		ScriptKey:         b.receiverKeys.ScriptKey.PubKey,
 		AnchorInternalKey: b.receiverKeys.InternalKey.PubKey,
 		AnchorKeyLocator:  b.receiverKeys.InternalKey.KeyLocator,
+		AltLeaves:         leaves,
 		LockTime:          b.lockTime,
 		RelativeLockTime:  b.relativeLockTime,
 		AnchorOutputIndex: 0,
@@ -193,4 +221,3 @@ func (b *InteractiveTxBuilder) complete(ctx context.Context) (*entities.SendResu
 
 	return result, nil
 }
-
