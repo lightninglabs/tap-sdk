@@ -20,6 +20,7 @@ var (
 	keyOutputAssetVersion                  = []byte{0x79}
 	keyOutputLockTime                      = []byte{0x7c}
 	keyOutputRelativeLockTime              = []byte{0x7d}
+	keyOutputAltLeaves                     = []byte{0x7e}
 )
 
 // VPacket versions

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"io"
 
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
@@ -29,6 +30,10 @@ type InteractiveVPacket struct {
 
 	// AnchorKeyLocator identifies the anchor key's derivation path.
 	AnchorKeyLocator entities.KeyLocator
+
+	// AltLeaves optionally carries auxiliary Taproot leaves that should be
+	// committed to the output's Taproot Asset tree.
+	AltLeaves [][]byte
 
 	// LockTime is the optional lock time for the output.
 	LockTime uint64
@@ -109,7 +114,11 @@ func (v *InteractiveVPacket) toPsbt() (*psbt.Packet, error) {
 	packet.Inputs[0].Unknowns = inputUnknowns
 
 	// Encode the output.
-	outputUnknowns, pOut := v.encodeOutputFields()
+	outputUnknowns, pOut, err := v.encodeOutputFields()
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode output: %w", err)
+	}
+
 	packet.Outputs[0] = pOut
 	packet.Outputs[0].Unknowns = outputUnknowns
 
@@ -152,7 +161,7 @@ func (v *InteractiveVPacket) encodeInputFields() ([]*psbt.Unknown, error) {
 }
 
 // encodeOutputFields encodes the output fields.
-func (v *InteractiveVPacket) encodeOutputFields() ([]*psbt.Unknown, psbt.POutput) {
+func (v *InteractiveVPacket) encodeOutputFields() ([]*psbt.Unknown, psbt.POutput, error) {
 	unknowns := []*psbt.Unknown{
 		// Type = Simple (0)
 		{
@@ -213,12 +222,25 @@ func (v *InteractiveVPacket) encodeOutputFields() ([]*psbt.Unknown, psbt.POutput
 		})
 	}
 
+	// Encode alt leaves if provided.
+	if len(v.AltLeaves) > 0 {
+		encodedAltLeaves, err := encodeAltLeaves(v.AltLeaves)
+		if err != nil {
+			return nil, psbt.POutput{}, err
+		}
+
+		unknowns = append(unknowns, &psbt.Unknown{
+			Key:   keyOutputAltLeaves,
+			Value: encodedAltLeaves,
+		})
+	}
+
 	// Create the PSBT output with script key derivation info.
 	pOut := psbt.POutput{
 		TaprootInternalKey: v.ScriptKey[1:], // x-only (32 bytes)
 	}
 
-	return unknowns, pOut
+	return unknowns, pOut, nil
 }
 
 // encodePrevID encodes a PrevID with only the asset ID set.
@@ -329,3 +351,57 @@ func encodeTaprootBip32Derivation(d *psbt.TaprootBip32Derivation) []byte {
 	return buf.Bytes()
 }
 
+// encodeAltLeaves serializes a list of alt leaves using the same minimal format
+// expected by tapd: varint leaf count followed by length-prefixed raw leaf
+// bytes.
+func encodeAltLeaves(leaves [][]byte) ([]byte, error) {
+	var (
+		buf     bytes.Buffer
+		scratch [9]byte
+	)
+
+	if err := writeVarInt(&buf, uint64(len(leaves)), scratch[:]); err != nil {
+		return nil, err
+	}
+
+	for _, leaf := range leaves {
+		if err := writeVarInt(&buf, uint64(len(leaf)), scratch[:]); err != nil {
+			return nil, err
+		}
+
+		if _, err := buf.Write(leaf); err != nil {
+			return nil, err
+		}
+	}
+
+	return buf.Bytes(), nil
+}
+
+// writeVarInt writes val using the compact encoding defined by BIP-0174/LND TLV
+// helpers.
+func writeVarInt(w io.Writer, val uint64, scratch []byte) error {
+	switch {
+	case val < 0xfd:
+		scratch[0] = uint8(val)
+		_, err := w.Write(scratch[:1])
+		return err
+
+	case val <= 0xffff:
+		scratch[0] = 0xfd
+		binary.BigEndian.PutUint16(scratch[1:3], uint16(val))
+		_, err := w.Write(scratch[:3])
+		return err
+
+	case val <= 0xffffffff:
+		scratch[0] = 0xfe
+		binary.BigEndian.PutUint32(scratch[1:5], uint32(val))
+		_, err := w.Write(scratch[:5])
+		return err
+
+	default:
+		scratch[0] = 0xff
+		binary.BigEndian.PutUint64(scratch[1:], val)
+		_, err := w.Write(scratch[:9])
+		return err
+	}
+}
