@@ -1,5 +1,11 @@
 package entities
 
+import (
+	"fmt"
+
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
+)
+
 // FundedTransfer represents the result of funding a virtual transaction.
 type FundedTransfer struct {
 	// FundedPsbt is the funded virtual transaction PSBT.
@@ -48,6 +54,9 @@ type SendResult struct {
 	// TransferTxid is the anchor transaction ID (32 bytes, not reversed).
 	TransferTxid [32]byte
 
+	// AnchorTxid is the display-order transaction ID (string form).
+	AnchorTxid string
+
 	// AnchorTx is the raw anchor transaction bytes.
 	AnchorTx []byte
 
@@ -60,6 +69,12 @@ type TransferOutput struct {
 	// Outpoint is the output location in "txid:index" format.
 	Outpoint string
 
+	// AnchorOutpoint is the on-chain outpoint.
+	AnchorOutpoint Outpoint
+
+	// AnchorValue is the BTC value of the anchor output in sats.
+	AnchorValue int64
+
 	// ScriptKey is the 33-byte compressed public key locking this output.
 	ScriptKey [33]byte
 
@@ -68,7 +83,11 @@ type TransferOutput struct {
 
 	// ProofBlob is the transition proof for this output.
 	// For interactive sends, this must be delivered to the receiver.
+	// This is the standard way to retrieve proofs for the transfer.
 	ProofBlob []byte
+
+	// AltLeaves are auxiliary Taproot leaves (if present) decoded from proofs.
+	AltLeaves [][]byte
 }
 
 // Outpoint represents a Bitcoin transaction outpoint.
@@ -78,4 +97,10 @@ type Outpoint struct {
 
 	// Index is the output index within the transaction.
 	Index uint32
+}
+
+// String returns the string representation of the outpoint in "txid:index" format.
+func (o Outpoint) String() string {
+	hash, _ := chainhash.NewHash(o.Txid[:])
+	return fmt.Sprintf("%v:%d", hash, o.Index)
 }
