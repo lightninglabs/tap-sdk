@@ -207,7 +207,8 @@ func (s *Wallet) DeriveKeys(ctx context.Context) (*entities.DerivedKeys, error) 
 // This is used by the sender in interactive transfers to export proofs
 // that must be delivered to the receiver out-of-band.
 func (s *Wallet) ExportProof(ctx context.Context, assetID [32]byte,
-	scriptKey [33]byte, outpoint entities.Outpoint) (*entities.ProofFile, error) {
+	scriptKey [33]byte, outpoint *entities.Outpoint) (*entities.ProofFile,
+	error) {
 
 	proofFile, err := s.Proof.ExportProof(
 		ctx, assetID[:], scriptKey[:], outpoint,
@@ -217,6 +218,14 @@ func (s *Wallet) ExportProof(ctx context.Context, assetID [32]byte,
 	}
 
 	return proofFile, nil
+}
+
+// ExportProofLatest exports the latest proof for the given asset/script key.
+// This is equivalent to calling ExportProof with a nil outpoint.
+func (s *Wallet) ExportProofLatest(ctx context.Context, assetID [32]byte,
+	scriptKey [33]byte) (*entities.ProofFile, error) {
+
+	return s.ExportProof(ctx, assetID, scriptKey, nil)
 }
 
 // ImportProof imports a proof file received from a sender during an

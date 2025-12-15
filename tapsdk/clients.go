@@ -30,8 +30,10 @@ type ProofClient interface {
 	ServiceClient[taprpc.TaprootAssetsClient]
 
 	// ExportProof exports a proof file for a specific asset output.
+	// If outpoint is nil, then the latest proof for the given asset/script key
+	// is exported.
 	ExportProof(ctx context.Context, assetID, scriptKey []byte,
-		outpoint entities.Outpoint) (*entities.ProofFile, error)
+		outpoint *entities.Outpoint) (*entities.ProofFile, error)
 
 	// UnpackProofFile unpacks a proof file into individual proofs.
 	UnpackProofFile(ctx context.Context, rawProofFile []byte) ([][]byte, error)
