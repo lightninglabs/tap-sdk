@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/lightninglabs/tap-sdk/entities"
+	"github.com/lightninglabs/tap-sdk/internal/codec"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"google.golang.org/grpc"
@@ -41,20 +42,25 @@ func (p *proofClient) RawClientWithMacAuth(
 
 // ExportProof exports a proof file for a specific asset output.
 func (p *proofClient) ExportProof(ctx context.Context, assetID,
-	scriptKey []byte, outpoint entities.Outpoint) (*entities.ProofFile, error) {
+	scriptKey []byte, outpoint *entities.Outpoint) (*entities.ProofFile,
+	error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
 
 	rpcCtx = p.proofMac.WithMacaroonAuth(rpcCtx)
-	resp, err := p.client.ExportProof(rpcCtx, &taprpc.ExportProofRequest{
+	req := &taprpc.ExportProofRequest{
 		AssetId:   assetID,
 		ScriptKey: scriptKey,
-		Outpoint: &taprpc.OutPoint{
+	}
+	if outpoint != nil {
+		req.Outpoint = &taprpc.OutPoint{
 			Txid:        outpoint.Txid[:],
 			OutputIndex: outpoint.Index,
-		},
-	})
+		}
+	}
+
+	resp, err := p.client.ExportProof(rpcCtx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -135,6 +141,17 @@ func (p *proofClient) DecodeProof(ctx context.Context,
 		result.GroupKey = asset.AssetGroup.TweakedGroupKey
 	}
 
+	// Decode alt leaves if present.
+	if len(decoded.AltLeaves) > 0 {
+		altLeaves, err := codec.DecodeAltLeaves(decoded.AltLeaves)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode alt leaves: %w",
+				err)
+		}
+
+		result.AltLeaves = altLeaves
+	}
+
 	return result, nil
 }
 
@@ -187,4 +204,3 @@ func (p *proofClient) RegisterTransfer(ctx context.Context, assetID,
 
 	return result, nil
 }
-

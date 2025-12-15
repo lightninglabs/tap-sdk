@@ -33,6 +33,10 @@ type DecodedProof struct {
 	// GroupKey is the optional tweaked group key (if asset is grouped).
 	GroupKey []byte
 
+	// AltLeaves are auxiliary Taproot leaves committed alongside the asset.
+	// Each entry is the raw per-leaf TLV stream bytes (opaque).
+	AltLeaves [][]byte
+
 	// IsIssuance is true if this is a genesis/issuance proof.
 	IsIssuance bool
 }
@@ -53,4 +57,3 @@ type RegisteredAsset struct {
 	// Outpoint is the output location where this asset resides.
 	Outpoint string
 }
-

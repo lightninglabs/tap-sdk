@@ -3,12 +3,11 @@ package tapsdk
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
-	"io"
 	"testing"
 
 	btcpsbt "github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/lightninglabs/tap-sdk/entities"
+	"github.com/lightninglabs/tap-sdk/internal/codec"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -201,7 +200,8 @@ func TestInteractiveTxBuilder_WithAltLeaves(t *testing.T) {
 
 	require.NotNil(t, encodedAltLeaves)
 
-	decodedLeaves := decodeAltLeaves(t, encodedAltLeaves)
+	decodedLeaves, err := codec.DecodeAltLeaves(encodedAltLeaves)
+	require.NoError(t, err)
 	require.Equal(t, altLeaves, decodedLeaves)
 
 	mockWalletKit.AssertExpectations(t)
@@ -303,54 +303,4 @@ func TestInteractiveTxBuilder_AlreadyFinished(t *testing.T) {
 	require.ErrorIs(t, err, ErrBuilderFinished)
 
 	mockWalletKit.AssertExpectations(t)
-}
-
-func decodeAltLeaves(t *testing.T, raw []byte) [][]byte {
-	t.Helper()
-
-	reader := bytes.NewReader(raw)
-	count := readVarInt(t, reader)
-
-	leaves := make([][]byte, count)
-	for i := uint64(0); i < count; i++ {
-		leafLen := readVarInt(t, reader)
-		leaf := make([]byte, leafLen)
-
-		_, err := io.ReadFull(reader, leaf)
-		require.NoError(t, err)
-
-		leaves[i] = leaf
-	}
-
-	return leaves
-}
-
-func readVarInt(t *testing.T, r io.Reader) uint64 {
-	t.Helper()
-
-	var scratch [8]byte
-
-	_, err := io.ReadFull(r, scratch[:1])
-	require.NoError(t, err)
-	disc := scratch[0]
-
-	switch {
-	case disc < 0xfd:
-		return uint64(disc)
-
-	case disc == 0xfd:
-		_, err := io.ReadFull(r, scratch[:2])
-		require.NoError(t, err)
-		return uint64(binary.BigEndian.Uint16(scratch[:2]))
-
-	case disc == 0xfe:
-		_, err := io.ReadFull(r, scratch[:4])
-		require.NoError(t, err)
-		return uint64(binary.BigEndian.Uint32(scratch[:4]))
-
-	default:
-		_, err := io.ReadFull(r, scratch[:])
-		require.NoError(t, err)
-		return binary.BigEndian.Uint64(scratch[:])
-	}
 }

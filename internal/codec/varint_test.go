@@ -1,4 +1,4 @@
-package vpsbt
+package codec
 
 import (
 	"bytes"
@@ -19,7 +19,7 @@ func TestWriteVarIntLarge(t *testing.T) {
 	// 0x0000000100000000 value
 	val := uint64(0x100000000)
 
-	err := writeVarInt(&buf, val, scratch[:])
+	err := WriteVarInt(&buf, val, scratch[:])
 	require.NoError(t, err)
 
 	// Expected: 0xff + 8 bytes of val
