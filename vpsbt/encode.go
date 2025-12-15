@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"io"
 
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/tap-sdk/entities"
+	"github.com/lightninglabs/tap-sdk/internal/codec"
 )
 
 // InteractiveVPacket represents a minimal virtual packet for interactive sends.
@@ -224,7 +224,7 @@ func (v *InteractiveVPacket) encodeOutputFields() ([]*psbt.Unknown, psbt.POutput
 
 	// Encode alt leaves if provided.
 	if len(v.AltLeaves) > 0 {
-		encodedAltLeaves, err := encodeAltLeaves(v.AltLeaves)
+		encodedAltLeaves, err := codec.EncodeAltLeaves(v.AltLeaves)
 		if err != nil {
 			return nil, psbt.POutput{}, err
 		}
@@ -349,59 +349,4 @@ func encodeTaprootBip32Derivation(d *psbt.TaprootBip32Derivation) []byte {
 	}
 
 	return buf.Bytes()
-}
-
-// encodeAltLeaves serializes a list of alt leaves using the same minimal format
-// expected by tapd: varint leaf count followed by length-prefixed raw leaf
-// bytes.
-func encodeAltLeaves(leaves [][]byte) ([]byte, error) {
-	var (
-		buf     bytes.Buffer
-		scratch [9]byte
-	)
-
-	if err := writeVarInt(&buf, uint64(len(leaves)), scratch[:]); err != nil {
-		return nil, err
-	}
-
-	for _, leaf := range leaves {
-		if err := writeVarInt(&buf, uint64(len(leaf)), scratch[:]); err != nil {
-			return nil, err
-		}
-
-		if _, err := buf.Write(leaf); err != nil {
-			return nil, err
-		}
-	}
-
-	return buf.Bytes(), nil
-}
-
-// writeVarInt writes val using the compact encoding defined by BIP-0174/LND TLV
-// helpers.
-func writeVarInt(w io.Writer, val uint64, scratch []byte) error {
-	switch {
-	case val < 0xfd:
-		scratch[0] = uint8(val)
-		_, err := w.Write(scratch[:1])
-		return err
-
-	case val <= 0xffff:
-		scratch[0] = 0xfd
-		binary.BigEndian.PutUint16(scratch[1:3], uint16(val))
-		_, err := w.Write(scratch[:3])
-		return err
-
-	case val <= 0xffffffff:
-		scratch[0] = 0xfe
-		binary.BigEndian.PutUint32(scratch[1:5], uint32(val))
-		_, err := w.Write(scratch[:5])
-		return err
-
-	default:
-		scratch[0] = 0xff
-		binary.BigEndian.PutUint64(scratch[1:], val)
-		_, err := w.Write(scratch[:9])
-		return err
-	}
 }
