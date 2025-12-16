@@ -17,6 +17,8 @@ type TaprpcServiceMac string
 const (
 	AdminServiceMac     TaprpcServiceMac = "admin.macaroon"
 	WalletKitServiceMac TaprpcServiceMac = "walletkit.macaroon"
+	ProofServiceMac     TaprpcServiceMac = "proof.macaroon"
+	UniverseServiceMac  TaprpcServiceMac = "universe.macaroon"
 	ReadOnlyServiceMac  TaprpcServiceMac = "readonly.macaroon"
 )
 
@@ -27,6 +29,8 @@ var (
 	macaroonServices = []TaprpcServiceMac{
 		WalletKitServiceMac,
 		AdminServiceMac,
+		ProofServiceMac,
+		UniverseServiceMac,
 		ReadOnlyServiceMac,
 	}
 )
@@ -103,6 +107,8 @@ func NewPouch(macaroonDir, customMacPath, customMacHex string) (Pouch, error) {
 		return Pouch{
 			WalletKitServiceMac: mac,
 			AdminServiceMac:     mac,
+			ProofServiceMac:     mac,
+			UniverseServiceMac:  mac,
 			ReadOnlyServiceMac:  mac,
 		}, nil
 	}

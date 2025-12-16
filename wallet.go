@@ -128,10 +128,10 @@ func NewWallet(cfg *Config) (*Wallet, error) {
 		conn, cfg.RPCTimeout, macaroons[macaroon.WalletKitServiceMac],
 	)
 	proofClient := grpcClients.NewProofClient(
-		conn, cfg.RPCTimeout, macaroons[macaroon.AdminServiceMac],
+		conn, cfg.RPCTimeout, macaroons[macaroon.ProofServiceMac],
 	)
 	universeClient := grpcClients.NewUniverseClient(
-		conn, cfg.RPCTimeout, macaroons[macaroon.AdminServiceMac],
+		conn, cfg.RPCTimeout, macaroons[macaroon.UniverseServiceMac],
 	)
 
 	// Get network parameters for vPacket encoding.
