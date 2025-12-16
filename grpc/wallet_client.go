@@ -3,8 +3,10 @@ package client
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
 	"time"
 
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 	"github.com/lightninglabs/taproot-assets/taprpc"
@@ -63,5 +65,251 @@ func (s *walletClient) GetInfo(ctx context.Context) (*entities.Info, error) {
 		BlockHeight:       resp.BlockHeight,
 		NodeAlias:         resp.NodeAlias,
 		SyncedToChain:     resp.SyncToChain,
+	}, nil
+}
+
+func (s *walletClient) ListAssets(ctx context.Context,
+	req *entities.ListAssetsRequest) ([]*entities.Asset, error) {
+
+	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+
+	rpcCtx = s.adminMac.WithMacaroonAuth(rpcCtx)
+
+	rpcReq := &taprpc.ListAssetRequest{}
+	if req != nil {
+		rpcReq.WithWitness = req.WithWitness
+		rpcReq.IncludeSpent = req.IncludeSpent
+		rpcReq.IncludeLeased = req.IncludeLeased
+		rpcReq.IncludeUnconfirmedMints = req.IncludeUnconfirmedMints
+		rpcReq.MinAmount = req.MinAmount
+		rpcReq.MaxAmount = req.MaxAmount
+
+		if len(req.GroupKey) > 0 {
+			rpcReq.GroupKey = req.GroupKey
+		}
+
+		if req.AnchorOutpoint != nil {
+			anchor := req.AnchorOutpoint
+			rpcReq.AnchorOutpoint = &taprpc.OutPoint{
+				Txid:        anchor.Txid[:],
+				OutputIndex: anchor.Index,
+			}
+		}
+
+		if req.ScriptKeyType != nil && req.ScriptKeyType.AllTypes {
+			rpcReq.ScriptKeyType = &taprpc.ScriptKeyTypeQuery{
+				Type: &taprpc.ScriptKeyTypeQuery_AllTypes{
+					AllTypes: true,
+				},
+			}
+		}
+	}
+
+	resp, err := s.client.ListAssets(rpcCtx, rpcReq)
+	if err != nil {
+		return nil, err
+	}
+
+	assets := make([]*entities.Asset, 0, len(resp.Assets))
+	for _, rpcAsset := range resp.Assets {
+		asset, err := unmarshalAsset(rpcAsset)
+		if err != nil {
+			return nil, err
+		}
+
+		assets = append(assets, &asset)
+	}
+
+	return assets, nil
+}
+
+func (s *walletClient) ListTransfers(ctx context.Context,
+	req *entities.ListTransfersRequest) ([]*entities.AssetTransfer, error) {
+
+	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+
+	rpcCtx = s.adminMac.WithMacaroonAuth(rpcCtx)
+
+	rpcReq := &taprpc.ListTransfersRequest{}
+	if req != nil {
+		rpcReq.AnchorTxid = req.AnchorTxid
+	}
+
+	resp, err := s.client.ListTransfers(rpcCtx, rpcReq)
+	if err != nil {
+		return nil, err
+	}
+
+	transfers := make([]*entities.AssetTransfer, 0, len(resp.Transfers))
+	for _, rpcTransfer := range resp.Transfers {
+		transfer, err := unmarshalAssetTransfer(rpcTransfer)
+		if err != nil {
+			return nil, err
+		}
+
+		transfers = append(transfers, &transfer)
+	}
+
+	return transfers, nil
+}
+
+func unmarshalAsset(rpcAsset *taprpc.Asset) (entities.Asset, error) {
+	if rpcAsset == nil {
+		return entities.Asset{}, fmt.Errorf("nil asset")
+	}
+	if rpcAsset.AssetGenesis == nil {
+		return entities.Asset{}, fmt.Errorf("missing asset genesis")
+	}
+	if len(rpcAsset.ScriptKey) != 33 {
+		return entities.Asset{}, fmt.Errorf("invalid script key length: %d",
+			len(rpcAsset.ScriptKey))
+	}
+
+	genesis, err := unmarshalAssetGenesis(rpcAsset.AssetGenesis)
+	if err != nil {
+		return entities.Asset{}, err
+	}
+
+	var scriptKeyPub [33]byte
+	copy(scriptKeyPub[:], rpcAsset.ScriptKey)
+
+	asset := entities.Asset{
+		Version:          uint8(rpcAsset.Version),
+		Genesis:          genesis,
+		Amount:           rpcAsset.Amount,
+		LockTime:         uint64(rpcAsset.LockTime),
+		RelativeLockTime: uint64(rpcAsset.RelativeLockTime),
+		ScriptVersion:    uint16(rpcAsset.ScriptVersion),
+		ScriptKey: entities.ScriptKey{
+			PubKey: scriptKeyPub,
+		},
+	}
+
+	if rpcAsset.AssetGroup != nil {
+		if len(rpcAsset.AssetGroup.RawGroupKey) == 33 {
+			var rawKey [33]byte
+			copy(rawKey[:], rpcAsset.AssetGroup.RawGroupKey)
+			asset.GroupKey = &entities.GroupKey{
+				RawKey:        rawKey,
+				TapscriptRoot: rpcAsset.AssetGroup.TapscriptRoot,
+			}
+		}
+	}
+
+	return asset, nil
+}
+
+func unmarshalAssetGenesis(rpcGenesis *taprpc.GenesisInfo) (
+	entities.AssetGenesis, error) {
+
+	if rpcGenesis == nil {
+		return entities.AssetGenesis{}, fmt.Errorf("nil asset genesis")
+	}
+	if rpcGenesis.GenesisPoint == "" {
+		return entities.AssetGenesis{}, fmt.Errorf("missing genesis point")
+	}
+	if len(rpcGenesis.AssetId) != 32 {
+		return entities.AssetGenesis{}, fmt.Errorf("invalid asset ID length: %d",
+			len(rpcGenesis.AssetId))
+	}
+	if len(rpcGenesis.MetaHash) != 0 && len(rpcGenesis.MetaHash) != 32 {
+		return entities.AssetGenesis{}, fmt.Errorf("invalid meta hash length: %d",
+			len(rpcGenesis.MetaHash))
+	}
+
+	firstPrevOut, err := wire.NewOutPointFromString(rpcGenesis.GenesisPoint)
+	if err != nil {
+		return entities.AssetGenesis{}, fmt.Errorf("invalid genesis point: %w",
+			err)
+	}
+
+	var assetID [32]byte
+	copy(assetID[:], rpcGenesis.AssetId)
+
+	var metaHash [32]byte
+	if len(rpcGenesis.MetaHash) == 32 {
+		copy(metaHash[:], rpcGenesis.MetaHash)
+	}
+
+	return entities.AssetGenesis{
+		FirstPrevOut: entities.Outpoint{
+			Txid:  firstPrevOut.Hash,
+			Index: firstPrevOut.Index,
+		},
+		Tag:         rpcGenesis.Name,
+		MetaHash:    metaHash,
+		AssetID:     assetID,
+		OutputIndex: rpcGenesis.OutputIndex,
+		Type:        entities.AssetType(rpcGenesis.AssetType),
+	}, nil
+}
+
+func unmarshalAssetTransfer(rpcTransfer *taprpc.AssetTransfer) (
+	entities.AssetTransfer, error) {
+
+	if rpcTransfer == nil {
+		return entities.AssetTransfer{}, fmt.Errorf("nil transfer")
+	}
+
+	sendResult, err := unmarshalSendResult(rpcTransfer)
+	if err != nil {
+		return entities.AssetTransfer{}, err
+	}
+
+	inputs := make([]entities.TransferInput, 0, len(rpcTransfer.Inputs))
+	for _, in := range rpcTransfer.Inputs {
+		if in == nil {
+			return entities.AssetTransfer{}, fmt.Errorf("nil transfer input")
+		}
+		if len(in.AssetId) != 32 {
+			return entities.AssetTransfer{}, fmt.Errorf(
+				"invalid input asset ID length: %d", len(in.AssetId),
+			)
+		}
+		if len(in.ScriptKey) != 33 {
+			return entities.AssetTransfer{}, fmt.Errorf(
+				"invalid input script key length: %d",
+				len(in.ScriptKey),
+			)
+		}
+
+		var assetID [32]byte
+		copy(assetID[:], in.AssetId)
+
+		var scriptKey [33]byte
+		copy(scriptKey[:], in.ScriptKey)
+
+		inputs = append(inputs, entities.TransferInput{
+			AnchorPoint: in.AnchorPoint,
+			AssetID:     assetID,
+			ScriptKey:   scriptKey,
+			Amount:      in.Amount,
+		})
+	}
+
+	var blockHash [32]byte
+	var blockHashStr string
+	if rpcTransfer.AnchorTxBlockHash != nil {
+		blockHashStr = rpcTransfer.AnchorTxBlockHash.HashStr
+		if len(rpcTransfer.AnchorTxBlockHash.Hash) == 32 {
+			copy(blockHash[:], rpcTransfer.AnchorTxBlockHash.Hash)
+		}
+	}
+
+	return entities.AssetTransfer{
+		TransferTimestamp:    rpcTransfer.TransferTimestamp,
+		TransferTxid:         sendResult.TransferTxid,
+		AnchorTxid:           sendResult.AnchorTxid,
+		AnchorTxHeightHint:   rpcTransfer.AnchorTxHeightHint,
+		AnchorTxChainFees:    rpcTransfer.AnchorTxChainFees,
+		Inputs:               inputs,
+		Outputs:              sendResult.Outputs,
+		AnchorTxBlockHash:    blockHash,
+		AnchorTxBlockHashStr: blockHashStr,
+		AnchorTxBlockHeight:  rpcTransfer.AnchorTxBlockHeight,
+		Label:                rpcTransfer.Label,
+		AnchorTx:             sendResult.AnchorTx,
 	}, nil
 }
