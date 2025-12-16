@@ -8,8 +8,8 @@ import (
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/tap-sdk/codec"
 	"github.com/lightninglabs/tap-sdk/entities"
-	"github.com/lightninglabs/tap-sdk/internal/codec"
 )
 
 // InteractiveVPacket represents a minimal virtual packet for interactive sends.

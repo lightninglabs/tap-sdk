@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	btcpsbt "github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/lightninglabs/tap-sdk/codec"
 	"github.com/lightninglabs/tap-sdk/entities"
-	"github.com/lightninglabs/tap-sdk/internal/codec"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
