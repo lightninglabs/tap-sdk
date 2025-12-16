@@ -90,6 +90,66 @@ type TransferOutput struct {
 	AltLeaves [][]byte
 }
 
+// TransferInput represents a single input in a transfer.
+type TransferInput struct {
+	// AnchorPoint is the old/current location of the Taproot Asset commitment
+	// that was spent as an input, in "txid:index" format.
+	AnchorPoint string
+
+	// AssetID is the 32-byte asset identifier of the asset that was spent.
+	AssetID [32]byte
+
+	// ScriptKey is the 33-byte script key of the asset that was spent.
+	ScriptKey [33]byte
+
+	// Amount is the number of asset units spent.
+	Amount uint64
+}
+
+// AssetTransfer represents a wallet-recorded outgoing transfer.
+type AssetTransfer struct {
+	// TransferTimestamp is the timestamp of the transfer in UTC Unix time
+	// seconds.
+	TransferTimestamp int64
+
+	// TransferTxid is the anchor transaction ID (32 bytes, not reversed).
+	TransferTxid [32]byte
+
+	// AnchorTxid is the display-order transaction ID (string form).
+	AnchorTxid string
+
+	// AnchorTxHeightHint is the height hint of the anchor transaction.
+	AnchorTxHeightHint uint32
+
+	// AnchorTxChainFees is the total fees paid by the anchor transaction in
+	// satoshis.
+	AnchorTxChainFees int64
+
+	// Inputs describes the set of spent assets.
+	Inputs []TransferInput
+
+	// Outputs describes the set of newly created asset outputs.
+	Outputs []TransferOutput
+
+	// AnchorTxBlockHash is the block hash of the blockchain block that contains
+	// the anchor transaction (if confirmed).
+	AnchorTxBlockHash [32]byte
+
+	// AnchorTxBlockHashStr is the byte-reversed hash as a hex string (if
+	// confirmed).
+	AnchorTxBlockHashStr string
+
+	// AnchorTxBlockHeight is the block height of the blockchain block that
+	// contains the anchor transaction (0 if unconfirmed).
+	AnchorTxBlockHeight uint32
+
+	// Label is an optional short label for the transfer.
+	Label string
+
+	// AnchorTx is the raw anchor transaction bytes.
+	AnchorTx []byte
+}
+
 // Outpoint represents a Bitcoin transaction outpoint.
 type Outpoint struct {
 	// Txid is the 32-byte transaction hash.

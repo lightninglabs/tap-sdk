@@ -23,6 +23,14 @@ type WalletClient interface {
 	ServiceClient[taprpc.TaprootAssetsClient]
 
 	GetInfo(ctx context.Context) (*entities.Info, error)
+
+	// ListAssets lists wallet assets with optional filtering.
+	ListAssets(ctx context.Context,
+		req *entities.ListAssetsRequest) ([]*entities.Asset, error)
+
+	// ListTransfers lists outgoing transfers with optional filtering.
+	ListTransfers(ctx context.Context,
+		req *entities.ListTransfersRequest) ([]*entities.AssetTransfer, error)
 }
 
 // ProofClient exposes proof-related operations from the TaprootAssets service.
@@ -61,7 +69,7 @@ type WalletKitClient interface {
 
 	// FundTransfer funds a virtual transaction using addresses.
 	FundTransfer(ctx context.Context, recipients []entities.Recipient,
-		inputs []entities.AssetInput) (*entities.FundedTransfer, error)
+		inputs []entities.PrevID) (*entities.FundedTransfer, error)
 
 	// FundInteractivePsbt funds a virtual PSBT for interactive sends.
 	FundInteractivePsbt(ctx context.Context, psbt []byte) (
