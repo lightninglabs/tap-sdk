@@ -37,6 +37,11 @@ type DecodedProof struct {
 	// Each entry is the raw per-leaf TLV stream bytes (opaque).
 	AltLeaves [][]byte
 
+	// PrevIDs are the asset-level identifiers of the inputs referenced by this
+	// proof's asset witnesses. These are required to derive STXO alt leaves for
+	// v1 transfer proofs.
+	PrevIDs []PrevID
+
 	// IsIssuance is true if this is a genesis/issuance proof.
 	IsIssuance bool
 }

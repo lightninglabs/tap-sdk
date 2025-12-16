@@ -1,17 +1,16 @@
 package entities
 
-import "github.com/btcsuite/btcd/wire"
+// PrevID represents a previous asset input to be spent. It is the Taproot
+// Assets protocol-level identifier for an input asset.
+type PrevID struct {
+	// Outpoint is the bitcoin anchor output on chain.
+	Outpoint Outpoint
 
-// AssetInput represents a previous asset input to be spent.
-type AssetInput struct {
-	// OutPoint is the bitcoin anchor output on chain.
-	OutPoint wire.OutPoint
-
-	// ID is the asset ID of the previous asset tree.
-	ID []byte
+	// AssetID is the 32-byte asset identifier of the previous asset tree.
+	AssetID [32]byte
 
 	// ScriptKey is the tweaked Taproot output key.
-	ScriptKey []byte
+	ScriptKey [33]byte
 }
 
 // AssetPacket represents a fully constructed and signed asset transfer packet
@@ -48,6 +47,9 @@ type AssetGenesis struct {
 
 	// MetaHash is the meta data hash.
 	MetaHash [32]byte
+
+	// AssetID is the unique 32-byte asset identifier.
+	AssetID [32]byte
 
 	// OutputIndex is the output index of the genesis transaction.
 	OutputIndex uint32

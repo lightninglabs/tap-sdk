@@ -18,7 +18,7 @@ type TxBuilder struct {
 	wallet *Wallet
 
 	recipients []entities.Recipient
-	inputs     []entities.AssetInput
+	inputs     []entities.PrevID
 	feeRate    uint64
 
 	fundedPsbt   []byte
@@ -54,7 +54,7 @@ func (b *TxBuilder) SetRecipients(recipients []entities.Recipient) *TxBuilder {
 }
 
 // AddInput adds a specific input to the transaction.
-func (b *TxBuilder) AddInput(input entities.AssetInput) *TxBuilder {
+func (b *TxBuilder) AddInput(input entities.PrevID) *TxBuilder {
 	b.inputs = append(b.inputs, input)
 	return b
 }

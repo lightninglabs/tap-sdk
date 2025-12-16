@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/tap-sdk/codec"
 	"github.com/lightninglabs/tap-sdk/entities"
-	"github.com/lightninglabs/tap-sdk/internal/codec"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"google.golang.org/grpc"
@@ -150,6 +151,46 @@ func (p *proofClient) DecodeProof(ctx context.Context,
 		}
 
 		result.AltLeaves = altLeaves
+	}
+
+	// Populate prev IDs if present.
+	if len(asset.PrevWitnesses) > 0 {
+		prevIDs := make([]entities.PrevID, 0, len(asset.PrevWitnesses))
+		for idx, witness := range asset.PrevWitnesses {
+			if witness == nil || witness.PrevId == nil {
+				return nil, fmt.Errorf("missing prev_id for witness %d",
+					idx)
+			}
+
+			prev := witness.PrevId
+			wireOutpoint, err := wire.NewOutPointFromString(
+				prev.AnchorPoint,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("invalid prev_id outpoint for witness %d: %w",
+					idx, err)
+			}
+
+			if len(prev.AssetId) != 32 {
+				return nil, fmt.Errorf("invalid prev_id asset_id length for witness %d: %d",
+					idx, len(prev.AssetId))
+			}
+
+			if len(prev.ScriptKey) != 33 {
+				return nil, fmt.Errorf("invalid prev_id script_key length for witness %d: %d",
+					idx, len(prev.ScriptKey))
+			}
+
+			var decodedPrev entities.PrevID
+			copy(decodedPrev.Outpoint.Txid[:], wireOutpoint.Hash[:])
+			decodedPrev.Outpoint.Index = wireOutpoint.Index
+			copy(decodedPrev.AssetID[:], prev.AssetId)
+			copy(decodedPrev.ScriptKey[:], prev.ScriptKey)
+
+			prevIDs = append(prevIDs, decodedPrev)
+		}
+
+		result.PrevIDs = prevIDs
 	}
 
 	return result, nil

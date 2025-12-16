@@ -41,7 +41,7 @@ func (m *walletKitClient) RawClientWithMacAuth(
 
 // FundTransfer funds a virtual transaction.
 func (m *walletKitClient) FundTransfer(ctx context.Context,
-	recipients []entities.Recipient, inputs []entities.AssetInput) (
+	recipients []entities.Recipient, inputs []entities.PrevID) (
 	*entities.FundedTransfer, error) {
 
 	// Map inputs to RPC inputs
@@ -49,11 +49,11 @@ func (m *walletKitClient) FundTransfer(ctx context.Context,
 	for i, input := range inputs {
 		rpcInputs[i] = &assetwalletrpc.PrevId{
 			Outpoint: &taprpc.OutPoint{
-				Txid:        input.OutPoint.Hash[:],
-				OutputIndex: input.OutPoint.Index,
+				Txid:        input.Outpoint.Txid[:],
+				OutputIndex: input.Outpoint.Index,
 			},
-			Id:        input.ID,
-			ScriptKey: input.ScriptKey,
+			Id:        input.AssetID[:],
+			ScriptKey: input.ScriptKey[:],
 		}
 	}
 
@@ -299,7 +299,7 @@ func unmarshalSendResult(transfer *taprpc.AssetTransfer) (
 		// Copy the outpoint from anchor.
 		if out.Anchor != nil {
 			output.Outpoint = out.Anchor.Outpoint
-			
+
 			op, err := wire.NewOutPointFromString(out.Anchor.Outpoint)
 			if err != nil {
 				return nil, fmt.Errorf("invalid anchor outpoint: %w", err)
@@ -308,7 +308,7 @@ func unmarshalSendResult(transfer *taprpc.AssetTransfer) (
 				Txid:  op.Hash,
 				Index: op.Index,
 			}
-			
+
 			output.AnchorValue = out.Anchor.Value
 		}
 

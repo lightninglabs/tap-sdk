@@ -26,7 +26,7 @@ func (m *MockWalletKitClient) RawClientWithMacAuth(
 }
 
 func (m *MockWalletKitClient) FundTransfer(ctx context.Context,
-	recipients []entities.Recipient, inputs []entities.AssetInput) (
+	recipients []entities.Recipient, inputs []entities.PrevID) (
 	*entities.FundedTransfer, error) {
 
 	args := m.Called(ctx, recipients, inputs)
