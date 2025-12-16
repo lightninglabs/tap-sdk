@@ -61,4 +61,3 @@ type DerivedKeys struct {
 	// InternalKey is used as the internal key for the anchor output.
 	InternalKey InternalKey
 }
-

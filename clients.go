@@ -2,26 +2,19 @@ package tapsdk
 
 import (
 	"context"
-	"time"
 
 	"github.com/lightninglabs/tap-sdk/entities"
-	"github.com/lightninglabs/taproot-assets/taprpc"
-	"github.com/lightninglabs/taproot-assets/taprpc/assetwalletrpc"
-	"github.com/lightninglabs/taproot-assets/taprpc/universerpc"
 )
 
-// ServiceClient is an interface that all service clients need to implement.
-type ServiceClient[T any] interface {
-	// RawClientWithMacAuth returns a context with the proper macaroon
-	// authentication, the default RPC timeout, and the raw client.
-	RawClientWithMacAuth(parentCtx context.Context) (context.Context,
-		time.Duration, T)
+type Client interface {
+	WalletClient
+	ProofClient
+	WalletKitClient
+	UniverseClient
 }
 
 // WalletClient exposes the TaprootAssets service gRPC client.
 type WalletClient interface {
-	ServiceClient[taprpc.TaprootAssetsClient]
-
 	GetInfo(ctx context.Context) (*entities.Info, error)
 
 	// ListAssets lists wallet assets with optional filtering.
@@ -35,8 +28,6 @@ type WalletClient interface {
 
 // ProofClient exposes proof-related operations from the TaprootAssets service.
 type ProofClient interface {
-	ServiceClient[taprpc.TaprootAssetsClient]
-
 	// ExportProof exports a proof file for a specific asset output.
 	// If outpoint is nil, then the latest proof for the given asset/script key
 	// is exported.
@@ -57,8 +48,6 @@ type ProofClient interface {
 
 // WalletKitClient exposes the AssetWalletClient service gRPC client.
 type WalletKitClient interface {
-	ServiceClient[assetwalletrpc.AssetWalletClient]
-
 	// DeriveScriptKey derives a new script key for receiving assets.
 	// The script key includes both the internal key and the tweaked
 	// Taproot output key.
@@ -96,8 +85,6 @@ type WalletKitClient interface {
 
 // UniverseClient exposes the Universe service gRPC client.
 type UniverseClient interface {
-	ServiceClient[universerpc.UniverseClient]
-
 	// InsertProof inserts a proof into the local universe.
 	InsertProof(ctx context.Context, rawProof []byte,
 		decoded *entities.DecodedProof) error

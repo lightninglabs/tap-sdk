@@ -14,7 +14,9 @@ import (
 // Interactive transfers require manual proof delivery after completion.
 // The returned SendResult contains the proofs that must be sent to the receiver.
 type InteractiveTxBuilder struct {
-	wallet *Wallet
+	walletKit  WalletKitClient
+	networkHRP string
+	coinType   uint32
 
 	// Transfer parameters
 	assetID          [32]byte
@@ -28,15 +30,19 @@ type InteractiveTxBuilder struct {
 	vPacketBytes []byte
 	fundedPsbt   []byte
 	signedPsbt   []byte
+	finished     bool
 
-	finished bool
-	mu       sync.Mutex
+	mu sync.Mutex
 }
 
 // newInteractiveTxBuilder creates a new InteractiveTxBuilder.
-func newInteractiveTxBuilder(wallet *Wallet) *InteractiveTxBuilder {
+func newInteractiveTxBuilder(wallet WalletKitClient,
+	networkHRP string, coinType uint32) *InteractiveTxBuilder {
+
 	return &InteractiveTxBuilder{
-		wallet: wallet,
+		walletKit:  wallet,
+		networkHRP: networkHRP,
+		coinType:   coinType,
 	}
 }
 
@@ -175,8 +181,8 @@ func (b *InteractiveTxBuilder) buildVPacket() error {
 		RelativeLockTime:  b.relativeLockTime,
 		AnchorOutputIndex: 0,
 		AssetVersion:      vpsbt.AssetVersionV0,
-		NetworkHRP:        b.wallet.networkHRP,
-		CoinType:          b.wallet.coinType,
+		NetworkHRP:        b.networkHRP,
+		CoinType:          b.coinType,
 	}
 
 	encoded, err := vPkt.Encode()
@@ -190,7 +196,7 @@ func (b *InteractiveTxBuilder) buildVPacket() error {
 
 // fund funds the virtual PSBT.
 func (b *InteractiveTxBuilder) fund(ctx context.Context) error {
-	resp, err := b.wallet.WalletKit.FundInteractivePsbt(ctx, b.vPacketBytes)
+	resp, err := b.walletKit.FundInteractivePsbt(ctx, b.vPacketBytes)
 	if err != nil {
 		return wrapErr("Fund", err)
 	}
@@ -201,7 +207,7 @@ func (b *InteractiveTxBuilder) fund(ctx context.Context) error {
 
 // sign signs the funded PSBT.
 func (b *InteractiveTxBuilder) sign(ctx context.Context) error {
-	signedPsbt, err := b.wallet.WalletKit.SignVirtualPsbt(ctx, b.fundedPsbt)
+	signedPsbt, err := b.walletKit.SignVirtualPsbt(ctx, b.fundedPsbt)
 	if err != nil {
 		return wrapErr("Sign", err)
 	}
@@ -212,7 +218,7 @@ func (b *InteractiveTxBuilder) sign(ctx context.Context) error {
 
 // complete anchors the signed PSBTs and completes the transfer.
 func (b *InteractiveTxBuilder) complete(ctx context.Context) (*entities.SendResult, error) {
-	result, err := b.wallet.WalletKit.AnchorVirtualPsbts(
+	result, err := b.walletKit.AnchorVirtualPsbts(
 		ctx, [][]byte{b.signedPsbt},
 	)
 	if err != nil {

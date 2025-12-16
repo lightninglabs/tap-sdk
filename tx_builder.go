@@ -15,7 +15,7 @@ import (
 // For interactive transfers where the receiver provides keys directly,
 // use InteractiveTxBuilder instead.
 type TxBuilder struct {
-	wallet *Wallet
+	walletKit WalletKitClient
 
 	recipients []entities.Recipient
 	inputs     []entities.PrevID
@@ -30,11 +30,11 @@ type TxBuilder struct {
 	mu       sync.Mutex
 }
 
-// NewTxBuilder creates a new TxBuilder instance.
-func NewTxBuilder(wallet *Wallet) *TxBuilder {
+// newTxBuilder creates a new TxBuilder instance.
+func newTxBuilder(wallet WalletKitClient) *TxBuilder {
 	return &TxBuilder{
-		wallet:  wallet,
-		feeRate: 1,
+		walletKit: wallet,
+		feeRate:   1,
 	}
 }
 
@@ -105,7 +105,7 @@ func (b *TxBuilder) Fund(ctx context.Context) (*entities.FundedTransfer, error) 
 		return nil, ErrNoRecipients
 	}
 
-	resp, err := b.wallet.WalletKit.FundTransfer(ctx, b.recipients, b.inputs)
+	resp, err := b.walletKit.FundTransfer(ctx, b.recipients, b.inputs)
 	if err != nil {
 		return nil, wrapErr("Fund", err)
 	}
@@ -128,7 +128,7 @@ func (b *TxBuilder) Sign(ctx context.Context) ([]byte, error) {
 		return nil, ErrNotFunded
 	}
 
-	signedPsbt, err := b.wallet.WalletKit.SignVirtualPsbt(ctx, b.fundedPsbt)
+	signedPsbt, err := b.walletKit.SignVirtualPsbt(ctx, b.fundedPsbt)
 	if err != nil {
 		return nil, wrapErr("Sign", err)
 	}
@@ -149,7 +149,7 @@ func (b *TxBuilder) Commit(ctx context.Context) (*entities.CommittedTransfer, er
 		return nil, ErrNotSigned
 	}
 
-	resp, err := b.wallet.WalletKit.CommitVirtualPsbts(
+	resp, err := b.walletKit.CommitVirtualPsbts(
 		ctx, [][]byte{b.signedPsbt}, b.passivePsbts, b.feeRate,
 	)
 	if err != nil {
@@ -184,7 +184,7 @@ func (b *TxBuilder) Finish(ctx context.Context, skipBroadcast bool) (
 		return nil, ErrNotCommitted
 	}
 
-	resp, err := b.wallet.WalletKit.PublishAndLogTransfer(
+	resp, err := b.walletKit.PublishAndLogTransfer(
 		ctx, b.anchorPsbt, [][]byte{b.signedPsbt}, b.passivePsbts,
 		skipBroadcast,
 	)
@@ -215,7 +215,7 @@ func (b *TxBuilder) Execute(ctx context.Context, skipBroadcast bool) (
 			return nil, ErrNoRecipients
 		}
 
-		resp, err := b.wallet.WalletKit.FundTransfer(
+		resp, err := b.walletKit.FundTransfer(
 			ctx, b.recipients, b.inputs,
 		)
 		if err != nil {
@@ -227,14 +227,14 @@ func (b *TxBuilder) Execute(ctx context.Context, skipBroadcast bool) (
 	}
 
 	// Sign.
-	signedPsbt, err := b.wallet.WalletKit.SignVirtualPsbt(ctx, b.fundedPsbt)
+	signedPsbt, err := b.walletKit.SignVirtualPsbt(ctx, b.fundedPsbt)
 	if err != nil {
 		return nil, wrapErr("Sign", err)
 	}
 	b.signedPsbt = append([]byte(nil), signedPsbt...)
 
 	// Commit.
-	commitResp, err := b.wallet.WalletKit.CommitVirtualPsbts(
+	commitResp, err := b.walletKit.CommitVirtualPsbts(
 		ctx, [][]byte{b.signedPsbt}, b.passivePsbts, b.feeRate,
 	)
 	if err != nil {
@@ -250,7 +250,7 @@ func (b *TxBuilder) Execute(ctx context.Context, skipBroadcast bool) (
 	}
 
 	// Finish.
-	resp, err := b.wallet.WalletKit.PublishAndLogTransfer(
+	resp, err := b.walletKit.PublishAndLogTransfer(
 		ctx, b.anchorPsbt, [][]byte{b.signedPsbt}, b.passivePsbts,
 		skipBroadcast,
 	)

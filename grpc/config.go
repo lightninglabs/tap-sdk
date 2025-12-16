@@ -1,10 +1,11 @@
-package tapsdk
+package grpc
 
 import (
 	"path/filepath"
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/lightninglabs/tap-sdk/entities"
 	"google.golang.org/grpc"
 )
 
@@ -35,7 +36,7 @@ type Config struct {
 	Host string
 
 	// Network is the bitcoin network we expect the tapd instance to operate on.
-	Network Network
+	Network entities.Network
 
 	// MacaroonDir is the directory where all tapd macaroons can be found.
 	// Either this, MacaroonPath, or MacaroonHex should be set,
@@ -70,26 +71,3 @@ type Config struct {
 	// seconds.
 	RPCTimeout time.Duration
 }
-
-// Network defines the chain that we operate on.
-type Network string
-
-const (
-	// NetworkMainnet is bitcoin mainnet.
-	NetworkMainnet Network = "mainnet"
-
-	// NetworkTestnet is bitcoin testnet.
-	NetworkTestnet Network = "testnet"
-
-	// NetworkTestnet4 is bitcoin testnet version 4.
-	NetworkTestnet4 Network = "testnet4"
-
-	// NetworkRegtest is bitcoin regtest.
-	NetworkRegtest Network = "regtest"
-
-	// NetworkSimnet is bitcoin simnet.
-	NetworkSimnet Network = "simnet"
-
-	// NetworkSignet is bitcoin signet.
-	NetworkSignet Network = "signet"
-)

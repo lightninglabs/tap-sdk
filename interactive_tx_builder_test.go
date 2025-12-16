@@ -14,11 +14,6 @@ import (
 
 func TestInteractiveTxBuilder_Execute(t *testing.T) {
 	mockWalletKit := new(MockWalletKitClient)
-	services := &Wallet{
-		WalletKit:  mockWalletKit,
-		networkHRP: "tapassetr",
-		coinType:   1,
-	}
 
 	ctx := context.Background()
 
@@ -79,7 +74,7 @@ func TestInteractiveTxBuilder_Execute(t *testing.T) {
 		expectedResult, nil)
 
 	// Execute interactive send
-	builder := services.NewInteractiveTxBuilder()
+	builder := newInteractiveTxBuilder(mockWalletKit, "tapassetr", 1)
 	builder.SetAsset(assetID, 1000).
 		SetReceiverKeys(receiverKeys)
 
@@ -95,11 +90,6 @@ func TestInteractiveTxBuilder_Execute(t *testing.T) {
 
 func TestInteractiveTxBuilder_WithAltLeaves(t *testing.T) {
 	mockWalletKit := new(MockWalletKitClient)
-	services := &Wallet{
-		WalletKit:  mockWalletKit,
-		networkHRP: "tapassetr",
-		coinType:   1,
-	}
 
 	ctx := context.Background()
 
@@ -169,7 +159,7 @@ func TestInteractiveTxBuilder_WithAltLeaves(t *testing.T) {
 	mockWalletKit.On("AnchorVirtualPsbts", ctx, [][]byte{signedPsbt}).Return(
 		expectedResult, nil)
 
-	builder := services.NewInteractiveTxBuilder()
+	builder := newInteractiveTxBuilder(mockWalletKit, "tapassetr", 1)
 	builder.SetAsset(assetID, 1000).
 		SetReceiverKeys(receiverKeys).
 		WithAltLeaves(receiverKeys.ScriptKey.PubKey, altLeaves)
@@ -250,11 +240,6 @@ func TestInteractiveTxBuilder_Validation(t *testing.T) {
 
 func TestInteractiveTxBuilder_AlreadyFinished(t *testing.T) {
 	mockWalletKit := new(MockWalletKitClient)
-	services := &Wallet{
-		WalletKit:  mockWalletKit,
-		networkHRP: "tapassetr",
-		coinType:   1,
-	}
 
 	ctx := context.Background()
 
@@ -291,7 +276,7 @@ func TestInteractiveTxBuilder_AlreadyFinished(t *testing.T) {
 	mockWalletKit.On("AnchorVirtualPsbts", ctx, [][]byte{signedPsbt}).Return(
 		expectedResult, nil)
 
-	builder := services.NewInteractiveTxBuilder()
+	builder := newInteractiveTxBuilder(mockWalletKit, "tapassetr", 1)
 	builder.SetAsset(assetID, 1000).SetReceiverKeys(receiverKeys)
 
 	// First execution succeeds

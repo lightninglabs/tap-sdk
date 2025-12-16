@@ -119,9 +119,6 @@ func (m *MockWalletKitClient) AnchorVirtualPsbts(ctx context.Context,
 
 func TestTxBuilder_Execute(t *testing.T) {
 	mockWalletKit := new(MockWalletKitClient)
-	services := &Wallet{
-		WalletKit: mockWalletKit,
-	}
 
 	// Test data
 	ctx := context.Background()
@@ -165,7 +162,7 @@ func TestTxBuilder_Execute(t *testing.T) {
 		expectedPacket, nil)
 
 	// Execute all steps manually.
-	builder := NewTxBuilder(services)
+	builder := newTxBuilder(mockWalletKit)
 	builder.AddRecipient(addr, amount).SetFeeRate(feeRate)
 
 	funded, err := builder.Fund(ctx)
@@ -196,9 +193,6 @@ func TestTxBuilder_Execute(t *testing.T) {
 
 func TestTxBuilder_StateInjection(t *testing.T) {
 	mockWalletKit := new(MockWalletKitClient)
-	services := &Wallet{
-		WalletKit: mockWalletKit,
-	}
 
 	ctx := context.Background()
 	fundedPsbt := []byte("funded_psbt")
@@ -208,7 +202,7 @@ func TestTxBuilder_StateInjection(t *testing.T) {
 	passivePsbts := [][]byte{[]byte("passive_psbt")}
 
 	// Inject externally produced PSBTs to skip earlier steps.
-	builder := NewTxBuilder(services)
+	builder := newTxBuilder(mockWalletKit)
 	builder.SetFundedPsbt(fundedPsbt).
 		SetSignedPsbt(signedPsbt).
 		SetPassivePsbts(passivePsbts)
@@ -241,12 +235,9 @@ func TestTxBuilder_StateInjection(t *testing.T) {
 
 func TestTxBuilder_NoRecipients(t *testing.T) {
 	mockWalletKit := new(MockWalletKitClient)
-	services := &Wallet{
-		WalletKit: mockWalletKit,
-	}
 
 	ctx := context.Background()
-	builder := NewTxBuilder(services)
+	builder := newTxBuilder(mockWalletKit)
 
 	// Fund without setting recipients should fail.
 	_, err := builder.Fund(ctx)

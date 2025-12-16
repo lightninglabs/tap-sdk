@@ -1,4 +1,4 @@
-package client
+package grpc
 
 import (
 	"context"
@@ -100,4 +100,3 @@ func (u *universeClient) InsertProof(ctx context.Context, rawProof []byte,
 
 	return nil
 }
-
