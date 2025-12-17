@@ -17,10 +17,10 @@ import (
 
 // Client holds the connection to the tapd daemon and the sub-clients.
 type Client struct {
-	wallet    *walletClient
-	walletKit *walletKitClient
-	proof     *proofClient
-	universe  *universeClient
+	*walletClient
+	*walletKitClient
+	*proofClient
+	*universeClient
 
 	grpcConn  *grpc.ClientConn
 	macaroons macaroon.Pouch
@@ -126,12 +126,12 @@ func NewClient(cfg *Config) (*Client, error) {
 	)
 
 	return &Client{
-		wallet:    walletClient,
-		walletKit: walletKitClient,
-		proof:     proofClient,
-		universe:  universeClient,
-		grpcConn:  conn,
-		macaroons: macaroons,
+		walletClient:    walletClient,
+		walletKitClient: walletKitClient,
+		proofClient:     proofClient,
+		universeClient:  universeClient,
+		grpcConn:        conn,
+		macaroons:       macaroons,
 	}, nil
 }
 
