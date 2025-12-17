@@ -72,7 +72,7 @@ func (u *universeClient) InsertProof(ctx context.Context, rawProof []byte,
 	// Build the leaf key using outpoint and script key.
 	leafKey := &universerpc.AssetKey{
 		Outpoint: &universerpc.AssetKey_OpStr{
-			OpStr: decoded.Outpoint,
+			OpStr: decoded.Outpoint.String(),
 		},
 		ScriptKey: &universerpc.AssetKey_ScriptKeyBytes{
 			ScriptKeyBytes: decoded.ScriptKey[:],

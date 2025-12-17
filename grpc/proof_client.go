@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/tap-sdk/codec"
 	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/lightninglabs/tap-sdk/macaroon"
@@ -66,9 +65,14 @@ func (p *proofClient) ExportProof(ctx context.Context, assetID,
 		return nil, err
 	}
 
+	genesisPoint, err := entities.NewOutpointFromString(resp.GenesisPoint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid genesis point: %v", err)
+	}
+
 	return &entities.ProofFile{
 		RawProofFile: resp.RawProofFile,
-		GenesisPoint: resp.GenesisPoint,
+		GenesisPoint: genesisPoint,
 	}, nil
 }
 
@@ -134,7 +138,11 @@ func (p *proofClient) DecodeProof(ctx context.Context,
 
 	// Get outpoint from chain anchor.
 	if asset.ChainAnchor != nil {
-		result.Outpoint = asset.ChainAnchor.AnchorOutpoint
+		op, err := entities.NewOutpointFromString(asset.ChainAnchor.AnchorOutpoint)
+		if err != nil {
+			return nil, fmt.Errorf("invalid anchor outpoint: %v", err)
+		}
+		result.Outpoint = op
 	}
 
 	// Get group key if present.
@@ -163,7 +171,7 @@ func (p *proofClient) DecodeProof(ctx context.Context,
 			}
 
 			prev := witness.PrevId
-			wireOutpoint, err := wire.NewOutPointFromString(
+			prevOutpoint, err := entities.NewOutpointFromString(
 				prev.AnchorPoint,
 			)
 			if err != nil {
@@ -182,8 +190,7 @@ func (p *proofClient) DecodeProof(ctx context.Context,
 			}
 
 			var decodedPrev entities.PrevID
-			copy(decodedPrev.Outpoint.Txid[:], wireOutpoint.Hash[:])
-			decodedPrev.Outpoint.Index = wireOutpoint.Index
+			decodedPrev.Outpoint = prevOutpoint
 			copy(decodedPrev.AssetID[:], prev.AssetId)
 			copy(decodedPrev.ScriptKey[:], prev.ScriptKey)
 
@@ -240,7 +247,11 @@ func (p *proofClient) RegisterTransfer(ctx context.Context, assetID,
 
 	// Get outpoint from chain anchor.
 	if asset.ChainAnchor != nil {
-		result.Outpoint = asset.ChainAnchor.AnchorOutpoint
+		op, err := entities.NewOutpointFromString(asset.ChainAnchor.AnchorOutpoint)
+		if err != nil {
+			return nil, fmt.Errorf("invalid anchor outpoint: %v", err)
+		}
+		result.Outpoint = op
 	}
 
 	return result, nil

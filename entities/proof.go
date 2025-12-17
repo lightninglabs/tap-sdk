@@ -7,7 +7,7 @@ type ProofFile struct {
 	RawProofFile []byte
 
 	// GenesisPoint is the outpoint of the asset's genesis transaction.
-	GenesisPoint string
+	GenesisPoint Outpoint
 }
 
 // DecodedProof contains information extracted from a decoded proof.
@@ -28,7 +28,7 @@ type DecodedProof struct {
 	Amount uint64
 
 	// Outpoint is the output location in "txid:index" format.
-	Outpoint string
+	Outpoint Outpoint
 
 	// GroupKey is the optional tweaked group key (if asset is grouped).
 	GroupKey []byte
@@ -60,5 +60,5 @@ type RegisteredAsset struct {
 	Amount uint64
 
 	// Outpoint is the output location where this asset resides.
-	Outpoint string
+	Outpoint Outpoint
 }

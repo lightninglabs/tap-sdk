@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/wire"
 )
 
 // FundedTransfer represents the result of funding a virtual transaction.
@@ -163,4 +164,17 @@ type Outpoint struct {
 func (o Outpoint) String() string {
 	hash, _ := chainhash.NewHash(o.Txid[:])
 	return fmt.Sprintf("%v:%d", hash, o.Index)
+}
+
+// NewOutpointFromString parses an outpoint from a string in "txid:index" format.
+func NewOutpointFromString(s string) (Outpoint, error) {
+	op, err := wire.NewOutPointFromString(s)
+	if err != nil {
+		return Outpoint{}, err
+	}
+
+	return Outpoint{
+		Txid:  op.Hash,
+		Index: op.Index,
+	}, nil
 }

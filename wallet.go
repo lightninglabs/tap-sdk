@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/lightninglabs/tap-sdk/vpsbt"
 )
@@ -32,13 +31,13 @@ func NewWallet(client Client, network entities.Network) (*Wallet, error) {
 
 // NewTxBuilder returns a new transaction builder for address-based transfers.
 func (s *Wallet) NewTxBuilder() *TxBuilder {
-	return newTxBuilder(s.Client)
+	return newTxBuilder(s)
 }
 
 // NewInteractiveTxBuilder returns a new builder for interactive transfers
 // where the receiver provides their keys directly.
 func (s *Wallet) NewInteractiveTxBuilder() *InteractiveTxBuilder {
-	return newInteractiveTxBuilder(s.Client, s.networkHRP, s.coinType)
+	return newInteractiveTxBuilder(s, s.networkHRP, s.coinType)
 }
 
 // DeriveKeys derives a new script key and internal key for receiving assets.
@@ -102,23 +101,12 @@ func (s *Wallet) ImportProof(ctx context.Context,
 	}
 
 	// Step 3: Register the transfer using the last proof's details.
-	// Parse the outpoint from the decoded proof.
-	wireOutpoint, err := wire.NewOutPointFromString(lastDecoded.Outpoint)
-	if err != nil {
-		return nil, wrapErr("ImportProof", err)
-	}
-
-	outpoint := entities.Outpoint{
-		Txid:  wireOutpoint.Hash,
-		Index: wireOutpoint.Index,
-	}
-
 	registered, err := s.RegisterTransfer(
 		ctx,
 		lastDecoded.AssetID[:],
 		lastDecoded.GroupKey,
 		lastDecoded.ScriptKey[:],
-		outpoint,
+		lastDecoded.Outpoint,
 	)
 	if err != nil {
 		return nil, wrapErr("ImportProof", err)
