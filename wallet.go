@@ -18,7 +18,7 @@ type Wallet struct {
 }
 
 // NewWallet creates a new Wallet instance.
-func NewWallet(client Client, network entities.Network) (*Wallet, error) {
+func NewWallet(client Client, network entities.Network) *Wallet {
 	// Get network parameters for vPacket encoding.
 	networkHRP, coinType := getNetworkParams(network)
 
@@ -26,7 +26,7 @@ func NewWallet(client Client, network entities.Network) (*Wallet, error) {
 		Client:     client,
 		networkHRP: networkHRP,
 		coinType:   coinType,
-	}, nil
+	}
 }
 
 // NewTxBuilder returns a new transaction builder for address-based transfers.
@@ -129,6 +129,16 @@ func getNetworkParams(network entities.Network) (string, uint32) {
 	switch network {
 	case entities.NetworkMainnet:
 		return vpsbt.HRPMainnet, 0 // BIP-44 coin type 0 for mainnet
+	case entities.NetworkTestnet:
+		return vpsbt.HRPTestnet, 1 // BIP-44 coin type 1 for testnet
+	case entities.NetworkTestnet4:
+		return vpsbt.HRPTestnet4, 1
+	case entities.NetworkSignet:
+		return vpsbt.HRPSignet, 1
+	case entities.NetworkSimnet:
+		return vpsbt.HRPSimnet, 1
+	case entities.NetworkRegtest:
+		return vpsbt.HRPRegtest, 1
 	default:
 		return vpsbt.HRPRegtest, 1 // Default to regtest
 	}
