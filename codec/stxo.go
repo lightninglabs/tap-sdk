@@ -26,7 +26,7 @@ var numsPubKey = func() *btcec.PublicKey {
 //
 //	burnTweak = h_tapTweak(NUMSKey || outPoint || assetID || scriptKeyXOnly)
 //	burnKey = NUMSKey + burnTweak*G
-func DeriveBurnKey(prevID entities.PrevID) ([33]byte, error) {
+func DeriveBurnKey(prevID entities.PrevID) (entities.PubKey, error) {
 	var (
 		buf bytes.Buffer
 		op  wire.OutPoint
@@ -48,7 +48,7 @@ func DeriveBurnKey(prevID entities.PrevID) ([33]byte, error) {
 	// in a 32-byte representation as well, as this is always a script key.
 	burnKey, _ = schnorr.ParsePubKey(schnorr.SerializePubKey(burnKey))
 
-	var burnKeyBytes [33]byte
+	var burnKeyBytes entities.PubKey
 	copy(burnKeyBytes[:], burnKey.SerializeCompressed())
 
 	return burnKeyBytes, nil
@@ -63,7 +63,7 @@ func DeriveSTXOAltLeaves(prevIDs []entities.PrevID) ([][]byte, error) {
 	}
 
 	leaves := make([][]byte, 0, len(prevIDs))
-	seen := make(map[[33]byte]struct{}, len(prevIDs))
+	seen := make(map[entities.PubKey]struct{}, len(prevIDs))
 	for idx, prevID := range prevIDs {
 		burnKey, err := DeriveBurnKey(prevID)
 		if err != nil {

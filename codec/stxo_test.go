@@ -31,13 +31,13 @@ func TestDeriveBurnKeyVectors(t *testing.T) {
 			txid[2] = 0x99
 			txid[3] = 0xaa
 
-			var assetID [32]byte
+			var assetID entities.AssetID
 			assetID[0] = 0x01
 			assetID[1] = 0x02
 			assetID[2] = 0x03
 			assetID[3] = 0x04
 
-			var scriptKey [33]byte
+			var scriptKey entities.PubKey
 			scriptKey[0] = 0x02
 			scriptKey[1] = 0x03
 			scriptKey[2] = 0x04
@@ -76,10 +76,10 @@ func TestDeriveBurnKeyVectors(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, scriptKeyBytes, 33)
 
-			var assetID [32]byte
+			var assetID entities.AssetID
 			copy(assetID[:], assetIDBytes)
 
-			var scriptKey [33]byte
+			var scriptKey entities.PubKey
 			copy(scriptKey[:], scriptKeyBytes)
 
 			return entities.PrevID{

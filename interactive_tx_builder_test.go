@@ -18,13 +18,13 @@ func TestInteractiveTxBuilder_Execute(t *testing.T) {
 	ctx := context.Background()
 
 	// Test data
-	var assetID [32]byte
+	var assetID entities.AssetID
 	copy(assetID[:], []byte("asset_id_32_bytes_long_enough!!!"))
 
-	var scriptKeyPubKey [33]byte
+	var scriptKeyPubKey entities.PubKey
 	copy(scriptKeyPubKey[:], []byte("script_key_pubkey_33_bytes_long"))
 
-	var internalKeyPubKey [33]byte
+	var internalKeyPubKey entities.PubKey
 	copy(internalKeyPubKey[:], []byte("internal_key_pubkey_33_bytes_lo"))
 
 	receiverKeys := entities.DerivedKeys{
@@ -93,13 +93,13 @@ func TestInteractiveTxBuilder_WithAltLeaves(t *testing.T) {
 
 	ctx := context.Background()
 
-	var assetID [32]byte
+	var assetID entities.AssetID
 	copy(assetID[:], []byte("asset_id_32_bytes_long_enough!!!"))
 
-	var scriptKeyPubKey [33]byte
+	var scriptKeyPubKey entities.PubKey
 	copy(scriptKeyPubKey[:], []byte("script_key_pubkey_33_bytes_long"))
 
-	var internalKeyPubKey [33]byte
+	var internalKeyPubKey entities.PubKey
 	copy(internalKeyPubKey[:], []byte("internal_key_pubkey_33_bytes_lo"))
 
 	receiverKeys := entities.DerivedKeys{
@@ -207,7 +207,7 @@ func TestInteractiveTxBuilder_Validation(t *testing.T) {
 
 	// Test missing receiver keys
 	builder := services.NewInteractiveTxBuilder()
-	builder.SetAsset([32]byte{1, 2, 3}, 1000)
+	builder.SetAsset(entities.AssetID{1, 2, 3}, 1000)
 
 	_, err := builder.Execute(ctx)
 	require.ErrorIs(t, err, ErrNoReceiverKeys)
@@ -220,17 +220,17 @@ func TestInteractiveTxBuilder_Validation(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoAssetID)
 
 	// Test zero amount
-	var assetID [32]byte
+	var assetID entities.AssetID
 	copy(assetID[:], []byte("asset_id_32_bytes_long_enough!!!"))
 
 	builder3 := services.NewInteractiveTxBuilder()
 	builder3.SetAsset(assetID, 0).
 		SetReceiverKeys(entities.DerivedKeys{
 			ScriptKey: entities.ScriptKey{
-				PubKey: [33]byte{1},
+				PubKey: entities.PubKey{1},
 			},
 			InternalKey: entities.InternalKey{
-				PubKey: [33]byte{1},
+				PubKey: entities.PubKey{1},
 			},
 		})
 
@@ -243,13 +243,13 @@ func TestInteractiveTxBuilder_AlreadyFinished(t *testing.T) {
 
 	ctx := context.Background()
 
-	var assetID [32]byte
+	var assetID entities.AssetID
 	copy(assetID[:], []byte("asset_id_32_bytes_long_enough!!!"))
 
-	var scriptKeyPubKey [33]byte
+	var scriptKeyPubKey entities.PubKey
 	copy(scriptKeyPubKey[:], []byte("script_key_pubkey_33_bytes_long"))
 
-	var internalKeyPubKey [33]byte
+	var internalKeyPubKey entities.PubKey
 	copy(internalKeyPubKey[:], []byte("internal_key_pubkey_33_bytes_lo"))
 
 	receiverKeys := entities.DerivedKeys{

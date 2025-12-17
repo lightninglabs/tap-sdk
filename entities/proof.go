@@ -19,10 +19,10 @@ type DecodedProof struct {
 	NumberOfProofs uint32
 
 	// AssetID is the 32-byte asset identifier.
-	AssetID [32]byte
+	AssetID AssetID
 
 	// ScriptKey is the 33-byte script key.
-	ScriptKey [33]byte
+	ScriptKey PubKey
 
 	// Amount is the number of asset units.
 	Amount uint64
@@ -31,7 +31,7 @@ type DecodedProof struct {
 	Outpoint Outpoint
 
 	// GroupKey is the optional tweaked group key (if asset is grouped).
-	GroupKey []byte
+	GroupKey *PubKey
 
 	// AltLeaves are auxiliary Taproot leaves committed alongside the asset.
 	// Each entry is the raw per-leaf TLV stream bytes (opaque).
@@ -51,10 +51,10 @@ type DecodedProof struct {
 // a proof from an interactive transfer.
 type RegisteredAsset struct {
 	// AssetID is the 32-byte asset identifier.
-	AssetID [32]byte
+	AssetID AssetID
 
 	// ScriptKey is the 33-byte script key for this asset.
-	ScriptKey [33]byte
+	ScriptKey PubKey
 
 	// Amount is the number of asset units.
 	Amount uint64

@@ -17,16 +17,16 @@ import (
 // by the tapd daemon.
 type InteractiveVPacket struct {
 	// AssetID is the 32-byte asset identifier.
-	AssetID [32]byte
+	AssetID entities.AssetID
 
 	// Amount is the number of asset units to send.
 	Amount uint64
 
 	// ScriptKey is the receiver's script key (tweaked Taproot output key).
-	ScriptKey [33]byte
+	ScriptKey entities.PubKey
 
 	// AnchorInternalKey is the receiver's anchor output internal key.
-	AnchorInternalKey [33]byte
+	AnchorInternalKey entities.PubKey
 
 	// AnchorKeyLocator identifies the anchor key's derivation path.
 	AnchorKeyLocator entities.KeyLocator
@@ -245,7 +245,7 @@ func (v *InteractiveVPacket) encodeOutputFields() ([]*psbt.Unknown, psbt.POutput
 
 // encodePrevID encodes a PrevID with only the asset ID set.
 // Format: OutPoint (36 bytes) + ID (32 bytes) + ScriptKey (33 bytes)
-func encodePrevID(assetID [32]byte) ([]byte, error) {
+func encodePrevID(assetID entities.AssetID) ([]byte, error) {
 	var buf bytes.Buffer
 
 	// OutPoint: 32-byte txid (zeros) + 4-byte index (zeros)

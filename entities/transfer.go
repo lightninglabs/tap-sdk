@@ -41,7 +41,7 @@ type Recipient struct {
 // InteractiveSendRequest represents a request to send assets interactively.
 type InteractiveSendRequest struct {
 	// AssetID is the 32-byte asset identifier.
-	AssetID [32]byte
+	AssetID AssetID
 
 	// Amount is the number of asset units to send.
 	Amount uint64
@@ -77,7 +77,7 @@ type TransferOutput struct {
 	AnchorValue int64
 
 	// ScriptKey is the 33-byte compressed public key locking this output.
-	ScriptKey [33]byte
+	ScriptKey PubKey
 
 	// Amount is the number of asset units in this output.
 	Amount uint64
@@ -98,10 +98,10 @@ type TransferInput struct {
 	AnchorPoint string
 
 	// AssetID is the 32-byte asset identifier of the asset that was spent.
-	AssetID [32]byte
+	AssetID AssetID
 
 	// ScriptKey is the 33-byte script key of the asset that was spent.
-	ScriptKey [33]byte
+	ScriptKey PubKey
 
 	// Amount is the number of asset units spent.
 	Amount uint64

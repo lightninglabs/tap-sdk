@@ -1,5 +1,18 @@
 package entities
 
+import (
+	"encoding/hex"
+	"fmt"
+)
+
+// AssetID is the 32-byte Taproot Asset identifier.
+type AssetID [32]byte
+
+// String returns the hex encoding of the asset ID.
+func (id AssetID) String() string {
+	return hex.EncodeToString(id[:])
+}
+
 // PrevID represents a previous asset input to be spent. It is the Taproot
 // Assets protocol-level identifier for an input asset.
 type PrevID struct {
@@ -7,10 +20,10 @@ type PrevID struct {
 	Outpoint Outpoint
 
 	// AssetID is the 32-byte asset identifier of the previous asset tree.
-	AssetID [32]byte
+	AssetID AssetID
 
 	// ScriptKey is the tweaked Taproot output key.
-	ScriptKey [33]byte
+	ScriptKey PubKey
 }
 
 // AssetPacket represents a fully constructed and signed asset transfer packet
@@ -46,10 +59,10 @@ type AssetGenesis struct {
 	Tag string
 
 	// MetaHash is the meta data hash.
-	MetaHash [32]byte
+	MetaHash Hash
 
 	// AssetID is the unique 32-byte asset identifier.
-	AssetID [32]byte
+	AssetID AssetID
 
 	// OutputIndex is the output index of the genesis transaction.
 	OutputIndex uint32
@@ -61,7 +74,7 @@ type AssetGenesis struct {
 // GroupKey represents a group key.
 type GroupKey struct {
 	// RawKey is the raw group key bytes.
-	RawKey [33]byte
+	RawKey PubKey
 
 	// TapscriptRoot is the tapscript root of the group key.
 	TapscriptRoot []byte
@@ -101,4 +114,26 @@ type Asset struct {
 
 	// AltLeaves are the auxiliary leaves.
 	AltLeaves []AltLeaf
+}
+
+// ParseAssetID parses a 32-byte asset ID from raw bytes.
+func ParseAssetID(b []byte) (AssetID, error) {
+	var id AssetID
+	if len(b) != len(id) {
+		return id, fmt.Errorf("asset ID must be %d bytes, was %d", len(id),
+			len(b))
+	}
+
+	copy(id[:], b)
+	return id, nil
+}
+
+// ParseAssetIDHex parses a hex-encoded asset ID.
+func ParseAssetIDHex(s string) (AssetID, error) {
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		return AssetID{}, err
+	}
+
+	return ParseAssetID(b)
 }

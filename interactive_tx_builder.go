@@ -19,12 +19,12 @@ type InteractiveTxBuilder struct {
 	coinType   uint32
 
 	// Transfer parameters
-	assetID          [32]byte
+	assetID          entities.AssetID
 	amount           uint64
 	receiverKeys     *entities.DerivedKeys
 	lockTime         uint64
 	relativeLockTime uint64
-	altLeaves        map[[33]byte][][]byte
+	altLeaves        map[entities.PubKey][][]byte
 
 	// Internal state
 	vPacketBytes []byte
@@ -47,7 +47,9 @@ func newInteractiveTxBuilder(wallet WalletKitClient,
 }
 
 // SetAsset specifies which asset and how much to send.
-func (b *InteractiveTxBuilder) SetAsset(assetID [32]byte, amount uint64) *InteractiveTxBuilder {
+func (b *InteractiveTxBuilder) SetAsset(assetID entities.AssetID,
+	amount uint64) *InteractiveTxBuilder {
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -86,14 +88,15 @@ func (b *InteractiveTxBuilder) SetRelativeLockTime(relativeLockTime uint64) *Int
 
 // WithAltLeaves attaches auxiliary Taproot leaves that should be committed to
 // the receiver's output.
-func (b *InteractiveTxBuilder) WithAltLeaves(scriptKey [33]byte,
+func (b *InteractiveTxBuilder) WithAltLeaves(
+	scriptKey entities.PubKey,
 	leaves [][]byte) *InteractiveTxBuilder {
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	if b.altLeaves == nil {
-		b.altLeaves = make(map[[33]byte][][]byte)
+		b.altLeaves = make(map[entities.PubKey][][]byte)
 	}
 
 	cloned := make([][]byte, len(leaves))
@@ -151,7 +154,7 @@ func (b *InteractiveTxBuilder) validate() error {
 		return &Error{Op: "Execute", Err: ErrNoReceiverKeys}
 	}
 
-	var zeroID [32]byte
+	var zeroID entities.AssetID
 	if b.assetID == zeroID {
 		return &Error{Op: "Execute", Err: ErrNoAssetID}
 	}

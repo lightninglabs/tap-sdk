@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/lightninglabs/tap-sdk/entities"
 )
 
 const maxAltLeavesSize = 65535
@@ -19,7 +20,7 @@ const (
 // EncodeAltLeaf encodes a single alt leaf as a TLV stream. The returned bytes
 // are the per-leaf payloads carried inside the alt-leaves container format
 // used by tapd.
-func EncodeAltLeaf(scriptVersion uint16, scriptKey [33]byte) ([]byte, error) {
+func EncodeAltLeaf(scriptVersion uint16, scriptKey entities.PubKey) ([]byte, error) {
 	if _, err := btcec.ParsePubKey(scriptKey[:]); err != nil {
 		return nil, fmt.Errorf("invalid script key: %w", err)
 	}

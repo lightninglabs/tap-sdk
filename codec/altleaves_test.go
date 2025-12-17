@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/require"
 )
 
@@ -12,7 +13,7 @@ func TestEncodeAltLeaf(t *testing.T) {
 	privKey, _ := btcec.PrivKeyFromBytes(bytes.Repeat([]byte{1}, 32))
 	pubKeyBytes := privKey.PubKey().SerializeCompressed()
 
-	var scriptKey [33]byte
+	var scriptKey entities.PubKey
 	copy(scriptKey[:], pubKeyBytes)
 
 	leafBytes, err := EncodeAltLeaf(0x1234, scriptKey)
@@ -23,7 +24,7 @@ func TestEncodeAltLeaf(t *testing.T) {
 }
 
 func TestEncodeAltLeafInvalidKey(t *testing.T) {
-	_, err := EncodeAltLeaf(0, [33]byte{})
+	_, err := EncodeAltLeaf(0, entities.PubKey{})
 	require.Error(t, err)
 }
 

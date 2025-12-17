@@ -15,7 +15,7 @@ type Info struct {
 	Network string
 
 	// LndIdentityPubkey is the public key of the LND node tapd is connected to.
-	LndIdentityPubkey [33]byte
+	LndIdentityPubkey PubKey
 
 	// NodeAlias is the alias of the LND node tapd is connected to.
 	NodeAlias string

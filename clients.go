@@ -31,7 +31,8 @@ type ProofClient interface {
 	// ExportProof exports a proof file for a specific asset output.
 	// If outpoint is nil, then the latest proof for the given asset/script key
 	// is exported.
-	ExportProof(ctx context.Context, assetID, scriptKey []byte,
+	ExportProof(ctx context.Context, assetID entities.AssetID,
+		scriptKey entities.PubKey,
 		outpoint *entities.Outpoint) (*entities.ProofFile, error)
 
 	// UnpackProofFile unpacks a proof file into individual proofs.
@@ -42,7 +43,8 @@ type ProofClient interface {
 
 	// RegisterTransfer registers an inbound transfer for an interactive send.
 	// The proof must already be in the local universe before calling this.
-	RegisterTransfer(ctx context.Context, assetID, groupKey, scriptKey []byte,
+	RegisterTransfer(ctx context.Context, assetID entities.AssetID,
+		groupKey *entities.PubKey, scriptKey entities.PubKey,
 		outpoint entities.Outpoint) (*entities.RegisteredAsset, error)
 }
 

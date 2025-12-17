@@ -41,8 +41,8 @@ func (p *proofClient) RawClientWithMacAuth(
 }
 
 // ExportProof exports a proof file for a specific asset output.
-func (p *proofClient) ExportProof(ctx context.Context, assetID,
-	scriptKey []byte, outpoint *entities.Outpoint) (*entities.ProofFile,
+func (p *proofClient) ExportProof(ctx context.Context, assetID entities.AssetID,
+	scriptKey entities.PubKey, outpoint *entities.Outpoint) (*entities.ProofFile,
 	error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, p.timeout)
@@ -50,8 +50,8 @@ func (p *proofClient) ExportProof(ctx context.Context, assetID,
 
 	rpcCtx = p.proofMac.WithMacaroonAuth(rpcCtx)
 	req := &taprpc.ExportProofRequest{
-		AssetId:   assetID,
-		ScriptKey: scriptKey,
+		AssetId:   assetID[:],
+		ScriptKey: scriptKey[:],
 	}
 	if outpoint != nil {
 		req.Outpoint = &taprpc.OutPoint{
@@ -147,7 +147,16 @@ func (p *proofClient) DecodeProof(ctx context.Context,
 
 	// Get group key if present.
 	if asset.AssetGroup != nil {
-		result.GroupKey = asset.AssetGroup.TweakedGroupKey
+		if len(asset.AssetGroup.TweakedGroupKey) > 0 {
+			groupKey, err := entities.ParsePubKey(
+				asset.AssetGroup.TweakedGroupKey,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("invalid group key: %w", err)
+			}
+
+			result.GroupKey = &groupKey
+		}
 	}
 
 	// Decode alt leaves if present.
@@ -205,18 +214,24 @@ func (p *proofClient) DecodeProof(ctx context.Context,
 
 // RegisterTransfer registers an inbound transfer for an interactive send.
 // The proof must already be in the local universe before calling this.
-func (p *proofClient) RegisterTransfer(ctx context.Context, assetID,
-	groupKey, scriptKey []byte, outpoint entities.Outpoint) (
+func (p *proofClient) RegisterTransfer(ctx context.Context,
+	assetID entities.AssetID, groupKey *entities.PubKey,
+	scriptKey entities.PubKey, outpoint entities.Outpoint) (
 	*entities.RegisteredAsset, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
 
 	rpcCtx = p.proofMac.WithMacaroonAuth(rpcCtx)
+	var groupKeyBytes []byte
+	if groupKey != nil {
+		groupKeyBytes = groupKey[:]
+	}
+
 	resp, err := p.client.RegisterTransfer(rpcCtx, &taprpc.RegisterTransferRequest{
-		AssetId:   assetID,
-		GroupKey:  groupKey,
-		ScriptKey: scriptKey,
+		AssetId:   assetID[:],
+		GroupKey:  groupKeyBytes,
+		ScriptKey: scriptKey[:],
 		Outpoint: &taprpc.OutPoint{
 			Txid:        outpoint.Txid[:],
 			OutputIndex: outpoint.Index,

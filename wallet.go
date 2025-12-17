@@ -103,9 +103,9 @@ func (s *Wallet) ImportProof(ctx context.Context,
 	// Step 3: Register the transfer using the last proof's details.
 	registered, err := s.RegisterTransfer(
 		ctx,
-		lastDecoded.AssetID[:],
+		lastDecoded.AssetID,
 		lastDecoded.GroupKey,
-		lastDecoded.ScriptKey[:],
+		lastDecoded.ScriptKey,
 		lastDecoded.Outpoint,
 	)
 	if err != nil {

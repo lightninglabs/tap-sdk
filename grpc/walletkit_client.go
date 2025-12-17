@@ -320,13 +320,10 @@ func unmarshalSendResult(transfer *taprpc.AssetTransfer) (
 
 // unmarshalScriptKey converts an RPC ScriptKey to an entities.ScriptKey.
 func unmarshalScriptKey(rpcKey *taprpc.ScriptKey) (*entities.ScriptKey, error) {
-	if len(rpcKey.PubKey) != 33 {
-		return nil, fmt.Errorf("invalid public key length: %d",
-			len(rpcKey.PubKey))
+	pubKey, err := entities.ParseTaprootPubKey(rpcKey.PubKey)
+	if err != nil {
+		return nil, fmt.Errorf("invalid script key public key: %w", err)
 	}
-
-	var pubKey [33]byte
-	copy(pubKey[:], rpcKey.PubKey)
 
 	scriptKey := &entities.ScriptKey{
 		PubKey:   pubKey,
@@ -350,13 +347,10 @@ func unmarshalScriptKey(rpcKey *taprpc.ScriptKey) (*entities.ScriptKey, error) {
 func unmarshalKeyDescriptor(rpcKey *taprpc.KeyDescriptor) (
 	*entities.KeyDescriptor, error) {
 
-	if len(rpcKey.RawKeyBytes) != 33 {
-		return nil, fmt.Errorf("invalid raw key bytes length: %d",
-			len(rpcKey.RawKeyBytes))
+	rawKeyBytes, err := entities.ParsePubKey(rpcKey.RawKeyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("invalid raw key bytes: %w", err)
 	}
-
-	var rawKeyBytes [33]byte
-	copy(rawKeyBytes[:], rpcKey.RawKeyBytes)
 
 	keyDesc := &entities.KeyDescriptor{
 		RawKeyBytes: rawKeyBytes,

@@ -85,8 +85,8 @@ func (s *walletClient) ListAssets(ctx context.Context,
 		rpcReq.MinAmount = req.MinAmount
 		rpcReq.MaxAmount = req.MaxAmount
 
-		if len(req.GroupKey) > 0 {
-			rpcReq.GroupKey = req.GroupKey
+		if req.GroupKey != nil {
+			rpcReq.GroupKey = req.GroupKey[:]
 		}
 
 		if req.AnchorOutpoint != nil {

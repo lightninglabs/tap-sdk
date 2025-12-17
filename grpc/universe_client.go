@@ -63,9 +63,9 @@ func (u *universeClient) InsertProof(ctx context.Context, rawProof []byte,
 	}
 
 	// If there's a group key, use it instead of asset ID.
-	if len(decoded.GroupKey) > 0 {
+	if decoded.GroupKey != nil {
 		uniID.Id = &universerpc.ID_GroupKey{
-			GroupKey: decoded.GroupKey,
+			GroupKey: decoded.GroupKey[:],
 		}
 	}
 
