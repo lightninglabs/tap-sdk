@@ -47,7 +47,7 @@ type InteractiveVPacket struct {
 	// AssetVersion is the version of the asset (V0 or V1).
 	AssetVersion uint8
 
-	// NetworkHRP is the chain params HRP (e.g., "tapassetr" for regtest).
+	// NetworkHRP is the chain params HRP.
 	NetworkHRP string
 
 	// CoinType is the BIP-44 coin type for derivation paths.
@@ -84,10 +84,9 @@ func (v *InteractiveVPacket) toPsbt() (*psbt.Packet, error) {
 
 	// Create the script for the output (pay-to-taproot using the script key).
 	// We need to convert the 33-byte compressed key to a 32-byte x-only key.
-	xOnlyKey := v.ScriptKey[1:] // Remove the prefix byte
 	pkScript, err := txscript.NewScriptBuilder().
 		AddOp(txscript.OP_1).
-		AddData(xOnlyKey).
+		AddData(v.ScriptKey.XOnly().Bytes()).
 		Script()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create pk script: %w", err)
@@ -192,18 +191,26 @@ func (v *InteractiveVPacket) encodeOutputFields() ([]*psbt.Unknown, psbt.POutput
 
 	// Add BIP32 derivation info for anchor key.
 	bip32Deriv, trBip32Deriv := makeBip32Derivation(
-		v.AnchorInternalKey[:],
+		v.AnchorInternalKey,
 		v.AnchorKeyLocator,
 		v.CoinType,
 	)
 
+	// For BIP32 derivation, the key must contain the pubkey.
+	bip32Key := append([]byte(nil), keyOutputAnchorOutputBip32Derivation...)
+	bip32Key = append(bip32Key, bip32Deriv.PubKey...)
+
+	// For Taproot BIP32 derivation, the key must contain the x-only pubkey.
+	trBip32Key := append([]byte(nil), keyOutputAnchorOutputTrBip32Derivation...)
+	trBip32Key = append(trBip32Key, trBip32Deriv.XOnlyPubKey...)
+
 	unknowns = append(unknowns,
 		&psbt.Unknown{
-			Key:   keyOutputAnchorOutputBip32Derivation,
+			Key:   bip32Key,
 			Value: encodeBip32Derivation(bip32Deriv),
 		},
 		&psbt.Unknown{
-			Key:   keyOutputAnchorOutputTrBip32Derivation,
+			Key:   trBip32Key,
 			Value: encodeTaprootBip32Derivation(trBip32Deriv),
 		},
 	)
@@ -237,7 +244,7 @@ func (v *InteractiveVPacket) encodeOutputFields() ([]*psbt.Unknown, psbt.POutput
 
 	// Create the PSBT output with script key derivation info.
 	pOut := psbt.POutput{
-		TaprootInternalKey: v.ScriptKey[1:], // x-only (32 bytes)
+		TaprootInternalKey: v.ScriptKey.XOnly().Bytes(),
 	}
 
 	return unknowns, pOut, nil
@@ -273,7 +280,7 @@ func encodeTLVUint8(val uint8) []byte {
 }
 
 // makeBip32Derivation creates BIP32 derivation info for a key.
-func makeBip32Derivation(pubKey []byte, loc entities.KeyLocator,
+func makeBip32Derivation(pubKey entities.PubKey, loc entities.KeyLocator,
 	coinType uint32) (*psbt.Bip32Derivation, *psbt.TaprootBip32Derivation) {
 
 	bip32Path := []uint32{
@@ -285,12 +292,12 @@ func makeBip32Derivation(pubKey []byte, loc entities.KeyLocator,
 	}
 
 	bip32Deriv := &psbt.Bip32Derivation{
-		PubKey:    pubKey,
+		PubKey:    pubKey.Bytes(),
 		Bip32Path: bip32Path,
 	}
 
 	trBip32Deriv := &psbt.TaprootBip32Derivation{
-		XOnlyPubKey: pubKey[1:], // x-only (32 bytes)
+		XOnlyPubKey: pubKey.XOnly().Bytes(),
 		Bip32Path:   bip32Path,
 		LeafHashes:  make([][]byte, 0),
 	}
@@ -299,12 +306,9 @@ func makeBip32Derivation(pubKey []byte, loc entities.KeyLocator,
 }
 
 // encodeBip32Derivation serializes a Bip32Derivation.
-// Format: pubkey (33 bytes) + master fingerprint (4 bytes) + path elements
+// Format: master fingerprint (4 bytes) + path elements
 func encodeBip32Derivation(d *psbt.Bip32Derivation) []byte {
 	var buf bytes.Buffer
-
-	// Public key (33 bytes)
-	buf.Write(d.PubKey)
 
 	// Master key fingerprint (4 bytes, big-endian)
 	fingerprint := make([]byte, 4)
@@ -332,9 +336,6 @@ func encodeTaprootBip32Derivation(d *psbt.TaprootBip32Derivation) []byte {
 	for _, hash := range d.LeafHashes {
 		buf.Write(hash)
 	}
-
-	// X-only public key (32 bytes)
-	buf.Write(d.XOnlyPubKey)
 
 	// Master key fingerprint (4 bytes, big-endian)
 	fingerprint := make([]byte, 4)

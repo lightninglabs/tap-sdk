@@ -141,9 +141,19 @@ func ParseScriptKey(b []byte) (PubKey, error) {
 	return ParseTaprootPubKey(b)
 }
 
+// Bytes returns the 33-byte compressed encoding of the public key.
+func (k PubKey) Bytes() []byte {
+	return k[:]
+}
+
 // XOnly returns the 32-byte x-only encoding of the public key.
 func (k PubKey) XOnly() XOnlyPubKey {
 	var x XOnlyPubKey
 	copy(x[:], k[1:])
 	return x
+}
+
+// Bytes returns the 32-byte x-only encoding of the public key.
+func (k XOnlyPubKey) Bytes() []byte {
+	return k[:]
 }
