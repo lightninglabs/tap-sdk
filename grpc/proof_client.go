@@ -65,15 +65,20 @@ func (p *proofClient) ExportProof(ctx context.Context, assetID entities.AssetID,
 		return nil, err
 	}
 
-	genesisPoint, err := entities.NewOutpointFromString(resp.GenesisPoint)
-	if err != nil {
-		return nil, fmt.Errorf("invalid genesis point: %v", err)
+	proofFile := &entities.ProofFile{
+		RawProofFile: resp.RawProofFile,
 	}
 
-	return &entities.ProofFile{
-		RawProofFile: resp.RawProofFile,
-		GenesisPoint: genesisPoint,
-	}, nil
+	// GenesisPoint is optional - only parse if provided.
+	if resp.GenesisPoint != "" {
+		genesisPoint, err := entities.NewOutpointFromString(resp.GenesisPoint)
+		if err != nil {
+			return nil, fmt.Errorf("invalid genesis point: %v", err)
+		}
+		proofFile.GenesisPoint = genesisPoint
+	}
+
+	return proofFile, nil
 }
 
 // UnpackProofFile unpacks a proof file into individual proofs.
