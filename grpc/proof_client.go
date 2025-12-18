@@ -71,7 +71,7 @@ func (p *proofClient) ExportProof(ctx context.Context, assetID entities.AssetID,
 
 	// GenesisPoint is optional - only parse if provided.
 	if resp.GenesisPoint != "" {
-		genesisPoint, err := entities.NewOutpointFromString(resp.GenesisPoint)
+		genesisPoint, err := entities.NewOutpointFromStr(resp.GenesisPoint)
 		if err != nil {
 			return nil, fmt.Errorf("invalid genesis point: %v", err)
 		}
@@ -143,7 +143,7 @@ func (p *proofClient) DecodeProof(ctx context.Context,
 
 	// Get outpoint from chain anchor.
 	if asset.ChainAnchor != nil {
-		op, err := entities.NewOutpointFromString(asset.ChainAnchor.AnchorOutpoint)
+		op, err := entities.NewOutpointFromStr(asset.ChainAnchor.AnchorOutpoint)
 		if err != nil {
 			return nil, fmt.Errorf("invalid anchor outpoint: %v", err)
 		}
@@ -185,7 +185,7 @@ func (p *proofClient) DecodeProof(ctx context.Context,
 			}
 
 			prev := witness.PrevId
-			prevOutpoint, err := entities.NewOutpointFromString(
+			prevOutpoint, err := entities.NewOutpointFromStr(
 				prev.AnchorPoint,
 			)
 			if err != nil {
@@ -267,7 +267,7 @@ func (p *proofClient) RegisterTransfer(ctx context.Context,
 
 	// Get outpoint from chain anchor.
 	if asset.ChainAnchor != nil {
-		op, err := entities.NewOutpointFromString(asset.ChainAnchor.AnchorOutpoint)
+		op, err := entities.NewOutpointFromStr(asset.ChainAnchor.AnchorOutpoint)
 		if err != nil {
 			return nil, fmt.Errorf("invalid anchor outpoint: %v", err)
 		}

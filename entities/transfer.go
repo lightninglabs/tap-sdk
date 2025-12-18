@@ -148,8 +148,8 @@ func (o Outpoint) String() string {
 	return fmt.Sprintf("%v:%d", hash, o.Index)
 }
 
-// NewOutpointFromString parses an outpoint from a string in "txid:index" format.
-func NewOutpointFromString(s string) (Outpoint, error) {
+// NewOutpointFromStr parses an outpoint from a string in "txid:index" format.
+func NewOutpointFromStr(s string) (Outpoint, error) {
 	op, err := wire.NewOutPointFromString(s)
 	if err != nil {
 		return Outpoint{}, err

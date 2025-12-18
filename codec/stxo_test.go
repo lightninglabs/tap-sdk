@@ -55,7 +55,7 @@ func TestDeriveBurnKeyVectors(t *testing.T) {
 	}, {
 		name: "random value ID",
 		prevID: func() entities.PrevID {
-			wireOutpoint, err := entities.NewOutpointFromString(
+			wireOutpoint, err := entities.NewOutpointFromStr(
 				"c8ca462e6247b1c7d67f9e2b5e371fc9303c3c3e6d690e8fb4a6bb5ca5b78104:354062834",
 			)
 			require.NoError(t, err)

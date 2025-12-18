@@ -219,7 +219,7 @@ func unmarshalAssetGenesis(rpcGenesis *taprpc.GenesisInfo) (
 			len(rpcGenesis.MetaHash))
 	}
 
-	firstPrevOut, err := entities.NewOutpointFromString(rpcGenesis.GenesisPoint)
+	firstPrevOut, err := entities.NewOutpointFromStr(rpcGenesis.GenesisPoint)
 	if err != nil {
 		return nil, fmt.Errorf("invalid genesis point: %w",
 			err)
@@ -276,7 +276,7 @@ func unmarshalAssetTransfer(rpcTransfer *taprpc.AssetTransfer) (
 
 		// Copy the outpoint from anchor.
 		if out.Anchor != nil {
-			op, err := entities.NewOutpointFromString(out.Anchor.Outpoint)
+			op, err := entities.NewOutpointFromStr(out.Anchor.Outpoint)
 			if err != nil {
 				return nil, fmt.Errorf("invalid anchor outpoint: %w", err)
 			}
@@ -312,7 +312,7 @@ func unmarshalAssetTransfer(rpcTransfer *taprpc.AssetTransfer) (
 		var scriptKey [33]byte
 		copy(scriptKey[:], in.ScriptKey)
 
-		anchorPoint, err := entities.NewOutpointFromString(in.AnchorPoint)
+		anchorPoint, err := entities.NewOutpointFromStr(in.AnchorPoint)
 		if err != nil {
 			return nil, fmt.Errorf("invalid anchor point: %w", err)
 		}
