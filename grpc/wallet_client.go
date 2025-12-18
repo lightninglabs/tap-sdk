@@ -312,8 +312,13 @@ func unmarshalAssetTransfer(rpcTransfer *taprpc.AssetTransfer) (
 		var scriptKey [33]byte
 		copy(scriptKey[:], in.ScriptKey)
 
+		anchorPoint, err := entities.NewOutpointFromString(in.AnchorPoint)
+		if err != nil {
+			return nil, fmt.Errorf("invalid anchor point: %w", err)
+		}
+
 		inputs = append(inputs, entities.TransferInput{
-			AnchorPoint: in.AnchorPoint,
+			AnchorPoint: anchorPoint,
 			AssetID:     assetID,
 			ScriptKey:   scriptKey,
 			Amount:      in.Amount,

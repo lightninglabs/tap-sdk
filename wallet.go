@@ -87,6 +87,7 @@ func (s *Wallet) ImportProof(ctx context.Context,
 	// Step 2: Decode and insert each proof into the universe.
 	var lastDecoded *entities.DecodedProof
 	for _, rawProof := range rawProofs {
+		// TODO: Decode the proof locally without using the RPC client.
 		decoded, err := s.DecodeProof(ctx, rawProof)
 		if err != nil {
 			return nil, wrapErr("ImportProof", err)

@@ -76,8 +76,8 @@ type TransferOutput struct {
 // TransferInput represents a single input in a transfer.
 type TransferInput struct {
 	// AnchorPoint is the old/current location of the Taproot Asset commitment
-	// that was spent as an input, in "txid:index" format.
-	AnchorPoint string
+	// that was spent as an input.
+	AnchorPoint Outpoint
 
 	// AssetID is the 32-byte asset identifier of the asset that was spent.
 	AssetID AssetID
