@@ -12,7 +12,7 @@ import (
 // receiver provides their keys directly (rather than a Taproot Asset address).
 //
 // Interactive transfers require manual proof delivery after completion.
-// The returned SendResult contains the proofs that must be sent to the receiver.
+// The returned AssetTransfer contains the proofs that must be sent to the receiver.
 type InteractiveTxBuilder struct {
 	walletKit  WalletKitClient
 	networkHRP string
@@ -109,8 +109,8 @@ func (b *InteractiveTxBuilder) WithAltLeaves(
 }
 
 // Execute builds and sends the interactive transfer.
-// Returns SendResult with proofs that must be delivered to the receiver.
-func (b *InteractiveTxBuilder) Execute(ctx context.Context) (*entities.SendResult, error) {
+// Returns AssetTransfer with proofs that must be delivered to the receiver.
+func (b *InteractiveTxBuilder) Execute(ctx context.Context) (*entities.AssetTransfer, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -220,7 +220,7 @@ func (b *InteractiveTxBuilder) sign(ctx context.Context) error {
 }
 
 // complete anchors the signed PSBTs and completes the transfer.
-func (b *InteractiveTxBuilder) complete(ctx context.Context) (*entities.SendResult, error) {
+func (b *InteractiveTxBuilder) complete(ctx context.Context) (*entities.AssetTransfer, error) {
 	result, err := b.walletKit.AnchorVirtualPsbts(
 		ctx, [][]byte{b.signedPsbt},
 	)

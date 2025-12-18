@@ -107,14 +107,14 @@ func (m *MockWalletKitClient) FundInteractivePsbt(ctx context.Context,
 }
 
 func (m *MockWalletKitClient) AnchorVirtualPsbts(ctx context.Context,
-	signedPsbts [][]byte) (*entities.SendResult, error) {
+	signedPsbts [][]byte) (*entities.AssetTransfer, error) {
 
 	args := m.Called(ctx, signedPsbts)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.SendResult), args.Error(1)
+	return args.Get(0).(*entities.AssetTransfer), args.Error(1)
 }
 
 func TestTxBuilder_Execute(t *testing.T) {

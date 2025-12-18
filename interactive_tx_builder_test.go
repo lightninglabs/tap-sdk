@@ -46,15 +46,16 @@ func TestInteractiveTxBuilder_Execute(t *testing.T) {
 	var transferTxid [32]byte
 	copy(transferTxid[:], []byte("txid_hash_32_bytes_long_enough!!"))
 
-	expectedResult := &entities.SendResult{
+	expectedResult := &entities.AssetTransfer{
 		TransferTxid: transferTxid,
 		AnchorTx:     []byte("anchor_tx_bytes"),
 		Outputs: []entities.TransferOutput{
 			{
-				Outpoint:  "txid:0",
-				ScriptKey: scriptKeyPubKey,
-				Amount:    1000,
-				ProofBlob: []byte("proof_blob"),
+				AnchorOutpoint: entities.Outpoint{Txid: transferTxid, Index: 0},
+				AnchorValue:    10,
+				ScriptKey:      scriptKeyPubKey,
+				Amount:         1000,
+				ProofBlob:      []byte("proof_blob"),
 			},
 		},
 	}
@@ -83,7 +84,8 @@ func TestInteractiveTxBuilder_Execute(t *testing.T) {
 	require.Equal(t, expectedResult.TransferTxid, result.TransferTxid)
 	require.Equal(t, expectedResult.AnchorTx, result.AnchorTx)
 	require.Len(t, result.Outputs, 1)
-	require.Equal(t, expectedResult.Outputs[0].Outpoint, result.Outputs[0].Outpoint)
+	require.Equal(t, expectedResult.Outputs[0].AnchorOutpoint, result.Outputs[0].AnchorOutpoint)
+	require.Equal(t, expectedResult.Outputs[0].AnchorValue, result.Outputs[0].AnchorValue)
 
 	mockWalletKit.AssertExpectations(t)
 }
@@ -121,15 +123,16 @@ func TestInteractiveTxBuilder_WithAltLeaves(t *testing.T) {
 	var transferTxid [32]byte
 	copy(transferTxid[:], []byte("txid_hash_32_bytes_long_enough!!"))
 
-	expectedResult := &entities.SendResult{
+	expectedResult := &entities.AssetTransfer{
 		TransferTxid: transferTxid,
 		AnchorTx:     []byte("anchor_tx_bytes"),
 		Outputs: []entities.TransferOutput{
 			{
-				Outpoint:  "txid:0",
-				ScriptKey: scriptKeyPubKey,
-				Amount:    1000,
-				ProofBlob: []byte("proof_blob"),
+				AnchorOutpoint: entities.Outpoint{Txid: transferTxid, Index: 0},
+				AnchorValue:    10,
+				ScriptKey:      scriptKeyPubKey,
+				Amount:         1000,
+				ProofBlob:      []byte("proof_blob"),
 			},
 		},
 	}
@@ -167,11 +170,12 @@ func TestInteractiveTxBuilder_WithAltLeaves(t *testing.T) {
 	result, err := builder.Execute(ctx)
 	require.NoError(t, err)
 
-	// Validate SendResult passthrough.
+	// Validate AssetTransfer passthrough.
 	require.Equal(t, expectedResult.TransferTxid, result.TransferTxid)
 	require.Equal(t, expectedResult.AnchorTx, result.AnchorTx)
 	require.Len(t, result.Outputs, 1)
-	require.Equal(t, expectedResult.Outputs[0].Outpoint, result.Outputs[0].Outpoint)
+	require.Equal(t, expectedResult.Outputs[0].AnchorOutpoint, result.Outputs[0].AnchorOutpoint)
+	require.Equal(t, expectedResult.Outputs[0].AnchorValue, result.Outputs[0].AnchorValue)
 
 	// Validate alt leaves were encoded into the vPSBT.
 	require.NotEmpty(t, capturedPsbt)
@@ -265,7 +269,7 @@ func TestInteractiveTxBuilder_AlreadyFinished(t *testing.T) {
 	fundedPsbt := []byte("funded_psbt")
 	signedPsbt := []byte("signed_psbt")
 
-	expectedResult := &entities.SendResult{
+	expectedResult := &entities.AssetTransfer{
 		AnchorTx: []byte("anchor_tx_bytes"),
 	}
 

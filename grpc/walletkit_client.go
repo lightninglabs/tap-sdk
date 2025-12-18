@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 	"github.com/lightninglabs/taproot-assets/taprpc"
@@ -247,7 +245,7 @@ func (m *walletKitClient) FundInteractivePsbt(ctx context.Context,
 // This combines signing, committing, and publishing into one operation.
 // It returns the completed transfer result with transaction details and proofs.
 func (m *walletKitClient) AnchorVirtualPsbts(ctx context.Context,
-	signedPsbts [][]byte) (*entities.SendResult, error) {
+	signedPsbts [][]byte) (*entities.AssetTransfer, error) {
 
 	req := &assetwalletrpc.AnchorVirtualPsbtsRequest{
 		VirtualPsbts: signedPsbts,
@@ -263,59 +261,7 @@ func (m *walletKitClient) AnchorVirtualPsbts(ctx context.Context,
 		return nil, fmt.Errorf("invalid transfer response")
 	}
 
-	return unmarshalSendResult(resp.Transfer)
-}
-
-// unmarshalSendResult converts an RPC AssetTransfer to an entities.SendResult.
-func unmarshalSendResult(transfer *taprpc.AssetTransfer) (
-	*entities.SendResult, error) {
-
-	result := &entities.SendResult{
-		AnchorTx: transfer.AnchorTx,
-		Outputs:  make([]entities.TransferOutput, 0, len(transfer.Outputs)),
-	}
-
-	// Copy the transaction hash.
-	if len(transfer.AnchorTxHash) == 32 {
-		copy(result.TransferTxid[:], transfer.AnchorTxHash)
-
-		var h chainhash.Hash
-		copy(h[:], transfer.AnchorTxHash)
-		result.AnchorTxid = h.String()
-	}
-
-	// Convert each output.
-	for _, out := range transfer.Outputs {
-		output := entities.TransferOutput{
-			Amount:    out.Amount,
-			ProofBlob: out.NewProofBlob,
-		}
-
-		// Copy the script key.
-		if len(out.ScriptKey) == 33 {
-			copy(output.ScriptKey[:], out.ScriptKey)
-		}
-
-		// Copy the outpoint from anchor.
-		if out.Anchor != nil {
-			output.Outpoint = out.Anchor.Outpoint
-
-			op, err := wire.NewOutPointFromString(out.Anchor.Outpoint)
-			if err != nil {
-				return nil, fmt.Errorf("invalid anchor outpoint: %w", err)
-			}
-			output.AnchorOutpoint = entities.Outpoint{
-				Txid:  op.Hash,
-				Index: op.Index,
-			}
-
-			output.AnchorValue = out.Anchor.Value
-		}
-
-		result.Outputs = append(result.Outputs, output)
-	}
-
-	return result, nil
+	return unmarshalAssetTransfer(resp.Transfer)
 }
 
 // unmarshalScriptKey converts an RPC ScriptKey to an entities.ScriptKey.

@@ -6,7 +6,6 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/require"
 )
@@ -56,13 +55,10 @@ func TestDeriveBurnKeyVectors(t *testing.T) {
 	}, {
 		name: "random value ID",
 		prevID: func() entities.PrevID {
-			wireOutpoint, err := wire.NewOutPointFromString(
+			wireOutpoint, err := entities.NewOutpointFromString(
 				"c8ca462e6247b1c7d67f9e2b5e371fc9303c3c3e6d690e8fb4a6bb5ca5b78104:354062834",
 			)
 			require.NoError(t, err)
-
-			var txid [32]byte
-			copy(txid[:], wireOutpoint.Hash[:])
 
 			assetIDBytes, err := hex.DecodeString(
 				"560982cea2defb7795dda938422b4d7ae5462e64cde32fc68ced4f503f8a5af7",
@@ -83,10 +79,7 @@ func TestDeriveBurnKeyVectors(t *testing.T) {
 			copy(scriptKey[:], scriptKeyBytes)
 
 			return entities.PrevID{
-				Outpoint: entities.Outpoint{
-					Txid:  txid,
-					Index: wireOutpoint.Index,
-				},
+				Outpoint:  wireOutpoint,
 				AssetID:   assetID,
 				ScriptKey: scriptKey,
 			}

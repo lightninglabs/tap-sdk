@@ -50,26 +50,8 @@ type InteractiveSendRequest struct {
 	ReceiverKeys DerivedKeys
 }
 
-// SendResult represents the result of a completed send operation.
-type SendResult struct {
-	// TransferTxid is the anchor transaction ID (32 bytes, not reversed).
-	TransferTxid [32]byte
-
-	// AnchorTxid is the display-order transaction ID (string form).
-	AnchorTxid string
-
-	// AnchorTx is the raw anchor transaction bytes.
-	AnchorTx []byte
-
-	// Outputs contains details about each transfer output.
-	Outputs []TransferOutput
-}
-
 // TransferOutput represents a single output in a transfer.
 type TransferOutput struct {
-	// Outpoint is the output location in "txid:index" format.
-	Outpoint string
-
 	// AnchorOutpoint is the on-chain outpoint.
 	AnchorOutpoint Outpoint
 
