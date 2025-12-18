@@ -11,6 +11,8 @@ type Client interface {
 	ProofClient
 	WalletKitClient
 	UniverseClient
+
+	Close() error
 }
 
 // WalletClient exposes the TaprootAssets service gRPC client.
@@ -76,7 +78,7 @@ type WalletKitClient interface {
 	// AnchorVirtualPsbts anchors signed virtual PSBTs in a single call.
 	// This combines committing and publishing into one operation.
 	AnchorVirtualPsbts(ctx context.Context, signedPsbts [][]byte) (
-		*entities.SendResult, error)
+		*entities.AssetTransfer, error)
 
 	// PublishAndLogTransfer publishes the anchor transaction and logs the
 	// transfer.

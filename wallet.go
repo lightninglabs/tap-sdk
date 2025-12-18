@@ -115,31 +115,27 @@ func (s *Wallet) ImportProof(ctx context.Context,
 	return registered, nil
 }
 
-// Close tears down the underlying gRPC connection.
+// Close tears down the underlying client connection if it exists.
 func (s *Wallet) Close() error {
-	if s.Client != nil {
-		return s.Close()
-	}
-
-	return nil
+	return s.Client.Close()
 }
 
 // getNetworkParams returns the HRP and coin type for a given network.
 func getNetworkParams(network entities.Network) (string, uint32) {
 	switch network {
 	case entities.NetworkMainnet:
-		return vpsbt.HRPMainnet, 0 // BIP-44 coin type 0 for mainnet
+		return vpsbt.MainnetHRP, 0 // BIP-44 coin type 0 for mainnet
 	case entities.NetworkTestnet:
-		return vpsbt.HRPTestnet, 1 // BIP-44 coin type 1 for testnet
+		return vpsbt.TestnetHRP, 1 // BIP-44 coin type 1 for testnet
 	case entities.NetworkTestnet4:
-		return vpsbt.HRPTestnet4, 1
+		return vpsbt.Testnet4HRP, 1
 	case entities.NetworkSignet:
-		return vpsbt.HRPSignet, 1
+		return vpsbt.SigNetHRP, 1
 	case entities.NetworkSimnet:
-		return vpsbt.HRPSimnet, 1
+		return vpsbt.SimNetHRP, 1
 	case entities.NetworkRegtest:
-		return vpsbt.HRPRegtest, 1
+		return vpsbt.RegTestHRP, 1
 	default:
-		return vpsbt.HRPRegtest, 1 // Default to regtest
+		return vpsbt.RegTestHRP, 1 // Default to regtest
 	}
 }

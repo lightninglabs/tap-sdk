@@ -43,12 +43,23 @@ const (
 
 // Network HRPs for chain params
 const (
-	HRPMainnet  = "tapassetam"
-	HRPTestnet  = "tapassetst"
-	HRPTestnet4 = "tapassets4"
-	HRPSignet   = "tapassetg"
-	HRPSimnet   = "tapassetr"
-	HRPRegtest  = "tapassetr"
+	// MainnetHRP is the HRP for mainnet.
+	MainnetHRP = "tapbc"
+
+	// TestnetHRP is the HRP for testnet.
+	TestnetHRP = "taptb"
+
+	// Testnet4HRP is the HRP for testnet4.
+	Testnet4HRP = "taptb"
+
+	// RegTestHRP is the HRP for regtest.
+	RegTestHRP = "taprt"
+
+	// SigNetHRP is the HRP for "the" signet.
+	SigNetHRP = "taptb"
+
+	// SimNetHRP is the HRP for simnet.
+	SimNetHRP = "tapsb"
 )
 
 // BIP-0043 purpose for key derivation (same as LND)
