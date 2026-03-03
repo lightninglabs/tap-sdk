@@ -26,6 +26,33 @@ type WalletClient interface {
 	// ListTransfers lists outgoing transfers with optional filtering.
 	ListTransfers(ctx context.Context,
 		req *entities.ListTransfersRequest) ([]*entities.AssetTransfer, error)
+
+	// NewAddr creates a new Taproot Asset address for receiving assets.
+	// The address is stored in tapd and can be queried later.
+	//
+	// For V0/V1 addresses, AssetID and Amount are required.
+	// For V2 addresses, either AssetID or GroupKey must be set.
+	//
+	// If ScriptKey and InternalKey are not provided, tapd derives them
+	// from its internal wallet.
+	NewAddr(ctx context.Context,
+		req *entities.NewAddressRequest) (*entities.Address, error)
+
+	// DecodeAddr decodes a bech32m Taproot Asset address string into its
+	// components. This does not store the address or require it to be
+	// previously known.
+	DecodeAddr(ctx context.Context, addr string) (*entities.Address, error)
+
+	// QueryAddrs returns addresses that were previously created by this
+	// tapd instance, filtered by the query parameters.
+	QueryAddrs(ctx context.Context,
+		query *entities.AddressQuery) ([]*entities.Address, error)
+
+	// AddrReceives returns incoming transfer events for addresses created
+	// by this tapd instance. Use this to track the status of expected
+	// incoming transfers.
+	AddrReceives(ctx context.Context,
+		query *entities.AddressReceivesQuery) ([]*entities.AddressEvent, error)
 }
 
 // ProofClient exposes proof-related operations from the TaprootAssets service.

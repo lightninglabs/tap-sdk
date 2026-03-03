@@ -40,6 +40,27 @@ func (s *Wallet) NewInteractiveTxBuilder() *InteractiveTxBuilder {
 	return newInteractiveTxBuilder(s, s.networkHRP, s.coinType)
 }
 
+// NewReceiveAddress creates a V2 address for receiving any asset from a
+// group. This is the recommended way to receive assets, as it allows the
+// sender to choose which specific asset and amount to send from the group.
+//
+// For more control (specific asset ID, custom keys, V0/V1 addresses), use
+// the lower-level NewAddr method on the client directly.
+func (s *Wallet) NewReceiveAddress(ctx context.Context,
+	groupKey entities.PubKey) (*entities.Address, error) {
+
+	v2 := entities.AddressVersionV2
+	addr, err := s.NewAddr(ctx, &entities.NewAddressRequest{
+		GroupKey:       &groupKey,
+		AddressVersion: &v2,
+	})
+	if err != nil {
+		return nil, wrapErr("NewReceiveAddress", err)
+	}
+
+	return addr, nil
+}
+
 // DeriveKeys derives a new script key and internal key for receiving assets.
 // The receiver calls this method and shares the result with the sender for
 // interactive transfers.

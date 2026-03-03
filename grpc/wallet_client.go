@@ -349,3 +349,253 @@ func unmarshalAssetTransfer(rpcTransfer *taprpc.AssetTransfer) (
 		AnchorTx:             rpcTransfer.AnchorTx,
 	}, nil
 }
+
+// NewAddr creates a new Taproot Asset address for receiving assets.
+func (s *walletClient) NewAddr(ctx context.Context,
+	req *entities.NewAddressRequest) (*entities.Address, error) {
+
+	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+
+	rpcCtx = s.adminMac.WithMacaroonAuth(rpcCtx)
+
+	rpcReq := marshalNewAddrRequest(req)
+	resp, err := s.client.NewAddr(rpcCtx, rpcReq)
+	if err != nil {
+		return nil, err
+	}
+
+	return unmarshalAddr(resp)
+}
+
+// DecodeAddr decodes a bech32m Taproot Asset address string into its
+// components.
+func (s *walletClient) DecodeAddr(ctx context.Context,
+	addr string) (*entities.Address, error) {
+
+	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+
+	rpcCtx = s.adminMac.WithMacaroonAuth(rpcCtx)
+
+	resp, err := s.client.DecodeAddr(rpcCtx, &taprpc.DecodeAddrRequest{
+		Addr: addr,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return unmarshalAddr(resp)
+}
+
+// QueryAddrs returns addresses that were previously created by this tapd
+// instance.
+func (s *walletClient) QueryAddrs(ctx context.Context,
+	query *entities.AddressQuery) ([]*entities.Address, error) {
+
+	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+
+	rpcCtx = s.adminMac.WithMacaroonAuth(rpcCtx)
+
+	rpcReq := &taprpc.QueryAddrRequest{}
+	if query != nil {
+		rpcReq.CreatedAfter = query.CreatedAfter
+		rpcReq.CreatedBefore = query.CreatedBefore
+		rpcReq.Limit = query.Limit
+		rpcReq.Offset = query.Offset
+	}
+
+	resp, err := s.client.QueryAddrs(rpcCtx, rpcReq)
+	if err != nil {
+		return nil, err
+	}
+
+	addrs := make([]*entities.Address, 0, len(resp.Addrs))
+	for _, rpcAddr := range resp.Addrs {
+		addr, err := unmarshalAddr(rpcAddr)
+		if err != nil {
+			return nil, err
+		}
+		addrs = append(addrs, addr)
+	}
+
+	return addrs, nil
+}
+
+// AddrReceives returns incoming transfer events for addresses created by this
+// tapd instance.
+func (s *walletClient) AddrReceives(ctx context.Context,
+	query *entities.AddressReceivesQuery) ([]*entities.AddressEvent, error) {
+
+	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+
+	rpcCtx = s.adminMac.WithMacaroonAuth(rpcCtx)
+
+	rpcReq := &taprpc.AddrReceivesRequest{}
+	if query != nil {
+		rpcReq.FilterAddr = query.FilterAddr
+		rpcReq.FilterStatus = taprpc.AddrEventStatus(query.FilterStatus)
+		rpcReq.StartTimestamp = query.StartTimestamp
+		rpcReq.EndTimestamp = query.EndTimestamp
+		rpcReq.Offset = query.Offset
+		rpcReq.Limit = query.Limit
+		rpcReq.Direction = taprpc.SortDirection(query.Direction)
+	}
+
+	resp, err := s.client.AddrReceives(rpcCtx, rpcReq)
+	if err != nil {
+		return nil, err
+	}
+
+	events := make([]*entities.AddressEvent, 0, len(resp.Events))
+	for _, rpcEvent := range resp.Events {
+		event, err := unmarshalAddrEvent(rpcEvent)
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, event)
+	}
+
+	return events, nil
+}
+
+func marshalNewAddrRequest(
+	req *entities.NewAddressRequest) *taprpc.NewAddrRequest {
+
+	if req == nil {
+		return &taprpc.NewAddrRequest{}
+	}
+
+	rpcReq := &taprpc.NewAddrRequest{
+		Amt:                       req.Amount,
+		TapscriptSibling:          req.TapscriptSibling,
+		ProofCourierAddr:          req.ProofCourierAddr,
+		SkipProofCourierConnCheck: req.SkipProofCourierConnCheck,
+	}
+
+	if req.AssetID != nil {
+		rpcReq.AssetId = req.AssetID[:]
+	}
+
+	if req.GroupKey != nil {
+		rpcReq.GroupKey = req.GroupKey[:]
+	}
+
+	if req.ScriptKey != nil {
+		rpcReq.ScriptKey = &taprpc.ScriptKey{
+			PubKey:   req.ScriptKey.PubKey[:],
+			TapTweak: req.ScriptKey.TapTweak,
+		}
+		if req.ScriptKey.KeyDesc.RawKeyBytes != (entities.PubKey{}) {
+			rpcReq.ScriptKey.KeyDesc = &taprpc.KeyDescriptor{
+				RawKeyBytes: req.ScriptKey.KeyDesc.RawKeyBytes[:],
+				KeyLoc: &taprpc.KeyLocator{
+					KeyFamily: int32(req.ScriptKey.KeyDesc.KeyLocator.Family),
+					KeyIndex:  int32(req.ScriptKey.KeyDesc.KeyLocator.Index),
+				},
+			}
+		}
+	}
+
+	if req.InternalKey != nil {
+		rpcReq.InternalKey = &taprpc.KeyDescriptor{
+			RawKeyBytes: req.InternalKey.RawKeyBytes[:],
+			KeyLoc: &taprpc.KeyLocator{
+				KeyFamily: int32(req.InternalKey.KeyLocator.Family),
+				KeyIndex:  int32(req.InternalKey.KeyLocator.Index),
+			},
+		}
+	}
+
+	if req.AssetVersion != nil {
+		rpcReq.AssetVersion = taprpc.AssetVersion(*req.AssetVersion)
+	}
+
+	if req.AddressVersion != nil {
+		rpcReq.AddressVersion = taprpc.AddrVersion(*req.AddressVersion)
+	}
+
+	return rpcReq
+}
+
+func unmarshalAddr(rpcAddr *taprpc.Addr) (*entities.Address, error) {
+	if rpcAddr == nil {
+		return nil, fmt.Errorf("nil address")
+	}
+
+	addr := &entities.Address{
+		Encoded:          rpcAddr.Encoded,
+		AssetType:        entities.AssetType(rpcAddr.AssetType),
+		Amount:           rpcAddr.Amount,
+		TapscriptSibling: rpcAddr.TapscriptSibling,
+		ProofCourierAddr: rpcAddr.ProofCourierAddr,
+		AssetVersion:     entities.AssetVersion(rpcAddr.AssetVersion),
+		AddressVersion:   entities.AddressVersion(rpcAddr.AddressVersion),
+	}
+
+	// Parse asset ID (may be empty for V2 group addresses).
+	if len(rpcAddr.AssetId) == 32 {
+		copy(addr.AssetID[:], rpcAddr.AssetId)
+	}
+
+	// Parse group key if present.
+	if len(rpcAddr.GroupKey) == 33 {
+		var gk entities.PubKey
+		copy(gk[:], rpcAddr.GroupKey)
+		addr.GroupKey = &gk
+	}
+
+	// Parse script key (required).
+	if len(rpcAddr.ScriptKey) != 33 {
+		return nil, fmt.Errorf("invalid script key length: %d",
+			len(rpcAddr.ScriptKey))
+	}
+	copy(addr.ScriptKey[:], rpcAddr.ScriptKey)
+
+	// Parse internal key (required).
+	if len(rpcAddr.InternalKey) != 33 {
+		return nil, fmt.Errorf("invalid internal key length: %d",
+			len(rpcAddr.InternalKey))
+	}
+	copy(addr.InternalKey[:], rpcAddr.InternalKey)
+
+	// Parse taproot output key (required).
+	if len(rpcAddr.TaprootOutputKey) != 32 {
+		return nil, fmt.Errorf("invalid taproot output key length: %d",
+			len(rpcAddr.TaprootOutputKey))
+	}
+	copy(addr.TaprootOutputKey[:], rpcAddr.TaprootOutputKey)
+
+	return addr, nil
+}
+
+func unmarshalAddrEvent(rpcEvent *taprpc.AddrEvent) (*entities.AddressEvent,
+	error) {
+
+	if rpcEvent == nil {
+		return nil, fmt.Errorf("nil address event")
+	}
+
+	event := &entities.AddressEvent{
+		CreationTime:       rpcEvent.CreationTimeUnixSeconds,
+		Status:             entities.AddressEventStatus(rpcEvent.Status),
+		Outpoint:           rpcEvent.Outpoint,
+		UTXOAmountSat:      rpcEvent.UtxoAmtSat,
+		TaprootSibling:     rpcEvent.TaprootSibling,
+		ConfirmationHeight: rpcEvent.ConfirmationHeight,
+		HasProof:           rpcEvent.HasProof,
+	}
+
+	// Unmarshal the embedded address if present.
+	if rpcEvent.Addr != nil {
+		addr, err := unmarshalAddr(rpcEvent.Addr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid address in event: %w", err)
+		}
+		event.Address = addr
+	}
+
+	return event, nil
+}
