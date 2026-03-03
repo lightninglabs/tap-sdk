@@ -29,12 +29,52 @@ ifneq ($(workers),)
 LINT_WORKERS = --concurrency=$(workers)
 endif
 
-DOCKER_TOOLS = docker run \
+# Use docker by default; allow overrides and detect podman wrapper.
+DOCKER ?= docker
+
+# Worktree support: golangci-lint's issues.new-from-rev compares against
+# git history, but worktrees keep .git metadata outside the worktree
+# root. When lint runs in Docker without those dirs mounted,
+# new-from-rev cannot resolve, so we bind-mount the git dir/common dir
+# into the container.
+GIT_DIR := $(shell git rev-parse --git-dir 2>/dev/null)
+GIT_COMMON_DIR := $(shell git rev-parse --git-common-dir 2>/dev/null)
+DOCKER_GIT_MOUNTS :=
+ifneq ($(filter /%,$(GIT_DIR)),)
+DOCKER_GIT_MOUNTS += -v $(GIT_DIR):$(GIT_DIR)
+endif
+ifneq ($(filter /%,$(GIT_COMMON_DIR)),)
+ifneq ($(GIT_COMMON_DIR),$(GIT_DIR))
+DOCKER_GIT_MOUNTS += -v $(GIT_COMMON_DIR):$(GIT_COMMON_DIR)
+endif
+endif
+
+# Docker cache mounting strategy:
+# - CI (GitHub Actions): Use bind mounts to host paths that GA caches
+#   persist.
+# - Local: Use Docker named volumes (much faster on macOS/Windows due
+#   to avoiding slow host-syncing overhead).
+# Paths inside container must match GOCACHE/GOMODCACHE in
+# tools/Dockerfile.
+ifdef CI
+# CI mode: bind mount to host paths that GitHub Actions caches.
+DOCKER_TOOLS = $(DOCKER) run \
   --rm \
-  -v $(shell bash -c "$(GOCC) env GOCACHE || (mkdir -p /tmp/go-cache; echo /tmp/go-cache)"):/tmp/build/.cache \
-  -v $(shell bash -c "$(GOCC) env GOMODCACHE || (mkdir -p /tmp/go-modcache; echo /tmp/go-modcache)"):/tmp/build/.modcache \
-  -v $(shell bash -c "mkdir -p /tmp/go-lint-cache; echo /tmp/go-lint-cache"):/root/.cache/golangci-lint \
+  -v $${HOME}/.cache/go-build:/tmp/build/.cache \
+  -v $${HOME}/go/pkg/mod:/tmp/build/.modcache \
+  -v $${HOME}/.cache/golangci-lint:/root/.cache/golangci-lint \
+  $(DOCKER_GIT_MOUNTS) \
   -v $$(pwd):/build tap-sdk-tools
+else
+# Local mode: Docker named volumes for fast macOS/Windows performance.
+DOCKER_TOOLS = $(DOCKER) run \
+  --rm \
+  -v tapsdk-go-build-cache:/tmp/build/.cache \
+  -v tapsdk-go-mod-cache:/tmp/build/.modcache \
+  -v tapsdk-go-lint-cache:/root/.cache/golangci-lint \
+  $(DOCKER_GIT_MOUNTS) \
+  -v $$(pwd):/build tap-sdk-tools
+endif
 
 GREEN := "\\033[0;32m"
 NC := "\\033[0m"

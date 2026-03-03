@@ -84,8 +84,14 @@ func TestInteractiveTxBuilder_Execute(t *testing.T) {
 	require.Equal(t, expectedResult.TransferTxid, result.TransferTxid)
 	require.Equal(t, expectedResult.AnchorTx, result.AnchorTx)
 	require.Len(t, result.Outputs, 1)
-	require.Equal(t, expectedResult.Outputs[0].AnchorOutpoint, result.Outputs[0].AnchorOutpoint)
-	require.Equal(t, expectedResult.Outputs[0].AnchorValue, result.Outputs[0].AnchorValue)
+	require.Equal(t,
+		expectedResult.Outputs[0].AnchorOutpoint,
+		result.Outputs[0].AnchorOutpoint,
+	)
+	require.Equal(t,
+		expectedResult.Outputs[0].AnchorValue,
+		result.Outputs[0].AnchorValue,
+	)
 
 	mockWalletKit.AssertExpectations(t)
 }
@@ -174,8 +180,14 @@ func TestInteractiveTxBuilder_WithAltLeaves(t *testing.T) {
 	require.Equal(t, expectedResult.TransferTxid, result.TransferTxid)
 	require.Equal(t, expectedResult.AnchorTx, result.AnchorTx)
 	require.Len(t, result.Outputs, 1)
-	require.Equal(t, expectedResult.Outputs[0].AnchorOutpoint, result.Outputs[0].AnchorOutpoint)
-	require.Equal(t, expectedResult.Outputs[0].AnchorValue, result.Outputs[0].AnchorValue)
+	require.Equal(t,
+		expectedResult.Outputs[0].AnchorOutpoint,
+		result.Outputs[0].AnchorOutpoint,
+	)
+	require.Equal(t,
+		expectedResult.Outputs[0].AnchorValue,
+		result.Outputs[0].AnchorValue,
+	)
 
 	// Validate alt leaves were encoded into the vPSBT.
 	require.NotEmpty(t, capturedPsbt)

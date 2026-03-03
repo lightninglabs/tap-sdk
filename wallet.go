@@ -67,7 +67,9 @@ func (s *Wallet) NewReceiveAddress(ctx context.Context,
 //
 // This is a convenience method that combines DeriveScriptKey and
 // DeriveInternalKey into a single call.
-func (s *Wallet) DeriveKeys(ctx context.Context) (*entities.DerivedKeys, error) {
+func (s *Wallet) DeriveKeys(ctx context.Context) (*entities.DerivedKeys,
+	error) {
+
 	scriptKey, err := s.DeriveScriptKey(ctx)
 	if err != nil {
 		return nil, wrapErr("DeriveKeys", err)

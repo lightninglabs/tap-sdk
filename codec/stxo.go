@@ -13,7 +13,8 @@ import (
 	"github.com/lightninglabs/tap-sdk/entities"
 )
 
-const numsKeyHex = "027c79b9b26e463895eef5679d8558942c86c4ad2233adef01bc3e6d540b3653fe"
+const numsKeyHex = "027c79b9b26e463895eef5679d855894" +
+	"2c86c4ad2233adef01bc3e6d540b3653fe"
 
 var numsPubKey = func() *btcec.PublicKey {
 	numsBytes, _ := hex.DecodeString(numsKeyHex)

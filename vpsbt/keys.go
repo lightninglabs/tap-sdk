@@ -2,15 +2,15 @@ package vpsbt
 
 // PSBT key prefixes for virtual transaction encoding.
 var (
-	// Global keys
+	// Global keys.
 	keyGlobalIsVirtualTx    = []byte{0x70}
 	keyGlobalChainParamsHRP = []byte{0x71}
 	keyGlobalPsbtVersion    = []byte{0x72}
 
-	// Input keys
+	// Input keys.
 	keyInputPrevID = []byte{0x70}
 
-	// Output keys
+	// Output keys.
 	keyOutputType                          = []byte{0x70}
 	keyOutputIsInteractive                 = []byte{0x71}
 	keyOutputAnchorOutputIndex             = []byte{0x72}
@@ -23,25 +23,25 @@ var (
 	keyOutputAltLeaves                     = []byte{0x7e}
 )
 
-// VPacket versions
+// VPacket versions.
 const (
 	VPacketVersionV0 uint8 = 0
 	VPacketVersionV1 uint8 = 1
 )
 
-// VOutput types
+// VOutput types.
 const (
 	VOutputTypeSimple    uint8 = 0
 	VOutputTypeSplitRoot uint8 = 1
 )
 
-// Asset versions
+// Asset versions.
 const (
 	AssetVersionV0 uint8 = 0
 	AssetVersionV1 uint8 = 1
 )
 
-// Network HRPs for chain params
+// Network HRPs for chain params.
 const (
 	// MainnetHRP is the HRP for mainnet.
 	MainnetHRP = "tapbc"
@@ -62,7 +62,7 @@ const (
 	SimNetHRP = "tapsb"
 )
 
-// BIP-0043 purpose for key derivation (same as LND)
+// BIP-0043 purpose for key derivation (same as LND).
 const (
 	BIP0043Purpose         = 1017
 	HardenedKeyStart       = 0x80000000

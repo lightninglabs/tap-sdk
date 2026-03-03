@@ -93,7 +93,9 @@ func (b *TxBuilder) SetPassivePsbts(passivePsbts [][]byte) *TxBuilder {
 }
 
 // Fund funds the transaction and returns the funded transfer details.
-func (b *TxBuilder) Fund(ctx context.Context) (*entities.FundedTransfer, error) {
+func (b *TxBuilder) Fund(ctx context.Context) (*entities.FundedTransfer,
+	error) {
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -138,7 +140,9 @@ func (b *TxBuilder) Sign(ctx context.Context) ([]byte, error) {
 }
 
 // Commit commits the signed transaction and returns the committed transfer.
-func (b *TxBuilder) Commit(ctx context.Context) (*entities.CommittedTransfer, error) {
+func (b *TxBuilder) Commit(ctx context.Context) (
+	*entities.CommittedTransfer, error) {
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
