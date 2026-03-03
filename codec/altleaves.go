@@ -20,7 +20,9 @@ const (
 // EncodeAltLeaf encodes a single alt leaf as a TLV stream. The returned bytes
 // are the per-leaf payloads carried inside the alt-leaves container format
 // used by tapd.
-func EncodeAltLeaf(scriptVersion uint16, scriptKey entities.PubKey) ([]byte, error) {
+func EncodeAltLeaf(scriptVersion uint16,
+	scriptKey entities.PubKey) ([]byte, error) {
+
 	if _, err := btcec.ParsePubKey(scriptKey[:]); err != nil {
 		return nil, fmt.Errorf("invalid script key: %w", err)
 	}
@@ -31,7 +33,8 @@ func EncodeAltLeaf(scriptVersion uint16, scriptKey entities.PubKey) ([]byte, err
 	)
 
 	// type=14 (LeafScriptVersion), len=2, value=uint16 (big-endian).
-	if err := WriteVarInt(&buf, altLeafTlvTypeScriptVersion, scratch[:]); err != nil {
+	err := WriteVarInt(&buf, altLeafTlvTypeScriptVersion, scratch[:])
+	if err != nil {
 		return nil, err
 	}
 	if err := WriteVarInt(&buf, 2, scratch[:]); err != nil {
@@ -118,7 +121,7 @@ func DecodeAltLeaves(encoded []byte) ([][]byte, error) {
 	}
 
 	leaves := make([][]byte, 0, numLeaves)
-	for i := uint64(0); i < numLeaves; i++ {
+	for range numLeaves {
 		leafLen, err := ReadVarInt(r, scratch[:])
 		if err != nil {
 			return nil, fmt.Errorf("read alt leaf length: %w", err)

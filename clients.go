@@ -6,6 +6,7 @@ import (
 	"github.com/lightninglabs/tap-sdk/entities"
 )
 
+// Client combines all sub-clients into a single interface.
 type Client interface {
 	WalletClient
 	ProofClient
@@ -41,7 +42,8 @@ type ProofClient interface {
 	UnpackProofFile(ctx context.Context, rawProofFile []byte) ([][]byte, error)
 
 	// DecodeProof decodes a raw proof and returns details about it.
-	DecodeProof(ctx context.Context, rawProof []byte) (*entities.DecodedProof, error)
+	DecodeProof(ctx context.Context,
+		rawProof []byte) (*entities.DecodedProof, error)
 
 	// RegisterTransfer registers an inbound transfer for an interactive send.
 	// The proof must already be in the local universe before calling this.

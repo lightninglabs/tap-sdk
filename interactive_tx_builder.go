@@ -12,7 +12,8 @@ import (
 // receiver provides their keys directly (rather than a Taproot Asset address).
 //
 // Interactive transfers require manual proof delivery after completion.
-// The returned AssetTransfer contains the proofs that must be sent to the receiver.
+// The returned AssetTransfer contains the proofs that must be sent to
+// the receiver.
 type InteractiveTxBuilder struct {
 	walletKit  WalletKitClient
 	networkHRP string
@@ -60,7 +61,9 @@ func (b *InteractiveTxBuilder) SetAsset(assetID entities.AssetID,
 
 // SetReceiverKeys sets the keys derived by the receiver.
 // These keys are obtained by the receiver calling Wallet.DeriveKeys().
-func (b *InteractiveTxBuilder) SetReceiverKeys(keys entities.DerivedKeys) *InteractiveTxBuilder {
+func (b *InteractiveTxBuilder) SetReceiverKeys(
+	keys entities.DerivedKeys) *InteractiveTxBuilder {
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -69,7 +72,9 @@ func (b *InteractiveTxBuilder) SetReceiverKeys(keys entities.DerivedKeys) *Inter
 }
 
 // SetLockTime sets the optional lock time for the output.
-func (b *InteractiveTxBuilder) SetLockTime(lockTime uint64) *InteractiveTxBuilder {
+func (b *InteractiveTxBuilder) SetLockTime(
+	lockTime uint64) *InteractiveTxBuilder {
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -78,7 +83,9 @@ func (b *InteractiveTxBuilder) SetLockTime(lockTime uint64) *InteractiveTxBuilde
 }
 
 // SetRelativeLockTime sets the optional relative lock time for the output.
-func (b *InteractiveTxBuilder) SetRelativeLockTime(relativeLockTime uint64) *InteractiveTxBuilder {
+func (b *InteractiveTxBuilder) SetRelativeLockTime(
+	relativeLockTime uint64) *InteractiveTxBuilder {
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -110,7 +117,9 @@ func (b *InteractiveTxBuilder) WithAltLeaves(
 
 // Execute builds and sends the interactive transfer.
 // Returns AssetTransfer with proofs that must be delivered to the receiver.
-func (b *InteractiveTxBuilder) Execute(ctx context.Context) (*entities.AssetTransfer, error) {
+func (b *InteractiveTxBuilder) Execute(
+	ctx context.Context) (*entities.AssetTransfer, error) {
+
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -220,7 +229,9 @@ func (b *InteractiveTxBuilder) sign(ctx context.Context) error {
 }
 
 // complete anchors the signed PSBTs and completes the transfer.
-func (b *InteractiveTxBuilder) complete(ctx context.Context) (*entities.AssetTransfer, error) {
+func (b *InteractiveTxBuilder) complete(
+	ctx context.Context) (*entities.AssetTransfer, error) {
+
 	result, err := b.walletKit.AnchorVirtualPsbts(
 		ctx, [][]byte{b.signedPsbt},
 	)

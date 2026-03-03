@@ -106,11 +106,7 @@ func (v *InteractiveVPacket) toPsbt() (*psbt.Packet, error) {
 	}
 
 	// Encode the input.
-	inputUnknowns, err := v.encodeInputFields()
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode input: %w", err)
-	}
-	packet.Inputs[0].Unknowns = inputUnknowns
+	packet.Inputs[0].Unknowns = v.encodeInputFields()
 
 	// Encode the output.
 	outputUnknowns, pOut, err := v.encodeOutputFields()
@@ -144,23 +140,22 @@ func (v *InteractiveVPacket) encodeGlobalFields() []*psbt.Unknown {
 
 // encodeInputFields encodes the input fields.
 // For ForInteractiveSend, only the asset ID is set in PrevID.
-func (v *InteractiveVPacket) encodeInputFields() ([]*psbt.Unknown, error) {
+func (v *InteractiveVPacket) encodeInputFields() []*psbt.Unknown {
 	// Encode PrevID with just the asset ID (outpoint and script key are zero).
-	prevIDBytes, err := encodePrevID(v.AssetID)
-	if err != nil {
-		return nil, err
-	}
+	prevIDBytes := encodePrevID(v.AssetID)
 
 	return []*psbt.Unknown{
 		{
 			Key:   keyInputPrevID,
 			Value: prevIDBytes,
 		},
-	}, nil
+	}
 }
 
 // encodeOutputFields encodes the output fields.
-func (v *InteractiveVPacket) encodeOutputFields() ([]*psbt.Unknown, psbt.POutput, error) {
+func (v *InteractiveVPacket) encodeOutputFields() ([]*psbt.Unknown,
+	psbt.POutput, error) {
+
 	unknowns := []*psbt.Unknown{
 		// Type = Simple (0)
 		{
@@ -251,8 +246,8 @@ func (v *InteractiveVPacket) encodeOutputFields() ([]*psbt.Unknown, psbt.POutput
 }
 
 // encodePrevID encodes a PrevID with only the asset ID set.
-// Format: OutPoint (36 bytes) + ID (32 bytes) + ScriptKey (33 bytes)
-func encodePrevID(assetID entities.AssetID) ([]byte, error) {
+// Format: OutPoint (36 bytes) + ID (32 bytes) + ScriptKey (33 bytes).
+func encodePrevID(assetID entities.AssetID) []byte {
 	var buf bytes.Buffer
 
 	// OutPoint: 32-byte txid (zeros) + 4-byte index (zeros)
@@ -264,7 +259,7 @@ func encodePrevID(assetID entities.AssetID) ([]byte, error) {
 	// ScriptKey: 33-byte compressed pubkey (zeros)
 	buf.Write(make([]byte, 33))
 
-	return buf.Bytes(), nil
+	return buf.Bytes()
 }
 
 // encodeTLVUint64 encodes a uint64 in TLV format.
@@ -306,7 +301,7 @@ func makeBip32Derivation(pubKey entities.PubKey, loc entities.KeyLocator,
 }
 
 // encodeBip32Derivation serializes a Bip32Derivation.
-// Format: master fingerprint (4 bytes) + path elements
+// Format: master fingerprint (4 bytes) + path elements.
 func encodeBip32Derivation(d *psbt.Bip32Derivation) []byte {
 	var buf bytes.Buffer
 

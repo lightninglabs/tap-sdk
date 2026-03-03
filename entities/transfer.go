@@ -142,7 +142,7 @@ type Outpoint struct {
 	Index uint32
 }
 
-// String returns the string representation of the outpoint in "txid:index" format.
+// String returns the outpoint in "txid:index" format.
 func (o Outpoint) String() string {
 	hash, _ := chainhash.NewHash(o.Txid[:])
 	return fmt.Sprintf("%v:%d", hash, o.Index)

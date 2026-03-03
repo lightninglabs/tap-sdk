@@ -199,7 +199,9 @@ func (p *proofClient) DecodeProof(ctx context.Context,
 			}
 
 			if len(prev.ScriptKey) != 33 {
-				return nil, fmt.Errorf("invalid prev_id script_key length for witness %d: %d",
+				return nil, fmt.Errorf("invalid prev_id "+
+					"script_key length for "+
+					"witness %d: %d",
 					idx, len(prev.ScriptKey))
 			}
 

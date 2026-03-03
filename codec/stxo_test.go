@@ -18,9 +18,10 @@ func TestDeriveBurnKeyVectors(t *testing.T) {
 		prevID      entities.PrevID
 		expectedKey string
 	}{{
-		name:        "empty prev ID",
-		prevID:      entities.PrevID{},
-		expectedKey: "b87da731321c9e90a2f3d525cf81a2f503e04ea49543692951e6b88752a0d72d",
+		name:   "empty prev ID",
+		prevID: entities.PrevID{},
+		expectedKey: "b87da731321c9e90a2f3d525cf81a2f5" +
+			"03e04ea49543692951e6b88752a0d72d",
 	}, {
 		name: "dummy value ID",
 		prevID: func() entities.PrevID {
@@ -51,12 +52,15 @@ func TestDeriveBurnKeyVectors(t *testing.T) {
 				ScriptKey: scriptKey,
 			}
 		}(),
-		expectedKey: "77493dcf8c7e6c1f214824409b2468afe8e4e5faa47e6ae87ddb60226ad4edde",
+		expectedKey: "77493dcf8c7e6c1f214824409b2468af" +
+			"e8e4e5faa47e6ae87ddb60226ad4edde",
 	}, {
 		name: "random value ID",
 		prevID: func() entities.PrevID {
 			wireOutpoint, err := entities.NewOutpointFromStr(
-				"c8ca462e6247b1c7d67f9e2b5e371fc9303c3c3e6d690e8fb4a6bb5ca5b78104:354062834",
+				"c8ca462e6247b1c7d67f9e2b5e371fc9" +
+					"303c3c3e6d690e8fb4a6bb5ca5b78104" +
+					":354062834",
 			)
 			require.NoError(t, err)
 
@@ -84,12 +88,11 @@ func TestDeriveBurnKeyVectors(t *testing.T) {
 				ScriptKey: scriptKey,
 			}
 		}(),
-		expectedKey: "a76bc68f430c78cfdad6d72abf143de10c8b679842fe00736072361b52ad426c",
+		expectedKey: "a76bc68f430c78cfdad6d72abf143de1" +
+			"0c8b679842fe00736072361b52ad426c",
 	}}
 
 	for _, tc := range testCases {
-		tc := tc
-
 		t.Run(tc.name, func(tt *testing.T) {
 			tt.Parallel()
 
