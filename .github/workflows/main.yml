@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - 'main'
+  pull_request:
+    branches:
+      - '*'
+  merge_group:
+    branches:
+      - 'main'
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  # Go needs absolute directories; using the $HOME variable doesn't
+  # work here.
+  GOPATH: /home/runner/work/go
+
+  GO_VERSION: '1.25.7'
+
+jobs:
+  # Run the lint suite for static analysis coverage.
+  lint-check:
+    name: Lint check
+    runs-on: ubuntu-latest
+    steps:
+      - name: git checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup go ${{ env.GO_VERSION }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: '${{ env.GO_VERSION }}'
+
+      - name: run lint
+        run: make lint
+
+  # Enforce formatting consistency.
+  format-check:
+    name: Format check
+    runs-on: ubuntu-latest
+    steps:
+      - name: git checkout
+        uses: actions/checkout@v4
+
+      - name: Setup go ${{ env.GO_VERSION }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: '${{ env.GO_VERSION }}'
+
+      - name: run format
+        run: make fmt
+
+  # Build the codebase to catch compilation regressions.
+  compile-check:
+    name: Compilation check
+    runs-on: ubuntu-latest
+    steps:
+      - name: git checkout
+        uses: actions/checkout@v4
+
+      - name: Setup go ${{ env.GO_VERSION }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: '${{ env.GO_VERSION }}'
+
+      - name: compile code
+        run: go build -v ./...
+
+  # Unit tests.
+  unit-test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: git checkout
+        uses: actions/checkout@v4
+
+      - name: Setup go ${{ env.GO_VERSION }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: '${{ env.GO_VERSION }}'
+
+      - name: run unit tests
+        run: make unit
