@@ -157,3 +157,29 @@ func (k PubKey) XOnly() XOnlyPubKey {
 func (k XOnlyPubKey) Bytes() []byte {
 	return k[:]
 }
+
+// ParsePubKeyHex parses a hex-encoded compressed secp256k1 public key.
+func ParsePubKeyHex(s string) (PubKey, error) {
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		return PubKey{}, fmt.Errorf("invalid hex: %w", err)
+	}
+
+	return ParsePubKey(b)
+}
+
+// ParseXOnlyPubKey parses a 32-byte x-only (Schnorr/Taproot) public key.
+func ParseXOnlyPubKey(b []byte) (XOnlyPubKey, error) {
+	var k XOnlyPubKey
+	if len(b) != schnorr.PubKeyBytesLen {
+		return k, fmt.Errorf("x-only public key must be %d bytes, was %d",
+			schnorr.PubKeyBytesLen, len(b))
+	}
+
+	if _, err := schnorr.ParsePubKey(b); err != nil {
+		return k, fmt.Errorf("invalid x-only public key: %w", err)
+	}
+
+	copy(k[:], b)
+	return k, nil
+}
