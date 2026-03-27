@@ -1,6 +1,10 @@
 package entities
 
-// SendAssetRequest specifies a one-shot address-based send.
+// SendAssetRequest specifies a low-level one-shot address-based send.
+//
+// This request type exists for advanced callers that need direct access to
+// the daemon's send RPC shape. Higher-level send flows should stay
+// opinionated around semantic asset identity and default V2 addresses.
 type SendAssetRequest struct {
 	// TapAddresses sends to one or more Taproot Asset addresses that already
 	// encode their amounts. This is mutually exclusive with Recipients.

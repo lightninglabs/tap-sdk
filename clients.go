@@ -24,8 +24,10 @@ type WalletClient interface {
 	ListAssets(ctx context.Context,
 		req *entities.ListAssetsRequest) ([]*entities.Asset, error)
 
-	// ListBalances lists confirmed wallet balances grouped by asset ID or
-	// group key.
+	// ListBalances is a low-level wrapper around the TaprootAssets balance RPC.
+	// It exposes the daemon's raw grouping modes for advanced use cases.
+	// High-level SDK surfaces should still prefer the semantic asset model:
+	// fungible assets by group key, collectibles by asset ID.
 	ListBalances(ctx context.Context,
 		req *entities.ListBalancesRequest) (*entities.ListBalancesResponse,
 		error)
@@ -34,9 +36,13 @@ type WalletClient interface {
 	ListTransfers(ctx context.Context,
 		req *entities.ListTransfersRequest) ([]*entities.AssetTransfer, error)
 
-	// SendAsset performs a one-shot address-based send using the TaprootAssets
-	// service. For reusable V2 addresses, specify amounts through
-	// SendAssetRequest.Recipients.
+	// SendAsset performs a low-level one-shot address-based send using the
+	// TaprootAssets service. For reusable V2 addresses, specify amounts
+	// through SendAssetRequest.Recipients.
+	//
+	// This method intentionally exposes the raw daemon capability for advanced
+	// callers. Higher-level send APIs should remain opinionated about semantic
+	// asset identity and default address handling.
 	SendAsset(ctx context.Context,
 		req *entities.SendAssetRequest) (*entities.AssetTransfer, error)
 

@@ -15,7 +15,12 @@ const (
 	BalanceGroupByGroupKey BalanceGroupBy = 2
 )
 
-// ListBalancesRequest specifies filters for querying wallet balances.
+// ListBalancesRequest specifies filters for querying wallet balances through
+// the raw TaprootAssets balance RPC.
+//
+// This type mirrors the daemon's grouping modes for advanced callers. The
+// higher-level SDK surface should still present fungible assets by group key
+// and collectibles by asset ID.
 type ListBalancesRequest struct {
 	// GroupBy selects whether balances are grouped by asset ID or group key.
 	// The zero value defaults to grouping by asset ID.
