@@ -12,6 +12,7 @@ type Client interface {
 	ProofClient
 	WalletKitClient
 	UniverseClient
+	MintClient
 
 	Close() error
 }
@@ -141,4 +142,37 @@ type UniverseClient interface {
 	// InsertProof inserts a proof into the local universe.
 	InsertProof(ctx context.Context, rawProof []byte,
 		decoded *entities.DecodedProof) error
+}
+
+// MintClient exposes low-level minting operations from the Mint service gRPC
+// client.
+//
+// These methods are building blocks for advanced callers and for future,
+// more opinionated mint workflows. They should not be treated as the final
+// high-level mint UX of the SDK.
+type MintClient interface {
+	// MintAsset stages a new asset in the pending mint batch.
+	MintAsset(ctx context.Context,
+		req *entities.MintAssetRequest) (*entities.MintingBatch, error)
+
+	// FundBatch funds the current pending mint batch.
+	FundBatch(ctx context.Context,
+		req *entities.FundBatchRequest) (*entities.VerboseMintingBatch,
+		error)
+
+	// SealBatch seals a funded batch before finalization.
+	SealBatch(ctx context.Context,
+		req *entities.SealBatchRequest) (*entities.MintingBatch, error)
+
+	// FinalizeBatch finalizes the current pending mint batch.
+	FinalizeBatch(ctx context.Context,
+		req *entities.FinalizeBatchRequest) (*entities.MintingBatch, error)
+
+	// CancelBatch cancels the current mint batch.
+	CancelBatch(ctx context.Context) (*entities.CancelBatchResponse, error)
+
+	// ListBatches lists mint batches known to the daemon.
+	ListBatches(ctx context.Context,
+		req *entities.ListBatchesRequest) ([]*entities.VerboseMintingBatch,
+		error)
 }

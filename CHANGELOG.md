@@ -8,10 +8,3 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
-
-### Added
-
-- Balance query support via `ListBalances`, including SDK-native balance
-  response types and script-key-type filtering.
-- One-shot send support via `SendAsset` with SDK-native request types for
-  amount-encoded and reusable V2 addresses.
