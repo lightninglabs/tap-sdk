@@ -1,8 +1,36 @@
 package entities
 
+// ScriptKeyType represents the role of an asset script key.
+type ScriptKeyType uint8
+
+const (
+	// ScriptKeyTypeUnknown is used when the script key type is not known.
+	ScriptKeyTypeUnknown ScriptKeyType = 0
+
+	// ScriptKeyTypeBIP86 is the standard BIP-86 script key type.
+	ScriptKeyTypeBIP86 ScriptKeyType = 1
+
+	// ScriptKeyTypeScriptPathExternal represents a user-defined script path.
+	ScriptKeyTypeScriptPathExternal ScriptKeyType = 2
+
+	// ScriptKeyTypeBurn represents an unspendable burn key.
+	ScriptKeyTypeBurn ScriptKeyType = 3
+
+	// ScriptKeyTypeTombstone represents an unspendable tombstone output.
+	ScriptKeyTypeTombstone ScriptKeyType = 4
+
+	// ScriptKeyTypeChannel represents a Taproot Asset channel-related key.
+	ScriptKeyTypeChannel ScriptKeyType = 5
+
+	// ScriptKeyTypeUniquePedersen represents a unique Pedersen-based key.
+	ScriptKeyTypeUniquePedersen ScriptKeyType = 6
+)
+
 // ScriptKeyTypeQuery specifies how to filter by script key type.
-// If nil in a request, the daemon default is used.
 type ScriptKeyTypeQuery struct {
+	// ExplicitType restricts results to a single script key type.
+	ExplicitType *ScriptKeyType
+
 	// AllTypes returns assets of all script key types.
 	AllTypes bool
 }

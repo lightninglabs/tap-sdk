@@ -49,8 +49,8 @@ clients:
 
 ```go
 Client
-├── WalletClient      // GetInfo, ListAssets, ListTransfers,
-│                     // NewAddr, DecodeAddr, QueryAddrs, AddrReceives
+├── WalletClient      // GetInfo, ListAssets, ListBalances, ListTransfers,
+│                     // NewAddr, DecodeAddr, QueryAddrs, AddrReceives, SendAsset
 ├── WalletKitClient   // DeriveScriptKey, DeriveInternalKey, Fund,
 │                     // Sign, Commit, Publish, Anchor
 ├── ProofClient       // ExportProof, DecodeProof, RegisterTransfer,
