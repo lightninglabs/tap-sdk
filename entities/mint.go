@@ -1,5 +1,12 @@
 package entities
 
+// The mint entities in this file intentionally model the low-level Mint RPC
+// building blocks.
+//
+// The higher-level mint UX of the SDK will be designed separately around the
+// semantic distinction between fungible assets and collectibles instead of
+// simply mirroring the raw RPC request shapes.
+
 // AssetMetaType describes how asset metadata should be interpreted.
 type AssetMetaType uint8
 

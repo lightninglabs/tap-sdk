@@ -144,7 +144,12 @@ type UniverseClient interface {
 		decoded *entities.DecodedProof) error
 }
 
-// MintClient exposes minting operations from the Mint service gRPC client.
+// MintClient exposes low-level minting operations from the Mint service gRPC
+// client.
+//
+// These methods are building blocks for advanced callers and for future,
+// more opinionated mint workflows. They should not be treated as the final
+// high-level mint UX of the SDK.
 type MintClient interface {
 	// MintAsset stages a new asset in the pending mint batch.
 	MintAsset(ctx context.Context,
