@@ -32,12 +32,12 @@ func TestMarshalListBalancesRequest(t *testing.T) {
 		validate func(*testing.T, *taprpc.ListBalancesRequest)
 	}{
 		{
-			name: "nil request defaults to asset grouping",
+			name: "nil request leaves grouping unspecified",
 			req:  nil,
 			validate: func(t *testing.T,
 				rpcReq *taprpc.ListBalancesRequest) {
 
-				require.True(t, rpcReq.GetAssetId())
+				require.False(t, rpcReq.GetAssetId())
 				require.False(t, rpcReq.GetGroupKey())
 				require.Nil(t, rpcReq.ScriptKeyType)
 			},

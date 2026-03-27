@@ -4,9 +4,10 @@ package entities
 type BalanceGroupBy uint8
 
 const (
-	// BalanceGroupByDefault groups balances by asset ID. This matches the
-	// SDK default when no explicit grouping is requested.
-	BalanceGroupByDefault BalanceGroupBy = 0
+	// BalanceGroupByUnspecified leaves the RPC grouping mode unset. This is
+	// useful for low-level callers that want raw daemon behavior instead of an
+	// SDK-imposed default.
+	BalanceGroupByUnspecified BalanceGroupBy = 0
 
 	// BalanceGroupByAssetID groups balances by asset ID.
 	BalanceGroupByAssetID BalanceGroupBy = 1
@@ -23,7 +24,7 @@ const (
 // and collectibles by asset ID.
 type ListBalancesRequest struct {
 	// GroupBy selects whether balances are grouped by asset ID or group key.
-	// The zero value defaults to grouping by asset ID.
+	// The zero value leaves the RPC grouping mode unspecified.
 	GroupBy BalanceGroupBy
 
 	// AssetFilter restricts asset-ID grouped queries to a specific asset.

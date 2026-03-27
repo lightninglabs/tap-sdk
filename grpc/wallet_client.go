@@ -524,10 +524,6 @@ func marshalListBalancesRequest(
 
 	rpcReq := &taprpc.ListBalancesRequest{}
 	if req == nil {
-		rpcReq.GroupBy = &taprpc.ListBalancesRequest_AssetId{
-			AssetId: true,
-		}
-
 		return rpcReq
 	}
 
@@ -535,14 +531,14 @@ func marshalListBalancesRequest(
 	rpcReq.ScriptKeyType = marshalScriptKeyTypeQuery(req.ScriptKeyType)
 
 	switch req.GroupBy {
+	case entities.BalanceGroupByAssetID:
+		rpcReq.GroupBy = &taprpc.ListBalancesRequest_AssetId{
+			AssetId: true,
+		}
+
 	case entities.BalanceGroupByGroupKey:
 		rpcReq.GroupBy = &taprpc.ListBalancesRequest_GroupKey{
 			GroupKey: true,
-		}
-
-	default:
-		rpcReq.GroupBy = &taprpc.ListBalancesRequest_AssetId{
-			AssetId: true,
 		}
 	}
 
