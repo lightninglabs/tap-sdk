@@ -302,7 +302,7 @@ func TestUnmarshalMintingBatch(t *testing.T) {
 							Type:     taprpc.AssetMetaType_META_TYPE_JSON,
 							MetaHash: metaHash,
 						},
-						GroupKey: append([]byte(nil), validPubKey...),
+						GroupKey:    append([]byte(nil), validPubKey...),
 						GroupAnchor: "anchor-asset",
 						GroupInternalKey: &taprpc.KeyDescriptor{
 							RawKeyBytes: append([]byte(nil), validPubKey...),

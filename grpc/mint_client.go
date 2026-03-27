@@ -98,20 +98,20 @@ func marshalMintAsset(asset *entities.MintAsset) *mintrpc.MintAsset {
 	}
 
 	rpcAsset := &mintrpc.MintAsset{
-		AssetVersion:             taprpc.AssetVersion(asset.AssetVersion),
-		AssetType:                taprpc.AssetType(asset.AssetType),
-		Name:                     asset.Name,
-		Amount:                   asset.Amount,
-		NewGroupedAsset:          asset.NewGroupedAsset,
-		GroupedAsset:             asset.GroupedAsset,
-		GroupAnchor:              asset.GroupAnchor,
-		GroupTapscriptRoot:       asset.GroupTapscriptRoot,
-		ScriptKey:                marshalScriptKey(asset.ScriptKey),
-		DecimalDisplay:           asset.DecimalDisplay,
-		ExternalGroupKey:         marshalExternalKey(asset.ExternalGroupKey),
-		EnableSupplyCommitments:  asset.EnableSupplyCommitments,
-		GroupInternalKey:         marshalKeyDescriptor(asset.GroupInternalKey),
-		AssetMeta:                marshalAssetMeta(asset.AssetMeta),
+		AssetVersion:            taprpc.AssetVersion(asset.AssetVersion),
+		AssetType:               taprpc.AssetType(asset.AssetType),
+		Name:                    asset.Name,
+		Amount:                  asset.Amount,
+		NewGroupedAsset:         asset.NewGroupedAsset,
+		GroupedAsset:            asset.GroupedAsset,
+		GroupAnchor:             asset.GroupAnchor,
+		GroupTapscriptRoot:      asset.GroupTapscriptRoot,
+		ScriptKey:               marshalScriptKey(asset.ScriptKey),
+		DecimalDisplay:          asset.DecimalDisplay,
+		ExternalGroupKey:        marshalExternalKey(asset.ExternalGroupKey),
+		EnableSupplyCommitments: asset.EnableSupplyCommitments,
+		GroupInternalKey:        marshalKeyDescriptor(asset.GroupInternalKey),
+		AssetMeta:               marshalAssetMeta(asset.AssetMeta),
 	}
 
 	if asset.GroupKey != nil {
@@ -328,7 +328,8 @@ func unmarshalPendingMintAsset(
 }
 
 func unmarshalAssetMeta(
-	rpcMeta *taprpc.AssetMeta) (*entities.AssetMeta, error) {
+	rpcMeta *taprpc.AssetMeta,
+) (*entities.AssetMeta, error) {
 	if rpcMeta == nil {
 		return nil, fmt.Errorf("nil asset meta")
 	}
