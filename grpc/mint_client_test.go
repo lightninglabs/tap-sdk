@@ -248,6 +248,8 @@ func TestUnmarshalMintingBatch(t *testing.T) {
 	metaHash := append([]byte(nil), testAssetID...)
 	_, pubKey := btcec.PrivKeyFromBytes(testAssetID)
 	validPubKey := pubKey.SerializeCompressed()
+	expectedScriptKey, err := entities.ParseTaprootPubKey(validPubKey)
+	require.NoError(t, err)
 
 	tests := []struct {
 		name     string
@@ -344,7 +346,7 @@ func TestUnmarshalMintingBatch(t *testing.T) {
 				require.Equal(t, uint32(7),
 					asset.GroupInternalKey.KeyLocator.Family)
 				require.NotNil(t, asset.ScriptKey)
-				require.Equal(t, validPubKey,
+				require.Equal(t, expectedScriptKey[:],
 					asset.ScriptKey.PubKey[:])
 			},
 		},
