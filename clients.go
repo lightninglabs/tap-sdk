@@ -197,7 +197,6 @@ type WalletKitClient interface {
 	DeclareScriptKey(ctx context.Context,
 		req *entities.DeclareScriptKeyRequest) (
 		*entities.ScriptKey, error)
-
 }
 
 // UniverseClient exposes the Universe service gRPC client.

@@ -8,6 +8,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// validPubKeyBytes is the compressed secp256k1 generator point G.
+// Tests that call ParsePubKey need a point actually on the curve.
+var validPubKeyBytes = []byte{
+	0x02,
+	0x79, 0xbe, 0x66, 0x7e, 0xf9, 0xdc, 0xbb, 0xac,
+	0x55, 0xa0, 0x62, 0x95, 0xce, 0x87, 0x0b, 0x07,
+	0x02, 0x9b, 0xfc, 0xdb, 0x2d, 0xce, 0x28, 0xd9,
+	0x59, 0xf2, 0x81, 0x5b, 0x16, 0xf8, 0x17, 0x98,
+}
+
 func TestUnmarshalManagedUtxo(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -24,7 +34,7 @@ func TestUnmarshalManagedUtxo(t *testing.T) {
 			rpcUtxo: &taprpc.ManagedUtxo{
 				OutPoint:         zeroGenesisPoint,
 				AmtSat:           100000,
-				InternalKey:      testPubKey,
+				InternalKey:      validPubKeyBytes,
 				TaprootAssetRoot: testAssetID,
 				MerkleRoot:       testAssetID,
 			},
@@ -33,7 +43,7 @@ func TestUnmarshalManagedUtxo(t *testing.T) {
 			name: "invalid outpoint",
 			rpcUtxo: &taprpc.ManagedUtxo{
 				OutPoint:    "invalid",
-				InternalKey: testPubKey,
+				InternalKey: validPubKeyBytes,
 			},
 			wantErr: "invalid outpoint",
 		},
@@ -146,7 +156,7 @@ func TestUnmarshalAssetBurn(t *testing.T) {
 			name: "valid burn with group key",
 			rpcBurn: &taprpc.AssetBurn{
 				AssetId:         testAssetID,
-				TweakedGroupKey: testPubKey,
+				TweakedGroupKey: validPubKeyBytes,
 				Amount:          100,
 				AnchorTxid:      testAssetID,
 			},

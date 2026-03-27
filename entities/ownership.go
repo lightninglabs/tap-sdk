@@ -54,5 +54,3 @@ type DeclareScriptKeyRequest struct {
 	// ScriptKey is the script key to declare.
 	ScriptKey ScriptKey
 }
-
-

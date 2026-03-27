@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"fmt"
+	"maps"
 
 	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/lightninglabs/taproot-assets/taprpc"
@@ -416,10 +417,10 @@ func unmarshalFetchAssetMetaResponse(
 		return nil, fmt.Errorf("invalid meta hash: %w", err)
 	}
 
-	unknownOddTypes := make(map[uint64][]byte, len(resp.UnknownOddTypes))
-	for k, v := range resp.UnknownOddTypes {
-		unknownOddTypes[k] = v
-	}
+	unknownOddTypes := make(
+		map[uint64][]byte, len(resp.UnknownOddTypes),
+	)
+	maps.Copy(unknownOddTypes, resp.UnknownOddTypes)
 
 	return &entities.AssetMeta{
 		Data:                  resp.Data,
