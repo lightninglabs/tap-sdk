@@ -180,7 +180,7 @@ func (s *walletClient) FetchAssetMeta(ctx context.Context,
 		return nil, err
 	}
 
-	return unmarshalAssetMeta(resp)
+	return unmarshalFetchAssetMetaResponse(resp)
 }
 
 // VerifyProof verifies a proof file and returns the decoded last proof
@@ -402,9 +402,9 @@ func marshalFetchAssetMetaRequest(
 	return rpcReq
 }
 
-// unmarshalAssetMeta converts an RPC AssetMeta response to an
-// entities.AssetMeta.
-func unmarshalAssetMeta(
+// unmarshalFetchAssetMetaResponse converts an RPC FetchAssetMetaResponse
+// to an entities.AssetMeta.
+func unmarshalFetchAssetMetaResponse(
 	resp *taprpc.FetchAssetMetaResponse) (*entities.AssetMeta, error) {
 
 	if resp == nil {
