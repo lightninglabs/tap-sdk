@@ -60,6 +60,7 @@ func TestMarshalListBalancesRequest(t *testing.T) {
 				require.True(t, rpcReq.IncludeLeased)
 				require.NotNil(t, rpcReq.ScriptKeyType)
 				require.Equal(
+					t,
 					taprpc.ScriptKeyType_SCRIPT_KEY_BURN,
 					rpcReq.ScriptKeyType.GetExplicitType(),
 				)
@@ -119,6 +120,7 @@ func TestMarshalSendAssetRequest(t *testing.T) {
 			},
 			validate: func(t *testing.T, rpcReq *taprpc.SendAssetRequest) {
 				require.Equal(
+					t,
 					[]string{"tap1first", "tap1second"},
 					rpcReq.TapAddrs,
 				)
@@ -148,14 +150,17 @@ func TestMarshalSendAssetRequest(t *testing.T) {
 				require.True(t, rpcReq.SkipProofCourierPingCheck)
 				require.Len(t, rpcReq.AddressesWithAmounts, 2)
 				require.Equal(
+					t,
 					"tap1amountless",
 					rpcReq.AddressesWithAmounts[0].TapAddr,
 				)
 				require.Equal(
+					t,
 					uint64(150),
 					rpcReq.AddressesWithAmounts[0].Amount,
 				)
 				require.Equal(
+					t,
 					"tap1fixed",
 					rpcReq.AddressesWithAmounts[1].TapAddr,
 				)
