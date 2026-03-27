@@ -12,6 +12,7 @@ type Client interface {
 	ProofClient
 	WalletKitClient
 	UniverseClient
+	MintClient
 
 	Close() error
 }
@@ -141,4 +142,15 @@ type UniverseClient interface {
 	// InsertProof inserts a proof into the local universe.
 	InsertProof(ctx context.Context, rawProof []byte,
 		decoded *entities.DecodedProof) error
+}
+
+// MintClient exposes minting operations from the Mint service gRPC client.
+type MintClient interface {
+	// MintAsset stages a new asset in the pending mint batch.
+	MintAsset(ctx context.Context,
+		req *entities.MintAssetRequest) (*entities.MintingBatch, error)
+
+	// FinalizeBatch finalizes the current pending mint batch.
+	FinalizeBatch(ctx context.Context,
+		req *entities.FinalizeBatchRequest) (*entities.MintingBatch, error)
 }

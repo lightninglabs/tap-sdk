@@ -21,6 +21,7 @@ type Client struct {
 	*walletKitClient
 	*proofClient
 	*universeClient
+	*mintClient
 
 	grpcConn  *grpc.ClientConn
 	macaroons macaroon.Pouch
@@ -124,12 +125,16 @@ func NewClient(cfg *Config) (*Client, error) {
 	universeClient := NewUniverseClient(
 		conn, cfg.RPCTimeout, macaroons[macaroon.UniverseServiceMac],
 	)
+	mintClient := NewMintClient(
+		conn, cfg.RPCTimeout, macaroons[macaroon.AdminServiceMac],
+	)
 
 	return &Client{
 		walletClient:    walletClient,
 		walletKitClient: walletKitClient,
 		proofClient:     proofClient,
 		universeClient:  universeClient,
+		mintClient:      mintClient,
 		grpcConn:        conn,
 		macaroons:       macaroons,
 	}, nil
