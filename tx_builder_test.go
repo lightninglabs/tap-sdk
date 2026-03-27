@@ -117,6 +117,80 @@ func (m *MockWalletKitClient) AnchorVirtualPsbts(ctx context.Context,
 	return args.Get(0).(*entities.AssetTransfer), args.Error(1)
 }
 
+func (m *MockWalletKitClient) QueryInternalKey(
+	ctx context.Context,
+	internalKey []byte) (*entities.KeyDescriptor, error) {
+
+	args := m.Called(ctx, internalKey)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*entities.KeyDescriptor), args.Error(1)
+}
+
+func (m *MockWalletKitClient) QueryScriptKey(
+	ctx context.Context,
+	tweakedScriptKey []byte) (*entities.ScriptKey, error) {
+
+	args := m.Called(ctx, tweakedScriptKey)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*entities.ScriptKey), args.Error(1)
+}
+
+func (m *MockWalletKitClient) ProveAssetOwnership(
+	ctx context.Context,
+	req *entities.ProveOwnershipRequest) (
+	*entities.OwnershipProof, error) {
+
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*entities.OwnershipProof),
+		args.Error(1)
+}
+
+func (m *MockWalletKitClient) VerifyAssetOwnership(
+	ctx context.Context,
+	req *entities.VerifyOwnershipRequest) (
+	*entities.VerifyOwnershipResponse, error) {
+
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*entities.VerifyOwnershipResponse),
+		args.Error(1)
+}
+
+func (m *MockWalletKitClient) RemoveUTXOLease(
+	ctx context.Context,
+	outpoint entities.Outpoint) error {
+
+	args := m.Called(ctx, outpoint)
+
+	return args.Error(0)
+}
+
+func (m *MockWalletKitClient) DeclareScriptKey(
+	ctx context.Context,
+	req *entities.DeclareScriptKeyRequest) (
+	*entities.ScriptKey, error) {
+
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*entities.ScriptKey), args.Error(1)
+}
+
 func TestTxBuilder_Execute(t *testing.T) {
 	mockWalletKit := new(MockWalletKitClient)
 

@@ -185,42 +185,4 @@ func (m *walletKitClient) DeclareScriptKey(ctx context.Context,
 	return unmarshalScriptKey(resp.ScriptKey)
 }
 
-// ExportAssetWalletBackup exports a backup of the asset wallet.
-func (m *walletKitClient) ExportAssetWalletBackup(ctx context.Context,
-	req *entities.ExportBackupRequest) ([]byte, error) {
 
-	authCtx, _, client := m.RawClientWithMacAuth(ctx)
-
-	rpcReq := &assetwalletrpc.ExportAssetWalletBackupRequest{}
-	if req != nil {
-		rpcReq.Mode = assetwalletrpc.BackupMode(req.Mode)
-	}
-
-	resp, err := client.ExportAssetWalletBackup(authCtx, rpcReq)
-	if err != nil {
-		return nil, err
-	}
-
-	return resp.Backup, nil
-}
-
-// ImportAssetsFromBackup imports assets from a previously exported
-// backup.
-func (m *walletKitClient) ImportAssetsFromBackup(ctx context.Context,
-	backup []byte) (*entities.ImportBackupResponse, error) {
-
-	authCtx, _, client := m.RawClientWithMacAuth(ctx)
-
-	resp, err := client.ImportAssetsFromBackup(
-		authCtx, &assetwalletrpc.ImportAssetsFromBackupRequest{
-			Backup: backup,
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return &entities.ImportBackupResponse{
-		NumImported: resp.NumImported,
-	}, nil
-}

@@ -308,7 +308,7 @@ func TestUnmarshalAssetMeta(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := unmarshalAssetMeta(tc.resp)
+			result, err := unmarshalFetchAssetMetaResponse(tc.resp)
 			if tc.wantErr != "" {
 				require.Error(t, err)
 				require.Contains(

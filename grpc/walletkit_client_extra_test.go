@@ -83,36 +83,4 @@ func TestVerifyOwnershipResponseUnmarshal(t *testing.T) {
 	}
 }
 
-func TestBackupModeMapping(t *testing.T) {
-	tests := []struct {
-		name    string
-		mode    entities.BackupMode
-		rpcMode assetwalletrpc.BackupMode
-	}{
-		{
-			name:    "raw",
-			mode:    entities.BackupModeRaw,
-			rpcMode: assetwalletrpc.BackupMode_RAW,
-		},
-		{
-			name:    "compact",
-			mode:    entities.BackupModeCompact,
-			rpcMode: assetwalletrpc.BackupMode_COMPACT,
-		},
-		{
-			name:    "optimistic",
-			mode:    entities.BackupModeOptimistic,
-			rpcMode: assetwalletrpc.BackupMode_OPTIMISTIC,
-		},
-	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(
-				t,
-				tc.rpcMode,
-				assetwalletrpc.BackupMode(tc.mode),
-			)
-		})
-	}
-}

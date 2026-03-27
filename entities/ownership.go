@@ -55,29 +55,4 @@ type DeclareScriptKeyRequest struct {
 	ScriptKey ScriptKey
 }
 
-// BackupMode specifies the backup format.
-type BackupMode uint8
 
-const (
-	// BackupModeRaw is a full backup with complete proof data.
-	BackupModeRaw BackupMode = 0
-
-	// BackupModeCompact strips blockchain-derivable fields from proofs.
-	BackupModeCompact BackupMode = 1
-
-	// BackupModeOptimistic stores no proof data; proofs are fetched
-	// on import from a universe server.
-	BackupModeOptimistic BackupMode = 2
-)
-
-// ExportBackupRequest specifies the backup mode for export.
-type ExportBackupRequest struct {
-	// Mode is the backup format to use.
-	Mode BackupMode
-}
-
-// ImportBackupResponse is the result of importing a wallet backup.
-type ImportBackupResponse struct {
-	// NumImported is the number of assets imported.
-	NumImported uint32
-}
