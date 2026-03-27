@@ -74,6 +74,37 @@ type WalletClient interface {
 	AddrReceives(ctx context.Context,
 		query *entities.AddressReceivesQuery) ([]*entities.AddressEvent,
 		error)
+
+	// ListUtxos lists managed UTXOs with optional filtering.
+	ListUtxos(ctx context.Context,
+		req *entities.ListUtxosRequest) (
+		map[string]*entities.ManagedUtxo, error)
+
+	// ListGroups lists all known asset groups.
+	ListGroups(ctx context.Context) (
+		map[string]*entities.GroupedAssets, error)
+
+	// BurnAsset burns asset units. The confirmation text must be set
+	// to "assets will be destroyed" for the burn to succeed.
+	BurnAsset(ctx context.Context,
+		req *entities.BurnAssetRequest) (
+		*entities.BurnAssetResponse, error)
+
+	// ListBurns lists asset burns with optional filtering.
+	ListBurns(ctx context.Context,
+		req *entities.ListBurnsRequest) ([]*entities.AssetBurn, error)
+
+	// FetchAssetMeta fetches the metadata for an asset by ID or meta
+	// hash.
+	FetchAssetMeta(ctx context.Context,
+		req *entities.FetchAssetMetaRequest) (
+		*entities.AssetMeta, error)
+
+	// VerifyProof verifies a proof file and returns the decoded last
+	// proof if valid.
+	VerifyProof(ctx context.Context,
+		rawProofFile []byte) (
+		*entities.VerifyProofResponse, error)
 }
 
 // ProofClient exposes proof-related operations from the TaprootAssets service.
@@ -135,6 +166,46 @@ type WalletKitClient interface {
 	PublishAndLogTransfer(ctx context.Context, anchorPsbt []byte,
 		virtualPsbts [][]byte, passivePsbts [][]byte,
 		skipAnchorTxBroadcast bool) (*entities.AssetPacket, error)
+
+	// QueryInternalKey looks up an internal key by its raw public key
+	// bytes. The input can be 32-byte x-only or 33-byte compressed.
+	QueryInternalKey(ctx context.Context,
+		internalKey []byte) (*entities.KeyDescriptor, error)
+
+	// QueryScriptKey looks up a script key by its tweaked public key
+	// bytes. The input can be 32-byte x-only or 33-byte compressed.
+	QueryScriptKey(ctx context.Context,
+		tweakedScriptKey []byte) (*entities.ScriptKey, error)
+
+	// ProveAssetOwnership generates a proof of ownership for an
+	// asset.
+	ProveAssetOwnership(ctx context.Context,
+		req *entities.ProveOwnershipRequest) (
+		*entities.OwnershipProof, error)
+
+	// VerifyAssetOwnership verifies an asset ownership proof.
+	VerifyAssetOwnership(ctx context.Context,
+		req *entities.VerifyOwnershipRequest) (
+		*entities.VerifyOwnershipResponse, error)
+
+	// RemoveUTXOLease removes a lease on a UTXO.
+	RemoveUTXOLease(ctx context.Context,
+		outpoint entities.Outpoint) error
+
+	// DeclareScriptKey informs the wallet about an externally derived
+	// script key.
+	DeclareScriptKey(ctx context.Context,
+		req *entities.DeclareScriptKeyRequest) (
+		*entities.ScriptKey, error)
+
+	// ExportAssetWalletBackup exports a backup of the asset wallet.
+	ExportAssetWalletBackup(ctx context.Context,
+		req *entities.ExportBackupRequest) ([]byte, error)
+
+	// ImportAssetsFromBackup imports assets from a previously
+	// exported backup.
+	ImportAssetsFromBackup(ctx context.Context,
+		backup []byte) (*entities.ImportBackupResponse, error)
 }
 
 // UniverseClient exposes the Universe service gRPC client.
