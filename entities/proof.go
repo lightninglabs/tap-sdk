@@ -46,6 +46,16 @@ type DecodedProof struct {
 	IsIssuance bool
 }
 
+// VerifyProofResponse contains the result of a proof verification.
+type VerifyProofResponse struct {
+	// Valid indicates whether the proof file was valid.
+	Valid bool
+
+	// DecodedProof is the decoded last proof in the file if the proof
+	// file was valid.
+	DecodedProof *DecodedProof
+}
+
 // RegisteredAsset represents an asset that has been registered after
 // importing a proof. This is returned when a receiver successfully imports
 // a proof from an interactive transfer.
