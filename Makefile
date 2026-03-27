@@ -127,9 +127,14 @@ lint: docker-tools
 	@$(call print, "Linting source.")
 	$(DOCKER_TOOLS) golangci-lint run -v $(LINT_WORKERS)
 
+lint-fix: docker-tools
+	@$(call print, "Linting and fixing source.")
+	$(DOCKER_TOOLS) golangci-lint run -v --fix $(LINT_WORKERS)
+
 .PHONY: default \
 	build \
 	unit \
 	unit-race \
 	fmt \
-	lint
+	lint \
+	lint-fix
