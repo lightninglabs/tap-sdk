@@ -1,6 +1,7 @@
 PKG := github.com/lightninglabs/tap-sdk
 
 TOOLS_DIR := tools
+TOOLS_MOD := $(TOOLS_DIR)/go.mod
 
 GOIMPORTS_PKG := github.com/rinchsan/gosimports/cmd/gosimports
 
@@ -8,6 +9,7 @@ GO_BIN := ${GOPATH}/bin
 GOIMPORTS_BIN := $(GO_BIN)/gosimports
 
 GOCC := go
+GOTOOL := GOWORK=off $(GOCC) tool -modfile=$(TOOLS_MOD)
 GOBUILD := go build -v
 GOINSTALL := go install -v
 GOTEST := go test -v
@@ -87,13 +89,6 @@ default: build
 all: build check install
 
 # ============
-# DEPENDENCIES
-# ============
-$(GOIMPORTS_BIN):
-	@$(call print, "Installing goimports.")
-	cd $(TOOLS_DIR); go install -trimpath $(GOIMPORTS_PKG)
-
-# ============
 # INSTALLATION
 # ============
 
@@ -122,9 +117,9 @@ unit-race:
 # =========
 # UTILITIES
 # =========
-fmt: $(GOIMPORTS_BIN)
+fmt:
 	@$(call print, "Fixing imports.")
-	gosimports -w $(GOFILES_NOVENDOR)
+	$(GOTOOL) $(GOIMPORTS_PKG) -w $(GOFILES_NOVENDOR)
 	@$(call print, "Formatting source.")
 	gofmt -l -w -s $(GOFILES_NOVENDOR)
 

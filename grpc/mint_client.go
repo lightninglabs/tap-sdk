@@ -585,6 +585,7 @@ func unmarshalPendingMintAsset(
 
 func unmarshalAssetMeta(
 	rpcMeta *taprpc.AssetMeta) (*entities.AssetMeta, error) {
+
 	if rpcMeta == nil {
 		return nil, fmt.Errorf("nil asset meta")
 	}

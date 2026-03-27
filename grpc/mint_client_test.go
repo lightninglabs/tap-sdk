@@ -494,7 +494,7 @@ func TestMarshalSealBatchRequest(t *testing.T) {
 				ShortResponse: true,
 				GroupWitnesses: []entities.GroupWitness{{
 					GenesisID: genesisID,
-					Witness: [][]byte{{0x01}, {0x02}},
+					Witness:   [][]byte{{0x01}, {0x02}},
 				}},
 			},
 			validate: func(t *testing.T,
@@ -522,7 +522,7 @@ func TestMarshalSealBatchRequest(t *testing.T) {
 		{
 			name: "reject both witness inputs",
 			req: &entities.SealBatchRequest{
-				GroupWitnesses: []entities.GroupWitness{{GenesisID: genesisID}},
+				GroupWitnesses:          []entities.GroupWitness{{GenesisID: genesisID}},
 				SignedGroupVirtualPSBTs: []string{"psbt-a"},
 			},
 			wantErr: "seal batch request must choose one witness input",
@@ -627,8 +627,8 @@ func TestUnmarshalVerboseMintingBatch(t *testing.T) {
 					AssetType:    taprpc.AssetType_NORMAL,
 					OutputIndex:  1,
 				},
-				NewAsset:       []byte{0x01, 0x02},
-				TapscriptRoot:  []byte{0xab},
+				NewAsset:      []byte{0x01, 0x02},
+				TapscriptRoot: []byte{0xab},
 				ExternalKey: &taprpc.ExternalKey{
 					Xpub:              "xpub-test",
 					MasterFingerprint: []byte{0xde, 0xad, 0xbe, 0xef},
