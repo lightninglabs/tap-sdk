@@ -24,9 +24,21 @@ type WalletClient interface {
 	ListAssets(ctx context.Context,
 		req *entities.ListAssetsRequest) ([]*entities.Asset, error)
 
+	// ListBalances lists confirmed wallet balances grouped by asset ID or
+	// group key.
+	ListBalances(ctx context.Context,
+		req *entities.ListBalancesRequest) (*entities.ListBalancesResponse,
+		error)
+
 	// ListTransfers lists outgoing transfers with optional filtering.
 	ListTransfers(ctx context.Context,
 		req *entities.ListTransfersRequest) ([]*entities.AssetTransfer, error)
+
+	// SendAsset performs a one-shot address-based send using the TaprootAssets
+	// service. For reusable V2 addresses, specify amounts through
+	// SendAssetRequest.Recipients.
+	SendAsset(ctx context.Context,
+		req *entities.SendAssetRequest) (*entities.AssetTransfer, error)
 
 	// NewAddr creates a new Taproot Asset address for receiving assets.
 	// The address is stored in tapd and can be queried later.
@@ -53,7 +65,8 @@ type WalletClient interface {
 	// by this tapd instance. Use this to track the status of expected
 	// incoming transfers.
 	AddrReceives(ctx context.Context,
-		query *entities.AddressReceivesQuery) ([]*entities.AddressEvent, error)
+		query *entities.AddressReceivesQuery) ([]*entities.AddressEvent,
+		error)
 }
 
 // ProofClient exposes proof-related operations from the TaprootAssets service.
@@ -102,7 +115,8 @@ type WalletKitClient interface {
 
 	// CommitVirtualPsbts commits virtual transactions.
 	CommitVirtualPsbts(ctx context.Context, virtualPsbts [][]byte,
-		passivePsbts [][]byte, feeRate uint64) (*entities.CommittedTransfer, error)
+		passivePsbts [][]byte, feeRate uint64) (*entities.CommittedTransfer,
+		error)
 
 	// AnchorVirtualPsbts anchors signed virtual PSBTs in a single call.
 	// This combines committing and publishing into one operation.
