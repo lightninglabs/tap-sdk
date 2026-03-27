@@ -62,7 +62,17 @@ Client
 
 SDK entities are thin wrappers over byte arrays with helper methods
 (String(), parsing). All gRPC types are converted to/from these entities
-at the `grpc/` package boundary:
+at the `grpc/` package boundary.
+
+The public entity model is intentionally opinionated:
+- for **fungible assets**, the normal SDK surface should identify the asset
+  by **group key**, not tranche-level `asset_id`
+- for **collectibles / non-fungible assets**, the correct public identifier
+  is the **asset ID**
+- low-level wrappers may still need to translate raw RPC fields, but the
+  high-level API and docs should consistently preserve that distinction
+
+Typical identifier types remain:
 
 ```go
 type AssetID [32]byte      // Hex string representation
@@ -139,8 +149,10 @@ When wrapping a new `tapd` RPC, follow this checklist:
 
 ## Design Documents
 
-Non-trivial changes require a design document under `docs/design/` before
-implementation. See existing docs for format and level of detail expected.
+Create a design document under `docs/design/` before implementation only for
+non-trivial design work, architecture decisions, or public API redesigns.
+Straightforward low-level RPC wrappers do not need a dedicated design doc if
+no new user-facing design is being introduced.
 
 ## Testing
 

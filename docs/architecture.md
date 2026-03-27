@@ -73,6 +73,9 @@ Design rules:
 - Helper methods for parsing and string conversion
 - Request/response structs for API operations
 - No proto imports, no gRPC dependencies
+- High-level APIs must preserve the SDK's semantic asset model:
+  fungible assets are identified by group key, while collectibles are
+  identified by asset ID
 
 ### `grpc/`
 
@@ -125,6 +128,11 @@ Macaroon authentication helpers:
 ## Transfer Flows
 
 ### Address-Based Send
+
+The normal address-based receive flow should prefer V2 addresses. Older
+address versions remain available for advanced compatibility use through the
+lower-level client surface, but they are not the default UX the SDK should
+promote.
 
 ```
 Sender                             tapd
@@ -186,9 +194,11 @@ Sentinel errors exist for builder state violations:
 
 ## Future Directions
 
-1. **Complete RPC coverage** — Wrap remaining `tapd` RPCs (ListBalances,
-   FetchAsset, ListGroups, ListUtxos, SendAsset, BurnAsset, etc.)
+1. **Complete RPC coverage** — Wrap remaining `tapd` RPCs where low-level
+   access is still useful, without turning the public SDK surface into a thin
+   `taprpc` mirror
 2. **Streaming support** — Subscribe to receive/send events
-3. **Asset minting** — High-level mint workflows via the Mint service
+3. **Asset minting** — High-level mint workflows via the Mint service,
+   redesigned around fungible/non-fungible concepts instead of raw RPC shape
 4. **Multi-language bindings** — WASM, Python, mobile via FFI
 5. **Integration test suite** — Regtest-based tests against a real `tapd`

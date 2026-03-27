@@ -40,6 +40,32 @@ tap-sdk/
    low-level through the `Client` interface.
 4. **Entities are thin wrappers.** Fixed-size byte arrays with helper methods,
    not heavy objects.
+5. **The SDK is opinionated.** The public surface should not blindly mirror
+   raw `taprpc` semantics when a cleaner Taproot Assets model exists.
+
+### Asset Identity Model
+
+The SDK must distinguish between the protocol's low-level identifiers and the
+user-facing identity model:
+
+- **Fungible assets are identified by group key** in the normal SDK surface.
+  The `asset_id` is tranche-level and should not be the primary identifier
+  that application developers work with for fungible assets.
+- **Collectibles / non-fungible assets are identified by asset ID.** In that
+  case the tranche is the asset, so exposing the asset ID is correct.
+- Low-level client wrappers may still need to translate raw RPC fields, but
+  high-level APIs and docs should consistently present the semantic model:
+  fungible => group key, non-fungible => asset ID.
+
+### Address Defaults
+
+The SDK should expose an opinionated default address flow:
+
+- **V2 addresses are the default** for the normal, high-level receive/send
+  surface unless there is a concrete reason to do otherwise.
+- Older address versions are considered advanced or compatibility paths and
+  should remain available through lower-level client methods instead of being
+  promoted in the primary UX.
 
 ## Development
 
@@ -77,11 +103,14 @@ Examples:
 
 ### PR Workflow
 
-1. Create a design doc under `docs/design/` for non-trivial changes
-2. Implement with granular, logical commits (not incremental)
-3. Force-push to keep history clean
-4. All CI must pass (lint, format, compile, unit tests)
-5. Wait for review before merge
+1. Create or update a design doc under `docs/design/` only for non-trivial
+   design work, architecture decisions, or API redesigns
+2. Skip dedicated design docs for straightforward low-level RPC wrapper work
+   that does not introduce new user-facing design
+3. Implement with granular, logical commits (not incremental)
+4. Force-push to keep history clean
+5. All CI must pass (lint, format, compile, unit tests)
+6. Wait for review before merge
 
 ### Adding New RPC Wrappers
 
