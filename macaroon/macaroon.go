@@ -19,6 +19,7 @@ const (
 	WalletKitServiceMac TaprpcServiceMac = "walletkit.macaroon"
 	ProofServiceMac     TaprpcServiceMac = "proof.macaroon"
 	UniverseServiceMac  TaprpcServiceMac = "universe.macaroon"
+	MintServiceMac      TaprpcServiceMac = "mint.macaroon"
 	ReadOnlyServiceMac  TaprpcServiceMac = "readonly.macaroon"
 )
 
@@ -31,6 +32,7 @@ var (
 		AdminServiceMac,
 		ProofServiceMac,
 		UniverseServiceMac,
+		MintServiceMac,
 		ReadOnlyServiceMac,
 	}
 )
@@ -109,6 +111,7 @@ func NewPouch(macaroonDir, customMacPath, customMacHex string) (Pouch, error) {
 			AdminServiceMac:     mac,
 			ProofServiceMac:     mac,
 			UniverseServiceMac:  mac,
+			MintServiceMac:      mac,
 			ReadOnlyServiceMac:  mac,
 		}, nil
 	}

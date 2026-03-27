@@ -367,3 +367,298 @@ func TestUnmarshalMintingBatch(t *testing.T) {
 		})
 	}
 }
+
+func TestMarshalFundBatchRequest(t *testing.T) {
+	leftHash := func() entities.Hash {
+		var hash entities.Hash
+		copy(hash[:], testAssetID)
+		return hash
+	}()
+	rightHash := func() entities.Hash {
+		var hash entities.Hash
+		copy(hash[:], testXOnlyPubKey)
+		return hash
+	}()
+
+	tests := []struct {
+		name     string
+		req      *entities.FundBatchRequest
+		wantErr  string
+		validate func(*testing.T, *mintrpc.FundBatchRequest)
+	}{
+		{
+			name: "nil request",
+			req:  nil,
+			validate: func(t *testing.T,
+				rpcReq *mintrpc.FundBatchRequest) {
+
+				require.NotNil(t, rpcReq)
+				require.False(t, rpcReq.ShortResponse)
+				require.Zero(t, rpcReq.FeeRate)
+			},
+		},
+		{
+			name: "full tree sibling",
+			req: &entities.FundBatchRequest{
+				ShortResponse: true,
+				FeeRate:       321,
+				BatchSibling: &entities.BatchSibling{
+					FullTree: &entities.TapscriptFullTree{
+						Leaves: []entities.TapLeaf{{Script: []byte{0x51}}},
+					},
+				},
+			},
+			validate: func(t *testing.T,
+				rpcReq *mintrpc.FundBatchRequest) {
+
+				require.True(t, rpcReq.ShortResponse)
+				require.Equal(t, uint32(321), rpcReq.FeeRate)
+				require.NotNil(t, rpcReq.GetFullTree())
+				require.Len(t, rpcReq.GetFullTree().AllLeaves, 1)
+			},
+		},
+		{
+			name: "branch sibling",
+			req: &entities.FundBatchRequest{
+				BatchSibling: &entities.BatchSibling{
+					Branch: &entities.TapBranch{
+						LeftTapHash:  leftHash,
+						RightTapHash: rightHash,
+					},
+				},
+			},
+			validate: func(t *testing.T,
+				rpcReq *mintrpc.FundBatchRequest) {
+
+				require.NotNil(t, rpcReq.GetBranch())
+				require.Equal(t, leftHash[:],
+					rpcReq.GetBranch().LeftTaphash)
+				require.Equal(t, rightHash[:],
+					rpcReq.GetBranch().RightTaphash)
+			},
+		},
+		{
+			name: "reject both sibling variants",
+			req: &entities.FundBatchRequest{
+				BatchSibling: &entities.BatchSibling{
+					FullTree: &entities.TapscriptFullTree{},
+					Branch:   &entities.TapBranch{},
+				},
+			},
+			wantErr: "batch sibling must set exactly one variant",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rpcReq, err := marshalFundBatchRequest(tc.req)
+			if tc.wantErr != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotNil(t, rpcReq)
+			tc.validate(t, rpcReq)
+		})
+	}
+}
+
+func TestMarshalSealBatchRequest(t *testing.T) {
+	genesisID := func() entities.AssetID {
+		var id entities.AssetID
+		copy(id[:], testAssetID)
+		return id
+	}()
+
+	tests := []struct {
+		name     string
+		req      *entities.SealBatchRequest
+		wantErr  string
+		validate func(*testing.T, *mintrpc.SealBatchRequest)
+	}{
+		{
+			name: "nil request",
+			req:  nil,
+			validate: func(t *testing.T,
+				rpcReq *mintrpc.SealBatchRequest) {
+
+				require.NotNil(t, rpcReq)
+				require.False(t, rpcReq.ShortResponse)
+			},
+		},
+		{
+			name: "group witnesses",
+			req: &entities.SealBatchRequest{
+				ShortResponse: true,
+				GroupWitnesses: []entities.GroupWitness{{
+					GenesisID: genesisID,
+					Witness: [][]byte{{0x01}, {0x02}},
+				}},
+			},
+			validate: func(t *testing.T,
+				rpcReq *mintrpc.SealBatchRequest) {
+
+				require.True(t, rpcReq.ShortResponse)
+				require.Len(t, rpcReq.GroupWitnesses, 1)
+				require.Equal(t, genesisID[:],
+					rpcReq.GroupWitnesses[0].GenesisId)
+				require.Len(t, rpcReq.GroupWitnesses[0].Witness, 2)
+			},
+		},
+		{
+			name: "signed virtual psbts",
+			req: &entities.SealBatchRequest{
+				SignedGroupVirtualPSBTs: []string{"psbt-a", "psbt-b"},
+			},
+			validate: func(t *testing.T,
+				rpcReq *mintrpc.SealBatchRequest) {
+
+				require.Equal(t, []string{"psbt-a", "psbt-b"},
+					rpcReq.SignedGroupVirtualPsbts)
+			},
+		},
+		{
+			name: "reject both witness inputs",
+			req: &entities.SealBatchRequest{
+				GroupWitnesses: []entities.GroupWitness{{GenesisID: genesisID}},
+				SignedGroupVirtualPSBTs: []string{"psbt-a"},
+			},
+			wantErr: "seal batch request must choose one witness input",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rpcReq, err := marshalSealBatchRequest(tc.req)
+			if tc.wantErr != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotNil(t, rpcReq)
+			tc.validate(t, rpcReq)
+		})
+	}
+}
+
+func TestMarshalListBatchesRequest(t *testing.T) {
+	batchKey := func() entities.PubKey {
+		var key entities.PubKey
+		copy(key[:], testPubKey)
+		return key
+	}()
+
+	tests := []struct {
+		name     string
+		req      *entities.ListBatchesRequest
+		validate func(*testing.T, *mintrpc.ListBatchRequest)
+	}{
+		{
+			name: "nil request",
+			req:  nil,
+			validate: func(t *testing.T,
+				rpcReq *mintrpc.ListBatchRequest) {
+
+				require.NotNil(t, rpcReq)
+				require.False(t, rpcReq.Verbose)
+				require.Nil(t, rpcReq.Filter)
+			},
+		},
+		{
+			name: "full request",
+			req: &entities.ListBatchesRequest{
+				BatchKey: &batchKey,
+				Verbose:  true,
+			},
+			validate: func(t *testing.T,
+				rpcReq *mintrpc.ListBatchRequest) {
+
+				require.True(t, rpcReq.Verbose)
+				require.Equal(t, batchKey[:], rpcReq.GetBatchKey())
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rpcReq := marshalListBatchesRequest(tc.req)
+			require.NotNil(t, rpcReq)
+			tc.validate(t, rpcReq)
+		})
+	}
+}
+
+func TestUnmarshalVerboseMintingBatch(t *testing.T) {
+	metaHash := append([]byte(nil), testAssetID...)
+	_, pubKey := btcec.PrivKeyFromBytes(testAssetID)
+	validPubKey := pubKey.SerializeCompressed()
+
+	rpcBatch := &mintrpc.VerboseBatch{
+		Batch: &mintrpc.MintingBatch{
+			BatchKey:   append([]byte(nil), validPubKey...),
+			BatchTxid:  "funded-batch",
+			State:      mintrpc.BatchState_BATCH_STATE_COMMITTED,
+			CreatedAt:  77,
+			HeightHint: 21,
+			BatchPsbt:  []byte{0xaa},
+		},
+		UnsealedAssets: []*mintrpc.UnsealedAsset{{
+			Asset: &mintrpc.PendingAsset{
+				AssetVersion: taprpc.AssetVersion_ASSET_VERSION_V1,
+				AssetType:    taprpc.AssetType_NORMAL,
+				Name:         "usd-test",
+				AssetMeta: &taprpc.AssetMeta{
+					Data:     []byte(`{"ticker":"USDt"}`),
+					Type:     taprpc.AssetMetaType_META_TYPE_JSON,
+					MetaHash: metaHash,
+				},
+				Amount: 42,
+			},
+			GroupKeyRequest: &taprpc.GroupKeyRequest{
+				AnchorGenesis: &taprpc.GenesisInfo{
+					GenesisPoint: "txid:0",
+					Name:         "usd-test",
+					MetaHash:     metaHash,
+					AssetId:      append([]byte(nil), testAssetID...),
+					AssetType:    taprpc.AssetType_NORMAL,
+					OutputIndex:  1,
+				},
+				NewAsset:       []byte{0x01, 0x02},
+				TapscriptRoot:  []byte{0xab},
+				ExternalKey: &taprpc.ExternalKey{
+					Xpub:              "xpub-test",
+					MasterFingerprint: []byte{0xde, 0xad, 0xbe, 0xef},
+					DerivationPath:    "m/86'/0'/0'/0/7",
+				},
+			},
+			GroupVirtualTx: &taprpc.GroupVirtualTx{
+				Transaction: append([]byte(nil), []byte{0x11, 0x22}...),
+				PrevOut: &taprpc.TxOut{
+					Value:    123,
+					PkScript: []byte{0x51},
+				},
+				GenesisId:  append([]byte(nil), testAssetID...),
+				TweakedKey: append([]byte(nil), validPubKey...),
+			},
+			GroupVirtualPsbt: "cHNidP8BAHECAAAAAQ==",
+		}},
+	}
+
+	batch, err := unmarshalVerboseMintingBatch(rpcBatch)
+	require.NoError(t, err)
+	require.NotNil(t, batch)
+	require.Equal(t, "funded-batch", batch.Batch.BatchTxid)
+	require.Equal(t, entities.BatchStateCommitted, batch.Batch.State)
+	require.Len(t, batch.UnsealedAssets, 1)
+	require.Equal(t, "usd-test", batch.UnsealedAssets[0].Asset.Name)
+	require.Equal(t, "txid:0",
+		batch.UnsealedAssets[0].GroupKeyRequest.AnchorGenesis.GenesisPoint)
+	require.Equal(t, int64(123),
+		batch.UnsealedAssets[0].GroupVirtualTx.PrevOut.Value)
+	require.Equal(t, "cHNidP8BAHECAAAAAQ==",
+		batch.UnsealedAssets[0].GroupVirtualPSBT)
+}

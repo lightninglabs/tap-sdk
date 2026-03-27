@@ -126,7 +126,7 @@ func NewClient(cfg *Config) (*Client, error) {
 		conn, cfg.RPCTimeout, macaroons[macaroon.UniverseServiceMac],
 	)
 	mintClient := NewMintClient(
-		conn, cfg.RPCTimeout, macaroons[macaroon.AdminServiceMac],
+		conn, cfg.RPCTimeout, macaroons[macaroon.MintServiceMac],
 	)
 
 	return &Client{

@@ -155,7 +155,24 @@ type MintClient interface {
 	MintAsset(ctx context.Context,
 		req *entities.MintAssetRequest) (*entities.MintingBatch, error)
 
+	// FundBatch funds the current pending mint batch.
+	FundBatch(ctx context.Context,
+		req *entities.FundBatchRequest) (*entities.VerboseMintingBatch,
+		error)
+
+	// SealBatch seals a funded batch before finalization.
+	SealBatch(ctx context.Context,
+		req *entities.SealBatchRequest) (*entities.MintingBatch, error)
+
 	// FinalizeBatch finalizes the current pending mint batch.
 	FinalizeBatch(ctx context.Context,
 		req *entities.FinalizeBatchRequest) (*entities.MintingBatch, error)
+
+	// CancelBatch cancels the current mint batch.
+	CancelBatch(ctx context.Context) (*entities.CancelBatchResponse, error)
+
+	// ListBatches lists mint batches known to the daemon.
+	ListBatches(ctx context.Context,
+		req *entities.ListBatchesRequest) ([]*entities.VerboseMintingBatch,
+		error)
 }

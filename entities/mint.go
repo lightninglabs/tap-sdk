@@ -157,6 +157,95 @@ type BatchSibling struct {
 	Branch *TapBranch
 }
 
+// GroupWitness authorizes a pending asset to join an asset group.
+type GroupWitness struct {
+	// GenesisID identifies the pending asset to authorize.
+	GenesisID AssetID
+
+	// Witness is the serialized witness stack.
+	Witness [][]byte
+}
+
+// GenesisInfo describes an asset genesis record used in mint responses.
+type GenesisInfo struct {
+	// GenesisPoint is the outpoint that created the asset.
+	GenesisPoint string
+
+	// Name is the asset name.
+	Name string
+
+	// MetaHash is the metadata hash committed into genesis.
+	MetaHash Hash
+
+	// AssetID is the protocol-level asset identifier.
+	AssetID AssetID
+
+	// AssetType is the genesis asset type.
+	AssetType AssetType
+
+	// OutputIndex is the anchor output index in the genesis transaction.
+	OutputIndex uint32
+}
+
+// GroupKeyRequest describes the group membership material for an unsealed
+// mint asset.
+type GroupKeyRequest struct {
+	// RawKey is the group internal key when locally managed.
+	RawKey *KeyDescriptor
+
+	// AnchorGenesis is the genesis of the asset anchoring the group.
+	AnchorGenesis *GenesisInfo
+
+	// TapscriptRoot is the optional tapscript root used in the group key.
+	TapscriptRoot []byte
+
+	// NewAsset is the serialized asset requesting group membership.
+	NewAsset []byte
+
+	// ExternalKey is the external key used for group signing, if any.
+	ExternalKey *ExternalKey
+}
+
+// TxOut represents a transaction output used in a group virtual tx.
+type TxOut struct {
+	// Value is the amount of the output.
+	Value int64
+
+	// PkScript is the output script.
+	PkScript []byte
+}
+
+// GroupVirtualTx describes the virtual transaction used for group witness
+// construction.
+type GroupVirtualTx struct {
+	// Transaction is the serialized virtual transaction.
+	Transaction []byte
+
+	// PrevOut is the output being spent in the virtual transaction.
+	PrevOut *TxOut
+
+	// GenesisID is the grouped asset's asset ID.
+	GenesisID AssetID
+
+	// TweakedKey is the tweaked group key for the request.
+	TweakedKey *PubKey
+}
+
+// UnsealedMintAsset contains the extra verbose details for a batch asset.
+type UnsealedMintAsset struct {
+	// Asset is the pending asset.
+	Asset *PendingMintAsset
+
+	// GroupKeyRequest is the request used to derive the group witness.
+	GroupKeyRequest *GroupKeyRequest
+
+	// GroupVirtualTx is the virtual transaction for witness creation.
+	GroupVirtualTx *GroupVirtualTx
+
+	// GroupVirtualPSBT is the serialized PSBT form of GroupVirtualTx.
+	GroupVirtualPSBT string
+}
+
 // MintingBatch is the daemon's view of a minting batch.
 type MintingBatch struct {
 	// BatchKey uniquely identifies the batch.
@@ -181,6 +270,15 @@ type MintingBatch struct {
 	BatchPSBT []byte
 }
 
+// VerboseMintingBatch is the daemon's verbose view of a minting batch.
+type VerboseMintingBatch struct {
+	// Batch is the batch itself.
+	Batch MintingBatch
+
+	// UnsealedAssets contains pending group witness details when requested.
+	UnsealedAssets []UnsealedMintAsset
+}
+
 // MintAssetRequest adds an asset to the pending mint batch.
 type MintAssetRequest struct {
 	// Asset is the asset to add to the batch.
@@ -188,6 +286,30 @@ type MintAssetRequest struct {
 
 	// ShortResponse asks the daemon to omit existing batch assets.
 	ShortResponse bool
+}
+
+// FundBatchRequest funds the current pending mint batch.
+type FundBatchRequest struct {
+	// ShortResponse asks the daemon to omit batch asset details.
+	ShortResponse bool
+
+	// FeeRate is the optional fee rate in sat/kw.
+	FeeRate uint32
+
+	// BatchSibling is the optional tapscript sibling for the batch output.
+	BatchSibling *BatchSibling
+}
+
+// SealBatchRequest seals the current funded mint batch.
+type SealBatchRequest struct {
+	// ShortResponse asks the daemon to omit batch asset details.
+	ShortResponse bool
+
+	// GroupWitnesses authorizes assets into externally signed groups.
+	GroupWitnesses []GroupWitness
+
+	// SignedGroupVirtualPSBTs are externally signed group virtual PSBTs.
+	SignedGroupVirtualPSBTs []string
 }
 
 // FinalizeBatchRequest finalizes the current pending mint batch.
@@ -200,4 +322,19 @@ type FinalizeBatchRequest struct {
 
 	// BatchSibling is the optional tapscript sibling for the batch output.
 	BatchSibling *BatchSibling
+}
+
+// CancelBatchResponse reports the cancelled batch key.
+type CancelBatchResponse struct {
+	// BatchKey is the internal public key of the cancelled batch.
+	BatchKey PubKey
+}
+
+// ListBatchesRequest queries known mint batches.
+type ListBatchesRequest struct {
+	// BatchKey filters the response to a single batch when set.
+	BatchKey *PubKey
+
+	// Verbose asks the daemon to include unsealed asset details.
+	Verbose bool
 }
