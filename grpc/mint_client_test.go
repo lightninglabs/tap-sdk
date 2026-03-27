@@ -3,6 +3,7 @@ package grpc
 import (
 	"testing"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/mintrpc"
@@ -245,6 +246,8 @@ func TestMarshalFinalizeBatchRequest(t *testing.T) {
 
 func TestUnmarshalMintingBatch(t *testing.T) {
 	metaHash := append([]byte(nil), testAssetID...)
+	_, pubKey := btcec.PrivKeyFromBytes(testAssetID)
+	validPubKey := pubKey.SerializeCompressed()
 
 	tests := []struct {
 		name     string
@@ -279,7 +282,7 @@ func TestUnmarshalMintingBatch(t *testing.T) {
 		{
 			name: "valid batch",
 			rpcBatch: &mintrpc.MintingBatch{
-				BatchKey:   append([]byte(nil), testPubKey...),
+				BatchKey:   append([]byte(nil), validPubKey...),
 				BatchTxid:  "abc123",
 				State:      mintrpc.BatchState_BATCH_STATE_PENDING,
 				CreatedAt:  1234,
@@ -297,10 +300,10 @@ func TestUnmarshalMintingBatch(t *testing.T) {
 							Type:     taprpc.AssetMetaType_META_TYPE_JSON,
 							MetaHash: metaHash,
 						},
-						GroupKey: append([]byte(nil), testPubKey...),
+						GroupKey: append([]byte(nil), validPubKey...),
 						GroupAnchor: "anchor-asset",
 						GroupInternalKey: &taprpc.KeyDescriptor{
-							RawKeyBytes: append([]byte(nil), testPubKey...),
+							RawKeyBytes: append([]byte(nil), validPubKey...),
 							KeyLoc: &taprpc.KeyLocator{
 								KeyFamily: 7,
 								KeyIndex:  9,
@@ -308,7 +311,7 @@ func TestUnmarshalMintingBatch(t *testing.T) {
 						},
 						GroupTapscriptRoot: []byte{0xaa, 0xbb},
 						ScriptKey: &taprpc.ScriptKey{
-							PubKey:   append([]byte(nil), testPubKey...),
+							PubKey:   append([]byte(nil), validPubKey...),
 							TapTweak: []byte{0x01, 0x02},
 						},
 					},
@@ -321,7 +324,7 @@ func TestUnmarshalMintingBatch(t *testing.T) {
 				require.Equal(t, int64(1234), batch.CreatedAt)
 				require.Equal(t, uint32(99), batch.HeightHint)
 				require.Equal(t, []byte{0xaa, 0xbb}, batch.BatchPSBT)
-				require.Equal(t, testPubKey, batch.BatchKey[:])
+				require.Equal(t, validPubKey, batch.BatchKey[:])
 				require.Len(t, batch.Assets, 1)
 				asset := batch.Assets[0]
 				require.Equal(t, "usd-test", asset.Name)
@@ -336,12 +339,12 @@ func TestUnmarshalMintingBatch(t *testing.T) {
 				require.Equal(t,
 					entities.AssetMetaTypeJSON, asset.AssetMeta.Type)
 				require.NotNil(t, asset.GroupKey)
-				require.Equal(t, testPubKey, (*asset.GroupKey)[:])
+				require.Equal(t, validPubKey, (*asset.GroupKey)[:])
 				require.NotNil(t, asset.GroupInternalKey)
 				require.Equal(t, uint32(7),
 					asset.GroupInternalKey.KeyLocator.Family)
 				require.NotNil(t, asset.ScriptKey)
-				require.Equal(t, testPubKey,
+				require.Equal(t, validPubKey,
 					asset.ScriptKey.PubKey[:])
 			},
 		},
