@@ -166,6 +166,22 @@ tap-sdk/
 
 5. **Opinionated defaults.** The SDK picks sensible defaults (fee rates,
    address versions, key derivation) so the common case is simple.
+6. **Semantic asset identity.** For fungible assets, the normal SDK surface
+   identifies the asset by group key. For collectibles, it identifies the
+   asset by asset ID.
+
+### Asset identity and address defaults
+
+The Taproot Assets RPC surface exposes low-level protocol details that are not
+always the right abstraction for SDK users.
+
+- For **fungible assets**, the SDK should primarily expose the **group key**
+  as the asset identifier in normal interfaces.
+- For **collectibles / non-fungible assets**, the SDK should expose the
+  **asset ID**.
+- For receive flows, **V2 addresses are the default** in the high-level API.
+  Older address versions remain available through lower-level client methods
+  for advanced use cases.
 
 See [docs/architecture.md](docs/architecture.md) for detailed design.
 
