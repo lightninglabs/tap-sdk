@@ -184,5 +184,3 @@ func (m *walletKitClient) DeclareScriptKey(ctx context.Context,
 
 	return unmarshalScriptKey(resp.ScriptKey)
 }
-
-

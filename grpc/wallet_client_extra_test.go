@@ -146,10 +146,10 @@ func TestUnmarshalAssetBurn(t *testing.T) {
 		{
 			name: "valid burn without group key",
 			rpcBurn: &taprpc.AssetBurn{
-				Note:        "test burn",
-				AssetId:     testAssetID,
-				Amount:      500,
-				AnchorTxid:  testAssetID,
+				Note:       "test burn",
+				AssetId:    testAssetID,
+				Amount:     500,
+				AnchorTxid: testAssetID,
 			},
 		},
 		{

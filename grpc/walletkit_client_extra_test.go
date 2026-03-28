@@ -82,5 +82,3 @@ func TestVerifyOwnershipResponseUnmarshal(t *testing.T) {
 		})
 	}
 }
-
-

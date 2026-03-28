@@ -339,10 +339,10 @@ func unmarshalAssetBurn(
 	}
 
 	burn := &entities.AssetBurn{
-		Note:        rpcBurn.Note,
-		AssetID:     assetID,
-		Amount:      rpcBurn.Amount,
-		AnchorTxid:  anchorTxid,
+		Note:       rpcBurn.Note,
+		AssetID:    assetID,
+		Amount:     rpcBurn.Amount,
+		AnchorTxid: anchorTxid,
 	}
 
 	if len(rpcBurn.TweakedGroupKey) > 0 {
