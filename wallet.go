@@ -139,6 +139,97 @@ func (s *Wallet) ImportProof(ctx context.Context,
 	return registered, nil
 }
 
+// Send performs a simple one-shot address-based asset transfer.
+//
+// The addr must be a valid bech32m-encoded Taproot Asset address. For
+// fungible assets with V2 addresses (which omit amounts), the amount
+// parameter specifies how many units to send. For V0/V1 addresses where
+// the amount is already embedded, pass 0 and the address amount is used.
+//
+// For multi-recipient sends in a single anchor transaction, use SendMulti.
+// For fine-grained control over the Fund → Sign → Commit → Publish
+// pipeline, use NewTxBuilder.
+func (s *Wallet) Send(ctx context.Context, addr string,
+	amount uint64, opts ...SendOption) (*entities.AssetTransfer, error) {
+
+	o := applySendOptions(opts)
+
+	req := &entities.SendAssetRequest{
+		FeeRate:                   o.feeRate,
+		Label:                     o.label,
+		SkipProofCourierPingCheck: o.skipProofCourierPingCheck,
+	}
+
+	if amount > 0 {
+		req.Recipients = []entities.Recipient{{
+			Address: addr,
+			Amount:  amount,
+		}}
+	} else {
+		req.TapAddresses = []string{addr}
+	}
+
+	transfer, err := s.SendAsset(ctx, req)
+	if err != nil {
+		return nil, wrapErr("Send", err)
+	}
+
+	return transfer, nil
+}
+
+// SendMulti sends to multiple recipients in a single anchor transaction.
+//
+// Each recipient must include a valid Taproot Asset address and the amount
+// to send. This is required for V2 addresses that omit amounts. For V0/V1
+// addresses, set Amount to 0 to use the address-embedded amount.
+//
+// For single-recipient sends, prefer Send for simplicity.
+func (s *Wallet) SendMulti(ctx context.Context,
+	recipients []entities.Recipient,
+	opts ...SendOption) (*entities.AssetTransfer, error) {
+
+	if len(recipients) == 0 {
+		return nil, wrapErr("SendMulti", ErrNoRecipients)
+	}
+
+	o := applySendOptions(opts)
+
+	// Split recipients into address-only (amount=0, V0/V1 embedded) and
+	// address-with-amount (V2 explicit) groups.
+	var (
+		addrOnly    []string
+		withAmounts []entities.Recipient
+	)
+	for _, r := range recipients {
+		if r.Amount > 0 {
+			withAmounts = append(withAmounts, r)
+		} else {
+			addrOnly = append(addrOnly, r.Address)
+		}
+	}
+
+	// If all recipients use embedded amounts, use the simple TapAddresses
+	// field. Otherwise, require all to have explicit amounts since tapd
+	// does not mix both modes.
+	req := &entities.SendAssetRequest{
+		FeeRate:                   o.feeRate,
+		Label:                     o.label,
+		SkipProofCourierPingCheck: o.skipProofCourierPingCheck,
+	}
+	if len(withAmounts) == 0 {
+		req.TapAddresses = addrOnly
+	} else {
+		req.Recipients = recipients
+	}
+
+	transfer, err := s.SendAsset(ctx, req)
+	if err != nil {
+		return nil, wrapErr("SendMulti", err)
+	}
+
+	return transfer, nil
+}
+
 // Close tears down the underlying client connection if it exists.
 func (s *Wallet) Close() error {
 	return s.Client.Close()
