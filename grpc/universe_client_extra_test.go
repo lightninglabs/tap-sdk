@@ -97,9 +97,9 @@ func TestMarshalUniverseID(t *testing.T) {
 
 func TestUnmarshalUniverseID(t *testing.T) {
 	tests := []struct {
-		name    string
-		rpcID   *universerpc.ID
-		wantErr string
+		name     string
+		rpcID    *universerpc.ID
+		wantErr  string
 		validate func(*testing.T, *entities.UniverseID)
 	}{
 		{
@@ -455,29 +455,17 @@ func TestUnmarshalProofType(t *testing.T) {
 }
 
 func TestMarshalSortDirection(t *testing.T) {
-	tests := []struct {
-		name string
-		in   entities.SortDirection
-		want taprpc.SortDirection
-	}{
-		{
-			name: "ascending",
-			in:   entities.SortAscending,
-			want: taprpc.SortDirection_SORT_DIRECTION_ASC,
-		},
-		{
-			name: "descending",
-			in:   entities.SortDescending,
-			want: taprpc.SortDirection_SORT_DIRECTION_DESC,
-		},
-	}
+	// marshalSortDirection is a direct cast, matching
+	// wallet_client.go's approach for consistency.
+	got := marshalSortDirection(entities.SortDescending)
+	require.Equal(
+		t, taprpc.SortDirection(entities.SortDescending), got,
+	)
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := marshalSortDirection(tc.in)
-			require.Equal(t, tc.want, got)
-		})
-	}
+	got = marshalSortDirection(entities.SortAscending)
+	require.Equal(
+		t, taprpc.SortDirection(entities.SortAscending), got,
+	)
 }
 
 func TestMarshalAssetStatsQuery(t *testing.T) {

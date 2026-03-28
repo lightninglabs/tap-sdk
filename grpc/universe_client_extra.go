@@ -647,15 +647,12 @@ func unmarshalProofType(
 }
 
 // marshalSortDirection converts an SDK SortDirection to the RPC type.
+// NOTE: this follows the same direct-cast approach used in wallet_client.go
+// for consistency.
 func marshalSortDirection(
 	d entities.SortDirection) taprpc.SortDirection {
 
-	switch d {
-	case entities.SortDescending:
-		return taprpc.SortDirection_SORT_DIRECTION_DESC
-	default:
-		return taprpc.SortDirection_SORT_DIRECTION_ASC
-	}
+	return taprpc.SortDirection(d)
 }
 
 // unmarshalMerkleSumNode converts an RPC MerkleSumNode to the SDK type.
@@ -989,15 +986,15 @@ func unmarshalAssetStatsAsset(
 	}
 
 	return &entities.AssetStatsAsset{
-		AssetID:        assetID,
-		GenesisPoint:   rpcAsset.GenesisPoint,
-		TotalSupply:    rpcAsset.TotalSupply,
-		AssetName:      rpcAsset.AssetName,
-		AssetType:      assetType,
-		GenesisHeight:  rpcAsset.GenesisHeight,
+		AssetID:          assetID,
+		GenesisPoint:     rpcAsset.GenesisPoint,
+		TotalSupply:      rpcAsset.TotalSupply,
+		AssetName:        rpcAsset.AssetName,
+		AssetType:        assetType,
+		GenesisHeight:    rpcAsset.GenesisHeight,
 		GenesisTimestamp: rpcAsset.GenesisTimestamp,
-		AnchorPoint:    rpcAsset.AnchorPoint,
-		DecimalDisplay: rpcAsset.DecimalDisplay,
+		AnchorPoint:      rpcAsset.AnchorPoint,
+		DecimalDisplay:   rpcAsset.DecimalDisplay,
 	}, nil
 }
 

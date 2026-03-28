@@ -69,17 +69,6 @@ type AssetRootRequest struct {
 	Direction SortDirection
 }
 
-// SortDirection controls pagination ordering.
-type SortDirection int
-
-const (
-	// SortAscending sorts in ascending order.
-	SortAscending SortDirection = 0
-
-	// SortDescending sorts in descending order.
-	SortDescending SortDirection = 1
-)
-
 // QueryRootResponse is the response for a single-asset root query.
 type QueryRootResponse struct {
 	// IssuanceRoot is the issuance universe root.
