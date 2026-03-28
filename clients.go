@@ -142,6 +142,82 @@ type UniverseClient interface {
 	// InsertProof inserts a proof into the local universe.
 	InsertProof(ctx context.Context, rawProof []byte,
 		decoded *entities.DecodedProof) error
+
+	// AssetRoots returns the known universe roots for all assets.
+	AssetRoots(ctx context.Context,
+		req *entities.AssetRootRequest) (map[string]*entities.UniverseRoot,
+		error)
+
+	// QueryAssetRoots queries the issuance and transfer roots for a
+	// specific asset identified by its UniverseID.
+	QueryAssetRoots(ctx context.Context,
+		id *entities.UniverseID) (*entities.QueryRootResponse, error)
+
+	// DeleteAssetRoot deletes a universe root and all associated data
+	// for a given asset.
+	DeleteAssetRoot(ctx context.Context,
+		id *entities.UniverseID) error
+
+	// AssetLeafKeys returns the set of leaf keys for a universe,
+	// identified by asset ID or group key.
+	AssetLeafKeys(ctx context.Context,
+		req *entities.AssetLeafKeysRequest) ([]entities.AssetLeafKey,
+		error)
+
+	// AssetLeaves returns the set of asset leaves for a universe.
+	AssetLeaves(ctx context.Context,
+		id *entities.UniverseID) ([]entities.AssetLeaf, error)
+
+	// QueryProof queries a specific proof from the universe by its
+	// full key (universe ID + leaf key).
+	QueryProof(ctx context.Context,
+		key *entities.UniverseKey) (*entities.AssetProofResponse,
+		error)
+
+	// UniverseStats returns aggregate statistics for the universe.
+	UniverseStats(ctx context.Context) (*entities.UniverseStats, error)
+
+	// QueryAssetStats returns per-asset statistics filtered and sorted
+	// by the given query parameters.
+	QueryAssetStats(ctx context.Context,
+		req *entities.AssetStatsQuery) ([]entities.AssetStatsSnapshot,
+		error)
+
+	// QueryEvents returns daily sync and proof event counts within a
+	// time range.
+	QueryEvents(ctx context.Context,
+		req *entities.QueryEventsRequest) ([]entities.GroupedUniverseEvents,
+		error)
+
+	// ListFederationServers lists the universe federation peers.
+	ListFederationServers(
+		ctx context.Context) ([]entities.FederationServer, error)
+
+	// AddFederationServer adds servers to the federation.
+	AddFederationServer(ctx context.Context,
+		servers []entities.FederationServer) error
+
+	// DeleteFederationServer removes servers from the federation.
+	DeleteFederationServer(ctx context.Context,
+		servers []entities.FederationServer) error
+
+	// SetFederationSyncConfig sets the federation sync configuration.
+	SetFederationSyncConfig(ctx context.Context,
+		global []entities.GlobalFederationSyncConfig,
+		asset []entities.AssetFederationSyncConfig) error
+
+	// QueryFederationSyncConfig queries the federation sync
+	// configuration.
+	QueryFederationSyncConfig(ctx context.Context,
+		ids []entities.UniverseID) (*entities.FederationSyncConfig,
+		error)
+
+	// Info returns basic universe server information.
+	Info(ctx context.Context) (*entities.UniverseInfo, error)
+
+	// SyncUniverse synchronizes with a remote universe server.
+	SyncUniverse(ctx context.Context,
+		req *entities.SyncRequest) ([]entities.SyncedUniverse, error)
 }
 
 // MintClient exposes low-level minting operations from the Mint service gRPC
