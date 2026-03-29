@@ -47,8 +47,10 @@ build Taproot Assets applications without direct dependency on the
 The root package contains the high-level API surface:
 
 - **`Wallet`** — The primary entrypoint. Wraps a `Client` and provides
-  convenience methods for common operations (receive addresses, key
-  derivation, proof import).
+  convenience methods for common operations (receive addresses, balance
+  queries, key derivation, proof import). High-level methods accept
+  `entities.AssetRef` so callers never deal with the group-key vs
+  asset-ID distinction directly.
 
 - **`TxBuilder`** — Builder pattern for address-based asset transfers.
   Guides users through the Fund → Sign → Commit → Finish pipeline.
@@ -73,9 +75,10 @@ Design rules:
 - Helper methods for parsing and string conversion
 - Request/response structs for API operations
 - No proto imports, no gRPC dependencies
-- High-level APIs must preserve the SDK's semantic asset model:
-  fungible assets are identified by group key, while collectibles are
-  identified by asset ID
+- **Unified asset identity:** `AssetRef` is the single identifier type
+  used across the high-level Wallet surface. For fungible assets it wraps
+  a group key; for collectibles it wraps an asset ID. Low-level wrappers
+  still accept raw `AssetID` / `PubKey` directly
 
 ### `grpc/`
 

@@ -53,6 +53,9 @@ user-facing identity model:
   that application developers work with for fungible assets.
 - **Collectibles / non-fungible assets are identified by asset ID.** In that
   case the tranche is the asset, so exposing the asset ID is correct.
+- **`entities.AssetRef`** is the unified identifier type that the high-level
+  `Wallet` surface accepts. It wraps a group key for fungible assets and an
+  asset ID for collectibles, so callers never need to pick the right field.
 - Low-level client wrappers may still need to translate raw RPC fields, but
   high-level APIs and docs should consistently present the semantic model:
   fungible => group key, non-fungible => asset ID.

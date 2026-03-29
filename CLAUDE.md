@@ -69,6 +69,10 @@ The public entity model is intentionally opinionated:
   by **group key**, not tranche-level `asset_id`
 - for **collectibles / non-fungible assets**, the correct public identifier
   is the **asset ID**
+- **`AssetRef`** is the unified identifier type for the high-level Wallet
+  surface. Construct via `AssetRefFromGroupKey` (fungible) or
+  `AssetRefFromAssetID` (collectible). Low-level wrappers still accept
+  raw `AssetID` / `PubKey` directly
 - low-level wrappers may still need to translate raw RPC fields, but the
   high-level API and docs should consistently preserve that distinction
 
@@ -78,6 +82,7 @@ Typical identifier types remain:
 type AssetID [32]byte      // Hex string representation
 type PubKey [33]byte       // Compressed secp256k1
 type XOnlyPubKey [32]byte  // Schnorr/Taproot x-only
+type AssetRef struct{...}  // Unified: group key OR asset ID
 type Outpoint struct { Txid [32]byte; Index uint32 }
 ```
 
