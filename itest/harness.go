@@ -91,17 +91,20 @@ func NewTestHarness(t *testing.T) *TestHarness {
 			"/root/.tapd/data/regtest/admin.macaroon"),
 	)
 
+	// Use MacaroonPath (single file) instead of MacaroonDir. The
+	// admin macaroon has all permissions and avoids having to
+	// extract every per-service macaroon from the container.
 	aliceCfg := &tapgrpc.Config{
-		Host:        aliceHost,
-		Network:     entities.NetworkRegtest,
-		TLSPath:     aliceTLSPath,
-		MacaroonDir: macDir(aliceMacPath),
+		Host:         aliceHost,
+		Network:      entities.NetworkRegtest,
+		TLSPath:      aliceTLSPath,
+		MacaroonPath: aliceMacPath,
 	}
 	bobCfg := &tapgrpc.Config{
-		Host:        bobHost,
-		Network:     entities.NetworkRegtest,
-		TLSPath:     bobTLSPath,
-		MacaroonDir: macDir(bobMacPath),
+		Host:         bobHost,
+		Network:      entities.NetworkRegtest,
+		TLSPath:      bobTLSPath,
+		MacaroonPath: bobMacPath,
 	}
 
 	aliceClient, err := tapgrpc.NewClient(aliceCfg)
@@ -348,15 +351,6 @@ func extractDockerFile(t *testing.T, container,
 		container, containerPath)
 
 	return localPath
-}
-
-// macDir returns the directory portion of a macaroon file path.
-func macDir(path string) string {
-	idx := strings.LastIndex(path, "/")
-	if idx < 0 {
-		return "."
-	}
-	return path[:idx]
 }
 
 // envOr returns the environment variable value or the fallback.
