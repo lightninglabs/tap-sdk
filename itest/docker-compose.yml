@@ -1,5 +1,3 @@
-version: "3.8"
-
 # tap-sdk integration test infrastructure.
 # bitcoind (regtest) ← lnd-alice + lnd-bob ← tapd-alice + tapd-bob
 #

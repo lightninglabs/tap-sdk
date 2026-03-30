@@ -38,23 +38,56 @@ jobs:
           docker compose -f itest/docker-compose.yml up -d
           echo "Waiting for services to become healthy..."
 
-          # Wait for tapd-alice.
-          for i in $(seq 1 60); do
-            if docker exec tap-sdk-tapd-alice tapcli --network=regtest getinfo >/dev/null 2>&1; then
-              echo "tapd-alice ready"
-              break
-            fi
-            sleep 5
-          done
+          # Helper: wait for a container's health to become "healthy".
+          wait_healthy() {
+            local container="$1"
+            local max_wait="$2"
+            local elapsed=0
+            while [ $elapsed -lt $max_wait ]; do
+              status=$(docker inspect --format='{{.State.Health.Status}}' "$container" 2>/dev/null || echo "missing")
+              if [ "$status" = "healthy" ]; then
+                echo "$container is healthy"
+                return 0
+              fi
+              echo "  $container status: $status (${elapsed}s / ${max_wait}s)"
+              sleep 5
+              elapsed=$((elapsed + 5))
+            done
+            echo "ERROR: $container never became healthy after ${max_wait}s"
+            docker logs "$container" 2>&1 | tail -50
+            return 1
+          }
 
-          # Wait for tapd-bob.
-          for i in $(seq 1 60); do
-            if docker exec tap-sdk-tapd-bob tapcli --network=regtest getinfo >/dev/null 2>&1; then
-              echo "tapd-bob ready"
-              break
-            fi
-            sleep 5
+          # bitcoind, lnd-alice, lnd-bob have health checks in
+          # docker-compose; wait for them first.
+          wait_healthy tap-sdk-bitcoind 60
+          wait_healthy tap-sdk-lnd-alice 120
+          wait_healthy tap-sdk-lnd-bob 120
+
+          # Mine initial blocks so LND wallets are funded and tapd can
+          # sync. LND needs 1 block to fully activate; tapd needs the
+          # chain to be non-empty.
+          echo "Mining initial blocks..."
+          docker exec tap-sdk-bitcoind bitcoin-cli \
+            -regtest -rpcuser=devuser -rpcpassword=devpass \
+            createwallet "miner" >/dev/null 2>&1 || true
+          ADDR=$(docker exec tap-sdk-bitcoind bitcoin-cli \
+            -regtest -rpcuser=devuser -rpcpassword=devpass \
+            -rpcwallet=miner getnewaddress)
+          docker exec tap-sdk-bitcoind bitcoin-cli \
+            -regtest -rpcuser=devuser -rpcpassword=devpass \
+            -rpcwallet=miner generatetoaddress 110 "$ADDR" >/dev/null
+          echo "Mined 110 blocks"
+
+          # Now wait for tapd instances.
+          wait_healthy tap-sdk-tapd-alice 180
+          wait_healthy tap-sdk-tapd-bob 180
+
+          # Final verification: tapd macaroons must exist.
+          for c in tap-sdk-tapd-alice tap-sdk-tapd-bob; do
+            docker exec "$c" ls -la /root/.tapd/data/regtest/admin.macaroon
           done
+          echo "All services ready"
 
       - name: Run integration tests
         run: go test -v -tags=itest -timeout=20m ./itest/...

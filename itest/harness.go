@@ -311,7 +311,8 @@ func (h *TestHarness) bitcoindCurlRPC(method string,
 
 // extractDockerFile copies a file from a running Docker container to a
 // temporary directory and returns the local path. The temp file is
-// cleaned up when the test finishes.
+// cleaned up when the test finishes. It retries a few times with a
+// short delay to handle slow container startup.
 func extractDockerFile(t *testing.T, container,
 	containerPath string) string {
 
@@ -321,12 +322,30 @@ func extractDockerFile(t *testing.T, container,
 	localPath := tmpDir + "/" + containerPath[strings.LastIndex(
 		containerPath, "/")+1:]
 
-	cmd := exec.Command("docker", "cp",
-		container+":"+containerPath, localPath)
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err,
-		"docker cp %s:%s failed: %s", container, containerPath,
-		string(out))
+	var lastErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		if attempt > 0 {
+			t.Logf("Retry %d: docker cp %s:%s",
+				attempt, container, containerPath)
+			time.Sleep(3 * time.Second)
+		}
+
+		cmd := exec.Command("docker", "cp",
+			container+":"+containerPath, localPath)
+		out, err := cmd.CombinedOutput()
+		if err == nil {
+			return localPath
+		}
+
+		lastErr = fmt.Errorf(
+			"docker cp %s:%s failed: %s",
+			container, containerPath, string(out),
+		)
+	}
+
+	require.NoError(t, lastErr,
+		"docker cp %s:%s failed after retries",
+		container, containerPath)
 
 	return localPath
 }
