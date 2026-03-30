@@ -1,0 +1,80 @@
+name: Integration tests (regtest)
+
+on:
+  # Manual trigger only — integration tests require a Docker Compose
+  # stack and are expensive to run.
+  workflow_dispatch:
+  # Also run when the itest directory or this workflow changes.
+  pull_request:
+    paths:
+      - 'itest/**'
+      - '.github/workflows/regtest.yml'
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  GOPATH: /home/runner/work/go
+  GO_VERSION: '1.25.7'
+
+jobs:
+  regtest:
+    name: Regtest integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: git checkout
+        uses: actions/checkout@v4
+
+      - name: Setup go ${{ env.GO_VERSION }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: '${{ env.GO_VERSION }}'
+
+      - name: Start Docker Compose stack
+        run: |
+          docker compose -f itest/docker-compose.yml up -d
+          echo "Waiting for services to become healthy..."
+
+          # Wait for tapd-alice.
+          for i in $(seq 1 60); do
+            if docker exec tap-sdk-tapd-alice tapcli --network=regtest getinfo >/dev/null 2>&1; then
+              echo "tapd-alice ready"
+              break
+            fi
+            sleep 5
+          done
+
+          # Wait for tapd-bob.
+          for i in $(seq 1 60); do
+            if docker exec tap-sdk-tapd-bob tapcli --network=regtest getinfo >/dev/null 2>&1; then
+              echo "tapd-bob ready"
+              break
+            fi
+            sleep 5
+          done
+
+      - name: Run integration tests
+        run: go test -v -tags=itest -timeout=20m ./itest/...
+
+      - name: Collect container logs on failure
+        if: failure()
+        run: |
+          mkdir -p /tmp/container-logs
+          for c in tap-sdk-bitcoind tap-sdk-lnd-alice tap-sdk-lnd-bob tap-sdk-tapd-alice tap-sdk-tapd-bob; do
+            docker logs "$c" > "/tmp/container-logs/$c.log" 2>&1 || true
+          done
+
+      - name: Upload container logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-logs
+          path: /tmp/container-logs/
+          retention-days: 7
+
+      - name: Tear down Docker Compose stack
+        if: always()
+        run: docker compose -f itest/docker-compose.yml down -v
