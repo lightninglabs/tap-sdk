@@ -29,15 +29,6 @@ func NewUniverseClient(conn grpc.ClientConnInterface, timeout time.Duration,
 	}
 }
 
-// RawClientWithMacAuth returns a context with the proper macaroon
-// authentication, the default RPC timeout, and the raw client.
-func (u *universeClient) RawClientWithMacAuth(
-	parentCtx context.Context) (context.Context, time.Duration,
-	universerpc.UniverseClient) {
-
-	return u.universeMac.WithMacaroonAuth(parentCtx), u.timeout, u.client
-}
-
 // InsertProof inserts a proof into the local universe.
 // The decoded proof information is used to construct the universe key.
 func (u *universeClient) InsertProof(ctx context.Context, rawProof []byte,

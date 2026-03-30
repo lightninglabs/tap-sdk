@@ -30,15 +30,6 @@ func NewWalletClient(conn grpc.ClientConnInterface, timeout time.Duration,
 	}
 }
 
-// RawClientWithMacAuth returns a context with the proper macaroon
-// authentication, the default RPC timeout, and the raw client.
-func (s *walletClient) RawClientWithMacAuth(
-	parentCtx context.Context) (context.Context, time.Duration,
-	taprpc.TaprootAssetsClient) {
-
-	return s.adminMac.WithMacaroonAuth(parentCtx), s.timeout, s.client
-}
-
 func (s *walletClient) GetInfo(ctx context.Context) (*entities.Info, error) {
 	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()

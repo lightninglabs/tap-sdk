@@ -3,10 +3,8 @@ package tapsdk
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/lightninglabs/tap-sdk/entities"
-	"github.com/lightninglabs/taproot-assets/taprpc/assetwalletrpc"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -14,15 +12,6 @@ import (
 // MockWalletKitClient is a mock for WalletKitClient.
 type MockWalletKitClient struct {
 	mock.Mock
-}
-
-func (m *MockWalletKitClient) RawClientWithMacAuth(
-	parentCtx context.Context) (context.Context, time.Duration,
-	assetwalletrpc.AssetWalletClient) {
-
-	args := m.Called(parentCtx)
-	return args.Get(0).(context.Context), args.Get(1).(time.Duration),
-		args.Get(2).(assetwalletrpc.AssetWalletClient)
 }
 
 func (m *MockWalletKitClient) FundTransfer(ctx context.Context,

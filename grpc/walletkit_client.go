@@ -30,11 +30,11 @@ func NewWalletKitClient(conn grpc.ClientConnInterface, timeout time.Duration,
 	}
 }
 
-func (m *walletKitClient) RawClientWithMacAuth(
-	parentCtx context.Context) (context.Context, time.Duration,
+func (m *walletKitClient) rawClientWithMacAuth(
+	parentCtx context.Context) (context.Context,
 	assetwalletrpc.AssetWalletClient) {
 
-	return m.walletKitMac.WithMacaroonAuth(parentCtx), m.timeout, m.client
+	return m.walletKitMac.WithMacaroonAuth(parentCtx), m.client
 }
 
 // FundTransfer funds a virtual transaction.
@@ -77,7 +77,7 @@ func (m *walletKitClient) FundTransfer(ctx context.Context,
 		},
 	}
 
-	authCtx, _, client := m.RawClientWithMacAuth(ctx)
+	authCtx, client := m.rawClientWithMacAuth(ctx)
 	resp, err := client.FundVirtualPsbt(authCtx, req)
 	if err != nil {
 		return nil, err
@@ -97,7 +97,7 @@ func (m *walletKitClient) SignVirtualPsbt(ctx context.Context,
 		FundedPsbt: fundedPsbt,
 	}
 
-	authCtx, _, client := m.RawClientWithMacAuth(ctx)
+	authCtx, client := m.rawClientWithMacAuth(ctx)
 	resp, err := client.SignVirtualPsbt(authCtx, req)
 	if err != nil {
 		return nil, err
@@ -122,7 +122,7 @@ func (m *walletKitClient) CommitVirtualPsbts(ctx context.Context,
 		},
 	}
 
-	authCtx, _, client := m.RawClientWithMacAuth(ctx)
+	authCtx, client := m.rawClientWithMacAuth(ctx)
 	resp, err := client.CommitVirtualPsbts(authCtx, req)
 	if err != nil {
 		return nil, err
@@ -147,7 +147,7 @@ func (m *walletKitClient) PublishAndLogTransfer(ctx context.Context,
 		SkipAnchorTxBroadcast: skipAnchorTxBroadcast,
 	}
 
-	authCtx, _, client := m.RawClientWithMacAuth(ctx)
+	authCtx, client := m.rawClientWithMacAuth(ctx)
 	resp, err := client.PublishAndLogTransfer(authCtx, req)
 	if err != nil {
 		return nil, err
@@ -170,7 +170,7 @@ func (m *walletKitClient) DeriveScriptKey(ctx context.Context) (
 		KeyFamily: entities.TaprootAssetsKeyFamily,
 	}
 
-	authCtx, _, client := m.RawClientWithMacAuth(ctx)
+	authCtx, client := m.rawClientWithMacAuth(ctx)
 	resp, err := client.NextScriptKey(authCtx, req)
 	if err != nil {
 		return nil, err
@@ -196,7 +196,7 @@ func (m *walletKitClient) DeriveInternalKey(ctx context.Context) (
 		KeyFamily: entities.TaprootAssetsKeyFamily,
 	}
 
-	authCtx, _, client := m.RawClientWithMacAuth(ctx)
+	authCtx, client := m.rawClientWithMacAuth(ctx)
 	resp, err := client.NextInternalKey(authCtx, req)
 	if err != nil {
 		return nil, err
@@ -229,7 +229,7 @@ func (m *walletKitClient) FundInteractivePsbt(ctx context.Context,
 		},
 	}
 
-	authCtx, _, client := m.RawClientWithMacAuth(ctx)
+	authCtx, client := m.rawClientWithMacAuth(ctx)
 	resp, err := client.FundVirtualPsbt(authCtx, req)
 	if err != nil {
 		return nil, err
@@ -251,7 +251,7 @@ func (m *walletKitClient) AnchorVirtualPsbts(ctx context.Context,
 		VirtualPsbts: signedPsbts,
 	}
 
-	authCtx, _, client := m.RawClientWithMacAuth(ctx)
+	authCtx, client := m.rawClientWithMacAuth(ctx)
 	resp, err := client.AnchorVirtualPsbts(authCtx, req)
 	if err != nil {
 		return nil, err
