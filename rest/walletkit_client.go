@@ -98,8 +98,9 @@ type jsonFundVirtualPsbtRequest struct {
 // jsonTxTemplate is the JSON shape of
 // assetwalletrpc.TxTemplate.
 type jsonTxTemplate struct {
-	Inputs               []*jsonPrevIDReq         `json:"inputs,omitempty"`
-	AddressesWithAmounts []*jsonAddressWithAmount `json:"addresses_with_amounts,omitempty"`
+	Inputs []*jsonPrevIDReq `json:"inputs,omitempty"`
+
+	AddressesWithAmounts []*jsonAddressWithAmount `json:"addresses_with_amounts,omitempty"` //nolint:lll
 }
 
 // jsonPrevIDReq is the JSON shape of assetwalletrpc.PrevId.
@@ -383,10 +384,11 @@ func (w *walletKitClient) AnchorVirtualPsbts(ctx context.Context,
 // jsonPublishAndLogRequest is the JSON body for
 // PublishAndLogTransfer.
 type jsonPublishAndLogRequest struct {
-	AnchorPsbt            string   `json:"anchor_psbt"`
-	VirtualPsbts          []string `json:"virtual_psbts"`
-	PassiveAssetPsbts     []string `json:"passive_asset_psbts,omitempty"`
-	SkipAnchorTxBroadcast bool     `json:"skip_anchor_tx_broadcast,omitempty"`
+	AnchorPsbt        string   `json:"anchor_psbt"`
+	VirtualPsbts      []string `json:"virtual_psbts"`
+	PassiveAssetPsbts []string `json:"passive_asset_psbts,omitempty"`
+
+	SkipAnchorTxBroadcast bool `json:"skip_anchor_tx_broadcast,omitempty"` //nolint:lll
 }
 
 // PublishAndLogTransfer publishes the anchor transaction and logs

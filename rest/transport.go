@@ -54,34 +54,30 @@ type apiError struct {
 	Details string `json:"details,omitempty"`
 }
 
-// doGet performs an authenticated GET request and decodes the JSON body
-// into result.
+// doGet performs an authenticated GET request and decodes the
+// JSON body into result.
 func (t *transport) doGet(ctx context.Context, path string,
-	mac macaroon.TaprpcServiceMac, result interface{}) error {
+	mac macaroon.TaprpcServiceMac, result any) error {
 
-	return t.do(ctx, http.MethodGet, path, mac, nil, result)
+	return t.do(
+		ctx, http.MethodGet, path, mac, nil, result,
+	)
 }
 
-// doPost performs an authenticated POST request with a JSON body and
-// decodes the JSON response into result.
+// doPost performs an authenticated POST request with a JSON body
+// and decodes the JSON response into result.
 func (t *transport) doPost(ctx context.Context, path string,
-	mac macaroon.TaprpcServiceMac, body, result interface{}) error {
+	mac macaroon.TaprpcServiceMac, body, result any) error {
 
-	return t.do(ctx, http.MethodPost, path, mac, body, result)
-}
-
-// doDelete performs an authenticated DELETE request and decodes the JSON
-// response.
-func (t *transport) doDelete(ctx context.Context, path string,
-	mac macaroon.TaprpcServiceMac, result interface{}) error {
-
-	return t.do(ctx, http.MethodDelete, path, mac, nil, result)
+	return t.do(
+		ctx, http.MethodPost, path, mac, body, result,
+	)
 }
 
 // do executes an HTTP request with the given method, path, optional
 // JSON body, and decodes the response into result.
 func (t *transport) do(ctx context.Context, method, path string,
-	mac macaroon.TaprpcServiceMac, body, result interface{}) error {
+	mac macaroon.TaprpcServiceMac, body, result any) error {
 
 	reqCtx, cancel := context.WithTimeout(ctx, t.timeout)
 	defer cancel()
@@ -106,7 +102,9 @@ func (t *transport) do(ctx context.Context, method, path string,
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(macaroonHeader, string(t.macaroons[mac]))
+	req.Header[macaroonHeader] = []string{
+		string(t.macaroons[mac]),
+	}
 
 	resp, err := t.client.Do(req)
 	if err != nil {

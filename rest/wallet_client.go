@@ -196,13 +196,15 @@ func (w *walletClient) ListTransfers(ctx context.Context,
 	return transfers, nil
 }
 
-// jsonSendAssetRequest is the JSON body for the SendAsset RPC.
+// jsonSendAssetRequest is the JSON body for the SendAsset
+// RPC.
 type jsonSendAssetRequest struct {
-	TapAddrs             []string                 `json:"tap_addrs,omitempty"`
-	FeeRate              uint32                   `json:"fee_rate,omitempty"`
-	Label                string                   `json:"label,omitempty"`
-	Recipients           []*jsonAddressWithAmount `json:"addresses_with_amounts,omitempty"`
-	SkipProofCourierPing bool                     `json:"skip_proof_courier_ping_check,omitempty"`
+	TapAddrs []string `json:"tap_addrs,omitempty"`
+	FeeRate  uint32   `json:"fee_rate,omitempty"`
+	Label    string   `json:"label,omitempty"`
+
+	Recipients           []*jsonAddressWithAmount `json:"addresses_with_amounts,omitempty"`        //nolint:lll
+	SkipProofCourierPing bool                     `json:"skip_proof_courier_ping_check,omitempty"` //nolint:lll
 }
 
 // jsonAddressWithAmount is the JSON shape of taprpc.AddressWithAmount.
@@ -257,16 +259,19 @@ func (w *walletClient) SendAsset(ctx context.Context,
 
 // jsonNewAddrRequest is the JSON body for the NewAddr RPC.
 type jsonNewAddrRequest struct {
-	AssetID                   string             `json:"asset_id,omitempty"`
-	Amount                    string             `json:"amt,omitempty"`
-	GroupKey                  string             `json:"group_key,omitempty"`
-	ScriptKey                 *jsonScriptKey     `json:"script_key,omitempty"`
-	InternalKey               *jsonKeyDescriptor `json:"internal_key,omitempty"`
-	TapscriptSibling          string             `json:"tapscript_sibling,omitempty"`
-	ProofCourierAddr          string             `json:"proof_courier_addr,omitempty"`
-	SkipProofCourierConnCheck bool               `json:"skip_proof_courier_conn_check,omitempty"`
-	AssetVersion              string             `json:"asset_version,omitempty"`
-	AddressVersion            string             `json:"address_version,omitempty"`
+	AssetID  string `json:"asset_id,omitempty"`
+	Amount   string `json:"amt,omitempty"`
+	GroupKey string `json:"group_key,omitempty"`
+
+	ScriptKey   *jsonScriptKey     `json:"script_key,omitempty"`
+	InternalKey *jsonKeyDescriptor `json:"internal_key,omitempty"`
+
+	TapscriptSibling          string `json:"tapscript_sibling,omitempty"`             //nolint:lll
+	ProofCourierAddr          string `json:"proof_courier_addr,omitempty"`            //nolint:lll
+	SkipProofCourierConnCheck bool   `json:"skip_proof_courier_conn_check,omitempty"` //nolint:lll
+
+	AssetVersion   string `json:"asset_version,omitempty"`
+	AddressVersion string `json:"address_version,omitempty"`
 }
 
 // NewAddr creates a new Taproot Asset address.

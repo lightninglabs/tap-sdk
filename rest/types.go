@@ -69,9 +69,9 @@ type jsonAssetGroupBalance struct {
 // jsonListBalancesResponse is the JSON shape of
 // taprpc.ListBalancesResponse.
 type jsonListBalancesResponse struct {
-	AssetBalances        map[string]*jsonAssetBalance      `json:"asset_balances"`
-	AssetGroupBalances   map[string]*jsonAssetGroupBalance `json:"asset_group_balances"`
-	UnconfirmedTransfers uint64                            `json:"unconfirmed_transfers"`
+	AssetBalances        map[string]*jsonAssetBalance      `json:"asset_balances"`        //nolint:lll
+	AssetGroupBalances   map[string]*jsonAssetGroupBalance `json:"asset_group_balances"`  //nolint:lll
+	UnconfirmedTransfers uint64                            `json:"unconfirmed_transfers"` //nolint:lll
 }
 
 // jsonAnchorInfo is the JSON shape of taprpc.AnchorInfo.
@@ -102,18 +102,21 @@ type jsonBlockHash struct {
 	HashStr string `json:"hash_str"`
 }
 
-// jsonAssetTransfer is the JSON shape of taprpc.AssetTransfer.
+// jsonAssetTransfer is the JSON shape of
+// taprpc.AssetTransfer.
 type jsonAssetTransfer struct {
-	TransferTimestamp   int64                 `json:"transfer_timestamp"`
-	AnchorTxHash        string                `json:"anchor_tx_hash"`
-	AnchorTxHeightHint  uint32                `json:"anchor_tx_height_hint"`
-	AnchorTxChainFees   int64                 `json:"anchor_tx_chain_fees"`
-	Inputs              []*jsonTransferInput  `json:"inputs"`
-	Outputs             []*jsonTransferOutput `json:"outputs"`
-	AnchorTxBlockHash   *jsonBlockHash        `json:"anchor_tx_block_hash"`
-	AnchorTxBlockHeight uint32                `json:"anchor_tx_block_height"`
-	Label               string                `json:"label"`
-	AnchorTx            string                `json:"anchor_tx"`
+	TransferTimestamp  int64  `json:"transfer_timestamp"`
+	AnchorTxHash       string `json:"anchor_tx_hash"`
+	AnchorTxHeightHint uint32 `json:"anchor_tx_height_hint"`
+	AnchorTxChainFees  int64  `json:"anchor_tx_chain_fees"`
+
+	Inputs  []*jsonTransferInput  `json:"inputs"`
+	Outputs []*jsonTransferOutput `json:"outputs"`
+
+	AnchorTxBlockHash   *jsonBlockHash `json:"anchor_tx_block_hash"`
+	AnchorTxBlockHeight uint32         `json:"anchor_tx_block_height"`
+	Label               string         `json:"label"`
+	AnchorTx            string         `json:"anchor_tx"`
 }
 
 // jsonListTransfersResponse is the JSON shape of
@@ -198,7 +201,7 @@ type jsonPrevID struct {
 
 // jsonGenesisReveal is the JSON shape of taprpc.GenesisReveal.
 type jsonGenesisReveal struct {
-	GenesisBaseReveal interface{} `json:"genesis_base_reveal"`
+	GenesisBaseReveal any `json:"genesis_base_reveal"`
 }
 
 // jsonDecodedAsset is the inner asset of a decoded proof.
@@ -217,7 +220,7 @@ type jsonDecodedProof struct {
 	NumberOfProofs uint32             `json:"number_of_proofs"`
 	Asset          *jsonDecodedAsset  `json:"asset"`
 	GenesisReveal  *jsonGenesisReveal `json:"genesis_reveal"`
-	AltLeaves      []interface{}      `json:"alt_leaves"`
+	AltLeaves      []any              `json:"alt_leaves"`
 }
 
 // jsonDecodeProofResponse is the JSON shape of
@@ -293,12 +296,6 @@ type jsonCommitVirtualPsbtsResponse struct {
 	PassiveAssetPsbts []string `json:"passive_asset_psbts"`
 }
 
-// jsonAnchorVirtualPsbtsResponse is the JSON shape of
-// assetwalletrpc.AnchorVirtualPsbtsResponse.
-type jsonAnchorVirtualPsbtsResponse struct {
-	Transfer *jsonAssetTransfer `json:"transfer"`
-}
-
 // jsonPublishAndLogResponse is the JSON shape of
 // assetwalletrpc.PublishAndLogResponse.
 type jsonPublishAndLogResponse struct {
@@ -325,20 +322,22 @@ type jsonAssetMeta struct {
 
 // jsonMintAsset is the JSON shape of mintrpc.MintAsset.
 type jsonMintAsset struct {
-	AssetVersion            string             `json:"asset_version"`
-	AssetType               string             `json:"asset_type"`
-	Name                    string             `json:"name"`
-	Amount                  string             `json:"amount"`
-	NewGroupedAsset         bool               `json:"new_grouped_asset"`
-	GroupedAsset            bool               `json:"grouped_asset"`
-	GroupKey                string             `json:"group_key"`
-	GroupAnchor             string             `json:"group_anchor"`
-	GroupTapscriptRoot      string             `json:"group_tapscript_root"`
-	ScriptKey               *jsonScriptKey     `json:"script_key"`
-	DecimalDisplay          uint32             `json:"decimal_display"`
-	AssetMeta               *jsonAssetMeta     `json:"asset_meta"`
-	GroupInternalKey        *jsonKeyDescriptor `json:"group_internal_key"`
-	EnableSupplyCommitments bool               `json:"enable_supply_commitments"`
+	AssetVersion       string `json:"asset_version"`
+	AssetType          string `json:"asset_type"`
+	Name               string `json:"name"`
+	Amount             string `json:"amount"`
+	NewGroupedAsset    bool   `json:"new_grouped_asset"`
+	GroupedAsset       bool   `json:"grouped_asset"`
+	GroupKey           string `json:"group_key"`
+	GroupAnchor        string `json:"group_anchor"`
+	GroupTapscriptRoot string `json:"group_tapscript_root"`
+
+	ScriptKey        *jsonScriptKey     `json:"script_key"`
+	DecimalDisplay   uint32             `json:"decimal_display"`
+	AssetMeta        *jsonAssetMeta     `json:"asset_meta"`
+	GroupInternalKey *jsonKeyDescriptor `json:"group_internal_key"`
+
+	EnableSupplyCommitments bool `json:"enable_supply_commitments"` //nolint:lll
 }
 
 // jsonPendingAsset is the JSON shape of mintrpc.PendingAsset.

@@ -80,9 +80,10 @@ func (m *mintClient) FundBatch(ctx context.Context,
 
 // jsonSealBatchRequest is the JSON body for SealBatch.
 type jsonSealBatchRequest struct {
-	ShortResponse           bool                `json:"short_response,omitempty"`
-	GroupWitnesses          []*jsonGroupWitness `json:"group_witnesses,omitempty"`
-	SignedGroupVirtualPsbts []string            `json:"signed_group_virtual_psbts,omitempty"`
+	ShortResponse  bool                `json:"short_response,omitempty"`
+	GroupWitnesses []*jsonGroupWitness `json:"group_witnesses,omitempty"`
+
+	SignedGroupVirtualPsbts []string `json:"signed_group_virtual_psbts,omitempty"` //nolint:lll
 }
 
 // jsonGroupWitness is the JSON shape of taprpc.GroupWitness.
@@ -101,13 +102,14 @@ func (m *mintClient) SealBatch(ctx context.Context,
 		body.ShortResponse = req.ShortResponse
 
 		for _, w := range req.GroupWitnesses {
+			gID := base64.StdEncoding.EncodeToString(
+				w.GenesisID[:],
+			)
 			body.GroupWitnesses = append(
 				body.GroupWitnesses,
 				&jsonGroupWitness{
-					GenesisID: base64.StdEncoding.EncodeToString(
-						w.GenesisID[:],
-					),
-					Witness: w.Witness,
+					GenesisID: gID,
+					Witness:   w.Witness,
 				},
 			)
 		}
@@ -262,14 +264,18 @@ func marshalMintAssetJSON(
 		return nil
 	}
 
+	ver := marshalAssetVersionJSON(asset.AssetVersion)
+	typ := marshalAssetTypeJSON(asset.AssetType)
+
 	rpcAsset := &jsonMintAsset{
-		AssetVersion:            marshalAssetVersionJSON(asset.AssetVersion),
-		AssetType:               marshalAssetTypeJSON(asset.AssetType),
-		Name:                    asset.Name,
-		Amount:                  fmt.Sprintf("%d", asset.Amount),
-		NewGroupedAsset:         asset.NewGroupedAsset,
-		GroupedAsset:            asset.GroupedAsset,
-		GroupAnchor:             asset.GroupAnchor,
+		AssetVersion:    ver,
+		AssetType:       typ,
+		Name:            asset.Name,
+		Amount:          fmt.Sprintf("%d", asset.Amount),
+		NewGroupedAsset: asset.NewGroupedAsset,
+		GroupedAsset:    asset.GroupedAsset,
+		GroupAnchor:     asset.GroupAnchor,
+
 		EnableSupplyCommitments: asset.EnableSupplyCommitments,
 	}
 

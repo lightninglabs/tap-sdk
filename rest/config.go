@@ -9,11 +9,9 @@ import (
 )
 
 const (
-	// defaultHTTPTimeout is the default timeout for HTTP requests.
+	// defaultHTTPTimeout is the default timeout for HTTP
+	// requests.
 	defaultHTTPTimeout = 30 * time.Second
-
-	// defaultRESTPort is the default REST API port for tapd.
-	defaultRESTPort = "8089"
 )
 
 var (
