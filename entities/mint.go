@@ -7,29 +7,6 @@ package entities
 // semantic distinction between fungible assets and collectibles instead of
 // simply mirroring the raw RPC request shapes.
 
-// AssetMetaType describes how asset metadata should be interpreted.
-type AssetMetaType uint8
-
-const (
-	// AssetMetaTypeOpaque is unstructured opaque metadata.
-	AssetMetaTypeOpaque AssetMetaType = 0
-
-	// AssetMetaTypeJSON is metadata encoded as JSON.
-	AssetMetaTypeJSON AssetMetaType = 1
-)
-
-// AssetMeta contains the metadata committed to an asset's genesis.
-type AssetMeta struct {
-	// Data is the raw metadata payload.
-	Data []byte
-
-	// Type describes how Data should be interpreted.
-	Type AssetMetaType
-
-	// MetaHash is the TLV hash of the metadata.
-	MetaHash Hash
-}
-
 // ExternalKey describes an externally managed BIP-86 key derivation.
 type ExternalKey struct {
 	// XPub is the account-level extended public key.
