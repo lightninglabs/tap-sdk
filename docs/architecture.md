@@ -192,6 +192,33 @@ Sentinel errors exist for builder state violations:
 - `ErrNotSigned` — attempted to commit before signing
 - `ErrNoRecipients` — no recipients configured
 
+## Dependency Boundary
+
+The SDK enforces a strict dependency boundary between consumers and the
+`taproot-assets` ecosystem:
+
+- **No `taprpc` types in public signatures.** Every exported type, function,
+  and method outside the `grpc/` package is defined entirely in terms of
+  `entities/` types and Go/btcsuite primitives. Consumers never need to
+  import `taproot-assets/taprpc` or any of its sub-packages.
+
+- **`grpc/` is the sole proto consumer.** All proto imports, marshal/unmarshal
+  functions, and raw RPC client types are confined to the `grpc/` package.
+  The sub-client structs (`walletClient`, `proofClient`, etc.) are unexported,
+  and their internal helper methods (macaroon auth, raw client access) are
+  also unexported to prevent taprpc types from leaking through embedding.
+
+- **`taproot-assets/taprpc` is a lightweight module.** The `go.mod`
+  dependency is on `taproot-assets/taprpc`, which is a standalone Go module
+  containing only protobuf definitions. It does NOT pull the full
+  `taproot-assets` repository with its heavy dependencies (bbolt, neutrino,
+  btcwallet, etc.).
+
+- **Consumer `go.mod` impact.** When a consumer runs
+  `go get github.com/lightninglabs/tap-sdk`, the `taproot-assets/taprpc`
+  module appears as an indirect dependency. Consumers who only import the
+  root package or `entities/` never interact with it directly.
+
 ## Future Directions
 
 1. **Complete RPC coverage** — Wrap remaining `tapd` RPCs where low-level

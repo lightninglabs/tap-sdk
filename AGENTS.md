@@ -127,8 +127,18 @@ When wrapping a new `tapd` RPC:
 ## Dependencies
 
 - **tapd** — Taproot Assets daemon (gRPC over TLS + macaroons)
-- **taproot-assets/taprpc** — gRPC service definitions (proto)
+- **taproot-assets/taprpc** — gRPC service definitions (proto, lightweight module)
 - **btcsuite/btcd** — Bitcoin primitives (PSBT, keys, crypto)
+
+### Dependency Boundary
+
+`taprpc` types must never appear in exported signatures outside `grpc/`.
+The `grpc/` sub-client structs are unexported, and their internal helpers
+(macaroon auth, raw client access) must remain unexported to prevent
+`taprpc` types from leaking through embedding into `grpc.Client`.
+
+When adding new gRPC wrappers, ensure all proto-to-entity conversion happens
+inside `grpc/` and that test files outside `grpc/` only use `entities/` types.
 
 ## Success Metrics
 
