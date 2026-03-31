@@ -453,3 +453,49 @@ func (w *walletKitClient) PublishAndLogTransfer(ctx context.Context,
 		PassiveAssetTransactions: passivePsbts,
 	}, nil
 }
+
+// QueryInternalKey looks up an internal key by its raw public key.
+func (w *walletKitClient) QueryInternalKey(ctx context.Context,
+	internalKey []byte) (*entities.KeyDescriptor, error) {
+
+	return nil, errNotImplemented("QueryInternalKey")
+}
+
+// QueryScriptKey looks up a script key by its tweaked public key.
+func (w *walletKitClient) QueryScriptKey(ctx context.Context,
+	tweakedScriptKey []byte) (*entities.ScriptKey, error) {
+
+	return nil, errNotImplemented("QueryScriptKey")
+}
+
+// ProveAssetOwnership generates a proof of ownership for an asset.
+func (w *walletKitClient) ProveAssetOwnership(ctx context.Context,
+	req *entities.ProveOwnershipRequest) (
+	*entities.OwnershipProof, error) {
+
+	return nil, errNotImplemented("ProveAssetOwnership")
+}
+
+// VerifyAssetOwnership verifies an asset ownership proof.
+func (w *walletKitClient) VerifyAssetOwnership(ctx context.Context,
+	req *entities.VerifyOwnershipRequest) (
+	*entities.VerifyOwnershipResponse, error) {
+
+	return nil, errNotImplemented("VerifyAssetOwnership")
+}
+
+// RemoveUTXOLease removes a lease on a UTXO.
+func (w *walletKitClient) RemoveUTXOLease(ctx context.Context,
+	outpoint entities.Outpoint) error {
+
+	return errNotImplemented("RemoveUTXOLease")
+}
+
+// DeclareScriptKey informs the wallet about an externally derived
+// script key.
+func (w *walletKitClient) DeclareScriptKey(ctx context.Context,
+	req *entities.DeclareScriptKeyRequest) (
+	*entities.ScriptKey, error) {
+
+	return nil, errNotImplemented("DeclareScriptKey")
+}

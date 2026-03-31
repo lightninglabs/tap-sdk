@@ -27,6 +27,16 @@ var (
 	)
 )
 
+// ErrNotImplemented is the base error for methods that haven't
+// been implemented yet in the REST transport.
+var ErrNotImplemented = errors.New("not implemented in REST transport")
+
+// errNotImplemented returns an error indicating that a given REST
+// method is not yet implemented.
+func errNotImplemented(method string) error {
+	return fmt.Errorf("%s: %w", method, ErrNotImplemented)
+}
+
 // APIError represents an error returned by the tapd REST API.
 type APIError struct {
 	StatusCode int

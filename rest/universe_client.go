@@ -126,3 +126,127 @@ func splitOutpoint(s string) [2]string {
 
 	return [2]string{s, "0"}
 }
+
+// AssetRoots returns the known universe roots for all assets.
+func (u *universeClient) AssetRoots(ctx context.Context,
+	req *entities.AssetRootRequest) (
+	map[string]*entities.UniverseRoot, error) {
+
+	return nil, errNotImplemented("AssetRoots")
+}
+
+// QueryAssetRoots queries the issuance and transfer roots for a
+// specific asset.
+func (u *universeClient) QueryAssetRoots(ctx context.Context,
+	id *entities.UniverseID) (*entities.QueryRootResponse,
+	error) {
+
+	return nil, errNotImplemented("QueryAssetRoots")
+}
+
+// DeleteAssetRoot deletes a universe root and all associated data.
+func (u *universeClient) DeleteAssetRoot(ctx context.Context,
+	id *entities.UniverseID) error {
+
+	return errNotImplemented("DeleteAssetRoot")
+}
+
+// AssetLeafKeys returns the set of leaf keys for a universe.
+func (u *universeClient) AssetLeafKeys(ctx context.Context,
+	req *entities.AssetLeafKeysRequest) (
+	[]entities.AssetLeafKey, error) {
+
+	return nil, errNotImplemented("AssetLeafKeys")
+}
+
+// AssetLeaves returns the set of asset leaves for a universe.
+func (u *universeClient) AssetLeaves(ctx context.Context,
+	id *entities.UniverseID) ([]entities.AssetLeaf, error) {
+
+	return nil, errNotImplemented("AssetLeaves")
+}
+
+// QueryProof queries a specific proof from the universe.
+func (u *universeClient) QueryProof(ctx context.Context,
+	key *entities.UniverseKey) (*entities.AssetProofResponse,
+	error) {
+
+	return nil, errNotImplemented("QueryProof")
+}
+
+// UniverseStats returns aggregate statistics for the universe.
+func (u *universeClient) UniverseStats(
+	ctx context.Context) (*entities.UniverseStats, error) {
+
+	return nil, errNotImplemented("UniverseStats")
+}
+
+// QueryAssetStats returns per-asset statistics.
+func (u *universeClient) QueryAssetStats(ctx context.Context,
+	req *entities.AssetStatsQuery) (
+	[]entities.AssetStatsSnapshot, error) {
+
+	return nil, errNotImplemented("QueryAssetStats")
+}
+
+// QueryEvents returns daily sync and proof event counts.
+func (u *universeClient) QueryEvents(ctx context.Context,
+	req *entities.QueryEventsRequest) (
+	[]entities.GroupedUniverseEvents, error) {
+
+	return nil, errNotImplemented("QueryEvents")
+}
+
+// ListFederationServers lists the universe federation peers.
+func (u *universeClient) ListFederationServers(
+	ctx context.Context) ([]entities.FederationServer, error) {
+
+	return nil, errNotImplemented("ListFederationServers")
+}
+
+// AddFederationServer adds servers to the federation.
+func (u *universeClient) AddFederationServer(ctx context.Context,
+	servers []entities.FederationServer) error {
+
+	return errNotImplemented("AddFederationServer")
+}
+
+// DeleteFederationServer removes servers from the federation.
+func (u *universeClient) DeleteFederationServer(ctx context.Context,
+	servers []entities.FederationServer) error {
+
+	return errNotImplemented("DeleteFederationServer")
+}
+
+// SetFederationSyncConfig sets the federation sync configuration.
+func (u *universeClient) SetFederationSyncConfig(
+	ctx context.Context,
+	global []entities.GlobalFederationSyncConfig,
+	asset []entities.AssetFederationSyncConfig) error {
+
+	return errNotImplemented("SetFederationSyncConfig")
+}
+
+// QueryFederationSyncConfig queries the federation sync config.
+func (u *universeClient) QueryFederationSyncConfig(
+	ctx context.Context,
+	ids []entities.UniverseID) (
+	*entities.FederationSyncConfig, error) {
+
+	return nil, errNotImplemented("QueryFederationSyncConfig")
+}
+
+// Info returns basic universe server information.
+func (u *universeClient) Info(
+	ctx context.Context) (*entities.UniverseInfo, error) {
+
+	return nil, errNotImplemented("Info")
+}
+
+// SyncUniverse synchronizes with a remote universe server.
+func (u *universeClient) SyncUniverse(ctx context.Context,
+	req *entities.SyncRequest) (
+	[]entities.SyncedUniverse, error) {
+
+	return nil, errNotImplemented("SyncUniverse")
+}

@@ -457,6 +457,54 @@ func (w *walletClient) AddrReceives(ctx context.Context,
 	return events, nil
 }
 
+// ListUtxos lists managed UTXOs with optional filtering.
+func (w *walletClient) ListUtxos(ctx context.Context,
+	req *entities.ListUtxosRequest) (
+	map[string]*entities.ManagedUtxo, error) {
+
+	return nil, errNotImplemented("ListUtxos")
+}
+
+// ListGroups lists all known asset groups.
+func (w *walletClient) ListGroups(
+	ctx context.Context) (map[string]*entities.GroupedAssets,
+	error) {
+
+	return nil, errNotImplemented("ListGroups")
+}
+
+// BurnAsset burns asset units.
+func (w *walletClient) BurnAsset(ctx context.Context,
+	req *entities.BurnAssetRequest) (
+	*entities.BurnAssetResponse, error) {
+
+	return nil, errNotImplemented("BurnAsset")
+}
+
+// ListBurns lists asset burns with optional filtering.
+func (w *walletClient) ListBurns(ctx context.Context,
+	req *entities.ListBurnsRequest) ([]*entities.AssetBurn,
+	error) {
+
+	return nil, errNotImplemented("ListBurns")
+}
+
+// FetchAssetMeta fetches the metadata for an asset.
+func (w *walletClient) FetchAssetMeta(ctx context.Context,
+	req *entities.FetchAssetMetaRequest) (
+	*entities.AssetMeta, error) {
+
+	return nil, errNotImplemented("FetchAssetMeta")
+}
+
+// VerifyProof verifies a proof file.
+func (w *walletClient) VerifyProof(ctx context.Context,
+	rawProofFile []byte) (
+	*entities.VerifyProofResponse, error) {
+
+	return nil, errNotImplemented("VerifyProof")
+}
+
 // marshalAssetVersionJSON converts an AssetVersion to a proto JSON
 // enum string.
 func marshalAssetVersionJSON(v entities.AssetVersion) string {
