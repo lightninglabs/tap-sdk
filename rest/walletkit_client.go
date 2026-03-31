@@ -3,6 +3,7 @@ package rest
 import (
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/lightninglabs/tap-sdk/entities"
@@ -458,14 +459,48 @@ func (w *walletKitClient) PublishAndLogTransfer(ctx context.Context,
 func (w *walletKitClient) QueryInternalKey(ctx context.Context,
 	internalKey []byte) (*entities.KeyDescriptor, error) {
 
-	return nil, errNotImplemented("QueryInternalKey")
+	keyHex := hex.EncodeToString(internalKey)
+	path := fmt.Sprintf(
+		"/v1/taproot-assets/wallet/internal-key/%s", keyHex,
+	)
+
+	var resp jsonQueryInternalKeyResponse
+	err := w.transport.doGet(
+		ctx, path, macaroon.AdminServiceMac, &resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.InternalKey == nil {
+		return nil, fmt.Errorf("empty internal key response")
+	}
+
+	return unmarshalKeyDescriptor(resp.InternalKey)
 }
 
 // QueryScriptKey looks up a script key by its tweaked public key.
 func (w *walletKitClient) QueryScriptKey(ctx context.Context,
 	tweakedScriptKey []byte) (*entities.ScriptKey, error) {
 
-	return nil, errNotImplemented("QueryScriptKey")
+	keyHex := hex.EncodeToString(tweakedScriptKey)
+	path := fmt.Sprintf(
+		"/v1/taproot-assets/wallet/script-key/%s", keyHex,
+	)
+
+	var resp jsonQueryScriptKeyResponse
+	err := w.transport.doGet(
+		ctx, path, macaroon.AdminServiceMac, &resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.ScriptKey == nil {
+		return nil, fmt.Errorf("empty script key response")
+	}
+
+	return unmarshalScriptKey(resp.ScriptKey)
 }
 
 // ProveAssetOwnership generates a proof of ownership for an asset.
@@ -473,7 +508,43 @@ func (w *walletKitClient) ProveAssetOwnership(ctx context.Context,
 	req *entities.ProveOwnershipRequest) (
 	*entities.OwnershipProof, error) {
 
-	return nil, errNotImplemented("ProveAssetOwnership")
+	body := map[string]any{
+		"asset_id": base64.StdEncoding.EncodeToString(
+			req.AssetID[:],
+		),
+		"script_key": base64.StdEncoding.EncodeToString(
+			req.ScriptKey[:],
+		),
+		"outpoint": map[string]any{
+			"txid":         hex.EncodeToString(req.Outpoint.Txid[:]),
+			"output_index": req.Outpoint.Index,
+		},
+	}
+
+	if len(req.Challenge) > 0 {
+		body["challenge"] = base64.StdEncoding.EncodeToString(
+			req.Challenge,
+		)
+	}
+
+	var resp jsonOwnershipProof
+	err := w.transport.doPost(
+		ctx, "/v1/taproot-assets/wallet/ownership/prove",
+		macaroon.AdminServiceMac, body, &resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	proofBytes, err := parseBase64Bytes(resp.ProofWithWitness)
+	if err != nil {
+		return nil, fmt.Errorf("decode ownership proof: %w",
+			err)
+	}
+
+	return &entities.OwnershipProof{
+		ProofWithWitness: proofBytes,
+	}, nil
 }
 
 // VerifyAssetOwnership verifies an asset ownership proof.
@@ -481,14 +552,41 @@ func (w *walletKitClient) VerifyAssetOwnership(ctx context.Context,
 	req *entities.VerifyOwnershipRequest) (
 	*entities.VerifyOwnershipResponse, error) {
 
-	return nil, errNotImplemented("VerifyAssetOwnership")
+	body := map[string]any{
+		"proof_with_witness": base64.StdEncoding.EncodeToString(
+			req.ProofWithWitness,
+		),
+	}
+
+	var resp jsonVerifyOwnershipResponse
+	err := w.transport.doPost(
+		ctx, "/v1/taproot-assets/wallet/ownership/verify",
+		macaroon.AdminServiceMac, body, &resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &entities.VerifyOwnershipResponse{
+		Valid: resp.ValidProof,
+	}, nil
 }
 
 // RemoveUTXOLease removes a lease on a UTXO.
 func (w *walletKitClient) RemoveUTXOLease(ctx context.Context,
 	outpoint entities.Outpoint) error {
 
-	return errNotImplemented("RemoveUTXOLease")
+	body := map[string]any{
+		"outpoint": map[string]any{
+			"txid":         hex.EncodeToString(outpoint.Txid[:]),
+			"output_index": outpoint.Index,
+		},
+	}
+
+	return w.transport.doPost(
+		ctx, "/v1/taproot-assets/wallet/utxo-lease/delete",
+		macaroon.AdminServiceMac, body, nil,
+	)
 }
 
 // DeclareScriptKey informs the wallet about an externally derived
@@ -497,5 +595,45 @@ func (w *walletKitClient) DeclareScriptKey(ctx context.Context,
 	req *entities.DeclareScriptKeyRequest) (
 	*entities.ScriptKey, error) {
 
-	return nil, errNotImplemented("DeclareScriptKey")
+	keyDesc := map[string]any{
+		"raw_key_bytes": base64.StdEncoding.EncodeToString(
+			req.ScriptKey.KeyDesc.RawKeyBytes[:],
+		),
+		"key_loc": map[string]any{
+			"key_family": req.ScriptKey.KeyDesc.KeyLocator.Family,
+			"key_index":  req.ScriptKey.KeyDesc.KeyLocator.Index,
+		},
+	}
+
+	scriptKeyMap := map[string]any{
+		"pub_key": base64.StdEncoding.EncodeToString(
+			req.ScriptKey.PubKey[:],
+		),
+		"key_desc": keyDesc,
+	}
+
+	if len(req.ScriptKey.TapTweak) > 0 {
+		scriptKeyMap["tap_tweak"] = base64.StdEncoding.EncodeToString(
+			req.ScriptKey.TapTweak,
+		)
+	}
+
+	body := map[string]any{
+		"script_key": scriptKeyMap,
+	}
+
+	var resp jsonDeclareScriptKeyResponse
+	err := w.transport.doPost(
+		ctx, "/v1/taproot-assets/wallet/script-key/declare",
+		macaroon.AdminServiceMac, body, &resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.ScriptKey == nil {
+		return nil, fmt.Errorf("empty script key response")
+	}
+
+	return unmarshalScriptKey(resp.ScriptKey)
 }

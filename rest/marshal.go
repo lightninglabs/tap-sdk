@@ -885,3 +885,235 @@ func unmarshalAssetMeta(
 		MetaHash: metaHash,
 	}, nil
 }
+
+// unmarshalManagedUtxo converts a JSON managed UTXO to an entity.
+func unmarshalManagedUtxo(
+	u *jsonManagedUtxo) (*entities.ManagedUtxo, error) {
+
+	if u == nil {
+		return nil, fmt.Errorf("nil managed utxo")
+	}
+
+	amtSat, err := parseUint64(u.AmtSat)
+	if err != nil {
+		return nil, fmt.Errorf("invalid amt_sat: %w", err)
+	}
+
+	internalKey, err := parseHexBytes(u.InternalKey)
+	if err != nil {
+		return nil, fmt.Errorf("invalid internal_key: %w",
+			err)
+	}
+
+	assets := make([]*entities.Asset, 0, len(u.Assets))
+	for _, a := range u.Assets {
+		asset, err := unmarshalAsset(a)
+		if err != nil {
+			return nil, fmt.Errorf("unmarshal utxo asset: %w",
+				err)
+		}
+		assets = append(assets, asset)
+	}
+
+	taprootRoot, err := parseHexBytes(u.TaprootAssetRoot)
+	if err != nil {
+		return nil, fmt.Errorf("invalid taproot_root: %w", err)
+	}
+
+	merkleRoot, err := parseHexBytes(u.MerkleRoot)
+	if err != nil {
+		return nil, fmt.Errorf("invalid merkle_root: %w", err)
+	}
+
+	outpoint, err := entities.NewOutpointFromStr(u.Outpoint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid outpoint: %w", err)
+	}
+
+	taprootRootHash, _ := entities.ParseHash(taprootRoot)
+	merkleRootHash, _ := entities.ParseHash(merkleRoot)
+
+	var pubKey entities.PubKey
+	copy(pubKey[:], internalKey)
+
+	return &entities.ManagedUtxo{
+		OutPoint:         outpoint,
+		AmtSat:           int64(amtSat),
+		InternalKey:      pubKey,
+		TaprootAssetRoot: taprootRootHash,
+		MerkleRoot:       merkleRootHash,
+		Assets:           assets,
+	}, nil
+}
+
+// unmarshalGroupedAssets converts a JSON grouped assets to an entity.
+func unmarshalGroupedAssets(
+	g *jsonGroupedAssets) (*entities.GroupedAssets, error) {
+
+	if g == nil {
+		return nil, fmt.Errorf("nil grouped assets")
+	}
+
+	assets := make(
+		[]*entities.AssetHumanReadable, 0, len(g.Assets),
+	)
+	for _, a := range g.Assets {
+		asset, err := unmarshalAssetHumanReadable(a)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"unmarshal grouped asset: %w", err)
+		}
+		assets = append(assets, asset)
+	}
+
+	return &entities.GroupedAssets{
+		Assets: assets,
+	}, nil
+}
+
+// unmarshalAssetHumanReadable converts a JSON asset to a simplified
+// AssetHumanReadable entity used in group listings.
+func unmarshalAssetHumanReadable(
+	a *jsonAsset) (*entities.AssetHumanReadable, error) {
+
+	if a == nil {
+		return nil, fmt.Errorf("nil asset")
+	}
+
+	amount, err := parseUint64(a.Amount)
+	if err != nil {
+		return nil, fmt.Errorf("invalid amount: %w", err)
+	}
+
+	var assetID entities.AssetID
+	var metaHash entities.Hash
+	var tag string
+	var assetType entities.AssetType
+
+	if a.AssetGenesis != nil {
+		idBytes, err := parseHexBytes(a.AssetGenesis.AssetID)
+		if err == nil {
+			copy(assetID[:], idBytes)
+		}
+
+		hashBytes, err := parseHexBytes(a.AssetGenesis.MetaHash)
+		if err == nil {
+			metaHash, _ = entities.ParseHash(hashBytes)
+		}
+
+		tag = a.AssetGenesis.Name
+		assetType = parseAssetType(a.AssetGenesis.AssetType)
+	}
+
+	return &entities.AssetHumanReadable{
+		ID:               assetID,
+		Amount:           amount,
+		LockTime:         a.LockTime,
+		RelativeLockTime: a.RelativeLockTime,
+		Tag:              tag,
+		MetaHash:         metaHash,
+		Type:             assetType,
+		Version:          uint8(a.Version),
+	}, nil
+}
+
+// unmarshalBurnAssetResponse converts a JSON burn response to an
+// entity.
+func unmarshalBurnAssetResponse(
+	r *jsonBurnAssetResponse) (*entities.BurnAssetResponse,
+	error) {
+
+	if r == nil {
+		return nil, fmt.Errorf("nil burn response")
+	}
+
+	var transfer *entities.AssetTransfer
+	if r.BurnTransfer != nil {
+		var err error
+		transfer, err = unmarshalAssetTransfer(r.BurnTransfer)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"unmarshal burn transfer: %w", err)
+		}
+	}
+
+	return &entities.BurnAssetResponse{
+		BurnTransfer: transfer,
+	}, nil
+}
+
+// unmarshalAssetBurn converts a JSON asset burn to an entity.
+func unmarshalAssetBurn(
+	b *jsonAssetBurn) (*entities.AssetBurn, error) {
+
+	if b == nil {
+		return nil, fmt.Errorf("nil asset burn")
+	}
+
+	amount, err := parseUint64(b.Amount)
+	if err != nil {
+		return nil, fmt.Errorf("invalid burn amount: %w", err)
+	}
+
+	var assetID entities.AssetID
+	idBytes, err := parseHexBytes(b.AssetID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid burn asset_id: %w",
+			err)
+	}
+	copy(assetID[:], idBytes)
+
+	groupKeyBytes, err := parseHexBytes(b.GroupKey)
+	if err != nil {
+		return nil, fmt.Errorf("invalid burn group_key: %w",
+			err)
+	}
+
+	var groupKey *entities.PubKey
+	if len(groupKeyBytes) > 0 {
+		var pk entities.PubKey
+		copy(pk[:], groupKeyBytes)
+		groupKey = &pk
+	}
+
+	txidBytes, err := parseHexBytes(b.TransferTxid)
+	if err != nil {
+		return nil, fmt.Errorf("invalid burn txid: %w", err)
+	}
+	anchorTxid, _ := entities.ParseHash(txidBytes)
+
+	return &entities.AssetBurn{
+		Note:            b.Note,
+		AssetID:         assetID,
+		TweakedGroupKey: groupKey,
+		Amount:          amount,
+		AnchorTxid:      anchorTxid,
+	}, nil
+}
+
+// unmarshalFetchAssetMetaResponse converts a JSON fetch meta response
+// to an entity.
+func unmarshalFetchAssetMetaResponse(
+	r *jsonFetchAssetMetaResponse) (*entities.AssetMeta, error) {
+
+	return unmarshalAssetMeta(&jsonAssetMeta{
+		Data:     r.Data,
+		Type:     r.Type,
+		MetaHash: r.MetaHash,
+	})
+}
+
+// unmarshalVerifyProofResponse converts a JSON verify proof response
+// to an entity.
+func unmarshalVerifyProofResponse(
+	r *jsonVerifyProofResponse) (
+	*entities.VerifyProofResponse, error) {
+
+	if r == nil {
+		return nil, fmt.Errorf("nil verify proof response")
+	}
+
+	return &entities.VerifyProofResponse{
+		Valid: r.Valid,
+	}, nil
+}

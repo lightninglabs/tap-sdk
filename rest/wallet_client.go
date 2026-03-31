@@ -462,7 +462,37 @@ func (w *walletClient) ListUtxos(ctx context.Context,
 	req *entities.ListUtxosRequest) (
 	map[string]*entities.ManagedUtxo, error) {
 
-	return nil, errNotImplemented("ListUtxos")
+	params := url.Values{}
+	if req != nil && req.IncludeLeased {
+		params.Set("include_leased", "true")
+	}
+
+	path := "/v1/taproot-assets/assets/utxos"
+	if len(params) > 0 {
+		path += "?" + params.Encode()
+	}
+
+	var resp jsonListUtxosResponse
+	err := w.transport.doGet(
+		ctx, path, macaroon.AdminServiceMac, &resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(
+		map[string]*entities.ManagedUtxo, len(resp.ManagedUtxos),
+	)
+	for k, v := range resp.ManagedUtxos {
+		utxo, err := unmarshalManagedUtxo(v)
+		if err != nil {
+			return nil, fmt.Errorf("unmarshal utxo %s: %w",
+				k, err)
+		}
+		result[k] = utxo
+	}
+
+	return result, nil
 }
 
 // ListGroups lists all known asset groups.
@@ -470,7 +500,28 @@ func (w *walletClient) ListGroups(
 	ctx context.Context) (map[string]*entities.GroupedAssets,
 	error) {
 
-	return nil, errNotImplemented("ListGroups")
+	var resp jsonListGroupsResponse
+	err := w.transport.doGet(
+		ctx, "/v1/taproot-assets/assets/groups",
+		macaroon.AdminServiceMac, &resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(
+		map[string]*entities.GroupedAssets, len(resp.Groups),
+	)
+	for k, v := range resp.Groups {
+		group, err := unmarshalGroupedAssets(v)
+		if err != nil {
+			return nil, fmt.Errorf("unmarshal group %s: %w",
+				k, err)
+		}
+		result[k] = group
+	}
+
+	return result, nil
 }
 
 // BurnAsset burns asset units.
@@ -478,7 +529,26 @@ func (w *walletClient) BurnAsset(ctx context.Context,
 	req *entities.BurnAssetRequest) (
 	*entities.BurnAssetResponse, error) {
 
-	return nil, errNotImplemented("BurnAsset")
+	body := map[string]any{
+		"asset_id_str":      hex.EncodeToString(req.AssetID[:]),
+		"amount_to_burn":    fmt.Sprintf("%d", req.AmountToBurn),
+		"confirmation_text": req.ConfirmationText,
+	}
+
+	if req.Note != "" {
+		body["note"] = req.Note
+	}
+
+	var resp jsonBurnAssetResponse
+	err := w.transport.doPost(
+		ctx, "/v1/taproot-assets/burn",
+		macaroon.AdminServiceMac, body, &resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return unmarshalBurnAssetResponse(&resp)
 }
 
 // ListBurns lists asset burns with optional filtering.
@@ -486,7 +556,43 @@ func (w *walletClient) ListBurns(ctx context.Context,
 	req *entities.ListBurnsRequest) ([]*entities.AssetBurn,
 	error) {
 
-	return nil, errNotImplemented("ListBurns")
+	params := url.Values{}
+	if req != nil {
+		if req.AssetID != nil {
+			params.Set("asset_id",
+				hex.EncodeToString(req.AssetID[:]))
+		}
+		if req.AnchorTxid != nil {
+			params.Set("anchor_txid",
+				hex.EncodeToString(
+					req.AnchorTxid[:],
+				))
+		}
+	}
+
+	path := "/v1/taproot-assets/burns"
+	if len(params) > 0 {
+		path += "?" + params.Encode()
+	}
+
+	var resp jsonListBurnsResponse
+	err := w.transport.doGet(
+		ctx, path, macaroon.AdminServiceMac, &resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	burns := make([]*entities.AssetBurn, 0, len(resp.Burns))
+	for _, b := range resp.Burns {
+		burn, err := unmarshalAssetBurn(b)
+		if err != nil {
+			return nil, err
+		}
+		burns = append(burns, burn)
+	}
+
+	return burns, nil
 }
 
 // FetchAssetMeta fetches the metadata for an asset.
@@ -494,7 +600,34 @@ func (w *walletClient) FetchAssetMeta(ctx context.Context,
 	req *entities.FetchAssetMetaRequest) (
 	*entities.AssetMeta, error) {
 
-	return nil, errNotImplemented("FetchAssetMeta")
+	var path string
+	switch {
+	case req.AssetID != nil:
+		path = fmt.Sprintf(
+			"/v1/taproot-assets/assets/meta/asset-id/%s",
+			hex.EncodeToString(req.AssetID[:]),
+		)
+
+	case req.MetaHash != nil:
+		path = fmt.Sprintf(
+			"/v1/taproot-assets/assets/meta/hash/%s",
+			hex.EncodeToString(req.MetaHash[:]),
+		)
+
+	default:
+		return nil, fmt.Errorf("either asset_id or " +
+			"meta_hash must be set")
+	}
+
+	var resp jsonFetchAssetMetaResponse
+	err := w.transport.doGet(
+		ctx, path, macaroon.AdminServiceMac, &resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return unmarshalFetchAssetMetaResponse(&resp)
 }
 
 // VerifyProof verifies a proof file.
@@ -502,7 +635,22 @@ func (w *walletClient) VerifyProof(ctx context.Context,
 	rawProofFile []byte) (
 	*entities.VerifyProofResponse, error) {
 
-	return nil, errNotImplemented("VerifyProof")
+	body := map[string]any{
+		"raw_proof_file": base64.StdEncoding.EncodeToString(
+			rawProofFile,
+		),
+	}
+
+	var resp jsonVerifyProofResponse
+	err := w.transport.doPost(
+		ctx, "/v1/taproot-assets/proofs/verify",
+		macaroon.AdminServiceMac, body, &resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return unmarshalVerifyProofResponse(&resp)
 }
 
 // marshalAssetVersionJSON converts an AssetVersion to a proto JSON

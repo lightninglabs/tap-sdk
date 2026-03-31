@@ -406,3 +406,102 @@ type jsonCancelBatchResponse struct {
 type jsonListBatchesResponse struct {
 	Batches []*jsonVerboseBatch `json:"batches"`
 }
+
+// --- WalletClient stub types ---
+
+// jsonManagedUtxo is the JSON shape of taprpc.ManagedUtxo.
+type jsonManagedUtxo struct {
+	Outpoint         string       `json:"out_point"`
+	AmtSat           string       `json:"amt_sat"`
+	InternalKey      string       `json:"internal_key"`
+	TaprootAssetRoot string       `json:"taproot_asset_root"`
+	MerkleRoot       string       `json:"merkle_root"`
+	Assets           []*jsonAsset `json:"assets"`
+}
+
+// jsonListUtxosResponse is the JSON shape of
+// taprpc.ListUtxosResponse.
+type jsonListUtxosResponse struct {
+	ManagedUtxos map[string]*jsonManagedUtxo `json:"managed_utxos"`
+}
+
+// jsonGroupedAssets is the JSON shape of taprpc.GroupedAssets.
+type jsonGroupedAssets struct {
+	Assets []*jsonAsset `json:"assets"`
+}
+
+// jsonListGroupsResponse is the JSON shape of
+// taprpc.ListGroupsResponse.
+type jsonListGroupsResponse struct {
+	Groups map[string]*jsonGroupedAssets `json:"groups"`
+}
+
+// jsonBurnAssetResponse is the JSON shape of
+// taprpc.BurnAssetResponse.
+type jsonBurnAssetResponse struct {
+	BurnTransfer *jsonAssetTransfer `json:"burn_transfer"`
+	BurnProof    *jsonDecodedProof  `json:"burn_proof"`
+}
+
+// jsonAssetBurn is the JSON shape of taprpc.AssetBurn.
+type jsonAssetBurn struct {
+	Note         string `json:"note"`
+	AssetID      string `json:"asset_id"`
+	GroupKey     string `json:"group_key"`
+	Amount       string `json:"amount"`
+	TransferTxid string `json:"transfer_txid"`
+	AnchorPoint  string `json:"anchor_point"`
+}
+
+// jsonListBurnsResponse is the JSON shape of
+// taprpc.ListBurnsResponse.
+type jsonListBurnsResponse struct {
+	Burns []*jsonAssetBurn `json:"burns"`
+}
+
+// jsonFetchAssetMetaResponse is the JSON shape of
+// taprpc.FetchAssetMetaResponse (same as taprpc.AssetMeta).
+type jsonFetchAssetMetaResponse struct {
+	Data     string `json:"data"`
+	Type     string `json:"type"`
+	MetaHash string `json:"meta_hash"`
+}
+
+// jsonVerifyProofResponse is the JSON shape of
+// taprpc.VerifyProofResponse.
+type jsonVerifyProofResponse struct {
+	Valid        bool              `json:"valid"`
+	DecodedProof *jsonDecodedProof `json:"decoded_proof"`
+}
+
+// --- WalletKitClient types ---
+
+// jsonQueryInternalKeyResponse is the JSON shape of
+// assetwalletrpc.QueryInternalKeyResponse.
+type jsonQueryInternalKeyResponse struct {
+	InternalKey *jsonKeyDescriptor `json:"internal_key"`
+}
+
+// jsonQueryScriptKeyResponse is the JSON shape of
+// assetwalletrpc.QueryScriptKeyResponse.
+type jsonQueryScriptKeyResponse struct {
+	ScriptKey *jsonScriptKey `json:"script_key"`
+}
+
+// jsonOwnershipProof is the JSON shape of
+// assetwalletrpc.ProveAssetOwnershipResponse.
+type jsonOwnershipProof struct {
+	ProofWithWitness string `json:"proof_with_witness"`
+}
+
+// jsonVerifyOwnershipResponse is the JSON shape of
+// assetwalletrpc.VerifyAssetOwnershipResponse.
+type jsonVerifyOwnershipResponse struct {
+	ValidProof bool `json:"valid_proof"`
+}
+
+// jsonDeclareScriptKeyResponse is the JSON shape of
+// assetwalletrpc.DeclareScriptKeyResponse.
+type jsonDeclareScriptKeyResponse struct {
+	ScriptKey *jsonScriptKey `json:"script_key"`
+}
