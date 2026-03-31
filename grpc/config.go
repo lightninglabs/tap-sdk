@@ -66,6 +66,18 @@ type Config struct {
 	// for tls.
 	SystemCert bool
 
+	// TLSMinVersion sets the minimum TLS version the client will accept.
+	// Defaults to TLS 1.2 when zero. Use crypto/tls constants
+	// (tls.VersionTLS12, tls.VersionTLS13).
+	TLSMinVersion uint16
+
+	// TLSPinnedCertFingerprint is the hex-encoded SHA-256 fingerprint
+	// of the expected server certificate. When set, the client rejects
+	// connections to servers presenting a different leaf certificate.
+	// The fingerprint is compared against the raw DER encoding of the
+	// first certificate in the peer's chain.
+	TLSPinnedCertFingerprint string
+
 	// RPCTimeout is an optional custom timeout that will be used for rpc
 	// calls to tapd. If this value is not set, it will default to 30
 	// seconds.

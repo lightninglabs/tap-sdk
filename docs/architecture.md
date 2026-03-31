@@ -125,6 +125,61 @@ Macaroon authentication helpers:
 - Attach macaroon metadata to gRPC contexts
 - Support per-service macaroon granularity
 
+## TLS and Authentication
+
+The SDK communicates with `tapd` over gRPC with TLS encryption and
+macaroon-based authentication.
+
+### TLS Configuration
+
+The `grpc.Config` struct supports multiple TLS modes:
+
+| Config Fields | Behavior |
+|--------------|----------|
+| (none) | Load cert from tapd default path (`~/.tapd/tls.cert`) |
+| `TLSPath` | Load cert from a custom file path |
+| `TLSData` | Use PEM-encoded certificate data directly |
+| `SystemCert` | Trust the system certificate pool |
+| `Insecure` | Skip TLS verification (testing only) |
+
+Only one of `TLSPath`, `TLSData`, `SystemCert`, or `Insecure` should
+be set. The SDK rejects conflicting combinations at construction time.
+
+### TLS Hardening
+
+**Minimum version floor.** The SDK enforces TLS 1.2 as the minimum
+protocol version. This is configurable via `Config.TLSMinVersion`
+(use `crypto/tls` constants). Go's TLS implementation already
+defaults to 1.2, but the SDK is explicit to prevent regressions.
+
+**Certificate pinning.** Set `Config.TLSPinnedCertFingerprint` to
+a hex-encoded SHA-256 digest of the expected server leaf certificate.
+When set, the SDK rejects connections to any server presenting a
+different certificate. The fingerprint can use colons as separators
+(e.g. `aa:bb:cc:...`).
+
+To obtain a fingerprint from an existing `tapd` TLS certificate:
+
+```bash
+openssl x509 -in ~/.tapd/tls.cert -outform DER | \
+  sha256sum | awk '{print $1}'
+```
+
+### Macaroon Authentication
+
+Each gRPC sub-client uses a service-specific macaroon:
+
+| Sub-client | Macaroon |
+|------------|----------|
+| walletClient | `admin.macaroon` |
+| walletKitClient | `walletkit.macaroon` |
+| proofClient | `proof.macaroon` |
+| universeClient | `universe.macaroon` |
+| mintClient | `mint.macaroon` |
+
+Macaroons can be loaded from a directory, a specific file path, or
+hex-encoded data.
+
 ## Transfer Flows
 
 ### Address-Based Send

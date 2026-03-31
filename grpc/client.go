@@ -1,13 +1,16 @@
 package grpc
 
 import (
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/pem"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/lightninglabs/tap-sdk/macaroon"
@@ -151,9 +154,7 @@ func (c *Client) Close() error {
 
 // getClientConn gets a client connection to the tapd host.
 func getClientConn(cfg *Config) (*grpc.ClientConn, error) {
-	creds, err := getTLSCredentials(
-		cfg.TLSData, cfg.TLSPath, cfg.Insecure, cfg.SystemCert,
-	)
+	creds, err := getTLSCredentials(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get tls creds: %v", err)
 	}
@@ -171,81 +172,163 @@ func getClientConn(cfg *Config) (*grpc.ClientConn, error) {
 	return conn, nil
 }
 
-// getTLSCredentials gets the tls credentials, whether provided as straight-up
-// data or a path to a certificate file.
-func getTLSCredentials(tlsData, tlsPath string, insecure,
-	systemCert bool) (credentials.TransportCredentials, error) {
+// defaultTLSMinVersion is the minimum TLS version the client will
+// accept when no explicit version is configured.
+const defaultTLSMinVersion = tls.VersionTLS12
+
+// getTLSCredentials builds the gRPC transport credentials from the
+// client configuration. It enforces a minimum TLS version floor and
+// optionally pins the server certificate by SHA-256 fingerprint.
+func getTLSCredentials(
+	cfg *Config) (credentials.TransportCredentials, error) {
+
+	tlsData := cfg.TLSData
+	tlsPath := cfg.TLSPath
+	insecure := cfg.Insecure
+	systemCert := cfg.SystemCert
+
+	minVersion := cfg.TLSMinVersion
+	if minVersion == 0 {
+		minVersion = defaultTLSMinVersion
+	}
 
 	// We'll determine if the tls certificate is passed in directly as
 	// data, by a path, or try the system's certificate chain, and then
 	// load it.
-	var creds credentials.TransportCredentials
+	var tlsCfg *tls.Config
 	switch {
 	case tlsPath != "" && tlsData != "":
-		return nil, fmt.Errorf("must set only one: TLSPath or TLSData")
+		return nil, fmt.Errorf("must set only one: TLSPath or " +
+			"TLSData")
 
 	case insecure && systemCert:
-		return nil, fmt.Errorf("cannot set insecure and system cert " +
-			"at the same time")
+		return nil, fmt.Errorf("cannot set insecure and system " +
+			"cert at the same time")
 
 	case insecure:
-		// If we don't need to use tls, such as if we're connecting to
-		// tapd via a bufconn, then we'll skip verification.
-		creds = credentials.NewTLS(&tls.Config{
+		// If we don't need to use tls, such as if we're connecting
+		// to tapd via a bufconn, then we'll skip verification.
+		tlsCfg = &tls.Config{
 			InsecureSkipVerify: true, // nolint:gosec
-		})
+			MinVersion:         minVersion,
+		}
 
 	case systemCert:
-		// Fallback to the system pool. Using an empty tls config is an
-		// alternative to x509.SystemCertPool(), which is not supported
-		// on Windows.
-		creds = credentials.NewTLS(&tls.Config{})
+		// Fallback to the system pool. Using an empty tls config
+		// is an alternative to x509.SystemCertPool(), which is
+		// not supported on Windows.
+		tlsCfg = &tls.Config{
+			MinVersion: minVersion,
+		}
 
 	case tlsData != "":
-		tlsBytes := []byte(tlsData)
-
-		block, _ := pem.Decode(tlsBytes)
-		if block == nil || block.Type != "CERTIFICATE" {
-			return nil, errors.New("failed to decode PEM block " +
-				"containing tls certificate")
-		}
-
-		cert, err := x509.ParseCertificate(block.Bytes)
+		pool, err := certPoolFromPEM([]byte(tlsData))
 		if err != nil {
 			return nil, err
 		}
 
-		pool := x509.NewCertPool()
-		pool.AddCert(cert)
-
-		// Load the specified TLS certificate and build transport
-		// credentials.
-		creds = credentials.NewClientTLSFromCert(pool, "")
+		tlsCfg = &tls.Config{
+			RootCAs:    pool,
+			MinVersion: minVersion,
+		}
 
 	case tlsPath != "":
-		var err error
-		creds, err = credentials.NewClientTLSFromFile(tlsPath, "")
+		pool, err := certPoolFromFile(tlsPath)
 		if err != nil {
 			return nil, err
+		}
+
+		tlsCfg = &tls.Config{
+			RootCAs:    pool,
+			MinVersion: minVersion,
 		}
 
 	default:
 		// If neither tlsData nor tlsPath were set, we'll try the
 		// default tls cert path.
-		_, err := os.Stat(defaultTLSCertPath)
-		if err != nil {
-			return nil, fmt.Errorf("couldn't find out if default "+
-				"TLS cert at %s exists: %v",
-				defaultTLSCertPath, err)
-		}
-		creds, err = credentials.NewClientTLSFromFile(
-			defaultTLSCertPath, "",
-		)
+		pool, err := certPoolFromFile(defaultTLSCertPath)
 		if err != nil {
 			return nil, fmt.Errorf("couldn't load default "+
-				"TLS cert at %s: %v", defaultTLSCertPath, err)
+				"TLS cert at %s: %v",
+				defaultTLSCertPath, err)
+		}
+
+		tlsCfg = &tls.Config{
+			RootCAs:    pool,
+			MinVersion: minVersion,
 		}
 	}
 
-	return creds, nil
+	// When a pinned certificate fingerprint is provided, install a
+	// VerifyPeerCertificate callback that compares the SHA-256
+	// digest of the leaf certificate against the expected value.
+	if cfg.TLSPinnedCertFingerprint != "" {
+		expected := strings.ToLower(strings.ReplaceAll(
+			cfg.TLSPinnedCertFingerprint, ":", "",
+		))
+
+		if _, err := hex.DecodeString(expected); err != nil ||
+			len(expected) != 64 {
+
+			return nil, fmt.Errorf("TLSPinnedCertFingerprint "+
+				"must be a 64-char hex SHA-256 digest, "+
+				"got %q", cfg.TLSPinnedCertFingerprint)
+		}
+
+		tlsCfg.VerifyPeerCertificate = func(
+			rawCerts [][]byte,
+			_ [][]*x509.Certificate) error {
+
+			if len(rawCerts) == 0 {
+				return errors.New("server presented " +
+					"no certificates")
+			}
+
+			digest := sha256.Sum256(rawCerts[0])
+			actual := hex.EncodeToString(digest[:])
+
+			if actual != expected {
+				return fmt.Errorf("certificate "+
+					"fingerprint mismatch: "+
+					"got %s, want %s",
+					actual, expected)
+			}
+
+			return nil
+		}
+	}
+
+	return credentials.NewTLS(tlsCfg), nil
+}
+
+// certPoolFromPEM decodes a PEM-encoded certificate and returns a
+// certificate pool containing it.
+func certPoolFromPEM(pemData []byte) (*x509.CertPool, error) {
+	block, _ := pem.Decode(pemData)
+	if block == nil || block.Type != "CERTIFICATE" {
+		return nil, errors.New("failed to decode PEM block " +
+			"containing tls certificate")
+	}
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	pool := x509.NewCertPool()
+	pool.AddCert(cert)
+
+	return pool, nil
+}
+
+// certPoolFromFile reads a PEM certificate file and returns a
+// certificate pool.
+func certPoolFromFile(path string) (*x509.CertPool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read TLS cert at %s: "+
+			"%v", path, err)
+	}
+
+	return certPoolFromPEM(data)
 }
