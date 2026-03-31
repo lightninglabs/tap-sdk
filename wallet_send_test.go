@@ -653,6 +653,29 @@ func (m *mockClient) SyncUniverse(ctx context.Context,
 	return args.Get(0).([]entities.SyncedUniverse), args.Error(1)
 }
 
+// --- EventClient ---
+
+func (m *mockClient) SubscribeReceiveEvents(ctx context.Context,
+	req *entities.SubscribeReceiveEventsRequest) (
+	<-chan *entities.ReceiveEvent, <-chan error, error) {
+
+	panic("SubscribeReceiveEvents not expected in unit tests")
+}
+
+func (m *mockClient) SubscribeSendEvents(ctx context.Context,
+	req *entities.SubscribeSendEventsRequest) (
+	<-chan *entities.SendEvent, <-chan error, error) {
+
+	panic("SubscribeSendEvents not expected in unit tests")
+}
+
+func (m *mockClient) SubscribeMintEvents(ctx context.Context,
+	req *entities.SubscribeMintEventsRequest) (
+	<-chan *entities.MintEvent, <-chan error, error) {
+
+	panic("SubscribeMintEvents not expected in unit tests")
+}
+
 func (m *mockClient) Close() error {
 	args := m.Called()
 	return args.Error(0)
