@@ -195,11 +195,15 @@ func TestEventListener_Reconnect(t *testing.T) {
 	err := listener.Start(ctx)
 	require.NoError(t, err)
 
-	// Wait for reconnection + delivery.
-	time.Sleep(500 * time.Millisecond)
+	// Poll until reconnection delivers the second event.
+	require.Eventually(t, func() bool {
+		return received.Load() >= 2
+	}, 3*time.Second, 20*time.Millisecond,
+		"expected at least 2 events via reconnect",
+	)
+
 	listener.Stop()
 
-	require.GreaterOrEqual(t, received.Load(), int32(2))
 	require.GreaterOrEqual(t, callCount.Load(), int32(2))
 }
 

@@ -238,9 +238,19 @@ func (l *eventListener) Running() bool {
 	return l.running
 }
 
-// streamFunc is a function that opens a subscription and blocks until
-// the stream ends or ctx is cancelled. It returns the terminal error.
-type streamFunc func(ctx context.Context) error
+// streamResult is the outcome of a single subscription attempt.
+type streamResult struct {
+	// err is the terminal error that ended the stream.
+	err error
+
+	// delivered is the number of events successfully dispatched
+	// to handlers before the stream broke.
+	delivered int
+}
+
+// streamFunc opens a subscription and blocks until the stream ends
+// or ctx is cancelled.
+type streamFunc func(ctx context.Context) streamResult
 
 // runStream manages reconnection for a single event stream.
 func (l *eventListener) runStream(ctx context.Context, name string,
@@ -252,7 +262,7 @@ func (l *eventListener) runStream(ctx context.Context, name string,
 	retries := 0
 
 	for {
-		err := subscribe(ctx)
+		result := subscribe(ctx)
 
 		// Context cancelled: clean shutdown.
 		if ctx.Err() != nil {
@@ -260,11 +270,19 @@ func (l *eventListener) runStream(ctx context.Context, name string,
 		}
 
 		// Check if the error is fatal (non-retriable).
-		if isFatalError(err) {
+		if isFatalError(result.err) {
 			if l.handler.OnError != nil {
-				l.handler.OnError(name, err)
+				l.handler.OnError(name, result.err)
 			}
 			return
+		}
+
+		// Successful event delivery resets the retry
+		// counter and backoff. A stream that reconnected
+		// and delivered at least one event is healthy.
+		if result.delivered > 0 {
+			retries = 0
+			backoff = l.config.InitialBackoff
 		}
 
 		retries++
@@ -274,7 +292,7 @@ func (l *eventListener) runStream(ctx context.Context, name string,
 			retries > l.config.MaxRetries {
 
 			if l.handler.OnError != nil {
-				l.handler.OnError(name, err)
+				l.handler.OnError(name, result.err)
 			}
 			return
 		}
@@ -299,7 +317,9 @@ func (l *eventListener) runStream(ctx context.Context, name string,
 
 // subscribeReceive opens a receive event stream and delivers events
 // to the handler until the stream breaks.
-func (l *eventListener) subscribeReceive(ctx context.Context) error {
+func (l *eventListener) subscribeReceive(
+	ctx context.Context) streamResult {
+
 	filter := l.config.ReceiveFilter
 	if filter == nil {
 		filter = &entities.SubscribeReceiveEventsRequest{}
@@ -309,7 +329,7 @@ func (l *eventListener) subscribeReceive(ctx context.Context) error {
 		ctx, filter,
 	)
 	if err != nil {
-		return err
+		return streamResult{err: err}
 	}
 
 	return drainEvents(ctx, eventCh, errCh,
@@ -320,7 +340,9 @@ func (l *eventListener) subscribeReceive(ctx context.Context) error {
 }
 
 // subscribeSend opens a send event stream and delivers events.
-func (l *eventListener) subscribeSend(ctx context.Context) error {
+func (l *eventListener) subscribeSend(
+	ctx context.Context) streamResult {
+
 	filter := l.config.SendFilter
 	if filter == nil {
 		filter = &entities.SubscribeSendEventsRequest{}
@@ -330,7 +352,7 @@ func (l *eventListener) subscribeSend(ctx context.Context) error {
 		ctx, filter,
 	)
 	if err != nil {
-		return err
+		return streamResult{err: err}
 	}
 
 	return drainEvents(ctx, eventCh, errCh,
@@ -341,7 +363,9 @@ func (l *eventListener) subscribeSend(ctx context.Context) error {
 }
 
 // subscribeMint opens a mint event stream and delivers events.
-func (l *eventListener) subscribeMint(ctx context.Context) error {
+func (l *eventListener) subscribeMint(
+	ctx context.Context) streamResult {
+
 	filter := l.config.MintFilter
 	if filter == nil {
 		filter = &entities.SubscribeMintEventsRequest{}
@@ -351,7 +375,7 @@ func (l *eventListener) subscribeMint(ctx context.Context) error {
 		ctx, filter,
 	)
 	if err != nil {
-		return err
+		return streamResult{err: err}
 	}
 
 	return drainEvents(ctx, eventCh, errCh,
@@ -362,30 +386,92 @@ func (l *eventListener) subscribeMint(ctx context.Context) error {
 }
 
 // drainEvents reads from an event channel and calls handler for each
-// event. Returns the terminal error from errCh.
+// event. Returns a streamResult with the terminal error and the count
+// of events delivered.
+//
+// Events are always prioritised over the error channel: when both
+// are ready, any buffered events are delivered first. This prevents
+// the Go select race where errCh wins and causes event loss.
 func drainEvents[T any](ctx context.Context,
 	eventCh <-chan *T, errCh <-chan error,
-	handler func(*T)) error {
+	handler func(*T)) streamResult {
+
+	delivered := 0
 
 	for {
+		// Priority: deliver pending events before checking
+		// errors. This avoids the select race where errCh wins
+		// and buffered events are lost.
 		select {
 		case event, ok := <-eventCh:
 			if !ok {
-				// Channel closed, read terminal error.
+				// Event channel closed, read terminal
+				// error.
 				select {
 				case err := <-errCh:
-					return err
+					return streamResult{
+						err:       err,
+						delivered: delivered,
+					}
 				default:
-					return nil
+					return streamResult{
+						delivered: delivered,
+					}
 				}
 			}
 			handler(event)
+			delivered++
+			continue
+
+		default:
+		}
+
+		// No pending event, wait on all channels.
+		select {
+		case event, ok := <-eventCh:
+			if !ok {
+				select {
+				case err := <-errCh:
+					return streamResult{
+						err:       err,
+						delivered: delivered,
+					}
+				default:
+					return streamResult{
+						delivered: delivered,
+					}
+				}
+			}
+			handler(event)
+			delivered++
 
 		case err := <-errCh:
-			return err
+			// Drain any remaining buffered events
+			// before returning the error.
+			for {
+				select {
+				case event, ok := <-eventCh:
+					if !ok {
+						return streamResult{
+							err:       err,
+							delivered: delivered,
+						}
+					}
+					handler(event)
+					delivered++
+				default:
+					return streamResult{
+						err:       err,
+						delivered: delivered,
+					}
+				}
+			}
 
 		case <-ctx.Done():
-			return ctx.Err()
+			return streamResult{
+				err:       ctx.Err(),
+				delivered: delivered,
+			}
 		}
 	}
 }
