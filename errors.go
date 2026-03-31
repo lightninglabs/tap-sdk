@@ -134,4 +134,13 @@ var (
 	// ErrZeroAmount is returned when attempting to execute a transfer
 	// with zero amount.
 	ErrZeroAmount = errors.New("amount must be greater than zero")
+
+	// ErrGroupKeyNotSupported is returned when a fungible
+	// (group-key) AssetRef is used in a context that requires a
+	// specific asset ID, such as interactive transfers.
+	ErrGroupKeyNotSupported = errors.New(
+		"group-key AssetRef not supported; use " +
+			"AssetRefFromAssetID for interactive " +
+			"transfers",
+	)
 )
