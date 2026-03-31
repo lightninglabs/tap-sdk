@@ -31,15 +31,6 @@ func NewProofClient(conn grpc.ClientConnInterface, timeout time.Duration,
 	}
 }
 
-// RawClientWithMacAuth returns a context with the proper macaroon
-// authentication, the default RPC timeout, and the raw client.
-func (p *proofClient) RawClientWithMacAuth(
-	parentCtx context.Context) (context.Context, time.Duration,
-	taprpc.TaprootAssetsClient) {
-
-	return p.proofMac.WithMacaroonAuth(parentCtx), p.timeout, p.client
-}
-
 // ExportProof exports a proof file for a specific asset output.
 func (p *proofClient) ExportProof(ctx context.Context, assetID entities.AssetID,
 	scriptKey entities.PubKey, outpoint *entities.Outpoint) (*entities.ProofFile,

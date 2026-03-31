@@ -14,7 +14,7 @@ import (
 func (m *walletKitClient) QueryInternalKey(ctx context.Context,
 	internalKey []byte) (*entities.KeyDescriptor, error) {
 
-	authCtx, _, client := m.RawClientWithMacAuth(ctx)
+	authCtx, client := m.rawClientWithMacAuth(ctx)
 
 	resp, err := client.QueryInternalKey(
 		authCtx, &assetwalletrpc.QueryInternalKeyRequest{
@@ -37,7 +37,7 @@ func (m *walletKitClient) QueryInternalKey(ctx context.Context,
 func (m *walletKitClient) QueryScriptKey(ctx context.Context,
 	tweakedScriptKey []byte) (*entities.ScriptKey, error) {
 
-	authCtx, _, client := m.RawClientWithMacAuth(ctx)
+	authCtx, client := m.rawClientWithMacAuth(ctx)
 
 	resp, err := client.QueryScriptKey(
 		authCtx, &assetwalletrpc.QueryScriptKeyRequest{
@@ -60,7 +60,7 @@ func (m *walletKitClient) ProveAssetOwnership(ctx context.Context,
 	req *entities.ProveOwnershipRequest) (*entities.OwnershipProof,
 	error) {
 
-	authCtx, _, client := m.RawClientWithMacAuth(ctx)
+	authCtx, client := m.rawClientWithMacAuth(ctx)
 
 	rpcReq := &assetwalletrpc.ProveAssetOwnershipRequest{
 		AssetId:   req.AssetID[:],
@@ -90,7 +90,7 @@ func (m *walletKitClient) VerifyAssetOwnership(ctx context.Context,
 	req *entities.VerifyOwnershipRequest) (
 	*entities.VerifyOwnershipResponse, error) {
 
-	authCtx, _, client := m.RawClientWithMacAuth(ctx)
+	authCtx, client := m.rawClientWithMacAuth(ctx)
 
 	rpcReq := &assetwalletrpc.VerifyAssetOwnershipRequest{
 		ProofWithWitness: req.ProofWithWitness,
@@ -128,7 +128,7 @@ func (m *walletKitClient) VerifyAssetOwnership(ctx context.Context,
 func (m *walletKitClient) RemoveUTXOLease(ctx context.Context,
 	outpoint entities.Outpoint) error {
 
-	authCtx, _, client := m.RawClientWithMacAuth(ctx)
+	authCtx, client := m.rawClientWithMacAuth(ctx)
 
 	_, err := client.RemoveUTXOLease(
 		authCtx, &assetwalletrpc.RemoveUTXOLeaseRequest{
@@ -148,7 +148,7 @@ func (m *walletKitClient) DeclareScriptKey(ctx context.Context,
 	req *entities.DeclareScriptKeyRequest) (*entities.ScriptKey,
 	error) {
 
-	authCtx, _, client := m.RawClientWithMacAuth(ctx)
+	authCtx, client := m.rawClientWithMacAuth(ctx)
 
 	rpcKey := &taprpc.ScriptKey{
 		PubKey:   req.ScriptKey.PubKey[:],

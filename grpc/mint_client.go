@@ -30,15 +30,6 @@ func NewMintClient(conn grpc.ClientConnInterface, timeout time.Duration,
 	}
 }
 
-// RawClientWithMacAuth returns a context with the proper macaroon
-// authentication, the default RPC timeout, and the raw client.
-func (m *mintClient) RawClientWithMacAuth(
-	parentCtx context.Context) (context.Context, time.Duration,
-	mintrpc.MintClient) {
-
-	return m.mintMac.WithMacaroonAuth(parentCtx), m.timeout, m.client
-}
-
 // MintAsset adds an asset to the pending minting batch.
 func (m *mintClient) MintAsset(ctx context.Context,
 	req *entities.MintAssetRequest) (*entities.MintingBatch, error) {

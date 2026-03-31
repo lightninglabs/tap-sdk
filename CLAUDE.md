@@ -144,8 +144,21 @@ When wrapping a new `tapd` RPC, follow this checklist:
 
 - **tapd daemon** — Taproot Assets daemon (gRPC over TLS with macaroon
   auth)
-- **taproot-assets/taprpc** — gRPC service definitions
+- **taproot-assets/taprpc** — gRPC service definitions (lightweight proto
+  module, not the full taproot-assets repo)
 - **btcsuite/btcd** — Bitcoin primitives (PSBT, keys, crypto)
+
+### Dependency Boundary
+
+`taprpc` imports are strictly confined to `grpc/`. No exported type,
+function, or method outside `grpc/` may reference `taprpc` types.
+The `grpc/` sub-client structs are unexported, and their internal helpers
+(macaroon auth, raw client access) must also remain unexported so that
+`taprpc` types do not leak through `grpc.Client` struct embedding.
+
+Test files outside `grpc/` must only use `entities/` types. If a mock
+needs to implement a client interface, it should use SDK types, not proto
+types.
 
 ## Design Documents
 
