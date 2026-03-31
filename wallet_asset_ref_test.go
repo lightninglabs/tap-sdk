@@ -217,6 +217,193 @@ func (m *refMockClient) ListBatches(ctx context.Context,
 	panic("ListBatches: unexpected call")
 }
 
+// --- WalletClient extras (PR #30 additions) ---
+
+func (m *refMockClient) ListUtxos(_ context.Context,
+	_ *entities.ListUtxosRequest) (
+	map[string]*entities.ManagedUtxo, error) {
+
+	return nil, nil
+}
+
+func (m *refMockClient) ListGroups(
+	_ context.Context) (map[string]*entities.GroupedAssets, error) {
+
+	return nil, nil
+}
+
+func (m *refMockClient) BurnAsset(_ context.Context,
+	_ *entities.BurnAssetRequest) (
+	*entities.BurnAssetResponse, error) {
+
+	return nil, nil
+}
+
+func (m *refMockClient) ListBurns(_ context.Context,
+	_ *entities.ListBurnsRequest) ([]*entities.AssetBurn, error) {
+
+	return nil, nil
+}
+
+func (m *refMockClient) FetchAssetMeta(_ context.Context,
+	_ *entities.FetchAssetMetaRequest) (
+	*entities.AssetMeta, error) {
+
+	return nil, nil
+}
+
+func (m *refMockClient) VerifyProof(_ context.Context,
+	_ []byte) (*entities.VerifyProofResponse, error) {
+
+	return nil, nil
+}
+
+// --- WalletKitClient extras (PR #30 additions) ---
+
+func (m *refMockClient) QueryInternalKey(_ context.Context,
+	_ []byte) (*entities.KeyDescriptor, error) {
+
+	return nil, nil
+}
+
+func (m *refMockClient) QueryScriptKey(_ context.Context,
+	_ []byte) (*entities.ScriptKey, error) {
+
+	return nil, nil
+}
+
+func (m *refMockClient) ProveAssetOwnership(_ context.Context,
+	_ *entities.ProveOwnershipRequest) (
+	*entities.OwnershipProof, error) {
+
+	return nil, nil
+}
+
+func (m *refMockClient) VerifyAssetOwnership(_ context.Context,
+	_ *entities.VerifyOwnershipRequest) (
+	*entities.VerifyOwnershipResponse, error) {
+
+	return nil, nil
+}
+
+func (m *refMockClient) RemoveUTXOLease(_ context.Context,
+	_ entities.Outpoint) error {
+
+	return nil
+}
+
+func (m *refMockClient) DeclareScriptKey(_ context.Context,
+	_ *entities.DeclareScriptKeyRequest) (
+	*entities.ScriptKey, error) {
+
+	return nil, nil
+}
+
+// --- UniverseClient (PR #31 additions) ---
+
+func (m *refMockClient) AssetRoots(_ context.Context,
+	_ *entities.AssetRootRequest) (
+	map[string]*entities.UniverseRoot, error) {
+
+	return nil, nil
+}
+
+func (m *refMockClient) QueryAssetRoots(_ context.Context,
+	_ *entities.UniverseID) (*entities.QueryRootResponse, error) {
+
+	return nil, nil
+}
+
+func (m *refMockClient) DeleteAssetRoot(_ context.Context,
+	_ *entities.UniverseID) error {
+
+	return nil
+}
+
+func (m *refMockClient) AssetLeafKeys(_ context.Context,
+	_ *entities.AssetLeafKeysRequest) (
+	[]entities.AssetLeafKey, error) {
+
+	return nil, nil
+}
+
+func (m *refMockClient) AssetLeaves(_ context.Context,
+	_ *entities.UniverseID) ([]entities.AssetLeaf, error) {
+
+	return nil, nil
+}
+
+func (m *refMockClient) QueryProof(_ context.Context,
+	_ *entities.UniverseKey) (*entities.AssetProofResponse,
+	error) {
+
+	return nil, nil
+}
+
+func (m *refMockClient) UniverseStats(
+	_ context.Context) (*entities.UniverseStats, error) {
+
+	return nil, nil
+}
+
+func (m *refMockClient) QueryAssetStats(_ context.Context,
+	_ *entities.AssetStatsQuery) (
+	[]entities.AssetStatsSnapshot, error) {
+
+	return nil, nil
+}
+
+func (m *refMockClient) QueryEvents(_ context.Context,
+	_ *entities.QueryEventsRequest) (
+	[]entities.GroupedUniverseEvents, error) {
+
+	return nil, nil
+}
+
+func (m *refMockClient) ListFederationServers(
+	_ context.Context) ([]entities.FederationServer, error) {
+
+	return nil, nil
+}
+
+func (m *refMockClient) AddFederationServer(_ context.Context,
+	_ []entities.FederationServer) error {
+
+	return nil
+}
+
+func (m *refMockClient) DeleteFederationServer(_ context.Context,
+	_ []entities.FederationServer) error {
+
+	return nil
+}
+
+func (m *refMockClient) SetFederationSyncConfig(_ context.Context,
+	_ []entities.GlobalFederationSyncConfig,
+	_ []entities.AssetFederationSyncConfig) error {
+
+	return nil
+}
+
+func (m *refMockClient) QueryFederationSyncConfig(_ context.Context,
+	_ []entities.UniverseID) (*entities.FederationSyncConfig,
+	error) {
+
+	return nil, nil
+}
+
+func (m *refMockClient) Info(
+	_ context.Context) (*entities.UniverseInfo, error) {
+
+	return nil, nil
+}
+
+func (m *refMockClient) SyncUniverse(_ context.Context,
+	_ *entities.SyncRequest) ([]entities.SyncedUniverse, error) {
+
+	return nil, nil
+}
+
 func (m *refMockClient) Close() error {
 	return nil
 }
