@@ -130,33 +130,171 @@ func NewTestHarness(t *testing.T) *TestHarness {
 	return h
 }
 
-// MineBlocks mines the specified number of blocks via bitcoind.
+// MineBlocks mines the specified number of blocks via bitcoind using
+// the miner wallet (created by FundLndWallet).
 func (h *TestHarness) MineBlocks(n int) {
 	h.t.Helper()
 
-	// Get a new address from bitcoind for the mining reward.
-	addr := h.bitcoindRPC("getnewaddress", `""`, `"bech32"`)
-	addr = strings.TrimSpace(addr)
-	addr = strings.Trim(addr, `"`)
+	// Ensure the miner wallet exists (ignore "already exists"
+	// errors from repeated calls).
+	h.bitcoindRPCWalletIgnoreErr("createwallet", `"miner"`)
 
-	result := h.bitcoindRPC(
-		"generatetoaddress", fmt.Sprintf("%d", n),
+	addr := h.bitcoindRPCWallet(
+		"miner", "getnewaddress", `""`, `"bech32"`,
+	)
+	addr = strings.TrimSpace(strings.Trim(addr, `"`))
+
+	result := h.bitcoindRPCWallet(
+		"miner", "generatetoaddress",
+		fmt.Sprintf("%d", n),
 		fmt.Sprintf(`"%s"`, addr),
 	)
 	h.t.Logf("Mined %d blocks: %s", n, truncate(result, 120))
 }
 
-// FundLndWallet mines blocks to fund the LND wallet and waits for
-// synchronization.
+// FundLndWallet sends BTC from the bitcoind miner wallet to Alice's
+// LND wallet and waits for tapd synchronization. This is required
+// before minting because tapd uses LND's wallet to fund on-chain
+// transactions.
 func (h *TestHarness) FundLndWallet() {
 	h.t.Helper()
 
-	// Mine enough blocks for coinbase maturity (100) + some extra.
-	h.MineBlocks(110)
+	// Ensure the miner wallet exists (ignore "already exists"
+	// errors from repeated calls).
+	h.bitcoindRPCWalletIgnoreErr("createwallet", `"miner"`)
 
-	// Wait for tapd to sync.
-	h.WaitForSync(h.AliceClient, 30*time.Second)
-	h.WaitForSync(h.BobClient, 30*time.Second)
+	// Mine coinbase-maturity blocks so the miner wallet has
+	// spendable coins.
+	minerAddr := h.bitcoindRPC("getnewaddress", `""`, `"bech32"`)
+	minerAddr = strings.TrimSpace(strings.Trim(minerAddr, `"`))
+	h.bitcoindRPC(
+		"generatetoaddress", "110",
+		fmt.Sprintf(`"%s"`, minerAddr),
+	)
+
+	// Get a fresh address from Alice's LND wallet.
+	aliceAddr := h.lndNewAddress("tap-sdk-lnd-alice")
+	h.t.Logf("Alice LND address: %s", aliceAddr)
+
+	// Send 1 BTC to Alice from the miner wallet. Use
+	// -rpcwallet=miner to select the funded wallet.
+	h.bitcoindRPCWallet("miner", "sendtoaddress",
+		fmt.Sprintf(`"%s"`, aliceAddr), `1.0`)
+
+	// Mine 6 blocks to confirm the send.
+	confirmAddr := h.bitcoindRPC(
+		"getnewaddress", `""`, `"bech32"`,
+	)
+	confirmAddr = strings.TrimSpace(strings.Trim(
+		confirmAddr, `"`,
+	))
+	h.bitcoindRPC(
+		"generatetoaddress", "6",
+		fmt.Sprintf(`"%s"`, confirmAddr),
+	)
+
+	h.t.Logf("Funded Alice LND wallet and mined 6 confirms")
+
+	// Wait for tapd to sync with the new chain tip.
+	h.WaitForSync(h.AliceClient, 60*time.Second)
+	h.WaitForSync(h.BobClient, 60*time.Second)
+}
+
+// lndNewAddress generates a new p2wkh address from an LND container
+// using lncli.
+func (h *TestHarness) lndNewAddress(container string) string {
+	h.t.Helper()
+
+	out, err := exec.Command(
+		"docker", "exec", container,
+		"lncli", "--network=regtest", "newaddress", "p2wkh",
+	).CombinedOutput()
+	require.NoError(h.t, err,
+		"lncli newaddress failed: %s", string(out))
+
+	// Parse the JSON response to extract the address.
+	var resp struct {
+		Address string `json:"address"`
+	}
+	require.NoError(h.t, json.Unmarshal(out, &resp),
+		"failed to parse lncli output: %s", string(out))
+
+	return resp.Address
+}
+
+// bitcoindRPCWallet calls bitcoind JSON-RPC targeting a specific
+// named wallet.
+func (h *TestHarness) bitcoindRPCWallet(
+	wallet, method string, params ...string) string {
+
+	h.t.Helper()
+
+	paramStr := strings.Join(params, ", ")
+	body := fmt.Sprintf(
+		`{"jsonrpc":"1.0","id":"test","method":"%s","params":[%s]}`,
+		method, paramStr,
+	)
+
+	url := fmt.Sprintf(
+		"http://%s:%s@%s/wallet/%s",
+		bitcoindUser, bitcoindPass, h.bitcoindHost, wallet,
+	)
+
+	out, err := exec.Command(
+		"curl", "-s", "-X", "POST",
+		"-H", "Content-Type: application/json",
+		"-d", body,
+		url,
+	).CombinedOutput()
+	require.NoError(h.t, err,
+		"bitcoind RPC (%s, wallet=%s) failed: %s",
+		method, wallet, string(out))
+
+	var rpcResp struct {
+		Result json.RawMessage `json:"result"`
+		Error  json.RawMessage `json:"error"`
+	}
+	if err := json.Unmarshal(out, &rpcResp); err == nil {
+		if string(rpcResp.Error) != "null" &&
+			string(rpcResp.Error) != "" {
+
+			h.t.Logf("bitcoind RPC error: %s",
+				string(rpcResp.Error))
+		}
+		return string(rpcResp.Result)
+	}
+
+	return string(out)
+}
+
+// bitcoindRPCWalletIgnoreErr is like bitcoindRPC but silently ignores
+// errors. Used for idempotent calls like createwallet that may fail
+// on repeated invocations.
+func (h *TestHarness) bitcoindRPCWalletIgnoreErr(
+	method string, params ...string) {
+
+	h.t.Helper()
+
+	paramStr := strings.Join(params, ", ")
+	body := fmt.Sprintf(
+		`{"jsonrpc":"1.0","id":"test","method":"%s","params":[%s]}`,
+		method, paramStr,
+	)
+
+	url := fmt.Sprintf(
+		"http://%s:%s@%s/",
+		bitcoindUser, bitcoindPass, h.bitcoindHost,
+	)
+
+	// nolint:gosec
+	out, _ := exec.Command(
+		"curl", "-s", "-X", "POST",
+		"-H", "Content-Type: application/json",
+		"-d", body, url,
+	).CombinedOutput()
+
+	h.t.Logf("bitcoindRPCIgnoreErr %s: %s",
+		method, truncate(string(out), 200))
 }
 
 // WaitForSync polls GetInfo until the node reports synced_to_chain.

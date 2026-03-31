@@ -64,10 +64,10 @@ jobs:
           wait_healthy tap-sdk-lnd-alice 120
           wait_healthy tap-sdk-lnd-bob 120
 
-          # Mine initial blocks so LND wallets are funded and tapd can
-          # sync. LND needs 1 block to fully activate; tapd needs the
-          # chain to be non-empty.
-          echo "Mining initial blocks..."
+          # Mine a few blocks so LND nodes can fully activate and tapd
+          # can start syncing. The test harness FundLndWallet() handles
+          # mining coinbase-maturity blocks and funding LND wallets.
+          echo "Mining initial blocks for chain activation..."
           docker exec tap-sdk-bitcoind bitcoin-cli \
             -regtest -rpcuser=devuser -rpcpassword=devpass \
             createwallet "miner" >/dev/null 2>&1 || true
@@ -76,8 +76,8 @@ jobs:
             -rpcwallet=miner getnewaddress)
           docker exec tap-sdk-bitcoind bitcoin-cli \
             -regtest -rpcuser=devuser -rpcpassword=devpass \
-            -rpcwallet=miner generatetoaddress 110 "$ADDR" >/dev/null
-          echo "Mined 110 blocks"
+            -rpcwallet=miner generatetoaddress 1 "$ADDR" >/dev/null
+          echo "Mined 1 block for activation"
 
           # Now wait for tapd instances.
           wait_healthy tap-sdk-tapd-alice 180
