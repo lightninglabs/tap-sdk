@@ -13,6 +13,7 @@ type Client interface {
 	WalletKitClient
 	UniverseClient
 	MintClient
+	EventClient
 
 	Close() error
 }
@@ -313,4 +314,29 @@ type MintClient interface {
 	ListBatches(ctx context.Context,
 		req *entities.ListBatchesRequest) ([]*entities.VerboseMintingBatch,
 		error)
+}
+
+// EventClient exposes server-streaming RPCs for real-time event
+// notifications. All subscribe methods return a channel that delivers
+// events until the context is cancelled or the stream encounters an
+// error. The error channel receives at most one value: the terminal
+// stream error (nil on clean shutdown).
+type EventClient interface {
+	// SubscribeReceiveEvents streams incoming asset transfer events.
+	// Filter by address or start time via the request. The returned
+	// channels are closed when the context is cancelled.
+	SubscribeReceiveEvents(ctx context.Context,
+		req *entities.SubscribeReceiveEventsRequest) (
+		<-chan *entities.ReceiveEvent, <-chan error, error)
+
+	// SubscribeSendEvents streams outgoing asset transfer events.
+	// Filter by script key, label, or start time via the request.
+	SubscribeSendEvents(ctx context.Context,
+		req *entities.SubscribeSendEventsRequest) (
+		<-chan *entities.SendEvent, <-chan error, error)
+
+	// SubscribeMintEvents streams minting batch lifecycle events.
+	SubscribeMintEvents(ctx context.Context,
+		req *entities.SubscribeMintEventsRequest) (
+		<-chan *entities.MintEvent, <-chan error, error)
 }
