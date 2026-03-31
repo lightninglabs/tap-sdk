@@ -339,6 +339,320 @@ func (m *mockClient) ListBatches(ctx context.Context,
 	return args.Get(0).([]*entities.VerboseMintingBatch), args.Error(1)
 }
 
+// --- WalletClient extras (PR #30 additions) ---
+
+func (m *mockClient) ListUtxos(ctx context.Context,
+	req *entities.ListUtxosRequest) (
+	map[string]*entities.ManagedUtxo, error) {
+
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(map[string]*entities.ManagedUtxo),
+		args.Error(1)
+}
+
+func (m *mockClient) ListGroups(
+	ctx context.Context) (map[string]*entities.GroupedAssets, error) {
+
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(map[string]*entities.GroupedAssets),
+		args.Error(1)
+}
+
+func (m *mockClient) BurnAsset(ctx context.Context,
+	req *entities.BurnAssetRequest) (
+	*entities.BurnAssetResponse, error) {
+
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*entities.BurnAssetResponse), args.Error(1)
+}
+
+func (m *mockClient) ListBurns(ctx context.Context,
+	req *entities.ListBurnsRequest) ([]*entities.AssetBurn, error) {
+
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).([]*entities.AssetBurn), args.Error(1)
+}
+
+func (m *mockClient) FetchAssetMeta(ctx context.Context,
+	req *entities.FetchAssetMetaRequest) (
+	*entities.AssetMeta, error) {
+
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*entities.AssetMeta), args.Error(1)
+}
+
+func (m *mockClient) VerifyProof(ctx context.Context,
+	rawProofFile []byte) (
+	*entities.VerifyProofResponse, error) {
+
+	args := m.Called(ctx, rawProofFile)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*entities.VerifyProofResponse), args.Error(1)
+}
+
+// --- WalletKitClient extras (PR #30 additions) ---
+
+func (m *mockClient) QueryInternalKey(ctx context.Context,
+	internalKey []byte) (*entities.KeyDescriptor, error) {
+
+	args := m.Called(ctx, internalKey)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*entities.KeyDescriptor), args.Error(1)
+}
+
+func (m *mockClient) QueryScriptKey(ctx context.Context,
+	tweakedScriptKey []byte) (*entities.ScriptKey, error) {
+
+	args := m.Called(ctx, tweakedScriptKey)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*entities.ScriptKey), args.Error(1)
+}
+
+func (m *mockClient) ProveAssetOwnership(ctx context.Context,
+	req *entities.ProveOwnershipRequest) (
+	*entities.OwnershipProof, error) {
+
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*entities.OwnershipProof), args.Error(1)
+}
+
+func (m *mockClient) VerifyAssetOwnership(ctx context.Context,
+	req *entities.VerifyOwnershipRequest) (
+	*entities.VerifyOwnershipResponse, error) {
+
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*entities.VerifyOwnershipResponse),
+		args.Error(1)
+}
+
+func (m *mockClient) RemoveUTXOLease(ctx context.Context,
+	outpoint entities.Outpoint) error {
+
+	args := m.Called(ctx, outpoint)
+	return args.Error(0)
+}
+
+func (m *mockClient) DeclareScriptKey(ctx context.Context,
+	req *entities.DeclareScriptKeyRequest) (
+	*entities.ScriptKey, error) {
+
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*entities.ScriptKey), args.Error(1)
+}
+
+// --- UniverseClient (PR #31 additions) ---
+
+func (m *mockClient) AssetRoots(ctx context.Context,
+	req *entities.AssetRootRequest) (
+	map[string]*entities.UniverseRoot, error) {
+
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(map[string]*entities.UniverseRoot),
+		args.Error(1)
+}
+
+func (m *mockClient) QueryAssetRoots(ctx context.Context,
+	id *entities.UniverseID) (*entities.QueryRootResponse, error) {
+
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*entities.QueryRootResponse), args.Error(1)
+}
+
+func (m *mockClient) DeleteAssetRoot(ctx context.Context,
+	id *entities.UniverseID) error {
+
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
+func (m *mockClient) AssetLeafKeys(ctx context.Context,
+	req *entities.AssetLeafKeysRequest) (
+	[]entities.AssetLeafKey, error) {
+
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).([]entities.AssetLeafKey), args.Error(1)
+}
+
+func (m *mockClient) AssetLeaves(ctx context.Context,
+	id *entities.UniverseID) ([]entities.AssetLeaf, error) {
+
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).([]entities.AssetLeaf), args.Error(1)
+}
+
+func (m *mockClient) QueryProof(ctx context.Context,
+	key *entities.UniverseKey) (*entities.AssetProofResponse,
+	error) {
+
+	args := m.Called(ctx, key)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*entities.AssetProofResponse), args.Error(1)
+}
+
+func (m *mockClient) UniverseStats(
+	ctx context.Context) (*entities.UniverseStats, error) {
+
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*entities.UniverseStats), args.Error(1)
+}
+
+func (m *mockClient) QueryAssetStats(ctx context.Context,
+	req *entities.AssetStatsQuery) (
+	[]entities.AssetStatsSnapshot, error) {
+
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).([]entities.AssetStatsSnapshot), args.Error(1)
+}
+
+func (m *mockClient) QueryEvents(ctx context.Context,
+	req *entities.QueryEventsRequest) (
+	[]entities.GroupedUniverseEvents, error) {
+
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).([]entities.GroupedUniverseEvents),
+		args.Error(1)
+}
+
+func (m *mockClient) ListFederationServers(
+	ctx context.Context) ([]entities.FederationServer, error) {
+
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).([]entities.FederationServer), args.Error(1)
+}
+
+func (m *mockClient) AddFederationServer(ctx context.Context,
+	servers []entities.FederationServer) error {
+
+	args := m.Called(ctx, servers)
+	return args.Error(0)
+}
+
+func (m *mockClient) DeleteFederationServer(ctx context.Context,
+	servers []entities.FederationServer) error {
+
+	args := m.Called(ctx, servers)
+	return args.Error(0)
+}
+
+func (m *mockClient) SetFederationSyncConfig(ctx context.Context,
+	global []entities.GlobalFederationSyncConfig,
+	asset []entities.AssetFederationSyncConfig) error {
+
+	args := m.Called(ctx, global, asset)
+	return args.Error(0)
+}
+
+func (m *mockClient) QueryFederationSyncConfig(ctx context.Context,
+	ids []entities.UniverseID) (*entities.FederationSyncConfig,
+	error) {
+
+	args := m.Called(ctx, ids)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*entities.FederationSyncConfig),
+		args.Error(1)
+}
+
+func (m *mockClient) Info(
+	ctx context.Context) (*entities.UniverseInfo, error) {
+
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*entities.UniverseInfo), args.Error(1)
+}
+
+func (m *mockClient) SyncUniverse(ctx context.Context,
+	req *entities.SyncRequest) ([]entities.SyncedUniverse, error) {
+
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).([]entities.SyncedUniverse), args.Error(1)
+}
+
 func (m *mockClient) Close() error {
 	args := m.Called()
 	return args.Error(0)
