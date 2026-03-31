@@ -21,10 +21,8 @@ import (
 )
 
 // generateSelfSignedCert creates a self-signed TLS certificate
-// and returns the PEM-encoded cert, key, and the raw DER bytes.
-func generateSelfSignedCert(t *testing.T) ([]byte, []byte,
-	[]byte) {
-
+// and returns the PEM-encoded cert and the raw DER bytes.
+func generateSelfSignedCert(t *testing.T) ([]byte, []byte) {
 	t.Helper()
 
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -55,15 +53,7 @@ func generateSelfSignedCert(t *testing.T) ([]byte, []byte,
 		Bytes: derBytes,
 	})
 
-	keyBytes, err := x509.MarshalECPrivateKey(key)
-	require.NoError(t, err)
-
-	keyPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "EC PRIVATE KEY",
-		Bytes: keyBytes,
-	})
-
-	return certPEM, keyPEM, derBytes
+	return certPEM, derBytes
 }
 
 // writeTempFile writes data to a temporary file and returns its path.
@@ -110,7 +100,7 @@ func TestGetTLSCredentials_SystemCert(t *testing.T) {
 func TestGetTLSCredentials_TLSData(t *testing.T) {
 	t.Parallel()
 
-	certPEM, _, _ := generateSelfSignedCert(t)
+	certPEM, _ := generateSelfSignedCert(t)
 
 	cfg := &Config{TLSData: string(certPEM)}
 	creds, err := getTLSCredentials(cfg)
@@ -123,7 +113,7 @@ func TestGetTLSCredentials_TLSData(t *testing.T) {
 func TestGetTLSCredentials_TLSPath(t *testing.T) {
 	t.Parallel()
 
-	certPEM, _, _ := generateSelfSignedCert(t)
+	certPEM, _ := generateSelfSignedCert(t)
 	certPath := writeTempFile(t, "tls.cert", certPEM)
 
 	cfg := &Config{TLSPath: certPath}
@@ -214,7 +204,7 @@ func TestGetTLSCredentials_MinVersionCustom(t *testing.T) {
 func TestGetTLSCredentials_PinnedFingerprint(t *testing.T) {
 	t.Parallel()
 
-	certPEM, _, derBytes := generateSelfSignedCert(t)
+	certPEM, derBytes := generateSelfSignedCert(t)
 	digest := sha256.Sum256(derBytes)
 	fingerprint := hex.EncodeToString(digest[:])
 
@@ -232,7 +222,7 @@ func TestGetTLSCredentials_PinnedFingerprint(t *testing.T) {
 func TestGetTLSCredentials_PinnedFingerprintColons(t *testing.T) {
 	t.Parallel()
 
-	certPEM, _, derBytes := generateSelfSignedCert(t)
+	certPEM, derBytes := generateSelfSignedCert(t)
 	digest := sha256.Sum256(derBytes)
 	raw := hex.EncodeToString(digest[:])
 
@@ -313,7 +303,7 @@ func TestGetTLSCredentials_InvalidPinnedFingerprint(t *testing.T) {
 func TestCertPoolFromPEM(t *testing.T) {
 	t.Parallel()
 
-	certPEM, _, _ := generateSelfSignedCert(t)
+	certPEM, _ := generateSelfSignedCert(t)
 
 	pool, err := certPoolFromPEM(certPEM)
 	require.NoError(t, err)
@@ -333,7 +323,7 @@ func TestCertPoolFromPEM_Invalid(t *testing.T) {
 func TestCertPoolFromFile(t *testing.T) {
 	t.Parallel()
 
-	certPEM, _, _ := generateSelfSignedCert(t)
+	certPEM, _ := generateSelfSignedCert(t)
 	path := writeTempFile(t, "tls.cert", certPEM)
 
 	pool, err := certPoolFromFile(path)
