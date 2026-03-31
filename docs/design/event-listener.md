@@ -1,6 +1,6 @@
 # Design: EventListener — High-Level Event Subscription API
 
-**Author:** Toshi (tap-sdk maintainer)
+**Author:** Dario Anongba Varela (@darioAnongba)
 **Date:** 2026-03-31
 **Status:** Proposal
 **Issue:** #41 (to be created)
