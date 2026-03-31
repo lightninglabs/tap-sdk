@@ -29,7 +29,12 @@ func (m *refMockClient) GetInfo(ctx context.Context) (*entities.Info,
 func (m *refMockClient) ListAssets(ctx context.Context,
 	req *entities.ListAssetsRequest) ([]*entities.Asset, error) {
 
-	panic("ListAssets: unexpected call")
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).([]*entities.Asset), args.Error(1)
 }
 
 func (m *refMockClient) ListBalances(ctx context.Context,
@@ -232,24 +237,42 @@ func (m *refMockClient) ListGroups(
 	return nil, nil
 }
 
-func (m *refMockClient) BurnAsset(_ context.Context,
-	_ *entities.BurnAssetRequest) (
+func (m *refMockClient) BurnAsset(ctx context.Context,
+	req *entities.BurnAssetRequest) (
 	*entities.BurnAssetResponse, error) {
 
-	return nil, nil
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*entities.BurnAssetResponse),
+		args.Error(1)
 }
 
-func (m *refMockClient) ListBurns(_ context.Context,
-	_ *entities.ListBurnsRequest) ([]*entities.AssetBurn, error) {
+func (m *refMockClient) ListBurns(ctx context.Context,
+	req *entities.ListBurnsRequest) ([]*entities.AssetBurn,
+	error) {
 
-	return nil, nil
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).([]*entities.AssetBurn),
+		args.Error(1)
 }
 
-func (m *refMockClient) FetchAssetMeta(_ context.Context,
-	_ *entities.FetchAssetMetaRequest) (
+func (m *refMockClient) FetchAssetMeta(ctx context.Context,
+	req *entities.FetchAssetMetaRequest) (
 	*entities.AssetMeta, error) {
 
-	return nil, nil
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*entities.AssetMeta), args.Error(1)
 }
 
 func (m *refMockClient) VerifyProof(_ context.Context,
@@ -402,6 +425,30 @@ func (m *refMockClient) SyncUniverse(_ context.Context,
 	_ *entities.SyncRequest) ([]entities.SyncedUniverse, error) {
 
 	return nil, nil
+}
+
+func (m *refMockClient) SubscribeReceiveEvents(
+	_ context.Context,
+	_ *entities.SubscribeReceiveEventsRequest) (
+	<-chan *entities.ReceiveEvent, <-chan error, error) {
+
+	panic("SubscribeReceiveEvents not expected in unit tests")
+}
+
+func (m *refMockClient) SubscribeSendEvents(
+	_ context.Context,
+	_ *entities.SubscribeSendEventsRequest) (
+	<-chan *entities.SendEvent, <-chan error, error) {
+
+	panic("SubscribeSendEvents not expected in unit tests")
+}
+
+func (m *refMockClient) SubscribeMintEvents(
+	_ context.Context,
+	_ *entities.SubscribeMintEventsRequest) (
+	<-chan *entities.MintEvent, <-chan error, error) {
+
+	panic("SubscribeMintEvents not expected in unit tests")
 }
 
 func (m *refMockClient) Close() error {
@@ -600,4 +647,178 @@ func TestGetBalance_Error(t *testing.T) {
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 
 	mc.AssertExpectations(t)
+}
+
+// --- ListAssetsByRef ---
+
+func TestListAssetsByRef_Fungible(t *testing.T) {
+	mc := new(refMockClient)
+	w := NewWallet(mc, entities.NetworkRegtest)
+	ctx := context.Background()
+
+	gk := testRefGroupKey(t)
+	ref := entities.AssetRefFromGroupKey(gk)
+
+	expected := []*entities.Asset{
+		{Genesis: entities.AssetGenesis{AssetID: testRefAssetID()}, Amount: 500},
+	}
+	mc.On("ListAssets", ctx, mock.MatchedBy(
+		func(r *entities.ListAssetsRequest) bool {
+			return r.GroupKey != nil && *r.GroupKey == gk
+		},
+	)).Return(expected, nil)
+
+	assets, err := w.ListAssetsByRef(ctx, ref)
+	require.NoError(t, err)
+	require.Len(t, assets, 1)
+	require.Equal(t, uint64(500), assets[0].Amount)
+
+	mc.AssertExpectations(t)
+}
+
+func TestListAssetsByRef_Collectible(t *testing.T) {
+	mc := new(refMockClient)
+	w := NewWallet(mc, entities.NetworkRegtest)
+	ctx := context.Background()
+
+	aid := testRefAssetID()
+	ref := entities.AssetRefFromAssetID(aid)
+
+	// Return two assets, only one matches the asset ID.
+	all := []*entities.Asset{
+		{Genesis: entities.AssetGenesis{AssetID: aid}, Amount: 1},
+		{Genesis: entities.AssetGenesis{}, Amount: 999},
+	}
+	mc.On("ListAssets", ctx, mock.Anything).Return(all, nil)
+
+	assets, err := w.ListAssetsByRef(ctx, ref)
+	require.NoError(t, err)
+	require.Len(t, assets, 1)
+	require.Equal(t, aid, assets[0].Genesis.AssetID)
+
+	mc.AssertExpectations(t)
+}
+
+// --- Burn ---
+
+func TestBurn_Collectible(t *testing.T) {
+	mc := new(refMockClient)
+	w := NewWallet(mc, entities.NetworkRegtest)
+	ctx := context.Background()
+
+	aid := testRefAssetID()
+	ref := entities.AssetRefFromAssetID(aid)
+
+	mc.On("BurnAsset", ctx, mock.MatchedBy(
+		func(r *entities.BurnAssetRequest) bool {
+			return r.AssetID != nil &&
+				*r.AssetID == aid &&
+				r.AmountToBurn == 10 &&
+				r.ConfirmationText ==
+					"assets will be destroyed"
+		},
+	)).Return(&entities.BurnAssetResponse{}, nil)
+
+	resp, err := w.Burn(ctx, ref, 10, "test burn")
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	mc.AssertExpectations(t)
+}
+
+func TestBurn_GroupKeyRejected(t *testing.T) {
+	mc := new(refMockClient)
+	w := NewWallet(mc, entities.NetworkRegtest)
+	ctx := context.Background()
+
+	gk := testRefGroupKey(t)
+	ref := entities.AssetRefFromGroupKey(gk)
+
+	_, err := w.Burn(ctx, ref, 10, "")
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrGroupKeyNotSupported)
+}
+
+// --- ListBurnsByRef ---
+
+func TestListBurnsByRef_Collectible(t *testing.T) {
+	mc := new(refMockClient)
+	w := NewWallet(mc, entities.NetworkRegtest)
+	ctx := context.Background()
+
+	aid := testRefAssetID()
+	ref := entities.AssetRefFromAssetID(aid)
+
+	expected := []*entities.AssetBurn{{Note: "test"}}
+	mc.On("ListBurns", ctx, mock.MatchedBy(
+		func(r *entities.ListBurnsRequest) bool {
+			return r.AssetID != nil && *r.AssetID == aid
+		},
+	)).Return(expected, nil)
+
+	burns, err := w.ListBurnsByRef(ctx, ref)
+	require.NoError(t, err)
+	require.Len(t, burns, 1)
+
+	mc.AssertExpectations(t)
+}
+
+func TestListBurnsByRef_Fungible(t *testing.T) {
+	mc := new(refMockClient)
+	w := NewWallet(mc, entities.NetworkRegtest)
+	ctx := context.Background()
+
+	gk := testRefGroupKey(t)
+	ref := entities.AssetRefFromGroupKey(gk)
+
+	expected := []*entities.AssetBurn{{Note: "grp"}}
+	mc.On("ListBurns", ctx, mock.MatchedBy(
+		func(r *entities.ListBurnsRequest) bool {
+			return r.TweakedGroupKey != nil &&
+				*r.TweakedGroupKey == gk
+		},
+	)).Return(expected, nil)
+
+	burns, err := w.ListBurnsByRef(ctx, ref)
+	require.NoError(t, err)
+	require.Len(t, burns, 1)
+
+	mc.AssertExpectations(t)
+}
+
+// --- FetchMetaByRef ---
+
+func TestFetchMetaByRef_Collectible(t *testing.T) {
+	mc := new(refMockClient)
+	w := NewWallet(mc, entities.NetworkRegtest)
+	ctx := context.Background()
+
+	aid := testRefAssetID()
+	ref := entities.AssetRefFromAssetID(aid)
+
+	expected := &entities.AssetMeta{Data: []byte("hello")}
+	mc.On("FetchAssetMeta", ctx, mock.MatchedBy(
+		func(r *entities.FetchAssetMetaRequest) bool {
+			return r.AssetID != nil && *r.AssetID == aid
+		},
+	)).Return(expected, nil)
+
+	meta, err := w.FetchMetaByRef(ctx, ref)
+	require.NoError(t, err)
+	require.Equal(t, []byte("hello"), meta.Data)
+
+	mc.AssertExpectations(t)
+}
+
+func TestFetchMetaByRef_GroupKeyRejected(t *testing.T) {
+	mc := new(refMockClient)
+	w := NewWallet(mc, entities.NetworkRegtest)
+	ctx := context.Background()
+
+	gk := testRefGroupKey(t)
+	ref := entities.AssetRefFromGroupKey(gk)
+
+	_, err := w.FetchMetaByRef(ctx, ref)
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrGroupKeyNotSupported)
 }

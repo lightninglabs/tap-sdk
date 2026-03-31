@@ -193,6 +193,115 @@ func (s *Wallet) ImportProof(ctx context.Context,
 // Send performs a simple one-shot address-based asset transfer.
 //
 // The addr must be a valid bech32m-encoded Taproot Asset address. For
+// ListAssetsByRef returns wallet assets matching the given AssetRef.
+//
+// For fungible assets (group key), it filters by group key and returns
+// all UTXOs in the group. For collectibles (asset ID), it returns
+// assets with that specific asset ID.
+func (s *Wallet) ListAssetsByRef(ctx context.Context,
+	ref entities.AssetRef) ([]*entities.Asset, error) {
+
+	req := &entities.ListAssetsRequest{}
+
+	if gk, ok := ref.GroupKey(); ok {
+		req.GroupKey = &gk
+	}
+
+	assets, err := s.ListAssets(ctx, req)
+	if err != nil {
+		return nil, wrapErr("ListAssetsByRef", err)
+	}
+
+	// For collectible refs, the low-level ListAssets doesn't
+	// filter by asset ID natively, so we filter client-side.
+	if aid, ok := ref.AssetID(); ok {
+		var filtered []*entities.Asset
+		for _, a := range assets {
+			if a.Genesis.AssetID == aid {
+				filtered = append(filtered, a)
+			}
+		}
+
+		return filtered, nil
+	}
+
+	return assets, nil
+}
+
+// Burn destroys asset units identified by the given AssetRef. Only
+// collectible (asset-ID) references are supported because the tapd
+// burn RPC requires a specific asset ID.
+//
+// The confirmation text "assets will be destroyed" is set
+// automatically.
+func (s *Wallet) Burn(ctx context.Context,
+	ref entities.AssetRef, amount uint64,
+	note string) (*entities.BurnAssetResponse, error) {
+
+	assetID, ok := ref.AssetID()
+	if !ok {
+		return nil, wrapErr("Burn", ErrGroupKeyNotSupported)
+	}
+
+	resp, err := s.BurnAsset(ctx, &entities.BurnAssetRequest{
+		AssetID:          &assetID,
+		AmountToBurn:     amount,
+		ConfirmationText: "assets will be destroyed",
+		Note:             note,
+	})
+	if err != nil {
+		return nil, wrapErr("Burn", err)
+	}
+
+	return resp, nil
+}
+
+// ListBurnsByRef returns burn events for the asset identified by ref.
+//
+// For fungible assets (group key), it filters by tweaked group key.
+// For collectibles (asset ID), it filters by asset ID.
+func (s *Wallet) ListBurnsByRef(ctx context.Context,
+	ref entities.AssetRef) ([]*entities.AssetBurn, error) {
+
+	req := &entities.ListBurnsRequest{}
+
+	if gk, ok := ref.GroupKey(); ok {
+		req.TweakedGroupKey = &gk
+	} else if aid, ok := ref.AssetID(); ok {
+		req.AssetID = &aid
+	}
+
+	burns, err := s.ListBurns(ctx, req)
+	if err != nil {
+		return nil, wrapErr("ListBurnsByRef", err)
+	}
+
+	return burns, nil
+}
+
+// FetchMetaByRef fetches the metadata for the asset identified by
+// ref. Only collectible (asset-ID) references are supported because
+// the tapd metadata RPC requires a specific asset ID.
+func (s *Wallet) FetchMetaByRef(ctx context.Context,
+	ref entities.AssetRef) (*entities.AssetMeta, error) {
+
+	assetID, ok := ref.AssetID()
+	if !ok {
+		return nil, wrapErr(
+			"FetchMetaByRef", ErrGroupKeyNotSupported,
+		)
+	}
+
+	meta, err := s.FetchAssetMeta(ctx, &entities.FetchAssetMetaRequest{
+		AssetID: &assetID,
+	})
+	if err != nil {
+		return nil, wrapErr("FetchMetaByRef", err)
+	}
+
+	return meta, nil
+}
+
 // fungible assets with V2 addresses (which omit amounts), the amount
 // parameter specifies how many units to send. For V0/V1 addresses where
 // the amount is already embedded, pass 0 and the address amount is used.
