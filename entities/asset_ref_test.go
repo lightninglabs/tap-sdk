@@ -164,3 +164,25 @@ func TestAssetRefRoundTrip(t *testing.T) {
 		})
 	}
 }
+
+func TestUniverseIDFromRef_GroupKey(t *testing.T) {
+	gk := testGroupKey(t)
+	ref := AssetRefFromGroupKey(gk)
+
+	uid := UniverseIDFromRef(ref, ProofTypeIssuance)
+	require.NotNil(t, uid.GroupKey)
+	require.Equal(t, gk, *uid.GroupKey)
+	require.Nil(t, uid.AssetID)
+	require.Equal(t, ProofTypeIssuance, uid.ProofType)
+}
+
+func TestUniverseIDFromRef_AssetID(t *testing.T) {
+	aid := testAssetID()
+	ref := AssetRefFromAssetID(aid)
+
+	uid := UniverseIDFromRef(ref, ProofTypeTransfer)
+	require.NotNil(t, uid.AssetID)
+	require.Equal(t, aid, *uid.AssetID)
+	require.Nil(t, uid.GroupKey)
+	require.Equal(t, ProofTypeTransfer, uid.ProofType)
+}

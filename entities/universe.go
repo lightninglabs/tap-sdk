@@ -29,6 +29,23 @@ type UniverseID struct {
 	ProofType ProofType
 }
 
+// UniverseIDFromRef constructs a UniverseID from an AssetRef and
+// proof type. Fungible refs (group key) produce a group-key universe
+// ID; collectible refs (asset ID) produce an asset-ID universe ID.
+func UniverseIDFromRef(
+	ref AssetRef, proofType ProofType) UniverseID {
+
+	uid := UniverseID{ProofType: proofType}
+
+	if gk, ok := ref.GroupKey(); ok {
+		uid.GroupKey = &gk
+	} else if aid, ok := ref.AssetID(); ok {
+		uid.AssetID = &aid
+	}
+
+	return uid
+}
+
 // MerkleSumNode is a node in the Merkle-Sum Sparse Merkle Tree.
 type MerkleSumNode struct {
 	// RootHash is the MS-SMT root hash.
