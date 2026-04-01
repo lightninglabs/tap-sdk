@@ -17,10 +17,10 @@ import (
 // mockEventClient is a test double for EventClient that allows
 // controlling event delivery and stream errors.
 type mockEventClient struct {
-	mu            sync.Mutex
-	receiveSetup  func() (<-chan *entities.ReceiveEvent, <-chan error)
-	sendSetup     func() (<-chan *entities.SendEvent, <-chan error)
-	mintSetup     func() (<-chan *entities.MintEvent, <-chan error)
+	mu             sync.Mutex
+	receiveSetup   func() (<-chan *entities.ReceiveEvent, <-chan error)
+	sendSetup      func() (<-chan *entities.SendEvent, <-chan error)
+	mintSetup      func() (<-chan *entities.MintEvent, <-chan error)
 	subscribeCalls int
 }
 
@@ -202,7 +202,7 @@ func TestEventListener_Reconnect(t *testing.T) {
 		"expected at least 2 events via reconnect",
 	)
 
-	listener.Stop()
+	require.NoError(t, listener.Stop())
 
 	require.GreaterOrEqual(t, callCount.Load(), int32(2))
 }
@@ -235,6 +235,7 @@ func TestEventListener_FatalError(t *testing.T) {
 	listener := NewEventListener(mc, EventHandler{
 		OnReceive: func(_ context.Context,
 			_ *entities.ReceiveEvent) {
+
 			t.Fatal("should not receive events")
 		},
 		OnError: func(stream string, err error) {
@@ -254,13 +255,13 @@ func TestEventListener_FatalError(t *testing.T) {
 	require.NoError(t, err)
 
 	time.Sleep(200 * time.Millisecond)
-	listener.Stop()
+	require.NoError(t, listener.Stop())
 
 	errorMu.Lock()
 	defer errorMu.Unlock()
 
 	require.Equal(t, "receive", errorStream)
-	require.NotNil(t, errorErr)
+	require.Error(t, errorErr)
 
 	s, ok := status.FromError(errorErr)
 	require.True(t, ok)
@@ -291,7 +292,8 @@ func TestEventListener_MaxRetries(t *testing.T) {
 
 	listener := NewEventListener(mc, EventHandler{
 		OnReceive: func(_ context.Context,
-			_ *entities.ReceiveEvent) {},
+			_ *entities.ReceiveEvent) {
+		},
 		OnError: func(_ string, _ error) {
 			gotError.Store(true)
 		},
@@ -310,7 +312,7 @@ func TestEventListener_MaxRetries(t *testing.T) {
 	require.NoError(t, err)
 
 	time.Sleep(500 * time.Millisecond)
-	listener.Stop()
+	require.NoError(t, listener.Stop())
 
 	require.True(t, gotError.Load())
 	// 1 initial + 3 retries = 4 calls.
@@ -331,7 +333,8 @@ func TestEventListener_Stop(t *testing.T) {
 
 	listener := NewEventListener(mc, EventHandler{
 		OnReceive: func(_ context.Context,
-			_ *entities.ReceiveEvent) {},
+			_ *entities.ReceiveEvent) {
+		},
 	})
 
 	ctx := context.Background()
@@ -342,7 +345,7 @@ func TestEventListener_Stop(t *testing.T) {
 	// Stop should not hang.
 	done := make(chan struct{})
 	go func() {
-		listener.Stop()
+		_ = listener.Stop()
 		close(done)
 	}()
 
@@ -367,7 +370,7 @@ func TestEventListener_NilHandlers(t *testing.T) {
 	require.NoError(t, err)
 
 	time.Sleep(50 * time.Millisecond)
-	listener.Stop()
+	require.NoError(t, listener.Stop())
 
 	// No subscribe calls should have been made.
 	require.Equal(t, 0, mc.calls())
@@ -411,14 +414,17 @@ func TestEventListener_MultipleStreams(t *testing.T) {
 	listener := NewEventListener(mc, EventHandler{
 		OnReceive: func(_ context.Context,
 			_ *entities.ReceiveEvent) {
+
 			receiveCount.Add(1)
 		},
 		OnSend: func(_ context.Context,
 			_ *entities.SendEvent) {
+
 			sendCount.Add(1)
 		},
 		OnMint: func(_ context.Context,
 			_ *entities.MintEvent) {
+
 			mintCount.Add(1)
 		},
 	}, WithMaxRetries(1), WithInitialBackoff(10*time.Millisecond))
@@ -432,7 +438,7 @@ func TestEventListener_MultipleStreams(t *testing.T) {
 	require.NoError(t, err)
 
 	time.Sleep(300 * time.Millisecond)
-	listener.Stop()
+	require.NoError(t, listener.Stop())
 
 	require.GreaterOrEqual(t, receiveCount.Load(), int32(1))
 	require.GreaterOrEqual(t, sendCount.Load(), int32(1))

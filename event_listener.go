@@ -2,10 +2,10 @@ package tapsdk
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"errors"
-	"io"
 	"math"
-	"math/rand/v2"
 	"sync"
 	"time"
 
@@ -306,12 +306,13 @@ func (l *eventListener) runStream(ctx context.Context, name string,
 		}
 
 		// Grow backoff.
-		backoff = time.Duration(
-			float64(backoff) * l.config.BackoffMultiplier,
+		backoff = min(
+			time.Duration(
+				float64(backoff)*
+					l.config.BackoffMultiplier,
+			),
+			l.config.MaxBackoff,
 		)
-		if backoff > l.config.MaxBackoff {
-			backoff = l.config.MaxBackoff
-		}
 	}
 }
 
@@ -498,41 +499,24 @@ func isFatalError(err error) bool {
 	return false
 }
 
-// isRetriableError returns true if the error can be retried with a
-// reconnection.
-func isRetriableError(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	// io.EOF means the stream ended normally (server closed it).
-	if errors.Is(err, io.EOF) {
-		return true
-	}
-
-	// gRPC retriable codes.
-	s, ok := status.FromError(err)
-	if ok {
-		switch s.Code() {
-		case codes.Unavailable, codes.DeadlineExceeded,
-			codes.Aborted, codes.Internal,
-			codes.ResourceExhausted:
-
-			return true
-		}
-	}
-
-	// Default: retry unknown errors.
-	return !isFatalError(err)
-}
-
 // addJitter adds ±jitterFraction random jitter to a duration.
 func addJitter(d time.Duration) time.Duration {
 	jitter := float64(d) * jitterFraction
-	offset := (rand.Float64()*2 - 1) * jitter
+	offset := (cryptoFloat64()*2 - 1) * jitter
 
 	return time.Duration(math.Max(
 		float64(d)+offset,
 		float64(time.Millisecond),
 	))
+}
+
+// cryptoFloat64 returns a cryptographically random float64 in
+// [0, 1).
+func cryptoFloat64() float64 {
+	var buf [8]byte
+	_, _ = rand.Read(buf[:])
+
+	return float64(
+		binary.LittleEndian.Uint64(buf[:])>>11,
+	) / (1 << 53)
 }
