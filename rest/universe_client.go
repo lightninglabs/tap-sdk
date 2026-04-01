@@ -48,6 +48,77 @@ type jsonAssetLeafReq struct {
 	Proof string `json:"proof"`
 }
 
+// marshalProofType converts an entities.ProofType to the proto enum
+// string.
+func marshalProofType(pt entities.ProofType) string {
+	switch pt {
+	case entities.ProofTypeIssuance:
+		return "PROOF_TYPE_ISSUANCE"
+	case entities.ProofTypeTransfer:
+		return "PROOF_TYPE_TRANSFER"
+	default:
+		return "PROOF_TYPE_UNSPECIFIED"
+	}
+}
+
+// marshalSortDirection converts an entities.SortDirection to the proto
+// enum string.
+func marshalSortDirection(sd entities.SortDirection) string {
+	switch sd {
+	case entities.SortAscending:
+		return "SORT_DIRECTION_ASC"
+	default:
+		return "SORT_DIRECTION_DESC"
+	}
+}
+
+// marshalAssetQuerySort converts an entities.AssetQuerySort to the
+// proto enum string.
+func marshalAssetQuerySort(s entities.AssetQuerySort) string {
+	switch s {
+	case entities.SortByAssetName:
+		return "SORT_BY_ASSET_NAME"
+	case entities.SortByAssetID:
+		return "SORT_BY_ASSET_ID"
+	case entities.SortByAssetType:
+		return "SORT_BY_ASSET_TYPE"
+	case entities.SortByTotalSyncs:
+		return "SORT_BY_TOTAL_SYNCS"
+	case entities.SortByTotalProofs:
+		return "SORT_BY_TOTAL_PROOFS"
+	case entities.SortByGenesisHeight:
+		return "SORT_BY_GENESIS_HEIGHT"
+	case entities.SortByTotalSupply:
+		return "SORT_BY_TOTAL_SUPPLY"
+	default:
+		return "SORT_BY_NONE"
+	}
+}
+
+// marshalAssetTypeFilter converts an entities.AssetTypeFilter to the
+// proto enum string.
+func marshalAssetTypeFilter(f entities.AssetTypeFilter) string {
+	switch f {
+	case entities.FilterAssetNormal:
+		return "FILTER_ASSET_NORMAL"
+	case entities.FilterAssetCollectible:
+		return "FILTER_ASSET_COLLECTIBLE"
+	default:
+		return "FILTER_ASSET_NONE"
+	}
+}
+
+// marshalSyncMode converts an entities.UniverseSyncMode to the proto
+// enum string.
+func marshalSyncMode(m entities.UniverseSyncMode) string {
+	switch m {
+	case entities.SyncFull:
+		return "SYNC_FULL"
+	default:
+		return "SYNC_ISSUANCE_ONLY"
+	}
+}
+
 // InsertProof inserts a proof into the local universe.
 func (u *universeClient) InsertProof(ctx context.Context,
 	rawProof []byte,
@@ -132,7 +203,60 @@ func (u *universeClient) AssetRoots(ctx context.Context,
 	req *entities.AssetRootRequest) (
 	map[string]*entities.UniverseRoot, error) {
 
-	return nil, errNotImplemented("AssetRoots")
+	params := ""
+	if req != nil {
+		p := make(map[string]string)
+		if req.WithAmountsByID {
+			p["with_amounts_by_id"] = "true"
+		}
+		if req.Offset != 0 {
+			p["offset"] = fmt.Sprintf("%d", req.Offset)
+		}
+		if req.Limit != 0 {
+			p["limit"] = fmt.Sprintf("%d", req.Limit)
+		}
+		if req.Direction != 0 {
+			p["direction"] = marshalSortDirection(
+				req.Direction,
+			)
+		}
+
+		if len(p) > 0 {
+			first := true
+			for k, v := range p {
+				if first {
+					params += "?"
+					first = false
+				} else {
+					params += "&"
+				}
+				params += k + "=" + v
+			}
+		}
+	}
+
+	path := "/v1/taproot-assets/universe/roots" + params
+
+	var resp jsonAssetRootsResponse
+	err := u.transport.doGet(
+		ctx, path, macaroon.UniverseServiceMac, &resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]*entities.UniverseRoot)
+	for k, v := range resp.UniverseRoots {
+		root, err := unmarshalUniverseRoot(v)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"unmarshal root %s: %w", k, err,
+			)
+		}
+		result[k] = root
+	}
+
+	return result, nil
 }
 
 // QueryAssetRoots queries the issuance and transfer roots for a
@@ -141,14 +265,92 @@ func (u *universeClient) QueryAssetRoots(ctx context.Context,
 	id *entities.UniverseID) (*entities.QueryRootResponse,
 	error) {
 
-	return nil, errNotImplemented("QueryAssetRoots")
+	if id == nil {
+		return nil, fmt.Errorf("nil universe ID")
+	}
+
+	var path string
+	proofTypeParam := "?id.proof_type=" + marshalProofType(
+		id.ProofType,
+	)
+
+	if id.AssetID != nil {
+		assetIDStr := hex.EncodeToString(id.AssetID[:])
+		path = fmt.Sprintf(
+			"/v1/taproot-assets/universe/roots/"+
+				"asset-id/%s%s",
+			assetIDStr, proofTypeParam,
+		)
+	} else if id.GroupKey != nil {
+		groupKeyStr := hex.EncodeToString(id.GroupKey[:])
+		path = fmt.Sprintf(
+			"/v1/taproot-assets/universe/roots/"+
+				"group-key/%s%s",
+			groupKeyStr, proofTypeParam,
+		)
+	} else {
+		return nil, fmt.Errorf(
+			"universe ID must have either AssetID or " +
+				"GroupKey",
+		)
+	}
+
+	var resp jsonQueryRootResponse
+	err := u.transport.doGet(
+		ctx, path, macaroon.UniverseServiceMac, &resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	issuanceRoot, err := unmarshalUniverseRoot(resp.IssuanceRoot)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshal issuance root: %w", err)
+	}
+
+	transferRoot, err := unmarshalUniverseRoot(resp.TransferRoot)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshal transfer root: %w", err)
+	}
+
+	return &entities.QueryRootResponse{
+		IssuanceRoot: issuanceRoot,
+		TransferRoot: transferRoot,
+	}, nil
 }
 
 // DeleteAssetRoot deletes a universe root and all associated data.
 func (u *universeClient) DeleteAssetRoot(ctx context.Context,
 	id *entities.UniverseID) error {
 
-	return errNotImplemented("DeleteAssetRoot")
+	if id == nil {
+		return fmt.Errorf("nil universe ID")
+	}
+
+	params := "?id.proof_type=" + marshalProofType(id.ProofType)
+
+	if id.AssetID != nil {
+		assetIDStr := hex.EncodeToString(id.AssetID[:])
+		params += "&id.asset_id_str=" + assetIDStr
+	}
+
+	if id.GroupKey != nil {
+		groupKeyStr := hex.EncodeToString(id.GroupKey[:])
+		params += "&id.group_key_str=" + groupKeyStr
+	}
+
+	path := "/v1/taproot-assets/universe/delete" + params
+
+	var resp jsonDeleteRootResponse
+	err := u.transport.do(
+		ctx, "DELETE", path, macaroon.UniverseServiceMac, nil,
+		&resp,
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // AssetLeafKeys returns the set of leaf keys for a universe.
@@ -156,14 +358,126 @@ func (u *universeClient) AssetLeafKeys(ctx context.Context,
 	req *entities.AssetLeafKeysRequest) (
 	[]entities.AssetLeafKey, error) {
 
-	return nil, errNotImplemented("AssetLeafKeys")
+	if req == nil {
+		return nil, fmt.Errorf("nil request")
+	}
+
+	var basePath string
+	if req.ID.AssetID != nil {
+		assetIDStr := hex.EncodeToString(req.ID.AssetID[:])
+		basePath = fmt.Sprintf(
+			"/v1/taproot-assets/universe/keys/"+
+				"asset-id/%s",
+			assetIDStr,
+		)
+	} else if req.ID.GroupKey != nil {
+		groupKeyStr := hex.EncodeToString(req.ID.GroupKey[:])
+		basePath = fmt.Sprintf(
+			"/v1/taproot-assets/universe/keys/"+
+				"group-key/%s",
+			groupKeyStr,
+		)
+	} else {
+		return nil, fmt.Errorf(
+			"universe ID must have either AssetID or " +
+				"GroupKey",
+		)
+	}
+
+	params := "?id.proof_type=" + marshalProofType(
+		req.ID.ProofType,
+	)
+
+	if req.Offset != 0 {
+		params += fmt.Sprintf("&offset=%d", req.Offset)
+	}
+	if req.Limit != 0 {
+		params += fmt.Sprintf("&limit=%d", req.Limit)
+	}
+	if req.Direction != 0 {
+		params += "&direction=" + marshalSortDirection(
+			req.Direction,
+		)
+	}
+
+	path := basePath + params
+
+	var resp jsonAssetLeafKeysResponse
+	err := u.transport.doGet(
+		ctx, path, macaroon.UniverseServiceMac, &resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]entities.AssetLeafKey, 0, len(resp.AssetKeys))
+	for _, k := range resp.AssetKeys {
+		leafKey, err := unmarshalAssetLeafKey(k)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"unmarshal asset key: %w", err,
+			)
+		}
+		result = append(result, *leafKey)
+	}
+
+	return result, nil
 }
 
 // AssetLeaves returns the set of asset leaves for a universe.
 func (u *universeClient) AssetLeaves(ctx context.Context,
 	id *entities.UniverseID) ([]entities.AssetLeaf, error) {
 
-	return nil, errNotImplemented("AssetLeaves")
+	if id == nil {
+		return nil, fmt.Errorf("nil universe ID")
+	}
+
+	var path string
+	proofTypeParam := "?proof_type=" + marshalProofType(
+		id.ProofType,
+	)
+
+	if id.AssetID != nil {
+		assetIDStr := hex.EncodeToString(id.AssetID[:])
+		path = fmt.Sprintf(
+			"/v1/taproot-assets/universe/leaves/"+
+				"asset-id/%s%s",
+			assetIDStr, proofTypeParam,
+		)
+	} else if id.GroupKey != nil {
+		groupKeyStr := hex.EncodeToString(id.GroupKey[:])
+		path = fmt.Sprintf(
+			"/v1/taproot-assets/universe/leaves/"+
+				"group-key/%s%s",
+			groupKeyStr, proofTypeParam,
+		)
+	} else {
+		return nil, fmt.Errorf(
+			"universe ID must have either AssetID or " +
+				"GroupKey",
+		)
+	}
+
+	var resp jsonAssetLeavesResponse
+	err := u.transport.doGet(
+		ctx, path, macaroon.UniverseServiceMac, &resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]entities.AssetLeaf, 0, len(resp.Leaves))
+	for _, l := range resp.Leaves {
+		leaf, err := unmarshalAssetLeaf(l)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"unmarshal asset leaf: %w", err,
+			)
+		}
+		result = append(result, *leaf)
+	}
+
+	return result, nil
 }
 
 // QueryProof queries a specific proof from the universe.
@@ -171,14 +485,67 @@ func (u *universeClient) QueryProof(ctx context.Context,
 	key *entities.UniverseKey) (*entities.AssetProofResponse,
 	error) {
 
-	return nil, errNotImplemented("QueryProof")
+	if key == nil {
+		return nil, fmt.Errorf("nil universe key")
+	}
+
+	var basePath string
+	if key.ID.AssetID != nil {
+		assetIDStr := hex.EncodeToString(key.ID.AssetID[:])
+		basePath = fmt.Sprintf(
+			"/v1/taproot-assets/universe/proofs/"+
+				"asset-id/%s",
+			assetIDStr,
+		)
+	} else if key.ID.GroupKey != nil {
+		groupKeyStr := hex.EncodeToString(key.ID.GroupKey[:])
+		basePath = fmt.Sprintf(
+			"/v1/taproot-assets/universe/proofs/"+
+				"group-key/%s",
+			groupKeyStr,
+		)
+	} else {
+		return nil, fmt.Errorf(
+			"universe ID must have either AssetID or " +
+				"GroupKey",
+		)
+	}
+
+	hashStr := hex.EncodeToString(key.LeafKey.Outpoint.Txid[:])
+	index := key.LeafKey.Outpoint.Index
+	scriptKeyStr := hex.EncodeToString(key.LeafKey.ScriptKey[:])
+
+	path := fmt.Sprintf(
+		"%s/%s/%d/%s?id.proof_type=%s",
+		basePath, hashStr, index, scriptKeyStr,
+		marshalProofType(key.ID.ProofType),
+	)
+
+	var resp jsonQueryProofResponse
+	err := u.transport.doGet(
+		ctx, path, macaroon.UniverseServiceMac, &resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return unmarshalAssetProofResponse(&resp)
 }
 
 // UniverseStats returns aggregate statistics for the universe.
 func (u *universeClient) UniverseStats(
 	ctx context.Context) (*entities.UniverseStats, error) {
 
-	return nil, errNotImplemented("UniverseStats")
+	var resp jsonUniverseStatsResponse
+	err := u.transport.doGet(
+		ctx, "/v1/taproot-assets/universe/stats",
+		macaroon.UniverseServiceMac, &resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return unmarshalUniverseStats(&resp)
 }
 
 // QueryAssetStats returns per-asset statistics.
@@ -186,7 +553,93 @@ func (u *universeClient) QueryAssetStats(ctx context.Context,
 	req *entities.AssetStatsQuery) (
 	[]entities.AssetStatsSnapshot, error) {
 
-	return nil, errNotImplemented("QueryAssetStats")
+	params := ""
+	if req != nil {
+		p := make([]string, 0)
+
+		if req.AssetNameFilter != "" {
+			p = append(
+				p, "asset_name_filter="+
+					req.AssetNameFilter,
+			)
+		}
+
+		if req.AssetIDFilter != nil {
+			assetIDStr := hex.EncodeToString(
+				req.AssetIDFilter[:],
+			)
+			p = append(p, "asset_id_filter="+assetIDStr)
+		}
+
+		if req.AssetTypeFilter != 0 {
+			p = append(
+				p, "asset_type_filter="+
+					marshalAssetTypeFilter(
+						req.AssetTypeFilter,
+					),
+			)
+		}
+
+		if req.SortBy != 0 {
+			p = append(
+				p, "sort_by="+marshalAssetQuerySort(
+					req.SortBy,
+				),
+			)
+		}
+
+		if req.Offset != 0 {
+			p = append(
+				p, fmt.Sprintf("offset=%d", req.Offset),
+			)
+		}
+
+		if req.Limit != 0 {
+			p = append(
+				p, fmt.Sprintf("limit=%d", req.Limit),
+			)
+		}
+
+		if req.Direction != 0 {
+			p = append(
+				p, "direction="+marshalSortDirection(
+					req.Direction,
+				),
+			)
+		}
+
+		if len(p) > 0 {
+			params = "?" + p[0]
+			for i := 1; i < len(p); i++ {
+				params += "&" + p[i]
+			}
+		}
+	}
+
+	path := "/v1/taproot-assets/universe/stats/assets" + params
+
+	var resp jsonAssetStatsResponse
+	err := u.transport.doGet(
+		ctx, path, macaroon.UniverseServiceMac, &resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(
+		[]entities.AssetStatsSnapshot, 0, len(resp.AssetStats),
+	)
+	for _, s := range resp.AssetStats {
+		snapshot, err := unmarshalAssetStatsSnapshot(s)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"unmarshal asset stats snapshot: %w", err,
+			)
+		}
+		result = append(result, *snapshot)
+	}
+
+	return result, nil
 }
 
 // QueryEvents returns daily sync and proof event counts.
@@ -194,28 +647,132 @@ func (u *universeClient) QueryEvents(ctx context.Context,
 	req *entities.QueryEventsRequest) (
 	[]entities.GroupedUniverseEvents, error) {
 
-	return nil, errNotImplemented("QueryEvents")
+	params := ""
+	if req != nil {
+		params = fmt.Sprintf(
+			"?start_timestamp=%d&end_timestamp=%d",
+			req.StartTimestamp, req.EndTimestamp,
+		)
+	}
+
+	path := "/v1/taproot-assets/universe/stats/events" + params
+
+	var resp jsonQueryEventsResponse
+	err := u.transport.doGet(
+		ctx, path, macaroon.UniverseServiceMac, &resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(
+		[]entities.GroupedUniverseEvents, 0, len(resp.Events),
+	)
+	for _, e := range resp.Events {
+		event, err := unmarshalGroupedUniverseEvents(e)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"unmarshal grouped events: %w", err,
+			)
+		}
+		result = append(result, *event)
+	}
+
+	return result, nil
 }
 
 // ListFederationServers lists the universe federation peers.
 func (u *universeClient) ListFederationServers(
 	ctx context.Context) ([]entities.FederationServer, error) {
 
-	return nil, errNotImplemented("ListFederationServers")
+	var resp jsonListFederationServersResponse
+	err := u.transport.doGet(
+		ctx, "/v1/taproot-assets/universe/federation",
+		macaroon.UniverseServiceMac, &resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(
+		[]entities.FederationServer, 0, len(resp.Servers),
+	)
+	for _, s := range resp.Servers {
+		server, err := unmarshalFederationServer(s)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"unmarshal federation server: %w", err,
+			)
+		}
+		result = append(result, *server)
+	}
+
+	return result, nil
 }
 
 // AddFederationServer adds servers to the federation.
 func (u *universeClient) AddFederationServer(ctx context.Context,
 	servers []entities.FederationServer) error {
 
-	return errNotImplemented("AddFederationServer")
+	jsonServers := make(
+		[]*jsonUniverseFederationServer, 0, len(servers),
+	)
+	for _, s := range servers {
+		jsonServers = append(jsonServers,
+			&jsonUniverseFederationServer{
+				Host: s.Host,
+				ID:   s.ID,
+			},
+		)
+	}
+
+	body := &jsonAddFederationServerRequest{
+		Servers: jsonServers,
+	}
+
+	var resp jsonAddFederationServerResponse
+	err := u.transport.doPost(
+		ctx, "/v1/taproot-assets/universe/federation",
+		macaroon.UniverseServiceMac, body, &resp,
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // DeleteFederationServer removes servers from the federation.
 func (u *universeClient) DeleteFederationServer(ctx context.Context,
 	servers []entities.FederationServer) error {
 
-	return errNotImplemented("DeleteFederationServer")
+	jsonServers := make(
+		[]*jsonUniverseFederationServer, 0, len(servers),
+	)
+	for _, s := range servers {
+		jsonServers = append(jsonServers,
+			&jsonUniverseFederationServer{
+				Host: s.Host,
+				ID:   s.ID,
+			},
+		)
+	}
+
+	body := &jsonDeleteFederationServerRequest{
+		Servers: jsonServers,
+	}
+
+	var resp jsonDeleteFederationServerResponse
+	err := u.transport.do(
+		ctx, "DELETE",
+		"/v1/taproot-assets/universe/federation",
+		macaroon.UniverseServiceMac, body, &resp,
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // SetFederationSyncConfig sets the federation sync configuration.
@@ -224,7 +781,65 @@ func (u *universeClient) SetFederationSyncConfig(
 	global []entities.GlobalFederationSyncConfig,
 	asset []entities.AssetFederationSyncConfig) error {
 
-	return errNotImplemented("SetFederationSyncConfig")
+	jsonGlobal := make(
+		[]*jsonGlobalFederationSyncConfig, 0, len(global),
+	)
+	for _, g := range global {
+		jsonGlobal = append(jsonGlobal,
+			&jsonGlobalFederationSyncConfig{
+				ProofType: marshalProofType(
+					g.ProofType,
+				),
+				AllowSyncInsert: g.AllowSyncInsert,
+				AllowSyncExport: g.AllowSyncExport,
+			},
+		)
+	}
+
+	jsonAsset := make(
+		[]*jsonAssetFederationSyncConfig, 0, len(asset),
+	)
+	for _, a := range asset {
+		id := &jsonUniverseID{
+			ProofType: marshalProofType(a.ID.ProofType),
+		}
+
+		if a.ID.AssetID != nil {
+			id.AssetID = hex.EncodeToString(
+				a.ID.AssetID[:],
+			)
+		}
+
+		if a.ID.GroupKey != nil {
+			id.GroupKey = hex.EncodeToString(
+				a.ID.GroupKey[:],
+			)
+		}
+
+		jsonAsset = append(jsonAsset,
+			&jsonAssetFederationSyncConfig{
+				ID:              id,
+				AllowSyncInsert: a.AllowSyncInsert,
+				AllowSyncExport: a.AllowSyncExport,
+			},
+		)
+	}
+
+	body := &jsonSetFederationSyncConfigRequest{
+		GlobalSyncConfigs: jsonGlobal,
+		AssetSyncConfigs:  jsonAsset,
+	}
+
+	var resp jsonSetFederationSyncConfigResponse
+	err := u.transport.doPost(
+		ctx, "/v1/taproot-assets/universe/sync/config",
+		macaroon.UniverseServiceMac, body, &resp,
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // QueryFederationSyncConfig queries the federation sync config.
@@ -233,14 +848,70 @@ func (u *universeClient) QueryFederationSyncConfig(
 	ids []entities.UniverseID) (
 	*entities.FederationSyncConfig, error) {
 
-	return nil, errNotImplemented("QueryFederationSyncConfig")
+	var resp jsonQueryFederationSyncConfigResponse
+	err := u.transport.doGet(
+		ctx, "/v1/taproot-assets/universe/sync/config",
+		macaroon.UniverseServiceMac, &resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	globalConfigs := make(
+		[]entities.GlobalFederationSyncConfig, 0,
+		len(resp.GlobalSyncConfigs),
+	)
+	for _, g := range resp.GlobalSyncConfigs {
+		cfg, err := unmarshalGlobalFederationSyncConfig(g)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"unmarshal global sync config: %w", err,
+			)
+		}
+		globalConfigs = append(globalConfigs, *cfg)
+	}
+
+	assetConfigs := make(
+		[]entities.AssetFederationSyncConfig, 0,
+		len(resp.AssetSyncConfigs),
+	)
+	for _, a := range resp.AssetSyncConfigs {
+		cfg, err := unmarshalAssetFederationSyncConfig(a)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"unmarshal asset sync config: %w", err,
+			)
+		}
+		assetConfigs = append(assetConfigs, *cfg)
+	}
+
+	return &entities.FederationSyncConfig{
+		GlobalSyncConfigs: globalConfigs,
+		AssetSyncConfigs:  assetConfigs,
+	}, nil
 }
 
 // Info returns basic universe server information.
 func (u *universeClient) Info(
 	ctx context.Context) (*entities.UniverseInfo, error) {
 
-	return nil, errNotImplemented("Info")
+	var resp jsonInfoResponse
+	err := u.transport.doGet(
+		ctx, "/v1/taproot-assets/universe/info",
+		macaroon.UniverseServiceMac, &resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	runtimeID, err := parseInt64(resp.RuntimeID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid runtime_id: %w", err)
+	}
+
+	return &entities.UniverseInfo{
+		RuntimeID: runtimeID,
+	}, nil
 }
 
 // SyncUniverse synchronizes with a remote universe server.
@@ -248,5 +919,61 @@ func (u *universeClient) SyncUniverse(ctx context.Context,
 	req *entities.SyncRequest) (
 	[]entities.SyncedUniverse, error) {
 
-	return nil, errNotImplemented("SyncUniverse")
+	if req == nil {
+		return nil, fmt.Errorf("nil sync request")
+	}
+
+	jsonTargets := make([]*jsonSyncTarget, 0, len(req.SyncTargets))
+	for _, t := range req.SyncTargets {
+		id := &jsonUniverseID{
+			ProofType: marshalProofType(t.ID.ProofType),
+		}
+
+		if t.ID.AssetID != nil {
+			id.AssetID = hex.EncodeToString(
+				t.ID.AssetID[:],
+			)
+		}
+
+		if t.ID.GroupKey != nil {
+			id.GroupKey = hex.EncodeToString(
+				t.ID.GroupKey[:],
+			)
+		}
+
+		jsonTargets = append(jsonTargets, &jsonSyncTarget{
+			ID: id,
+		})
+	}
+
+	body := &jsonSyncUniverseRequest{
+		UniverseHost: req.UniverseHost,
+		SyncMode:     marshalSyncMode(req.SyncMode),
+		SyncTargets:  jsonTargets,
+	}
+
+	var resp jsonSyncUniverseResponse
+	err := u.transport.doPost(
+		ctx, "/v1/taproot-assets/universe/sync",
+		macaroon.UniverseServiceMac, body, &resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(
+		[]entities.SyncedUniverse, 0,
+		len(resp.SyncedUniverses),
+	)
+	for _, s := range resp.SyncedUniverses {
+		synced, err := unmarshalSyncedUniverse(s)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"unmarshal synced universe: %w", err,
+			)
+		}
+		result = append(result, *synced)
+	}
+
+	return result, nil
 }

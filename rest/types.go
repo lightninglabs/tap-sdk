@@ -505,3 +505,236 @@ type jsonVerifyOwnershipResponse struct {
 type jsonDeclareScriptKeyResponse struct {
 	ScriptKey *jsonScriptKey `json:"script_key"`
 }
+
+// --- UniverseClient types ---
+
+// jsonMerkleSumNode is the JSON shape of universerpc.MerkleSumNode.
+type jsonMerkleSumNode struct {
+	RootHash string `json:"root_hash"`
+	RootSum  string `json:"root_sum"`
+}
+
+// jsonUniverseRoot is the JSON shape of universerpc.UniverseRoot.
+type jsonUniverseRoot struct {
+	ID               *jsonUniverseID    `json:"id"`
+	MSSMTRoot        *jsonMerkleSumNode `json:"mssmt_root"`
+	AssetName        string             `json:"asset_name"`
+	AmountsByAssetID map[string]string  `json:"amounts_by_asset_id"` //nolint:lll
+}
+
+// jsonAssetRootsResponse is the JSON shape of
+// universerpc.AssetRootResponse.
+type jsonAssetRootsResponse struct {
+	UniverseRoots map[string]*jsonUniverseRoot `json:"universe_roots"` //nolint:lll
+}
+
+// jsonQueryRootResponse is the JSON shape of
+// universerpc.QueryRootResponse.
+type jsonQueryRootResponse struct {
+	IssuanceRoot *jsonUniverseRoot `json:"issuance_root"`
+	TransferRoot *jsonUniverseRoot `json:"transfer_root"`
+}
+
+// jsonDeleteRootResponse is the JSON shape of
+// universerpc.DeleteRootResponse (empty body).
+type jsonDeleteRootResponse struct {
+}
+
+// jsonAssetLeafKeysResponse is the JSON shape of
+// universerpc.AssetLeafKeysResponse.
+type jsonAssetLeafKeysResponse struct {
+	AssetKeys []*jsonAssetKey `json:"asset_keys"`
+}
+
+// jsonAssetKey is the JSON shape of universerpc.AssetKey.
+type jsonAssetKey struct {
+	Outpoint  *jsonOutpoint `json:"outpoint"`
+	ScriptKey string        `json:"script_key"`
+}
+
+// jsonOutpoint is the JSON shape of taprpc.Outpoint.
+type jsonOutpoint struct {
+	Txid        string `json:"txid"`
+	OutputIndex uint32 `json:"output_index"`
+}
+
+// jsonAssetLeavesResponse is the JSON shape of
+// universerpc.AssetLeafResponse.
+type jsonAssetLeavesResponse struct {
+	Leaves []*jsonAssetLeafResp `json:"leaves"`
+}
+
+// jsonAssetLeafResp is the JSON shape of universerpc.AssetLeaf in
+// responses.
+type jsonAssetLeafResp struct {
+	Asset *jsonAsset `json:"asset"`
+	Proof string     `json:"proof"`
+}
+
+// jsonQueryProofResponse is the JSON shape of
+// universerpc.AssetProofResponse.
+type jsonQueryProofResponse struct {
+	Req                      *jsonUniverseKey   `json:"req"`
+	UniverseRoot             *jsonUniverseRoot  `json:"universe_root"`
+	UniverseInclusionProof   string             `json:"universe_inclusion_proof"` //nolint:lll
+	AssetLeaf                *jsonAssetLeafResp `json:"asset_leaf"`
+	MultiverseRoot           *jsonMerkleSumNode `json:"multiverse_root"`
+	MultiverseInclusionProof string             `json:"multiverse_inclusion_proof"` //nolint:lll
+}
+
+// jsonUniverseStatsResponse is the JSON shape of
+// universerpc.UniverseAssetStats.
+type jsonUniverseStatsResponse struct {
+	NumTotalAssets string `json:"num_total_assets"`
+	NumTotalGroups string `json:"num_total_groups"`
+	NumTotalSyncs  string `json:"num_total_syncs"`
+	NumTotalProofs string `json:"num_total_proofs"`
+}
+
+// jsonAssetStatsResponse is the JSON shape of
+// universerpc.AssetStatsQueryResponse.
+type jsonAssetStatsResponse struct {
+	AssetStats []*jsonAssetStatsSnapshot `json:"asset_stats"`
+}
+
+// jsonAssetStatsSnapshot is the JSON shape of
+// universerpc.AssetStatsSnapshot.
+type jsonAssetStatsSnapshot struct {
+	AssetID     string               `json:"asset_id"`
+	GroupKey    string               `json:"group_key"`
+	GroupSupply string               `json:"group_supply"`
+	GroupAnchor *jsonAssetStatsAsset `json:"group_anchor"`
+	Asset       *jsonAssetStatsAsset `json:"asset"`
+	TotalSyncs  string               `json:"total_syncs"`
+	TotalProofs string               `json:"total_proofs"`
+}
+
+// jsonAssetStatsAsset is the JSON shape of
+// universerpc.AssetStatsAsset.
+type jsonAssetStatsAsset struct {
+	AssetID          string `json:"asset_id"`
+	GenesisPoint     string `json:"genesis_point"`
+	TotalSupply      string `json:"total_supply"`
+	AssetName        string `json:"asset_name"`
+	AssetType        string `json:"asset_type"`
+	GenesisHeight    int32  `json:"genesis_height"`
+	GenesisTimestamp string `json:"genesis_timestamp"`
+	AnchorPoint      string `json:"anchor_point"`
+	DecimalDisplay   uint32 `json:"decimal_display"`
+}
+
+// jsonQueryEventsResponse is the JSON shape of
+// universerpc.QueryEventsResponse.
+type jsonQueryEventsResponse struct {
+	Events []*jsonGroupedUniverseEvents `json:"events"`
+}
+
+// jsonGroupedUniverseEvents is the JSON shape of
+// universerpc.GroupedUniverseEvents.
+type jsonGroupedUniverseEvents struct {
+	Date           string `json:"date"`
+	SyncEvents     string `json:"sync_events"`
+	NewProofEvents string `json:"new_proof_events"`
+}
+
+// jsonListFederationServersResponse is the JSON shape of
+// universerpc.ListFederationServersResponse.
+type jsonListFederationServersResponse struct {
+	Servers []*jsonUniverseFederationServer `json:"servers"`
+}
+
+// jsonUniverseFederationServer is the JSON shape of
+// universerpc.UniverseFederationServer.
+type jsonUniverseFederationServer struct {
+	Host string `json:"host"`
+	ID   int32  `json:"id"`
+}
+
+// jsonAddFederationServerRequest is the JSON body for
+// AddFederationServer.
+type jsonAddFederationServerRequest struct {
+	Servers []*jsonUniverseFederationServer `json:"servers"`
+}
+
+// jsonAddFederationServerResponse is the JSON shape of
+// universerpc.AddFederationServerResponse (empty body).
+type jsonAddFederationServerResponse struct {
+}
+
+// jsonDeleteFederationServerRequest is the JSON body for
+// DeleteFederationServer.
+type jsonDeleteFederationServerRequest struct {
+	Servers []*jsonUniverseFederationServer `json:"servers"`
+}
+
+// jsonDeleteFederationServerResponse is the JSON shape of
+// universerpc.DeleteFederationServerResponse (empty body).
+type jsonDeleteFederationServerResponse struct {
+}
+
+// jsonSetFederationSyncConfigRequest is the JSON body for
+// SetFederationSyncConfig.
+type jsonSetFederationSyncConfigRequest struct {
+	GlobalSyncConfigs []*jsonGlobalFederationSyncConfig `json:"global_sync_configs"` //nolint:lll
+	AssetSyncConfigs  []*jsonAssetFederationSyncConfig  `json:"asset_sync_configs"`  //nolint:lll
+}
+
+// jsonGlobalFederationSyncConfig is the JSON shape of
+// universerpc.GlobalFederationSyncConfig.
+type jsonGlobalFederationSyncConfig struct {
+	ProofType       string `json:"proof_type"`
+	AllowSyncInsert bool   `json:"allow_sync_insert"`
+	AllowSyncExport bool   `json:"allow_sync_export"`
+}
+
+// jsonAssetFederationSyncConfig is the JSON shape of
+// universerpc.AssetFederationSyncConfig.
+type jsonAssetFederationSyncConfig struct {
+	ID              *jsonUniverseID `json:"id"`
+	AllowSyncInsert bool            `json:"allow_sync_insert"`
+	AllowSyncExport bool            `json:"allow_sync_export"`
+}
+
+// jsonSetFederationSyncConfigResponse is the JSON shape of
+// universerpc.SetFederationSyncConfigResponse (empty body).
+type jsonSetFederationSyncConfigResponse struct {
+}
+
+// jsonQueryFederationSyncConfigResponse is the JSON shape of
+// universerpc.QueryFederationSyncConfigResponse.
+type jsonQueryFederationSyncConfigResponse struct {
+	GlobalSyncConfigs []*jsonGlobalFederationSyncConfig `json:"global_sync_configs"` //nolint:lll
+	AssetSyncConfigs  []*jsonAssetFederationSyncConfig  `json:"asset_sync_configs"`  //nolint:lll
+}
+
+// jsonInfoResponse is the JSON shape of
+// universerpc.InfoResponse.
+type jsonInfoResponse struct {
+	RuntimeID string `json:"runtime_id"`
+}
+
+// jsonSyncUniverseRequest is the JSON body for SyncUniverse.
+type jsonSyncUniverseRequest struct {
+	UniverseHost string            `json:"universe_host"`
+	SyncMode     string            `json:"sync_mode"`
+	SyncTargets  []*jsonSyncTarget `json:"sync_targets"`
+}
+
+// jsonSyncTarget is the JSON shape of universerpc.SyncTarget.
+type jsonSyncTarget struct {
+	ID *jsonUniverseID `json:"id"`
+}
+
+// jsonSyncUniverseResponse is the JSON shape of
+// universerpc.SyncResponse.
+type jsonSyncUniverseResponse struct {
+	SyncedUniverses []*jsonSyncedUniverse `json:"synced_universes"`
+}
+
+// jsonSyncedUniverse is the JSON shape of
+// universerpc.SyncedUniverse.
+type jsonSyncedUniverse struct {
+	OldAssetRoot   *jsonUniverseRoot    `json:"old_asset_root"`
+	NewAssetRoot   *jsonUniverseRoot    `json:"new_asset_root"`
+	NewAssetLeaves []*jsonAssetLeafResp `json:"new_asset_leaves"`
+}
