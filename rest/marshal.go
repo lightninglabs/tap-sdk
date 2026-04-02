@@ -1123,59 +1123,12 @@ func unmarshalVerifyProofResponse(
 // parseProofType converts a proto enum string to entities.ProofType.
 func parseProofType(s string) entities.ProofType {
 	switch s {
-	case "PROOF_TYPE_ISSUANCE":
+	case proofTypeIssuance:
 		return entities.ProofTypeIssuance
-	case "PROOF_TYPE_TRANSFER":
+	case proofTypeTransfer:
 		return entities.ProofTypeTransfer
 	default:
 		return entities.ProofTypeUnspecified
-	}
-}
-
-// parseSortDirection converts a proto enum string to
-// entities.SortDirection.
-func parseSortDirection(s string) entities.SortDirection {
-	switch s {
-	case "SORT_DIRECTION_ASC":
-		return entities.SortAscending
-	default:
-		return entities.SortDescending
-	}
-}
-
-// parseAssetQuerySort converts a proto enum string to
-// entities.AssetQuerySort.
-func parseAssetQuerySort(s string) entities.AssetQuerySort {
-	switch s {
-	case "SORT_BY_ASSET_NAME":
-		return entities.SortByAssetName
-	case "SORT_BY_ASSET_ID":
-		return entities.SortByAssetID
-	case "SORT_BY_ASSET_TYPE":
-		return entities.SortByAssetType
-	case "SORT_BY_TOTAL_SYNCS":
-		return entities.SortByTotalSyncs
-	case "SORT_BY_TOTAL_PROOFS":
-		return entities.SortByTotalProofs
-	case "SORT_BY_GENESIS_HEIGHT":
-		return entities.SortByGenesisHeight
-	case "SORT_BY_TOTAL_SUPPLY":
-		return entities.SortByTotalSupply
-	default:
-		return entities.SortByNone
-	}
-}
-
-// parseAssetTypeFilter converts a proto enum string to
-// entities.AssetTypeFilter.
-func parseAssetTypeFilter(s string) entities.AssetTypeFilter {
-	switch s {
-	case "FILTER_ASSET_NORMAL":
-		return entities.FilterAssetNormal
-	case "FILTER_ASSET_COLLECTIBLE":
-		return entities.FilterAssetCollectible
-	default:
-		return entities.FilterAssetNone
 	}
 }
 

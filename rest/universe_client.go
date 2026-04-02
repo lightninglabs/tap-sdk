@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"strings"
 
 	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/lightninglabs/tap-sdk/macaroon"
@@ -48,16 +49,30 @@ type jsonAssetLeafReq struct {
 	Proof string `json:"proof"`
 }
 
+const (
+	// proofTypeIssuance is the proto enum string for issuance
+	// proofs.
+	proofTypeIssuance = "PROOF_TYPE_ISSUANCE"
+
+	// proofTypeTransfer is the proto enum string for transfer
+	// proofs.
+	proofTypeTransfer = "PROOF_TYPE_TRANSFER"
+
+	// proofTypeUnspecified is the proto enum string for
+	// unspecified proof types.
+	proofTypeUnspecified = "PROOF_TYPE_UNSPECIFIED"
+)
+
 // marshalProofType converts an entities.ProofType to the proto enum
 // string.
 func marshalProofType(pt entities.ProofType) string {
 	switch pt {
 	case entities.ProofTypeIssuance:
-		return "PROOF_TYPE_ISSUANCE"
+		return proofTypeIssuance
 	case entities.ProofTypeTransfer:
-		return "PROOF_TYPE_TRANSFER"
+		return proofTypeTransfer
 	default:
-		return "PROOF_TYPE_UNSPECIFIED"
+		return proofTypeUnspecified
 	}
 }
 
@@ -124,9 +139,9 @@ func (u *universeClient) InsertProof(ctx context.Context,
 	rawProof []byte,
 	decoded *entities.DecodedProof) error {
 
-	proofType := "PROOF_TYPE_TRANSFER"
+	proofType := proofTypeTransfer
 	if decoded.IsIssuance {
-		proofType = "PROOF_TYPE_ISSUANCE"
+		proofType = proofTypeIssuance
 	}
 
 	uniID := &jsonUniverseID{ProofType: proofType}
@@ -222,16 +237,20 @@ func (u *universeClient) AssetRoots(ctx context.Context,
 		}
 
 		if len(p) > 0 {
+			var b strings.Builder
 			first := true
 			for k, v := range p {
 				if first {
-					params += "?"
+					b.WriteString("?")
 					first = false
 				} else {
-					params += "&"
+					b.WriteString("&")
 				}
-				params += k + "=" + v
+				b.WriteString(k)
+				b.WriteString("=")
+				b.WriteString(v)
 			}
+			params = b.String()
 		}
 	}
 
@@ -274,21 +293,22 @@ func (u *universeClient) QueryAssetRoots(ctx context.Context,
 		id.ProofType,
 	)
 
-	if id.AssetID != nil {
+	switch {
+	case id.AssetID != nil:
 		assetIDStr := hex.EncodeToString(id.AssetID[:])
 		path = fmt.Sprintf(
 			"/v1/taproot-assets/universe/roots/"+
 				"asset-id/%s%s",
 			assetIDStr, proofTypeParam,
 		)
-	} else if id.GroupKey != nil {
+	case id.GroupKey != nil:
 		groupKeyStr := hex.EncodeToString(id.GroupKey[:])
 		path = fmt.Sprintf(
 			"/v1/taproot-assets/universe/roots/"+
 				"group-key/%s%s",
 			groupKeyStr, proofTypeParam,
 		)
-	} else {
+	default:
 		return nil, fmt.Errorf(
 			"universe ID must have either AssetID or " +
 				"GroupKey",
@@ -363,21 +383,24 @@ func (u *universeClient) AssetLeafKeys(ctx context.Context,
 	}
 
 	var basePath string
-	if req.ID.AssetID != nil {
+	switch {
+	case req.ID.AssetID != nil:
 		assetIDStr := hex.EncodeToString(req.ID.AssetID[:])
 		basePath = fmt.Sprintf(
 			"/v1/taproot-assets/universe/keys/"+
 				"asset-id/%s",
 			assetIDStr,
 		)
-	} else if req.ID.GroupKey != nil {
-		groupKeyStr := hex.EncodeToString(req.ID.GroupKey[:])
+	case req.ID.GroupKey != nil:
+		groupKeyStr := hex.EncodeToString(
+			req.ID.GroupKey[:],
+		)
 		basePath = fmt.Sprintf(
 			"/v1/taproot-assets/universe/keys/"+
 				"group-key/%s",
 			groupKeyStr,
 		)
-	} else {
+	default:
 		return nil, fmt.Errorf(
 			"universe ID must have either AssetID or " +
 				"GroupKey",
@@ -437,21 +460,22 @@ func (u *universeClient) AssetLeaves(ctx context.Context,
 		id.ProofType,
 	)
 
-	if id.AssetID != nil {
+	switch {
+	case id.AssetID != nil:
 		assetIDStr := hex.EncodeToString(id.AssetID[:])
 		path = fmt.Sprintf(
 			"/v1/taproot-assets/universe/leaves/"+
 				"asset-id/%s%s",
 			assetIDStr, proofTypeParam,
 		)
-	} else if id.GroupKey != nil {
+	case id.GroupKey != nil:
 		groupKeyStr := hex.EncodeToString(id.GroupKey[:])
 		path = fmt.Sprintf(
 			"/v1/taproot-assets/universe/leaves/"+
 				"group-key/%s%s",
 			groupKeyStr, proofTypeParam,
 		)
-	} else {
+	default:
 		return nil, fmt.Errorf(
 			"universe ID must have either AssetID or " +
 				"GroupKey",
