@@ -68,14 +68,21 @@ func TestAddressSend(t *testing.T) {
 
 	// Sync Bob's local universe with Alice so Bob can bootstrap the
 	// fungible asset group before creating a group-key receive address.
-	_, err = h.BobClient.SyncUniverse(ctx, &entities.SyncRequest{
+	synced, err := h.BobClient.SyncUniverse(ctx, &entities.SyncRequest{
 		UniverseHost: envOr(
 			"TAPD_ALICE_UNIVERSE_HOST",
 			defaultAliceUniverseHost,
 		),
 		SyncMode: entities.SyncIssuanceOnly,
+		SyncTargets: []entities.SyncTarget{{
+			ID: entities.UniverseID{
+				GroupKey:  &groupKey,
+				ProofType: entities.ProofTypeIssuance,
+			},
+		}},
 	})
 	require.NoError(t, err)
+	require.NotEmpty(t, synced, "expected Bob universe sync to import the asset group")
 
 	// --- Step 2: Bob creates a V2 address by group key ---
 	// Fungible receive flows should use the group key as the
