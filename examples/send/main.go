@@ -59,13 +59,13 @@ func main() {
 		if err != nil {
 			fmt.Fprintf(os.Stderr,
 				"Connect to Bob: %v\n", err)
-			os.Exit(1)
+			return
 		}
 		defer bobClient.Close()
 
 		bob = tapsdk.NewWallet(bobClient, network)
 	} else {
-		fmt.Println("No TAPD_BOB_HOST set; using self-send.")
+		fmt.Fprintln(os.Stdout, "No TAPD_BOB_HOST set; using self-send.")
 		bob = alice
 	}
 
@@ -77,7 +77,7 @@ func main() {
 	// -------------------------------------------------------
 	// Step 1: Mint a fungible asset on Alice.
 	// -------------------------------------------------------
-	fmt.Println("Minting asset on Alice...")
+	fmt.Fprintln(os.Stdout, "Minting asset on Alice...")
 	batch, err := alice.MintAsset(ctx,
 		&entities.MintAssetRequest{
 			Asset: &entities.MintAsset{
@@ -93,17 +93,17 @@ func main() {
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "MintAsset: %v\n", err)
-		os.Exit(1)
+		return
 	}
 
 	_, err = alice.FinalizeBatch(ctx,
 		&entities.FinalizeBatchRequest{ShortResponse: true})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "FinalizeBatch: %v\n", err)
-		os.Exit(1)
+		return
 	}
 
-	fmt.Println(
+	fmt.Fprintln(os.Stdout,
 		"Batch finalized. Mine blocks on regtest to confirm.",
 	)
 	waitForMint(ctx, alice, batch.BatchKey)
@@ -114,7 +114,7 @@ func main() {
 		&entities.ListAssetsRequest{})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ListAssets: %v\n", err)
-		os.Exit(1)
+		return
 	}
 
 	var groupKey entities.PubKey
@@ -126,28 +126,28 @@ func main() {
 	}
 	if groupKey == (entities.PubKey{}) {
 		fmt.Fprintln(os.Stderr, "Minted asset has no group key")
-		os.Exit(1)
+		return
 	}
-	fmt.Printf("Group key: %s\n", hex.EncodeToString(groupKey[:]))
+	fmt.Fprintf(os.Stdout, "Group key: %s\n", hex.EncodeToString(groupKey[:]))
 
 	// -------------------------------------------------------
 	// Step 2: Create a receive address on Bob.
 	// Uses V2 address with group key (recommended for fungible
 	// assets).
 	// -------------------------------------------------------
-	fmt.Println("Creating receive address on Bob...")
+	fmt.Fprintln(os.Stdout, "Creating receive address on Bob...")
 	addr, err := bob.NewReceiveAddress(ctx, groupKey)
 	if err != nil {
 		fmt.Fprintf(os.Stderr,
 			"NewReceiveAddress: %v\n", err)
-		os.Exit(1)
+		return
 	}
-	fmt.Printf("Receive address: %s\n", addr.Encoded)
+	fmt.Fprintf(os.Stdout, "Receive address: %s\n", addr.Encoded)
 
 	// -------------------------------------------------------
 	// Step 3: Send 1000 units from Alice to Bob's address.
 	// -------------------------------------------------------
-	fmt.Println("Sending 1000 units...")
+	fmt.Fprintln(os.Stdout, "Sending 1000 units...")
 	transfer, err := alice.SendAsset(ctx,
 		&entities.SendAssetRequest{
 			Recipients: []entities.Recipient{
@@ -160,14 +160,14 @@ func main() {
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "SendAsset: %v\n", err)
-		os.Exit(1)
+		return
 	}
-	fmt.Printf("Transfer anchor TX: %s\n", transfer.AnchorTxid)
+	fmt.Fprintf(os.Stdout, "Transfer anchor TX: %s\n", transfer.AnchorTxid)
 
 	// -------------------------------------------------------
 	// Step 4: Mine blocks and verify receipt on Bob.
 	// -------------------------------------------------------
-	fmt.Println(
+	fmt.Fprintln(os.Stdout,
 		"Mine blocks on regtest, then checking Bob's balance...",
 	)
 	time.Sleep(5 * time.Second) // Wait for propagation.
@@ -176,16 +176,16 @@ func main() {
 		&entities.ListAssetsRequest{})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Bob ListAssets: %v\n", err)
-		os.Exit(1)
+		return
 	}
 
 	for _, a := range bobAssets {
 		if a.Genesis.Tag == "send-example" {
-			fmt.Printf("Bob received: amount=%d\n", a.Amount)
+			fmt.Fprintf(os.Stdout, "Bob received: amount=%d\n", a.Amount)
 		}
 	}
 
-	fmt.Println("Done!")
+	fmt.Fprintln(os.Stdout, "Done!")
 }
 
 // waitForMint polls ListBatches until the batch is finalized.
@@ -204,7 +204,7 @@ func waitForMint(ctx context.Context, w *tapsdk.Wallet,
 				if b.Batch.State ==
 					entities.BatchStateFinalized {
 
-					fmt.Printf(
+					fmt.Fprintf(os.Stdout,
 						"Mint confirmed: %s\n",
 						b.Batch.BatchTxid,
 					)

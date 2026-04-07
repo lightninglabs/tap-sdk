@@ -45,7 +45,7 @@ func main() {
 	// -------------------------------------------------------
 	// Step 1: Stage a fungible asset in the pending batch.
 	// -------------------------------------------------------
-	fmt.Println("Staging asset in mint batch...")
+	fmt.Fprintln(os.Stdout, "Staging asset in mint batch...")
 	batch, err := wallet.MintAsset(ctx,
 		&entities.MintAssetRequest{
 			Asset: &entities.MintAsset{
@@ -64,16 +64,16 @@ func main() {
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "MintAsset: %v\n", err)
-		os.Exit(1)
+		return
 	}
-	fmt.Printf("Batch key: %x\n", batch.BatchKey[:])
+	fmt.Fprintf(os.Stdout, "Batch key: %x\n", batch.BatchKey[:])
 
 	// -------------------------------------------------------
 	// Step 2: Finalize the batch.
 	// This funds the anchor transaction from LND's wallet,
 	// seals the batch, and broadcasts the genesis TX.
 	// -------------------------------------------------------
-	fmt.Println("Finalizing batch...")
+	fmt.Fprintln(os.Stdout, "Finalizing batch...")
 	finalized, err := wallet.FinalizeBatch(ctx,
 		&entities.FinalizeBatchRequest{
 			ShortResponse: true,
@@ -81,9 +81,9 @@ func main() {
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "FinalizeBatch: %v\n", err)
-		os.Exit(1)
+		return
 	}
-	fmt.Printf("Batch state: %d\n", finalized.State)
+	fmt.Fprintf(os.Stdout, "Batch state: %d\n", finalized.State)
 
 	// -------------------------------------------------------
 	// Step 3: Wait for on-chain confirmation.
@@ -91,7 +91,7 @@ func main() {
 	// bitcoin-cli generatetoaddress 6 <addr>). On mainnet /
 	// testnet, just wait.
 	// -------------------------------------------------------
-	fmt.Println("Waiting for confirmation (mine blocks on regtest)...")
+	fmt.Fprintln(os.Stdout, "Waiting for confirmation (mine blocks on regtest)...")
 
 	deadline := time.Now().Add(90 * time.Second)
 	for time.Now().Before(deadline) {
@@ -105,7 +105,7 @@ func main() {
 				if b.Batch.State ==
 					entities.BatchStateFinalized {
 
-					fmt.Printf(
+					fmt.Fprintf(os.Stdout,
 						"Mint confirmed! txid=%s\n",
 						b.Batch.BatchTxid,
 					)
@@ -116,7 +116,7 @@ func main() {
 		time.Sleep(2 * time.Second)
 	}
 	fmt.Fprintln(os.Stderr, "Timed out waiting for confirmation")
-	os.Exit(1)
+	return
 
 confirmed:
 
@@ -128,12 +128,12 @@ confirmed:
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ListAssets: %v\n", err)
-		os.Exit(1)
+		return
 	}
 
 	for _, a := range assets {
 		if a.Genesis.Tag == "example-token" {
-			fmt.Printf(
+			fmt.Fprintf(os.Stdout,
 				"Asset found: id=%s amount=%d\n",
 				a.Genesis.AssetID, a.Amount,
 			)
@@ -142,5 +142,5 @@ confirmed:
 	}
 
 	fmt.Fprintln(os.Stderr, "Minted asset not found in wallet")
-	os.Exit(1)
+	return
 }

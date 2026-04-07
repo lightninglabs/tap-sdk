@@ -36,14 +36,14 @@ func main() {
 	info, err := client.GetInfo(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "GetInfo failed: %v\n", err)
-		os.Exit(1)
+		return
 	}
 
-	fmt.Println("Connected to tapd!")
-	fmt.Printf("  Version:      %s\n", info.Version)
-	fmt.Printf("  LND version:  %s\n", info.LndVersion)
-	fmt.Printf("  Network:      %s\n", info.Network)
-	fmt.Printf("  Block height: %d\n", info.BlockHeight)
-	fmt.Printf("  Synced:       %v\n", info.SyncedToChain)
-	fmt.Printf("  Node alias:   %s\n", info.NodeAlias)
+	fmt.Fprintln(os.Stdout, "Connected to tapd!")
+	fmt.Fprintf(os.Stdout, "  Version:      %s\n", info.Version)
+	fmt.Fprintf(os.Stdout, "  LND version:  %s\n", info.LndVersion)
+	fmt.Fprintf(os.Stdout, "  Network:      %s\n", info.Network)
+	fmt.Fprintf(os.Stdout, "  Block height: %d\n", info.BlockHeight)
+	fmt.Fprintf(os.Stdout, "  Synced:       %v\n", info.SyncedToChain)
+	fmt.Fprintf(os.Stdout, "  Node alias:   %s\n", info.NodeAlias)
 }

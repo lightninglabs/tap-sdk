@@ -38,36 +38,36 @@ func main() {
 	// -------------------------------------------------------
 	// Step 1: Query universe info.
 	// -------------------------------------------------------
-	fmt.Println("Universe info:")
+	fmt.Fprintln(os.Stdout, "Universe info:")
 	info, err := client.Info(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Info: %v\n", err)
-		os.Exit(1)
+		return
 	}
-	fmt.Printf("  Runtime ID: %d\n", info.RuntimeID)
+	fmt.Fprintf(os.Stdout, "  Runtime ID: %d\n", info.RuntimeID)
 
 	// -------------------------------------------------------
 	// Step 2: List asset roots.
 	// Each root represents an asset known to the universe.
 	// -------------------------------------------------------
-	fmt.Println("\nAsset roots:")
+	fmt.Fprintln(os.Stdout, "\nAsset roots:")
 	roots, err := client.AssetRoots(ctx,
 		&entities.AssetRootRequest{})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "AssetRoots: %v\n", err)
-		os.Exit(1)
+		return
 	}
 
 	if len(roots) == 0 {
-		fmt.Println("  (no assets in universe)")
+		fmt.Fprintln(os.Stdout, "  (no assets in universe)")
 	}
 	for key, root := range roots {
-		fmt.Printf("  %s:\n", key)
-		fmt.Printf("    Asset name: %s\n", root.AssetName)
+		fmt.Fprintf(os.Stdout, "  %s:\n", key)
+		fmt.Fprintf(os.Stdout, "    Asset name: %s\n", root.AssetName)
 		if root.MSSMTRoot != nil {
-			fmt.Printf("    Root hash:  %s\n",
+			fmt.Fprintf(os.Stdout, "    Root hash:  %s\n",
 				root.MSSMTRoot.RootHash)
-			fmt.Printf("    Root sum:   %d\n",
+			fmt.Fprintf(os.Stdout, "    Root sum:   %d\n",
 				root.MSSMTRoot.RootSum)
 		}
 	}
@@ -75,33 +75,33 @@ func main() {
 	// -------------------------------------------------------
 	// Step 3: Get universe statistics.
 	// -------------------------------------------------------
-	fmt.Println("\nUniverse statistics:")
+	fmt.Fprintln(os.Stdout, "\nUniverse statistics:")
 	stats, err := client.UniverseStats(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "UniverseStats: %v\n", err)
-		os.Exit(1)
+		return
 	}
-	fmt.Printf("  Total syncs:   %d\n", stats.NumTotalSyncs)
-	fmt.Printf("  Total proofs:  %d\n", stats.NumTotalProofs)
-	fmt.Printf("  Total groups:  %d\n", stats.NumTotalGroups)
+	fmt.Fprintf(os.Stdout, "  Total syncs:   %d\n", stats.NumTotalSyncs)
+	fmt.Fprintf(os.Stdout, "  Total proofs:  %d\n", stats.NumTotalProofs)
+	fmt.Fprintf(os.Stdout, "  Total groups:  %d\n", stats.NumTotalGroups)
 
 	// -------------------------------------------------------
 	// Step 4: List federation servers.
 	// -------------------------------------------------------
-	fmt.Println("\nFederation servers:")
+	fmt.Fprintln(os.Stdout, "\nFederation servers:")
 	servers, err := client.ListFederationServers(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr,
 			"ListFederationServers: %v\n", err)
-		os.Exit(1)
+		return
 	}
 
 	if len(servers) == 0 {
-		fmt.Println("  (no federation peers)")
+		fmt.Fprintln(os.Stdout, "  (no federation peers)")
 	}
 	for _, s := range servers {
-		fmt.Printf("  %s (id=%d)\n", s.Host, s.ID)
+		fmt.Fprintf(os.Stdout, "  %s (id=%d)\n", s.Host, s.ID)
 	}
 
-	fmt.Println("\nDone!")
+	fmt.Fprintln(os.Stdout, "\nDone!")
 }

@@ -46,7 +46,7 @@ func main() {
 	// -------------------------------------------------------
 	// Step 1: Mint an asset so we have something to prove.
 	// -------------------------------------------------------
-	fmt.Println("Minting asset...")
+	fmt.Fprintln(os.Stdout, "Minting asset...")
 	batch, err := wallet.MintAsset(ctx,
 		&entities.MintAssetRequest{
 			Asset: &entities.MintAsset{
@@ -61,17 +61,17 @@ func main() {
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "MintAsset: %v\n", err)
-		os.Exit(1)
+		return
 	}
 
 	_, err = wallet.FinalizeBatch(ctx,
 		&entities.FinalizeBatchRequest{ShortResponse: true})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "FinalizeBatch: %v\n", err)
-		os.Exit(1)
+		return
 	}
 
-	fmt.Println("Waiting for mint confirmation...")
+	fmt.Fprintln(os.Stdout, "Waiting for mint confirmation...")
 	waitForMint(ctx, wallet, batch.BatchKey)
 
 	// Find the minted asset.
@@ -79,7 +79,7 @@ func main() {
 		&entities.ListAssetsRequest{})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ListAssets: %v\n", err)
-		os.Exit(1)
+		return
 	}
 
 	var target *entities.Asset
@@ -91,10 +91,10 @@ func main() {
 	}
 	if target == nil {
 		fmt.Fprintln(os.Stderr, "Minted asset not found")
-		os.Exit(1)
+		return
 	}
 
-	fmt.Printf("Asset: id=%s scriptKey=%s\n",
+	fmt.Fprintf(os.Stdout, "Asset: id=%s scriptKey=%s\n",
 		target.Genesis.AssetID,
 		hex.EncodeToString(target.ScriptKey.PubKey[:]),
 	)
@@ -104,53 +104,53 @@ func main() {
 	// ExportProof takes the asset ID, the script key's public
 	// key, and an optional outpoint filter.
 	// -------------------------------------------------------
-	fmt.Println("\nExporting proof file...")
+	fmt.Fprintln(os.Stdout, "\nExporting proof file...")
 	proofFile, err := wallet.ExportProof(
 		ctx, target.Genesis.AssetID,
 		target.ScriptKey.PubKey, nil,
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ExportProof: %v\n", err)
-		os.Exit(1)
+		return
 	}
-	fmt.Printf("Proof file: %d bytes\n",
+	fmt.Fprintf(os.Stdout, "Proof file: %d bytes\n",
 		len(proofFile.RawProofFile))
 
 	// -------------------------------------------------------
 	// Step 3: Unpack the proof file into individual proofs.
 	// -------------------------------------------------------
-	fmt.Println("\nUnpacking proof file...")
+	fmt.Fprintln(os.Stdout, "\nUnpacking proof file...")
 	rawProofs, err := wallet.UnpackProofFile(
 		ctx, proofFile.RawProofFile,
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "UnpackProofFile: %v\n", err)
-		os.Exit(1)
+		return
 	}
-	fmt.Printf("Contains %d proof(s)\n", len(rawProofs))
+	fmt.Fprintf(os.Stdout, "Contains %d proof(s)\n", len(rawProofs))
 
 	// -------------------------------------------------------
 	// Step 4: Decode the last proof (most recent state).
 	// -------------------------------------------------------
 	if len(rawProofs) > 0 {
-		fmt.Println("\nDecoding last proof...")
+		fmt.Fprintln(os.Stdout, "\nDecoding last proof...")
 		decoded, err := wallet.DecodeProof(
 			ctx, rawProofs[len(rawProofs)-1],
 		)
 		if err != nil {
 			fmt.Fprintf(os.Stderr,
 				"DecodeProof: %v\n", err)
-			os.Exit(1)
+			return
 		}
 
-		fmt.Printf("  Asset ID:    %s\n", decoded.AssetID)
-		fmt.Printf("  Amount:      %d\n", decoded.Amount)
-		fmt.Printf("  Outpoint:    %s\n", decoded.Outpoint)
-		fmt.Printf("  Script key:  %s\n",
+		fmt.Fprintf(os.Stdout, "  Asset ID:    %s\n", decoded.AssetID)
+		fmt.Fprintf(os.Stdout, "  Amount:      %d\n", decoded.Amount)
+		fmt.Fprintf(os.Stdout, "  Outpoint:    %s\n", decoded.Outpoint)
+		fmt.Fprintf(os.Stdout, "  Script key:  %s\n",
 			hex.EncodeToString(decoded.ScriptKey[:]))
 
 		if decoded.GroupKey != nil {
-			fmt.Printf("  Group key:   %s\n",
+			fmt.Fprintf(os.Stdout, "  Group key:   %s\n",
 				hex.EncodeToString(
 					decoded.GroupKey[:],
 				))
@@ -160,18 +160,18 @@ func main() {
 	// -------------------------------------------------------
 	// Step 5: Verify the proof file.
 	// -------------------------------------------------------
-	fmt.Println("\nVerifying proof file...")
+	fmt.Fprintln(os.Stdout, "\nVerifying proof file...")
 	verifyResp, err := wallet.VerifyProof(
 		ctx, proofFile.RawProofFile,
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "VerifyProof: %v\n", err)
-		os.Exit(1)
+		return
 	}
 
-	fmt.Printf("Proof valid: %v\n", verifyResp.Valid)
+	fmt.Fprintf(os.Stdout, "Proof valid: %v\n", verifyResp.Valid)
 
-	fmt.Println("\nDone!")
+	fmt.Fprintln(os.Stdout, "\nDone!")
 }
 
 // waitForMint polls ListBatches until the batch is finalized.
@@ -190,7 +190,7 @@ func waitForMint(ctx context.Context, w *tapsdk.Wallet,
 				if b.Batch.State ==
 					entities.BatchStateFinalized {
 
-					fmt.Printf(
+					fmt.Fprintf(os.Stdout,
 						"Confirmed: %s\n",
 						b.Batch.BatchTxid,
 					)
