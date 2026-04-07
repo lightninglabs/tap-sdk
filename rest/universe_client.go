@@ -514,21 +514,24 @@ func (u *universeClient) QueryProof(ctx context.Context,
 	}
 
 	var basePath string
-	if key.ID.AssetID != nil {
+	switch {
+	case key.ID.AssetID != nil:
 		assetIDStr := hex.EncodeToString(key.ID.AssetID[:])
 		basePath = fmt.Sprintf(
 			"/v1/taproot-assets/universe/proofs/"+
 				"asset-id/%s",
 			assetIDStr,
 		)
-	} else if key.ID.GroupKey != nil {
+
+	case key.ID.GroupKey != nil:
 		groupKeyStr := hex.EncodeToString(key.ID.GroupKey[:])
 		basePath = fmt.Sprintf(
 			"/v1/taproot-assets/universe/proofs/"+
 				"group-key/%s",
 			groupKeyStr,
 		)
-	} else {
+
+	default:
 		return nil, fmt.Errorf(
 			"universe ID must have either AssetID or " +
 				"GroupKey",
