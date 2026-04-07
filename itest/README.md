@@ -54,6 +54,7 @@ Override default connection settings with:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `TAPD_ALICE_HOST` | `localhost:10029` | Alice's tapd gRPC address |
+| `TAPD_ALICE_UNIVERSE_HOST` | `tapd-alice:10029` | Alice's tapd address as seen from Bob's container during universe sync |
 | `TAPD_BOB_HOST` | `localhost:10030` | Bob's tapd gRPC address |
 | `BITCOIND_HOST` | `localhost:18443` | bitcoind RPC address |
 | `TAPD_ALICE_TLS` | Auto-extracted from container | Alice's TLS cert path |

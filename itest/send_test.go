@@ -69,8 +69,11 @@ func TestAddressSend(t *testing.T) {
 	// Sync Bob's local universe with Alice so Bob can bootstrap the
 	// fungible asset group before creating a group-key receive address.
 	_, err = h.BobClient.SyncUniverse(ctx, &entities.SyncRequest{
-		UniverseHost: envOr("TAPD_ALICE_HOST", defaultAliceHost),
-		SyncMode:     entities.SyncIssuanceOnly,
+		UniverseHost: envOr(
+			"TAPD_ALICE_UNIVERSE_HOST",
+			defaultAliceUniverseHost,
+		),
+		SyncMode: entities.SyncIssuanceOnly,
 	})
 	require.NoError(t, err)
 

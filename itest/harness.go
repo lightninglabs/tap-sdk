@@ -21,8 +21,13 @@ import (
 )
 
 const (
-	// defaultAliceHost is the default gRPC host for tapd-alice.
+	// defaultAliceHost is the default host-side gRPC address for
+	// tapd-alice.
 	defaultAliceHost = "localhost:10029"
+
+	// defaultAliceUniverseHost is the address tapd-bob should use when
+	// syncing directly from tapd-alice over the Docker network.
+	defaultAliceUniverseHost = "tapd-alice:10029"
 
 	// defaultBobHost is the default gRPC host for tapd-bob.
 	defaultBobHost = "localhost:10030"
