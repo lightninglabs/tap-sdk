@@ -1117,3 +1117,581 @@ func unmarshalVerifyProofResponse(
 		Valid: r.Valid,
 	}, nil
 }
+
+// --- Universe unmarshal helpers ---
+
+// parseProofType converts a proto enum string to entities.ProofType.
+func parseProofType(s string) entities.ProofType {
+	switch s {
+	case proofTypeIssuance:
+		return entities.ProofTypeIssuance
+	case proofTypeTransfer:
+		return entities.ProofTypeTransfer
+	default:
+		return entities.ProofTypeUnspecified
+	}
+}
+
+// unmarshalMerkleSumNode converts a JSON merkle sum node to an
+// entity.
+func unmarshalMerkleSumNode(
+	n *jsonMerkleSumNode) (*entities.MerkleSumNode, error) {
+
+	if n == nil {
+		return nil, nil
+	}
+
+	rootHashBytes, err := parseHexBytes(n.RootHash)
+	if err != nil {
+		return nil, fmt.Errorf("invalid root_hash: %w", err)
+	}
+
+	rootHash, err := entities.ParseHash(rootHashBytes)
+	if err != nil {
+		return nil, fmt.Errorf("invalid root hash: %w", err)
+	}
+
+	rootSum, err := parseInt64(n.RootSum)
+	if err != nil {
+		return nil, fmt.Errorf("invalid root_sum: %w", err)
+	}
+
+	return &entities.MerkleSumNode{
+		RootHash: rootHash,
+		RootSum:  rootSum,
+	}, nil
+}
+
+// unmarshalUniverseID converts a JSON universe ID to an entity.
+func unmarshalUniverseID(
+	id *jsonUniverseID) (*entities.UniverseID, error) {
+
+	if id == nil {
+		return nil, fmt.Errorf("nil universe ID")
+	}
+
+	uniID := &entities.UniverseID{
+		ProofType: parseProofType(id.ProofType),
+	}
+
+	if id.AssetID != "" {
+		assetIDBytes, err := parseHexBytes(id.AssetID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid asset_id: %w",
+				err)
+		}
+
+		if len(assetIDBytes) == 32 {
+			var assetID entities.AssetID
+			copy(assetID[:], assetIDBytes)
+			uniID.AssetID = &assetID
+		}
+	}
+
+	if id.GroupKey != "" {
+		groupKeyBytes, err := parseHexBytes(id.GroupKey)
+		if err != nil {
+			return nil, fmt.Errorf("invalid group_key: %w",
+				err)
+		}
+
+		if len(groupKeyBytes) == 33 {
+			var groupKey entities.PubKey
+			copy(groupKey[:], groupKeyBytes)
+			uniID.GroupKey = &groupKey
+		}
+	}
+
+	return uniID, nil
+}
+
+// unmarshalUniverseRoot converts a JSON universe root to an entity.
+func unmarshalUniverseRoot(
+	r *jsonUniverseRoot) (*entities.UniverseRoot, error) {
+
+	if r == nil {
+		return nil, nil
+	}
+
+	id, err := unmarshalUniverseID(r.ID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid universe ID: %w", err)
+	}
+
+	mssmtRoot, err := unmarshalMerkleSumNode(r.MSSMTRoot)
+	if err != nil {
+		return nil, fmt.Errorf("invalid mssmt_root: %w", err)
+	}
+
+	root := &entities.UniverseRoot{
+		ID:        *id,
+		MSSMTRoot: mssmtRoot,
+		AssetName: r.AssetName,
+	}
+
+	if len(r.AmountsByAssetID) > 0 {
+		root.AmountsByAssetID = make(map[string]uint64)
+		for k, v := range r.AmountsByAssetID {
+			amount, err := parseUint64(v)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"invalid amount for %s: %w", k, err,
+				)
+			}
+			root.AmountsByAssetID[k] = amount
+		}
+	}
+
+	return root, nil
+}
+
+// unmarshalAssetLeafKey converts a JSON asset key to an entity.
+func unmarshalAssetLeafKey(
+	k *jsonAssetKey) (*entities.AssetLeafKey, error) {
+
+	if k == nil {
+		return nil, fmt.Errorf("nil asset key")
+	}
+
+	if k.Outpoint == nil {
+		return nil, fmt.Errorf("nil outpoint")
+	}
+
+	outpoint := entities.Outpoint{
+		Index: k.Outpoint.OutputIndex,
+	}
+
+	txidBytes, err := parseHexBytes(k.Outpoint.Txid)
+	if err != nil {
+		return nil, fmt.Errorf("invalid txid: %w", err)
+	}
+
+	if len(txidBytes) == 32 {
+		copy(outpoint.Txid[:], txidBytes)
+	}
+
+	scriptKeyBytes, err := parseHexBytes(k.ScriptKey)
+	if err != nil {
+		return nil, fmt.Errorf("invalid script_key: %w", err)
+	}
+
+	if len(scriptKeyBytes) != 33 {
+		return nil, fmt.Errorf("invalid script_key length: %d",
+			len(scriptKeyBytes))
+	}
+
+	var scriptKey entities.PubKey
+	copy(scriptKey[:], scriptKeyBytes)
+
+	return &entities.AssetLeafKey{
+		Outpoint:  outpoint,
+		ScriptKey: scriptKey,
+	}, nil
+}
+
+// unmarshalAssetLeaf converts a JSON asset leaf to an entity.
+func unmarshalAssetLeaf(
+	l *jsonAssetLeafResp) (*entities.AssetLeaf, error) {
+
+	if l == nil {
+		return nil, fmt.Errorf("nil asset leaf")
+	}
+
+	leaf := &entities.AssetLeaf{}
+
+	if l.Asset != nil {
+		asset, err := unmarshalAsset(l.Asset)
+		if err != nil {
+			return nil, fmt.Errorf("invalid asset: %w", err)
+		}
+		leaf.Asset = asset
+	}
+
+	if l.Proof != "" {
+		proofBytes, err := parseHexBytes(l.Proof)
+		if err != nil {
+			return nil, fmt.Errorf("invalid proof: %w", err)
+		}
+		leaf.Proof = proofBytes
+	}
+
+	return leaf, nil
+}
+
+// unmarshalAssetProofResponse converts a JSON query proof response to
+// an entity.
+func unmarshalAssetProofResponse(
+	r *jsonQueryProofResponse) (*entities.AssetProofResponse,
+	error) {
+
+	if r == nil {
+		return nil, fmt.Errorf("nil proof response")
+	}
+
+	resp := &entities.AssetProofResponse{}
+
+	if r.Req != nil {
+		id, err := unmarshalUniverseID(r.Req.ID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid req ID: %w",
+				err)
+		}
+
+		key := entities.UniverseKey{ID: *id}
+
+		if r.Req.LeafKey != nil {
+			leafKey, err := unmarshalAssetLeafKey(
+				&jsonAssetKey{
+					Outpoint: &jsonOutpoint{
+						Txid: r.Req.LeafKey.OpStr,
+					},
+					ScriptKey: r.Req.LeafKey.ScriptKeyBytes, //nolint:lll
+				},
+			)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"invalid leaf_key: %w", err,
+				)
+			}
+			key.LeafKey = *leafKey
+		}
+
+		resp.Key = key
+	}
+
+	if r.UniverseRoot != nil {
+		root, err := unmarshalUniverseRoot(r.UniverseRoot)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"invalid universe_root: %w", err,
+			)
+		}
+		resp.UniverseRoot = root
+	}
+
+	if r.UniverseInclusionProof != "" {
+		proof, err := parseHexBytes(r.UniverseInclusionProof)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"invalid universe_inclusion_proof: %w", err,
+			)
+		}
+		resp.UniverseInclusionProof = proof
+	}
+
+	if r.AssetLeaf != nil {
+		leaf, err := unmarshalAssetLeaf(r.AssetLeaf)
+		if err != nil {
+			return nil, fmt.Errorf("invalid asset_leaf: %w",
+				err)
+		}
+		resp.AssetLeaf = leaf
+	}
+
+	if r.MultiverseRoot != nil {
+		root, err := unmarshalMerkleSumNode(r.MultiverseRoot)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"invalid multiverse_root: %w", err,
+			)
+		}
+		resp.MultiverseRoot = root
+	}
+
+	if r.MultiverseInclusionProof != "" {
+		proof, err := parseHexBytes(r.MultiverseInclusionProof)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"invalid multiverse_inclusion_proof: %w",
+				err,
+			)
+		}
+		resp.MultiverseInclusionProof = proof
+	}
+
+	return resp, nil
+}
+
+// unmarshalUniverseStats converts a JSON universe stats response to an
+// entity.
+func unmarshalUniverseStats(
+	r *jsonUniverseStatsResponse) (*entities.UniverseStats,
+	error) {
+
+	if r == nil {
+		return nil, fmt.Errorf("nil universe stats")
+	}
+
+	numTotalAssets, err := parseInt64(r.NumTotalAssets)
+	if err != nil {
+		return nil, fmt.Errorf("invalid num_total_assets: %w",
+			err)
+	}
+
+	numTotalGroups, err := parseInt64(r.NumTotalGroups)
+	if err != nil {
+		return nil, fmt.Errorf("invalid num_total_groups: %w",
+			err)
+	}
+
+	numTotalSyncs, err := parseInt64(r.NumTotalSyncs)
+	if err != nil {
+		return nil, fmt.Errorf("invalid num_total_syncs: %w",
+			err)
+	}
+
+	numTotalProofs, err := parseInt64(r.NumTotalProofs)
+	if err != nil {
+		return nil, fmt.Errorf("invalid num_total_proofs: %w",
+			err)
+	}
+
+	return &entities.UniverseStats{
+		NumTotalAssets: numTotalAssets,
+		NumTotalGroups: numTotalGroups,
+		NumTotalSyncs:  numTotalSyncs,
+		NumTotalProofs: numTotalProofs,
+	}, nil
+}
+
+// unmarshalAssetStatsAsset converts a JSON asset stats asset to an
+// entity.
+func unmarshalAssetStatsAsset(
+	a *jsonAssetStatsAsset) (*entities.AssetStatsAsset, error) {
+
+	if a == nil {
+		return nil, nil
+	}
+
+	assetIDBytes, err := parseHexBytes(a.AssetID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid asset_id: %w", err)
+	}
+
+	var assetID entities.AssetID
+	if len(assetIDBytes) == 32 {
+		copy(assetID[:], assetIDBytes)
+	}
+
+	totalSupply, err := parseInt64(a.TotalSupply)
+	if err != nil {
+		return nil, fmt.Errorf("invalid total_supply: %w", err)
+	}
+
+	genesisTimestamp, err := parseInt64(a.GenesisTimestamp)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"invalid genesis_timestamp: %w", err,
+		)
+	}
+
+	return &entities.AssetStatsAsset{
+		AssetID:          assetID,
+		GenesisPoint:     a.GenesisPoint,
+		TotalSupply:      totalSupply,
+		AssetName:        a.AssetName,
+		AssetType:        parseAssetType(a.AssetType),
+		GenesisHeight:    a.GenesisHeight,
+		GenesisTimestamp: genesisTimestamp,
+		AnchorPoint:      a.AnchorPoint,
+		DecimalDisplay:   a.DecimalDisplay,
+	}, nil
+}
+
+// unmarshalAssetStatsSnapshot converts a JSON asset stats snapshot to
+// an entity.
+func unmarshalAssetStatsSnapshot(
+	s *jsonAssetStatsSnapshot) (*entities.AssetStatsSnapshot,
+	error) {
+
+	if s == nil {
+		return nil, fmt.Errorf("nil asset stats snapshot")
+	}
+
+	snapshot := &entities.AssetStatsSnapshot{}
+
+	if s.GroupKey != "" {
+		groupKeyBytes, err := parseHexBytes(s.GroupKey)
+		if err != nil {
+			return nil, fmt.Errorf("invalid group_key: %w",
+				err)
+		}
+
+		if len(groupKeyBytes) == 33 {
+			var groupKey entities.PubKey
+			copy(groupKey[:], groupKeyBytes)
+			snapshot.GroupKey = &groupKey
+		}
+	}
+
+	groupSupply, err := parseInt64(s.GroupSupply)
+	if err != nil {
+		return nil, fmt.Errorf("invalid group_supply: %w", err)
+	}
+	snapshot.GroupSupply = groupSupply
+
+	if s.GroupAnchor != nil {
+		anchor, err := unmarshalAssetStatsAsset(s.GroupAnchor)
+		if err != nil {
+			return nil, fmt.Errorf("invalid group_anchor: %w",
+				err)
+		}
+		snapshot.GroupAnchor = anchor
+	}
+
+	if s.Asset != nil {
+		asset, err := unmarshalAssetStatsAsset(s.Asset)
+		if err != nil {
+			return nil, fmt.Errorf("invalid asset: %w", err)
+		}
+		snapshot.Asset = asset
+	}
+
+	totalSyncs, err := parseInt64(s.TotalSyncs)
+	if err != nil {
+		return nil, fmt.Errorf("invalid total_syncs: %w", err)
+	}
+	snapshot.TotalSyncs = totalSyncs
+
+	totalProofs, err := parseInt64(s.TotalProofs)
+	if err != nil {
+		return nil, fmt.Errorf("invalid total_proofs: %w", err)
+	}
+	snapshot.TotalProofs = totalProofs
+
+	return snapshot, nil
+}
+
+// unmarshalGroupedUniverseEvents converts a JSON grouped universe
+// events to an entity.
+func unmarshalGroupedUniverseEvents(
+	e *jsonGroupedUniverseEvents) (
+	*entities.GroupedUniverseEvents, error) {
+
+	if e == nil {
+		return nil, fmt.Errorf("nil grouped universe events")
+	}
+
+	syncEvents, err := parseUint64(e.SyncEvents)
+	if err != nil {
+		return nil, fmt.Errorf("invalid sync_events: %w", err)
+	}
+
+	newProofEvents, err := parseUint64(e.NewProofEvents)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"invalid new_proof_events: %w", err,
+		)
+	}
+
+	return &entities.GroupedUniverseEvents{
+		Date:           e.Date,
+		SyncEvents:     syncEvents,
+		NewProofEvents: newProofEvents,
+	}, nil
+}
+
+// unmarshalFederationServer converts a JSON federation server to an
+// entity.
+func unmarshalFederationServer(
+	s *jsonUniverseFederationServer) (
+	*entities.FederationServer, error) {
+
+	if s == nil {
+		return nil, fmt.Errorf("nil federation server")
+	}
+
+	return &entities.FederationServer{
+		Host: s.Host,
+		ID:   s.ID,
+	}, nil
+}
+
+// unmarshalGlobalFederationSyncConfig converts a JSON global
+// federation sync config to an entity.
+func unmarshalGlobalFederationSyncConfig(
+	c *jsonGlobalFederationSyncConfig) (
+	*entities.GlobalFederationSyncConfig, error) {
+
+	if c == nil {
+		return nil, fmt.Errorf("nil global federation sync config")
+	}
+
+	return &entities.GlobalFederationSyncConfig{
+		ProofType:       parseProofType(c.ProofType),
+		AllowSyncInsert: c.AllowSyncInsert,
+		AllowSyncExport: c.AllowSyncExport,
+	}, nil
+}
+
+// unmarshalAssetFederationSyncConfig converts a JSON asset federation
+// sync config to an entity.
+func unmarshalAssetFederationSyncConfig(
+	c *jsonAssetFederationSyncConfig) (
+	*entities.AssetFederationSyncConfig, error) {
+
+	if c == nil {
+		return nil, fmt.Errorf("nil asset federation sync config")
+	}
+
+	id, err := unmarshalUniverseID(c.ID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid ID: %w", err)
+	}
+
+	return &entities.AssetFederationSyncConfig{
+		ID:              *id,
+		AllowSyncInsert: c.AllowSyncInsert,
+		AllowSyncExport: c.AllowSyncExport,
+	}, nil
+}
+
+// unmarshalSyncedUniverse converts a JSON synced universe to an
+// entity.
+func unmarshalSyncedUniverse(
+	s *jsonSyncedUniverse) (*entities.SyncedUniverse, error) {
+
+	if s == nil {
+		return nil, fmt.Errorf("nil synced universe")
+	}
+
+	synced := &entities.SyncedUniverse{}
+
+	if s.OldAssetRoot != nil {
+		oldRoot, err := unmarshalUniverseRoot(s.OldAssetRoot)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"invalid old_asset_root: %w", err,
+			)
+		}
+		synced.OldAssetRoot = oldRoot
+	}
+
+	if s.NewAssetRoot != nil {
+		newRoot, err := unmarshalUniverseRoot(s.NewAssetRoot)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"invalid new_asset_root: %w", err,
+			)
+		}
+		synced.NewAssetRoot = newRoot
+	}
+
+	if len(s.NewAssetLeaves) > 0 {
+		leaves := make(
+			[]entities.AssetLeaf, 0, len(s.NewAssetLeaves),
+		)
+		for _, l := range s.NewAssetLeaves {
+			leaf, err := unmarshalAssetLeaf(l)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"invalid asset leaf: %w", err,
+				)
+			}
+			leaves = append(leaves, *leaf)
+		}
+		synced.NewAssetLeaves = leaves
+	}
+
+	return synced, nil
+}
