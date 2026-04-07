@@ -506,6 +506,18 @@ type jsonDeclareScriptKeyResponse struct {
 	ScriptKey *jsonScriptKey `json:"script_key"`
 }
 
+// jsonExportAssetWalletBackupResponse is the JSON shape of
+// assetwalletrpc.ExportAssetWalletBackupResponse.
+type jsonExportAssetWalletBackupResponse struct {
+	Backup string `json:"backup"`
+}
+
+// jsonImportAssetsFromBackupResponse is the JSON shape of
+// assetwalletrpc.ImportAssetsFromBackupResponse.
+type jsonImportAssetsFromBackupResponse struct {
+	NumImported uint32 `json:"num_imported"`
+}
+
 // --- UniverseClient types ---
 
 // jsonMerkleSumNode is the JSON shape of universerpc.MerkleSumNode.

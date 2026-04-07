@@ -83,6 +83,18 @@ func parseAddressVersion(s string) entities.AddressVersion {
 	}
 }
 
+// parseBackupMode converts a proto enum string to entities.BackupMode.
+func parseBackupMode(s string) entities.BackupMode {
+	switch s {
+	case "COMPACT":
+		return entities.BackupModeCompact
+	case "OPTIMISTIC":
+		return entities.BackupModeOptimistic
+	default:
+		return entities.BackupModeRaw
+	}
+}
+
 // parseAddressEventStatus converts a proto enum string to
 // entities.AddressEventStatus.
 func parseAddressEventStatus(s string) entities.AddressEventStatus {

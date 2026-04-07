@@ -19,6 +19,27 @@ func newWalletKitClient(tp *transport) *walletKitClient {
 	return &walletKitClient{transport: tp}
 }
 
+type jsonExportAssetWalletBackupRequest struct {
+	Mode string `json:"mode"`
+}
+
+type jsonImportAssetsFromBackupRequest struct {
+	Backup string `json:"backup"`
+}
+
+func marshalBackupMode(mode entities.BackupMode) string {
+	switch mode {
+	case entities.BackupModeCompact:
+		return "COMPACT"
+
+	case entities.BackupModeOptimistic:
+		return "OPTIMISTIC"
+
+	default:
+		return "RAW"
+	}
+}
+
 // jsonNextScriptKeyRequest is the JSON body for NextScriptKey.
 type jsonNextScriptKeyRequest struct {
 	KeyFamily uint32 `json:"key_family"`
@@ -636,4 +657,49 @@ func (w *walletKitClient) DeclareScriptKey(ctx context.Context,
 	}
 
 	return unmarshalScriptKey(resp.ScriptKey)
+}
+
+// ExportBackup exports an asset wallet backup blob.
+func (w *walletKitClient) ExportBackup(ctx context.Context,
+	mode entities.BackupMode) ([]byte, error) {
+
+	body := &jsonExportAssetWalletBackupRequest{
+		Mode: marshalBackupMode(mode),
+	}
+
+	var resp jsonExportAssetWalletBackupResponse
+	err := w.transport.doPost(
+		ctx, "/v1/taproot-assets/wallet/backup/export",
+		macaroon.WalletKitServiceMac, body, &resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	backup, err := parseBase64Bytes(resp.Backup)
+	if err != nil {
+		return nil, fmt.Errorf("invalid backup: %w", err)
+	}
+
+	return backup, nil
+}
+
+// ImportBackup imports assets from a previously exported wallet backup blob.
+func (w *walletKitClient) ImportBackup(ctx context.Context,
+	backup []byte) (uint32, error) {
+
+	body := &jsonImportAssetsFromBackupRequest{
+		Backup: base64.StdEncoding.EncodeToString(backup),
+	}
+
+	var resp jsonImportAssetsFromBackupResponse
+	err := w.transport.doPost(
+		ctx, "/v1/taproot-assets/wallet/backup/import",
+		macaroon.WalletKitServiceMac, body, &resp,
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	return resp.NumImported, nil
 }

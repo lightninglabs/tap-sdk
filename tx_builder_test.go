@@ -180,6 +180,24 @@ func (m *MockWalletKitClient) DeclareScriptKey(
 	return args.Get(0).(*entities.ScriptKey), args.Error(1)
 }
 
+func (m *MockWalletKitClient) ExportBackup(ctx context.Context,
+	mode entities.BackupMode) ([]byte, error) {
+
+	args := m.Called(ctx, mode)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).([]byte), args.Error(1)
+}
+
+func (m *MockWalletKitClient) ImportBackup(ctx context.Context,
+	backup []byte) (uint32, error) {
+
+	args := m.Called(ctx, backup)
+	return uint32(args.Int(0)), args.Error(1)
+}
+
 func TestTxBuilder_Execute(t *testing.T) {
 	mockWalletKit := new(MockWalletKitClient)
 

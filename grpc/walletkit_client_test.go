@@ -9,6 +9,41 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestMarshalBackupMode(t *testing.T) {
+	tests := []struct {
+		name string
+		mode entities.BackupMode
+		want assetwalletrpc.BackupMode
+	}{
+		{
+			name: "raw",
+			mode: entities.BackupModeRaw,
+			want: assetwalletrpc.BackupMode_RAW,
+		},
+		{
+			name: "compact",
+			mode: entities.BackupModeCompact,
+			want: assetwalletrpc.BackupMode_COMPACT,
+		},
+		{
+			name: "optimistic",
+			mode: entities.BackupModeOptimistic,
+			want: assetwalletrpc.BackupMode_OPTIMISTIC,
+		},
+		{
+			name: "unknown defaults to raw",
+			mode: entities.BackupMode(99),
+			want: assetwalletrpc.BackupMode_RAW,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, marshalBackupMode(tc.mode))
+		})
+	}
+}
+
 func TestVerifyOwnershipResponseUnmarshal(t *testing.T) {
 	tests := []struct {
 		name     string

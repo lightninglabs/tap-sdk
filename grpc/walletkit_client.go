@@ -487,3 +487,39 @@ func (m *walletKitClient) DeclareScriptKey(ctx context.Context,
 
 	return unmarshalScriptKey(resp.ScriptKey)
 }
+
+// ExportBackup exports an asset wallet backup blob.
+func (m *walletKitClient) ExportBackup(ctx context.Context,
+	mode entities.BackupMode) ([]byte, error) {
+
+	authCtx, client := m.rawClientWithMacAuth(ctx)
+
+	resp, err := client.ExportAssetWalletBackup(
+		authCtx, &assetwalletrpc.ExportAssetWalletBackupRequest{
+			Mode: marshalBackupMode(mode),
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp.Backup, nil
+}
+
+// ImportBackup imports assets from a previously exported wallet backup blob.
+func (m *walletKitClient) ImportBackup(ctx context.Context,
+	backup []byte) (uint32, error) {
+
+	authCtx, client := m.rawClientWithMacAuth(ctx)
+
+	resp, err := client.ImportAssetsFromBackup(
+		authCtx, &assetwalletrpc.ImportAssetsFromBackupRequest{
+			Backup: backup,
+		},
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	return resp.NumImported, nil
+}

@@ -481,6 +481,24 @@ func (m *mockClient) DeclareScriptKey(ctx context.Context,
 	return args.Get(0).(*entities.ScriptKey), args.Error(1)
 }
 
+func (m *mockClient) ExportBackup(ctx context.Context,
+	mode entities.BackupMode) ([]byte, error) {
+
+	args := m.Called(ctx, mode)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).([]byte), args.Error(1)
+}
+
+func (m *mockClient) ImportBackup(ctx context.Context,
+	backup []byte) (uint32, error) {
+
+	args := m.Called(ctx, backup)
+	return uint32(args.Int(0)), args.Error(1)
+}
+
 // --- UniverseClient (PR #31 additions) ---
 
 func (m *mockClient) AssetRoots(ctx context.Context,
