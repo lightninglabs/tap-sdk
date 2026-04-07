@@ -45,7 +45,7 @@ func TestAddressSend(t *testing.T) {
 	h.WaitForMint(ctx, h.AliceClient, batch.BatchKey,
 		60*time.Second)
 
-	// Find the minted asset to get its asset ID.
+	// Find the minted asset to get its group key.
 	assets, err := h.AliceClient.ListAssets(ctx,
 		&entities.ListAssetsRequest{})
 	require.NoError(t, err)
@@ -62,18 +62,19 @@ func TestAddressSend(t *testing.T) {
 		"minted asset should have group key")
 
 	assetID := mintedAsset.Genesis.AssetID
+	groupKey := mintedAsset.GroupKey.RawKey
 	t.Logf("Minted asset: id=%s, group=%x, amount=%d",
-		assetID, mintedAsset.GroupKey.RawKey[:],
-		mintedAsset.Amount)
+		assetID, groupKey[:], mintedAsset.Amount)
 
-	// --- Step 2: Bob creates a V0 address with explicit amount ---
-	// Using V0 for simplicity in this test (asset ID + amount).
-	v0 := entities.AddressVersionV0
+	// --- Step 2: Bob creates a V2 address by group key ---
+	// Fungible receive flows should use the group key as the
+	// user-facing identifier. V2 addresses also keep the amount on the
+	// sender side.
+	v2 := entities.AddressVersionV2
 	bobAddr, err := h.BobClient.NewAddr(ctx,
 		&entities.NewAddressRequest{
-			AssetID:        &assetID,
-			Amount:         200,
-			AddressVersion: &v0,
+			GroupKey:       &groupKey,
+			AddressVersion: &v2,
 		},
 	)
 	require.NoError(t, err)
@@ -83,7 +84,10 @@ func TestAddressSend(t *testing.T) {
 	// --- Step 3: Alice sends 200 units to Bob's address ---
 	transfer, err := h.AliceClient.SendAsset(ctx,
 		&entities.SendAssetRequest{
-			TapAddresses: []string{bobAddr.Encoded},
+			Recipients: []entities.Recipient{{
+				Address: bobAddr.Encoded,
+				Amount:  200,
+			}},
 		},
 	)
 	require.NoError(t, err)
