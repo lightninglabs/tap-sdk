@@ -190,9 +190,6 @@ func (s *Wallet) ImportProof(ctx context.Context,
 	return registered, nil
 }
 
-// Send performs a simple one-shot address-based asset transfer.
-//
-// The addr must be a valid bech32m-encoded Taproot Asset address. For
 // ListAssetsByRef returns wallet assets matching the given AssetRef.
 //
 // For fungible assets (group key), it filters by group key and returns
@@ -302,7 +299,10 @@ func (s *Wallet) FetchMetaByRef(ctx context.Context,
 	return meta, nil
 }
 
-// fungible assets with V2 addresses (which omit amounts), the amount
+// Send performs a simple one-shot address-based asset transfer.
+//
+// The addr must be a valid bech32m-encoded Taproot Asset address. For
+// fungible assets with V2 addresses, which omit amounts, the amount
 // parameter specifies how many units to send. For V0/V1 addresses where
 // the amount is already embedded, pass 0 and the address amount is used.
 //
