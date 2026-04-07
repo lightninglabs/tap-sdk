@@ -198,6 +198,15 @@ type WalletKitClient interface {
 	DeclareScriptKey(ctx context.Context,
 		req *entities.DeclareScriptKeyRequest) (
 		*entities.ScriptKey, error)
+
+	// ExportBackup exports an asset wallet backup blob using the requested
+	// backup mode.
+	ExportBackup(ctx context.Context,
+		mode entities.BackupMode) ([]byte, error)
+
+	// ImportBackup imports assets from a previously exported wallet backup
+	// blob and returns the number of imported assets.
+	ImportBackup(ctx context.Context, backup []byte) (uint32, error)
 }
 
 // UniverseClient exposes the Universe service gRPC client.

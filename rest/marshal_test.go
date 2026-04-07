@@ -229,6 +229,76 @@ func TestParseAddressVersion(t *testing.T) {
 	}
 }
 
+func TestParseBackupMode(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  entities.BackupMode
+	}{
+		{
+			name:  "raw",
+			input: "RAW",
+			want:  entities.BackupModeRaw,
+		},
+		{
+			name:  "compact",
+			input: "COMPACT",
+			want:  entities.BackupModeCompact,
+		},
+		{
+			name:  "optimistic",
+			input: "OPTIMISTIC",
+			want:  entities.BackupModeOptimistic,
+		},
+		{
+			name:  "unknown defaults to raw",
+			input: "SOMETHING_ELSE",
+			want:  entities.BackupModeRaw,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, parseBackupMode(tc.input))
+		})
+	}
+}
+
+func TestMarshalBackupMode(t *testing.T) {
+	tests := []struct {
+		name string
+		mode entities.BackupMode
+		want string
+	}{
+		{
+			name: "raw",
+			mode: entities.BackupModeRaw,
+			want: "RAW",
+		},
+		{
+			name: "compact",
+			mode: entities.BackupModeCompact,
+			want: "COMPACT",
+		},
+		{
+			name: "optimistic",
+			mode: entities.BackupModeOptimistic,
+			want: "OPTIMISTIC",
+		},
+		{
+			name: "unknown defaults to raw",
+			mode: entities.BackupMode(99),
+			want: "RAW",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, marshalBackupMode(tc.mode))
+		})
+	}
+}
+
 func TestParseBatchState(t *testing.T) {
 	tests := []struct {
 		name  string
