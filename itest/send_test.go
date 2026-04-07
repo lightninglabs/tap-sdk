@@ -66,6 +66,14 @@ func TestAddressSend(t *testing.T) {
 	t.Logf("Minted asset: id=%s, group=%x, amount=%d",
 		assetID, groupKey[:], mintedAsset.Amount)
 
+	// Sync Bob's local universe with Alice so Bob can bootstrap the
+	// fungible asset group before creating a group-key receive address.
+	_, err = h.BobClient.SyncUniverse(ctx, &entities.SyncRequest{
+		UniverseHost: envOr("TAPD_ALICE_HOST", defaultAliceHost),
+		SyncMode:     entities.SyncIssuanceOnly,
+	})
+	require.NoError(t, err)
+
 	// --- Step 2: Bob creates a V2 address by group key ---
 	// Fungible receive flows should use the group key as the
 	// user-facing identifier. V2 addresses also keep the amount on the
