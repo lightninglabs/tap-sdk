@@ -68,7 +68,7 @@ func TestAddressSend(t *testing.T) {
 
 	// Sync Bob's local universe with Alice so Bob can bootstrap the
 	// fungible asset group before creating a group-key receive address.
-	synced, err := h.BobClient.SyncUniverse(ctx, &entities.SyncRequest{
+	syncReq := &entities.SyncRequest{
 		UniverseHost: envOr(
 			"TAPD_ALICE_UNIVERSE_HOST",
 			defaultAliceUniverseHost,
@@ -80,24 +80,38 @@ func TestAddressSend(t *testing.T) {
 				ProofType: entities.ProofTypeIssuance,
 			},
 		}},
-	})
-	require.NoError(t, err)
-	if len(synced) == 0 {
-		t.Log("Bob universe sync returned no diff")
 	}
 
-	// --- Step 2: Bob creates a V2 address by group key ---
-	// Fungible receive flows should use the group key as the
-	// user-facing identifier. V2 addresses also keep the amount on the
-	// sender side.
+	// The mint is finalized before the universe bootstrap is always
+	// observable from the remote node, so retry the targeted sync until
+	// Bob can successfully create the V2 group-key address.
 	v2 := entities.AddressVersionV2
-	bobAddr, err := h.BobClient.NewAddr(ctx,
-		&entities.NewAddressRequest{
-			GroupKey:       &groupKey,
-			AddressVersion: &v2,
-		},
-	)
-	require.NoError(t, err)
+	var bobAddr *entities.Address
+	require.Eventually(t, func() bool {
+		synced, syncErr := h.BobClient.SyncUniverse(ctx, syncReq)
+		if syncErr != nil {
+			t.Logf("Bob universe sync failed: %v", syncErr)
+			return false
+		}
+
+		if len(synced) == 0 {
+			t.Log("Bob universe sync returned no diff")
+		}
+
+		bobAddr, err = h.BobClient.NewAddr(ctx,
+			&entities.NewAddressRequest{
+				GroupKey:       &groupKey,
+				AddressVersion: &v2,
+			},
+		)
+		if err != nil {
+			t.Logf("Bob address bootstrap not ready yet: %v", err)
+			return false
+		}
+
+		return true
+	}, 30*time.Second, time.Second)
+	require.NotNil(t, bobAddr)
 	require.NotEmpty(t, bobAddr.Encoded)
 	t.Logf("Bob address: %s", bobAddr.Encoded)
 
