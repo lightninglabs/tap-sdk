@@ -66,20 +66,29 @@ func TestAddressSend(t *testing.T) {
 	t.Logf("Minted asset: id=%s, group=%x, amount=%d",
 		assetID, groupKey[:], mintedAsset.Amount)
 
-	// Add Alice as Bob's universe federation peer so Bob can bootstrap the
-	// fungible asset group via the normal group-key lookup path.
-	aliceUniverseHost := envOr(
-		"TAPD_ALICE_UNIVERSE_HOST",
-		defaultAliceUniverseHost,
+	// Prime Bob's local universe with Alice's issuance proof so Bob can
+	// resolve the fungible group key deterministically before receiving.
+	proofFile, err := h.AliceClient.ExportProof(ctx,
+		mintedAsset.Genesis.AssetID, mintedAsset.ScriptKey.PubKey, nil,
 	)
-	err = h.BobClient.AddFederationServer(ctx, []entities.FederationServer{{
-		Host: aliceUniverseHost,
-	}})
 	require.NoError(t, err)
 
-	// The mint finalization and federation bootstrap can complete slightly
-	// after the batch reaches its terminal state, so retry address creation
-	// until Bob can resolve the fungible group key.
+	rawProofs, err := h.AliceClient.UnpackProofFile(ctx,
+		proofFile.RawProofFile,
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, rawProofs)
+
+	for _, rawProof := range rawProofs {
+		decoded, decodeErr := h.AliceClient.DecodeProof(ctx, rawProof)
+		require.NoError(t, decodeErr)
+
+		err = h.BobClient.InsertProof(ctx, rawProof, decoded)
+		require.NoError(t, err)
+	}
+
+	// Address creation can still lag slightly behind proof insertion, so
+	// retry until Bob can resolve the fungible group key locally.
 	v2 := entities.AddressVersionV2
 	var bobAddr *entities.Address
 	require.Eventually(t, func() bool {
