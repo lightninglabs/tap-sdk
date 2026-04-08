@@ -66,40 +66,33 @@ func TestAddressSend(t *testing.T) {
 	t.Logf("Minted asset: id=%s, group=%x, amount=%d",
 		assetID, groupKey[:], mintedAsset.Amount)
 
-	// Prime Bob's local universe with Alice's issuance proof so Bob can
-	// resolve the fungible group key deterministically before receiving.
-	proofFile, err := h.AliceClient.ExportProof(ctx,
-		mintedAsset.Genesis.AssetID, mintedAsset.ScriptKey.PubKey, nil,
-	)
-	require.NoError(t, err)
-
-	rawProofs, err := h.AliceClient.UnpackProofFile(ctx,
-		proofFile.RawProofFile,
-	)
-	require.NoError(t, err)
-	require.NotEmpty(t, rawProofs)
-
-	err = h.BobClient.SetFederationSyncConfig(ctx,
-		[]entities.GlobalFederationSyncConfig{
-			{
-				ProofType:       entities.ProofTypeIssuance,
-				AllowSyncInsert: true,
-				AllowSyncExport: true,
-			},
-		}, nil,
-	)
-	require.NoError(t, err)
-
-	for _, rawProof := range rawProofs {
-		decoded, decodeErr := h.AliceClient.DecodeProof(ctx, rawProof)
-		require.NoError(t, decodeErr)
-
-		err = h.BobClient.InsertProof(ctx, rawProof, decoded)
-		require.NoError(t, err)
+	// Allow issuance proof sync on both nodes, then add Alice as Bob's
+	// universe federation peer so the normal group-key bootstrap path can
+	// resolve the fungible asset before Bob creates a V2 address.
+	issuanceSync := []entities.GlobalFederationSyncConfig{
+		{
+			ProofType:       entities.ProofTypeIssuance,
+			AllowSyncInsert: true,
+			AllowSyncExport: true,
+		},
 	}
+	err = h.AliceClient.SetFederationSyncConfig(ctx, issuanceSync, nil)
+	require.NoError(t, err)
 
-	// Address creation can still lag slightly behind proof insertion, so
-	// retry until Bob can resolve the fungible group key locally.
+	err = h.BobClient.SetFederationSyncConfig(ctx, issuanceSync, nil)
+	require.NoError(t, err)
+
+	aliceUniverseHost := envOr(
+		"TAPD_ALICE_UNIVERSE_HOST",
+		defaultAliceUniverseHost,
+	)
+	err = h.BobClient.AddFederationServer(ctx, []entities.FederationServer{{
+		Host: aliceUniverseHost,
+	}})
+	require.NoError(t, err)
+
+	// Address creation can still lag slightly behind federation bootstrap,
+	// so retry until Bob can resolve the fungible group key locally.
 	v2 := entities.AddressVersionV2
 	var bobAddr *entities.Address
 	require.Eventually(t, func() bool {
