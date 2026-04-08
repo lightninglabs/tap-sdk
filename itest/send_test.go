@@ -66,38 +66,23 @@ func TestAddressSend(t *testing.T) {
 	t.Logf("Minted asset: id=%s, group=%x, amount=%d",
 		assetID, groupKey[:], mintedAsset.Amount)
 
-	// Sync Bob's local universe with Alice so Bob can bootstrap the
-	// fungible asset group before creating a group-key receive address.
-	syncReq := &entities.SyncRequest{
-		UniverseHost: envOr(
-			"TAPD_ALICE_UNIVERSE_HOST",
-			defaultAliceUniverseHost,
-		),
-		SyncMode: entities.SyncIssuanceOnly,
-		SyncTargets: []entities.SyncTarget{{
-			ID: entities.UniverseID{
-				GroupKey:  &groupKey,
-				ProofType: entities.ProofTypeIssuance,
-			},
-		}},
-	}
+	// Add Alice as Bob's universe federation peer so Bob can bootstrap the
+	// fungible asset group via the normal group-key lookup path.
+	aliceUniverseHost := envOr(
+		"TAPD_ALICE_UNIVERSE_HOST",
+		defaultAliceUniverseHost,
+	)
+	err = h.BobClient.AddFederationServer(ctx, []entities.FederationServer{{
+		Host: aliceUniverseHost,
+	}})
+	require.NoError(t, err)
 
-	// The mint is finalized before the universe bootstrap is always
-	// observable from the remote node, so retry the targeted sync until
-	// Bob can successfully create the V2 group-key address.
+	// The mint finalization and federation bootstrap can complete slightly
+	// after the batch reaches its terminal state, so retry address creation
+	// until Bob can resolve the fungible group key.
 	v2 := entities.AddressVersionV2
 	var bobAddr *entities.Address
 	require.Eventually(t, func() bool {
-		synced, syncErr := h.BobClient.SyncUniverse(ctx, syncReq)
-		if syncErr != nil {
-			t.Logf("Bob universe sync failed: %v", syncErr)
-			return false
-		}
-
-		if len(synced) == 0 {
-			t.Log("Bob universe sync returned no diff")
-		}
-
 		bobAddr, err = h.BobClient.NewAddr(ctx,
 			&entities.NewAddressRequest{
 				GroupKey:       &groupKey,
