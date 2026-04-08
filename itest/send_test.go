@@ -79,6 +79,17 @@ func TestAddressSend(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, rawProofs)
 
+	err = h.BobClient.SetFederationSyncConfig(ctx,
+		[]entities.GlobalFederationSyncConfig{
+			{
+				ProofType:       entities.ProofTypeIssuance,
+				AllowSyncInsert: true,
+				AllowSyncExport: true,
+			},
+		}, nil,
+	)
+	require.NoError(t, err)
+
 	for _, rawProof := range rawProofs {
 		decoded, decodeErr := h.AliceClient.DecodeProof(ctx, rawProof)
 		require.NoError(t, decodeErr)
