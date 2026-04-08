@@ -69,6 +69,7 @@ func (s *walletClient) ListAssets(ctx context.Context,
 	rpcCtx = s.adminMac.WithMacaroonAuth(rpcCtx)
 
 	rpcReq := &taprpc.ListAssetRequest{}
+	var assetRefFilter *entities.AssetRef
 	if req != nil {
 		rpcReq.WithWitness = req.WithWitness
 		rpcReq.IncludeSpent = req.IncludeSpent
@@ -77,8 +78,15 @@ func (s *walletClient) ListAssets(ctx context.Context,
 		rpcReq.MinAmount = req.MinAmount
 		rpcReq.MaxAmount = req.MaxAmount
 
-		if req.GroupKey != nil {
-			rpcReq.GroupKey = req.GroupKey[:]
+		if req.AssetRef != nil {
+			if err := req.AssetRef.Validate(); err != nil {
+				return nil, err
+			}
+
+			assetRefFilter = req.AssetRef
+			if groupKey, ok := req.AssetRef.GroupKey(); ok {
+				rpcReq.GroupKey = groupKey[:]
+			}
 		}
 
 		if req.AnchorOutpoint != nil {
@@ -106,6 +114,10 @@ func (s *walletClient) ListAssets(ctx context.Context,
 			return nil, err
 		}
 
+		if assetRefFilter != nil && asset.AssetRef != *assetRefFilter {
+			continue
+		}
+
 		assets = append(assets, asset)
 	}
 
@@ -121,36 +133,57 @@ func (s *walletClient) ListBalances(ctx context.Context,
 
 	rpcCtx = s.adminMac.WithMacaroonAuth(rpcCtx)
 
-	rpcReq := marshalListBalancesRequest(req)
-	resp, err := s.client.ListBalances(rpcCtx, rpcReq)
+	rawResp, err := s.client.ListBalances(
+		rpcCtx, marshalListBalancesRequest(req),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	assets, err := s.ListAssets(ctx, &entities.ListAssetsRequest{
+		IncludeLeased: req != nil && req.IncludeLeased,
+		AssetRef: func() *entities.AssetRef {
+			if req == nil {
+				return nil
+			}
+
+			return req.AssetRef
+		}(),
+		ScriptKeyType: func() *entities.ScriptKeyTypeQuery {
+			if req == nil {
+				return nil
+			}
+
+			return req.ScriptKeyType
+		}(),
+	})
 	if err != nil {
 		return nil, err
 	}
 
 	result := &entities.ListBalancesResponse{
-		AssetBalances: make(map[string]*entities.AssetBalance),
-		AssetGroupBalances: make(
-			map[string]*entities.AssetGroupBalance,
-		),
-		UnconfirmedTransfers: resp.UnconfirmedTransfers,
+		Balances:             make(map[string]*entities.AssetBalance),
+		UnconfirmedTransfers: rawResp.UnconfirmedTransfers,
 	}
 
-	for key, rpcBalance := range resp.AssetBalances {
-		balance, err := unmarshalAssetBalance(rpcBalance)
-		if err != nil {
-			return nil, err
+	for _, asset := range assets {
+		key := asset.AssetRef.String()
+		balance, ok := result.Balances[key]
+		if !ok {
+			balance = &entities.AssetBalance{
+				AssetRef:     asset.AssetRef,
+				AssetGenesis: asset.Genesis,
+			}
+
+			if asset.GroupKey != nil {
+				groupKey := asset.GroupKey.RawKey
+				balance.GroupKey = &groupKey
+			}
+
+			result.Balances[key] = balance
 		}
 
-		result.AssetBalances[key] = balance
-	}
-
-	for key, rpcBalance := range resp.AssetGroupBalances {
-		balance, err := unmarshalAssetGroupBalance(rpcBalance)
-		if err != nil {
-			return nil, err
-		}
-
-		result.AssetGroupBalances[key] = balance
+		balance.Balance += asset.Amount
 	}
 
 	return result, nil
@@ -248,6 +281,18 @@ func unmarshalAsset(rpcAsset *taprpc.Asset) (*entities.Asset, error) {
 		}
 	}
 
+	asset.AssetRef = entities.AssetRefFromAsset(
+		asset.Genesis.IssuanceID,
+		func() *entities.PubKey {
+			if asset.GroupKey == nil {
+				return nil
+			}
+
+			rawKey := asset.GroupKey.RawKey
+			return &rawKey
+		}(),
+	)
+
 	return asset, nil
 }
 
@@ -287,7 +332,7 @@ func unmarshalAssetGenesis(rpcGenesis *taprpc.GenesisInfo) (
 		FirstPrevOut: firstPrevOut,
 		Tag:          rpcGenesis.Name,
 		MetaHash:     metaHash,
-		AssetID:      assetID,
+		IssuanceID:   assetID,
 		OutputIndex:  rpcGenesis.OutputIndex,
 		Type:         entities.AssetType(rpcGenesis.AssetType),
 	}, nil
@@ -369,7 +414,7 @@ func unmarshalAssetTransfer(rpcTransfer *taprpc.AssetTransfer) (
 
 		inputs = append(inputs, entities.TransferInput{
 			AnchorPoint: anchorPoint,
-			AssetID:     assetID,
+			IssuanceID:  assetID,
 			ScriptKey:   scriptKey,
 			Amount:      in.Amount,
 		})
@@ -409,7 +454,11 @@ func (s *walletClient) NewAddr(ctx context.Context,
 
 	rpcCtx = s.adminMac.WithMacaroonAuth(rpcCtx)
 
-	rpcReq := marshalNewAddrRequest(req)
+	rpcReq, err := marshalNewAddrRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
 	resp, err := s.client.NewAddr(rpcCtx, rpcReq)
 	if err != nil {
 		return nil, err
@@ -522,26 +571,6 @@ func marshalListBalancesRequest(
 	rpcReq.IncludeLeased = req.IncludeLeased
 	rpcReq.ScriptKeyType = marshalScriptKeyTypeQuery(req.ScriptKeyType)
 
-	switch req.GroupBy {
-	case entities.BalanceGroupByAssetID:
-		rpcReq.GroupBy = &taprpc.ListBalancesRequest_AssetId{
-			AssetId: true,
-		}
-
-	case entities.BalanceGroupByGroupKey:
-		rpcReq.GroupBy = &taprpc.ListBalancesRequest_GroupKey{
-			GroupKey: true,
-		}
-	}
-
-	if req.AssetFilter != nil {
-		rpcReq.AssetFilter = req.AssetFilter[:]
-	}
-
-	if req.GroupKeyFilter != nil {
-		rpcReq.GroupKeyFilter = req.GroupKeyFilter[:]
-	}
-
 	return rpcReq
 }
 
@@ -587,6 +616,7 @@ func unmarshalAssetBalance(
 	}
 
 	balance := &entities.AssetBalance{
+		AssetRef:     entities.AssetRefFromAsset(genesis.IssuanceID, nil),
 		AssetGenesis: *genesis,
 		Balance:      rpcBalance.Balance,
 	}
@@ -600,6 +630,7 @@ func unmarshalAssetBalance(
 		var groupKey entities.PubKey
 		copy(groupKey[:], rpcBalance.GroupKey)
 		balance.GroupKey = &groupKey
+		balance.AssetRef = entities.AssetRefFromGroupKey(groupKey)
 	}
 
 	return balance, nil
@@ -666,10 +697,10 @@ func marshalSendAssetRequest(
 }
 
 func marshalNewAddrRequest(
-	req *entities.NewAddressRequest) *taprpc.NewAddrRequest {
+	req *entities.NewAddressRequest) (*taprpc.NewAddrRequest, error) {
 
 	if req == nil {
-		return &taprpc.NewAddrRequest{}
+		return &taprpc.NewAddrRequest{}, nil
 	}
 
 	rpcReq := &taprpc.NewAddrRequest{
@@ -679,12 +710,19 @@ func marshalNewAddrRequest(
 		SkipProofCourierConnCheck: req.SkipProofCourierConnCheck,
 	}
 
-	if req.AssetID != nil {
-		rpcReq.AssetId = req.AssetID[:]
-	}
+	if !req.AssetRef.IsZero() {
+		assetID, groupKey, err := req.AssetRef.Specifier()
+		if err != nil {
+			return nil, err
+		}
 
-	if req.GroupKey != nil {
-		rpcReq.GroupKey = req.GroupKey[:]
+		if assetID != nil {
+			rpcReq.AssetId = (*assetID)[:]
+		}
+
+		if groupKey != nil {
+			rpcReq.GroupKey = (*groupKey)[:]
+		}
 	}
 
 	if req.ScriptKey != nil {
@@ -721,7 +759,7 @@ func marshalNewAddrRequest(
 		rpcReq.AddressVersion = taprpc.AddrVersion(*req.AddressVersion)
 	}
 
-	return rpcReq
+	return rpcReq, nil
 }
 
 func unmarshalAddr(rpcAddr *taprpc.Addr) (*entities.Address, error) {
@@ -739,16 +777,33 @@ func unmarshalAddr(rpcAddr *taprpc.Addr) (*entities.Address, error) {
 		AddressVersion:   entities.AddressVersion(rpcAddr.AddressVersion),
 	}
 
-	// Parse asset ID (may be empty for V2 group addresses).
+	var assetID *entities.AssetID
 	if len(rpcAddr.AssetId) == 32 {
-		copy(addr.AssetID[:], rpcAddr.AssetId)
+		parsedAssetID, err := entities.ParseAssetID(rpcAddr.AssetId)
+		if err != nil {
+			return nil, fmt.Errorf("invalid asset ID: %w", err)
+		}
+
+		assetID = &parsedAssetID
 	}
 
-	// Parse group key if present.
+	var groupKey *entities.PubKey
 	if len(rpcAddr.GroupKey) == 33 {
-		var gk entities.PubKey
-		copy(gk[:], rpcAddr.GroupKey)
-		addr.GroupKey = &gk
+		parsedGroupKey, err := entities.ParsePubKey(rpcAddr.GroupKey)
+		if err != nil {
+			return nil, fmt.Errorf("invalid group key: %w", err)
+		}
+
+		groupKey = &parsedGroupKey
+	}
+
+	if assetID != nil || groupKey != nil {
+		assetRef, err := entities.AssetRefFromSpecifier(assetID, groupKey)
+		if err != nil {
+			return nil, err
+		}
+
+		addr.AssetRef = assetRef
 	}
 
 	// Parse script key (required).
@@ -888,7 +943,10 @@ func (s *walletClient) BurnAsset(ctx context.Context,
 
 	rpcCtx = s.adminMac.WithMacaroonAuth(rpcCtx)
 
-	rpcReq := marshalBurnAssetRequest(req)
+	rpcReq, err := s.marshalBurnAssetRequest(ctx, req)
+	if err != nil {
+		return nil, err
+	}
 
 	resp, err := s.client.BurnAsset(rpcCtx, rpcReq)
 	if err != nil {
@@ -931,11 +989,19 @@ func (s *walletClient) ListBurns(ctx context.Context,
 
 	rpcReq := &taprpc.ListBurnsRequest{}
 	if req != nil {
-		if req.AssetID != nil {
-			rpcReq.AssetId = req.AssetID[:]
-		}
-		if req.TweakedGroupKey != nil {
-			rpcReq.TweakedGroupKey = req.TweakedGroupKey[:]
+		if req.AssetRef != nil {
+			assetID, groupKey, err := req.AssetRef.Specifier()
+			if err != nil {
+				return nil, err
+			}
+
+			if assetID != nil {
+				rpcReq.AssetId = (*assetID)[:]
+			}
+
+			if groupKey != nil {
+				rpcReq.TweakedGroupKey = (*groupKey)[:]
+			}
 		}
 		if req.AnchorTxid != nil {
 			rpcReq.AnchorTxid = req.AnchorTxid[:]
@@ -969,7 +1035,10 @@ func (s *walletClient) FetchAssetMeta(ctx context.Context,
 
 	rpcCtx = s.adminMac.WithMacaroonAuth(rpcCtx)
 
-	rpcReq := marshalFetchAssetMetaRequest(req)
+	rpcReq, err := s.marshalFetchAssetMetaRequest(ctx, req)
+	if err != nil {
+		return nil, err
+	}
 
 	resp, err := s.client.FetchAssetMeta(rpcCtx, rpcReq)
 	if err != nil {
@@ -1099,7 +1168,8 @@ func unmarshalGroupedAssets(
 		}
 
 		assets = append(assets, &entities.AssetHumanReadable{
-			ID:               assetID,
+			AssetRef:         entities.AssetRefFromAssetID(assetID),
+			IssuanceID:       assetID,
 			Amount:           rpcAsset.Amount,
 			LockTime:         rpcAsset.LockTime,
 			RelativeLockTime: rpcAsset.RelativeLockTime,
@@ -1135,7 +1205,8 @@ func unmarshalAssetBurn(
 
 	burn := &entities.AssetBurn{
 		Note:       rpcBurn.Note,
-		AssetID:    assetID,
+		AssetRef:   entities.AssetRefFromAsset(assetID, nil),
+		IssuanceID: assetID,
 		Amount:     rpcBurn.Amount,
 		AnchorTxid: anchorTxid,
 	}
@@ -1149,15 +1220,15 @@ func unmarshalAssetBurn(
 				"key: %w", err)
 		}
 
-		burn.TweakedGroupKey = &groupKey
+		burn.AssetRef = entities.AssetRefFromGroupKey(groupKey)
 	}
 
 	return burn, nil
 }
 
 // marshalBurnAssetRequest converts a BurnAssetRequest to an RPC request.
-func marshalBurnAssetRequest(
-	req *entities.BurnAssetRequest) *taprpc.BurnAssetRequest {
+func (s *walletClient) marshalBurnAssetRequest(ctx context.Context,
+	req *entities.BurnAssetRequest) (*taprpc.BurnAssetRequest, error) {
 
 	rpcReq := &taprpc.BurnAssetRequest{
 		AmountToBurn:     req.AmountToBurn,
@@ -1165,29 +1236,40 @@ func marshalBurnAssetRequest(
 		Note:             req.Note,
 	}
 
-	if req.AssetID != nil {
-		rpcReq.Asset = &taprpc.BurnAssetRequest_AssetId{
-			AssetId: req.AssetID[:],
-		}
-	} else if req.AssetIDStr != "" {
-		rpcReq.Asset = &taprpc.BurnAssetRequest_AssetIdStr{
-			AssetIdStr: req.AssetIDStr,
-		}
+	issuanceID, err := s.resolveIssuanceID(
+		ctx, req.AssetRef, req.AmountToBurn,
+	)
+	if err != nil {
+		return nil, err
 	}
 
-	return rpcReq
+	rpcReq.Asset = &taprpc.BurnAssetRequest_AssetId{
+		AssetId: issuanceID[:],
+	}
+
+	return rpcReq, nil
 }
 
 // marshalFetchAssetMetaRequest converts a FetchAssetMetaRequest to an
 // RPC request.
-func marshalFetchAssetMetaRequest(
-	req *entities.FetchAssetMetaRequest) *taprpc.FetchAssetMetaRequest {
+func (s *walletClient) marshalFetchAssetMetaRequest(ctx context.Context,
+	req *entities.FetchAssetMetaRequest) (*taprpc.FetchAssetMetaRequest,
+	error) {
 
 	rpcReq := &taprpc.FetchAssetMetaRequest{}
 
-	if req.AssetID != nil {
+	if req == nil {
+		return rpcReq, nil
+	}
+
+	if req.AssetRef != nil {
+		issuanceID, err := s.resolveIssuanceID(ctx, *req.AssetRef, 0)
+		if err != nil {
+			return nil, err
+		}
+
 		rpcReq.Asset = &taprpc.FetchAssetMetaRequest_AssetId{
-			AssetId: req.AssetID[:],
+			AssetId: issuanceID[:],
 		}
 	} else if req.MetaHash != nil {
 		rpcReq.Asset = &taprpc.FetchAssetMetaRequest_MetaHash{
@@ -1195,7 +1277,7 @@ func marshalFetchAssetMetaRequest(
 		}
 	}
 
-	return rpcReq
+	return rpcReq, nil
 }
 
 // unmarshalFetchAssetMetaResponse converts an RPC FetchAssetMetaResponse
@@ -1260,7 +1342,8 @@ func unmarshalDecodedProof(
 	proof := &entities.DecodedProof{
 		ProofAtDepth:   rpcProof.ProofAtDepth,
 		NumberOfProofs: rpcProof.NumberOfProofs,
-		AssetID:        assetID,
+		AssetRef:       entities.AssetRefFromAsset(assetID, nil),
+		IssuanceID:     assetID,
 		ScriptKey:      scriptKey,
 		Amount:         rpcProof.Asset.Amount,
 	}
@@ -1288,8 +1371,52 @@ func unmarshalDecodedProof(
 				err)
 		}
 
-		proof.GroupKey = &groupKey
+		proof.AssetRef = entities.AssetRefFromGroupKey(groupKey)
 	}
 
 	return proof, nil
+}
+
+func (s *walletClient) resolveIssuanceID(ctx context.Context,
+	assetRef entities.AssetRef, minAmount uint64) (entities.AssetID, error) {
+
+	if assetRef.IsZero() {
+		return entities.AssetID{}, fmt.Errorf("asset ref is required")
+	}
+
+	if assetID, ok := assetRef.AssetID(); ok {
+		return assetID, nil
+	}
+
+	assets, err := s.ListAssets(ctx, &entities.ListAssetsRequest{
+		AssetRef:      &assetRef,
+		IncludeLeased: true,
+	})
+	if err != nil {
+		return entities.AssetID{}, err
+	}
+
+	if len(assets) == 0 {
+		return entities.AssetID{}, fmt.Errorf("asset %s not found", assetRef)
+	}
+
+	var selected *entities.Asset
+	for _, asset := range assets {
+		if asset.Amount >= minAmount {
+			return asset.Genesis.IssuanceID, nil
+		}
+
+		if selected == nil || asset.Amount > selected.Amount {
+			selected = asset
+		}
+	}
+
+	if minAmount > 0 {
+		return entities.AssetID{}, fmt.Errorf(
+			"asset %s has no single issuance with at least %d units",
+			assetRef, minAmount,
+		)
+	}
+
+	return selected.Genesis.IssuanceID, nil
 }

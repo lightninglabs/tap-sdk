@@ -26,10 +26,7 @@ type WalletClient interface {
 	ListAssets(ctx context.Context,
 		req *entities.ListAssetsRequest) ([]*entities.Asset, error)
 
-	// ListBalances is a low-level wrapper around the TaprootAssets balance RPC.
-	// It exposes the daemon's raw grouping modes for advanced use cases.
-	// High-level SDK surfaces should still prefer the semantic asset model:
-	// fungible assets by group key, collectibles by asset ID.
+	// ListBalances lists wallet balances keyed by semantic AssetRef.
 	ListBalances(ctx context.Context,
 		req *entities.ListBalancesRequest) (*entities.ListBalancesResponse,
 		error)
@@ -51,8 +48,9 @@ type WalletClient interface {
 	// NewAddr creates a new Taproot Asset address for receiving assets.
 	// The address is stored in tapd and can be queried later.
 	//
-	// For V0/V1 addresses, AssetID and Amount are required.
-	// For V2 addresses, either AssetID or GroupKey must be set.
+	// For V0/V1 addresses, AssetRef must resolve to a concrete issuance asset
+	// ID. For V2 addresses, AssetRef may resolve to either an issuance asset ID
+	// or a group key.
 	//
 	// If ScriptKey and InternalKey are not provided, tapd derives them
 	// from its internal wallet.
@@ -81,7 +79,7 @@ type WalletClient interface {
 		req *entities.ListUtxosRequest) (
 		map[string]*entities.ManagedUtxo, error)
 
-	// ListGroups lists all known asset groups.
+	// ListGroups lists all known protocol-level asset groups.
 	ListGroups(ctx context.Context) (
 		map[string]*entities.GroupedAssets, error)
 
@@ -95,7 +93,7 @@ type WalletClient interface {
 	ListBurns(ctx context.Context,
 		req *entities.ListBurnsRequest) ([]*entities.AssetBurn, error)
 
-	// FetchAssetMeta fetches the metadata for an asset by ID or meta
+	// FetchAssetMeta fetches the metadata for an asset by AssetRef or meta
 	// hash.
 	FetchAssetMeta(ctx context.Context,
 		req *entities.FetchAssetMetaRequest) (
@@ -113,7 +111,7 @@ type ProofClient interface {
 	// ExportProof exports a proof file for a specific asset output.
 	// If outpoint is nil, then the latest proof for the given asset/script key
 	// is exported.
-	ExportProof(ctx context.Context, assetID entities.AssetID,
+	ExportProof(ctx context.Context, issuanceID entities.AssetID,
 		scriptKey entities.PubKey,
 		outpoint *entities.Outpoint) (*entities.ProofFile, error)
 
@@ -126,8 +124,8 @@ type ProofClient interface {
 
 	// RegisterTransfer registers an inbound transfer for an interactive send.
 	// The proof must already be in the local universe before calling this.
-	RegisterTransfer(ctx context.Context, assetID entities.AssetID,
-		groupKey *entities.PubKey, scriptKey entities.PubKey,
+	RegisterTransfer(ctx context.Context, assetRef entities.AssetRef,
+		scriptKey entities.PubKey,
 		outpoint entities.Outpoint) (*entities.RegisteredAsset, error)
 }
 
@@ -230,8 +228,7 @@ type UniverseClient interface {
 	DeleteAssetRoot(ctx context.Context,
 		id *entities.UniverseID) error
 
-	// AssetLeafKeys returns the set of leaf keys for a universe,
-	// identified by asset ID or group key.
+	// AssetLeafKeys returns the set of leaf keys for a universe.
 	AssetLeafKeys(ctx context.Context,
 		req *entities.AssetLeafKeysRequest) ([]entities.AssetLeafKey,
 		error)
@@ -299,7 +296,18 @@ type UniverseClient interface {
 // more opinionated mint workflows. They should not be treated as the final
 // high-level mint UX of the SDK.
 type MintClient interface {
-	// MintAsset stages a new asset in the pending mint batch.
+	// CreateAsset stages a brand-new asset in the pending mint batch.
+	CreateAsset(ctx context.Context,
+		req *entities.CreateAssetRequest) (*entities.MintingBatch, error)
+
+	// CreateIssuance stages an additional issuance/tranche for an existing
+	// asset in the pending mint batch.
+	CreateIssuance(ctx context.Context,
+		req *entities.CreateIssuanceRequest) (*entities.MintingBatch, error)
+
+	// MintAsset stages a new mint request using tapd's raw overloaded shape.
+	//
+	// Deprecated: prefer CreateAsset or CreateIssuance.
 	MintAsset(ctx context.Context,
 		req *entities.MintAssetRequest) (*entities.MintingBatch, error)
 

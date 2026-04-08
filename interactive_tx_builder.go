@@ -20,7 +20,7 @@ type InteractiveTxBuilder struct {
 	coinType   uint32
 
 	// Transfer parameters
-	assetID          entities.AssetID
+	assetRef         entities.AssetRef
 	amount           uint64
 	receiverKeys     *entities.DerivedKeys
 	lockTime         uint64
@@ -47,14 +47,18 @@ func newInteractiveTxBuilder(wallet WalletKitClient,
 	}
 }
 
-// SetAsset specifies which asset and how much to send.
-func (b *InteractiveTxBuilder) SetAsset(assetID entities.AssetID,
+// SetAsset specifies which asset and how much to send. The ref
+// must be a collectible (asset-ID) reference because interactive
+// transfers build a vPacket for a single, concrete asset. Fungible
+// group-key references are rejected because the protocol needs a
+// specific asset ID for coin selection.
+func (b *InteractiveTxBuilder) SetAsset(ref entities.AssetRef,
 	amount uint64) *InteractiveTxBuilder {
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	b.assetID = assetID
+	b.assetRef = ref
 	b.amount = amount
 	return b
 }
@@ -163,8 +167,22 @@ func (b *InteractiveTxBuilder) validate() error {
 		return &Error{Op: "Execute", Err: ErrNoReceiverKeys}
 	}
 
+	// AssetRef must be a collectible (asset-ID) reference.
+	assetID, ok := b.assetRef.AssetID()
+	if !ok {
+		// Check if ref is zero (unset) or fungible (group key).
+		if _, gk := b.assetRef.GroupKey(); gk {
+			return &Error{
+				Op:  "Execute",
+				Err: ErrGroupKeyNotSupported,
+			}
+		}
+
+		return &Error{Op: "Execute", Err: ErrNoAssetID}
+	}
+
 	var zeroID entities.AssetID
-	if b.assetID == zeroID {
+	if assetID == zeroID {
 		return &Error{Op: "Execute", Err: ErrNoAssetID}
 	}
 
@@ -182,8 +200,11 @@ func (b *InteractiveTxBuilder) buildVPacket() error {
 		leaves = b.altLeaves[b.receiverKeys.ScriptKey.PubKey]
 	}
 
+	// Safe to unwrap: validate() already checked this is an asset-ID ref.
+	assetID, _ := b.assetRef.AssetID()
+
 	vPkt := &vpsbt.InteractiveVPacket{
-		AssetID:           b.assetID,
+		AssetID:           assetID,
 		Amount:            b.amount,
 		ScriptKey:         b.receiverKeys.ScriptKey.PubKey,
 		AnchorInternalKey: b.receiverKeys.InternalKey.PubKey,

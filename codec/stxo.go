@@ -39,7 +39,7 @@ func DeriveBurnKey(prevID entities.PrevID) (entities.PubKey, error) {
 	op.Index = prevID.Outpoint.Index
 
 	_ = wire.WriteOutPoint(&buf, 0, 0, &op)
-	_, _ = buf.Write(prevID.AssetID[:])
+	_, _ = buf.Write(prevID.IssuanceID[:])
 	_, _ = buf.Write(prevID.ScriptKey[1:]) // x-only 32 bytes
 
 	burnKey := txscript.ComputeTaprootOutputKey(numsPubKey, buf.Bytes())

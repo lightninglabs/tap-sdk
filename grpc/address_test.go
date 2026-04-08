@@ -11,11 +11,11 @@ import (
 var (
 	// Test data: valid 33-byte compressed public key.
 	testPubKey = []byte{
-		0x02, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-		0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
-		0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
-		0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
-		0x20,
+		0x02,
+		0x79, 0xbe, 0x66, 0x7e, 0xf9, 0xdc, 0xbb, 0xac,
+		0x55, 0xa0, 0x62, 0x95, 0xce, 0x87, 0x0b, 0x07,
+		0x02, 0x9b, 0xfc, 0xdb, 0x2d, 0xce, 0x28, 0xd9,
+		0x59, 0xf2, 0x81, 0x5b, 0x16, 0xf8, 0x17, 0x98,
 	}
 
 	// Test data: valid 32-byte x-only public key.
@@ -133,21 +133,22 @@ func TestUnmarshalAddr(t *testing.T) {
 				addr.AddressVersion,
 			)
 
-			// Check asset ID if present.
-			if len(tc.rpcAddr.AssetId) == 32 {
-				var expectedAssetID entities.AssetID
-				copy(expectedAssetID[:], tc.rpcAddr.AssetId)
-				require.Equal(t, expectedAssetID, addr.AssetID)
-			}
-
-			// Check group key if present.
 			if len(tc.rpcAddr.GroupKey) == 33 {
-				require.NotNil(t, addr.GroupKey)
 				var expectedGroupKey entities.PubKey
 				copy(expectedGroupKey[:], tc.rpcAddr.GroupKey)
-				require.Equal(t, expectedGroupKey, *addr.GroupKey)
-			} else {
-				require.Nil(t, addr.GroupKey)
+				require.Equal(
+					t,
+					entities.AssetRefFromGroupKey(expectedGroupKey),
+					addr.AssetRef,
+				)
+			} else if len(tc.rpcAddr.AssetId) == 32 {
+				var expectedAssetID entities.AssetID
+				copy(expectedAssetID[:], tc.rpcAddr.AssetId)
+				require.Equal(
+					t,
+					entities.AssetRefFromAssetID(expectedAssetID),
+					addr.AssetRef,
+				)
 			}
 		})
 	}
@@ -171,10 +172,10 @@ func TestMarshalNewAddrRequest(t *testing.T) {
 		{
 			name: "V0 address with asset ID and amount",
 			req: &entities.NewAddressRequest{
-				AssetID: func() *entities.AssetID {
+				AssetRef: func() entities.AssetRef {
 					var id entities.AssetID
 					copy(id[:], testAssetID)
-					return &id
+					return entities.AssetRefFromAssetID(id)
 				}(),
 				Amount: 1000,
 			},
@@ -186,10 +187,10 @@ func TestMarshalNewAddrRequest(t *testing.T) {
 		{
 			name: "V2 address with group key",
 			req: &entities.NewAddressRequest{
-				GroupKey: func() *entities.PubKey {
+				AssetRef: func() entities.AssetRef {
 					var gk entities.PubKey
 					copy(gk[:], testPubKey)
-					return &gk
+					return entities.AssetRefFromGroupKey(gk)
 				}(),
 				AddressVersion: func() *entities.AddressVersion {
 					v := entities.AddressVersionV2
@@ -207,10 +208,10 @@ func TestMarshalNewAddrRequest(t *testing.T) {
 		{
 			name: "address with proof courier and skip check",
 			req: &entities.NewAddressRequest{
-				AssetID: func() *entities.AssetID {
+				AssetRef: func() entities.AssetRef {
 					var id entities.AssetID
 					copy(id[:], testAssetID)
-					return &id
+					return entities.AssetRefFromAssetID(id)
 				}(),
 				Amount:                    500,
 				ProofCourierAddr:          "universe://localhost:10029",
@@ -237,10 +238,10 @@ func TestMarshalNewAddrRequest(t *testing.T) {
 				copy(internalRawKey[:], testPubKey)
 
 				return &entities.NewAddressRequest{
-					AssetID: func() *entities.AssetID {
+					AssetRef: func() entities.AssetRef {
 						var id entities.AssetID
 						copy(id[:], testAssetID)
-						return &id
+						return entities.AssetRefFromAssetID(id)
 					}(),
 					Amount: 1000,
 					ScriptKey: &entities.ScriptKey{
@@ -307,7 +308,8 @@ func TestMarshalNewAddrRequest(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			rpcReq := marshalNewAddrRequest(tc.req)
+			rpcReq, err := marshalNewAddrRequest(tc.req)
+			require.NoError(t, err)
 			require.NotNil(t, rpcReq)
 			tc.validate(t, rpcReq)
 		})

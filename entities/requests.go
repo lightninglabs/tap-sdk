@@ -43,7 +43,7 @@ type ListAssetsRequest struct {
 	IncludeUnconfirmedMints bool
 	MinAmount               uint64
 	MaxAmount               uint64
-	GroupKey                *PubKey
+	AssetRef                *AssetRef
 	AnchorOutpoint          *Outpoint
 	ScriptKeyType           *ScriptKeyTypeQuery
 }

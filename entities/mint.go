@@ -256,7 +256,106 @@ type VerboseMintingBatch struct {
 	UnsealedAssets []UnsealedMintAsset
 }
 
+// CreateAsset describes a brand-new semantic asset to stage in a minting
+// batch.
+type CreateAsset struct {
+	// AssetVersion is the asset encoding version.
+	AssetVersion AssetVersion
+
+	// AssetType is the type of asset to create.
+	AssetType AssetType
+
+	// Name is the asset tag.
+	Name string
+
+	// AssetMeta is the optional metadata committed to the genesis.
+	AssetMeta *AssetMeta
+
+	// InitialSupply is the number of units in the first issuance.
+	InitialSupply uint64
+
+	// AllowIssuance creates the asset with a group key so future issuances are
+	// possible.
+	AllowIssuance bool
+
+	// DecimalDisplay is the wallet display precision for the asset.
+	DecimalDisplay uint32
+
+	// ScriptKey is the optional custom script key for the first issuance.
+	ScriptKey *ScriptKey
+
+	// GroupInternalKey is the internal key for a newly issuable asset.
+	GroupInternalKey *KeyDescriptor
+
+	// GroupTapscriptRoot is the optional tapscript root for a newly issuable
+	// asset.
+	GroupTapscriptRoot []byte
+
+	// ExternalGroupKey enables external signing for future issuance.
+	ExternalGroupKey *ExternalKey
+
+	// EnableSupplyCommitments enables supply commitments for a newly issuable
+	// asset.
+	EnableSupplyCommitments bool
+}
+
+// CreateAssetRequest stages a brand-new asset in the pending mint batch.
+type CreateAssetRequest struct {
+	// Asset is the asset to create.
+	Asset *CreateAsset
+
+	// ShortResponse asks the daemon to omit existing batch assets.
+	ShortResponse bool
+}
+
+// CreateIssuance describes an additional issuance/tranche for an existing
+// semantic asset.
+type CreateIssuance struct {
+	// AssetRef identifies the asset to issue more units of. It must resolve to a
+	// group key.
+	AssetRef AssetRef
+
+	// Name is the asset tag of the existing asset. tapd still requires it on the
+	// underlying mint request.
+	Name string
+
+	// AssetType is the type of the existing asset.
+	AssetType AssetType
+
+	// AssetMeta is the metadata for the issuance. Callers should keep it aligned
+	// with the asset they are extending.
+	AssetMeta *AssetMeta
+
+	// Amount is the number of units to issue in this tranche.
+	Amount uint64
+
+	// AssetVersion is the asset encoding version.
+	AssetVersion AssetVersion
+
+	// DecimalDisplay is the display precision for the issuance metadata.
+	DecimalDisplay uint32
+
+	// ScriptKey is the optional custom script key for the issuance.
+	ScriptKey *ScriptKey
+
+	// ExternalGroupKey enables external signing for the group issuance.
+	ExternalGroupKey *ExternalKey
+}
+
+// CreateIssuanceRequest stages an additional issuance in the pending mint
+// batch.
+type CreateIssuanceRequest struct {
+	// Issuance is the issuance to stage.
+	Issuance *CreateIssuance
+
+	// ShortResponse asks the daemon to omit existing batch assets.
+	ShortResponse bool
+}
+
 // MintAssetRequest adds an asset to the pending mint batch.
+//
+// Deprecated: prefer CreateAssetRequest or CreateIssuanceRequest depending on
+// whether the caller is defining a new asset or extending an existing one.
 type MintAssetRequest struct {
 	// Asset is the asset to add to the batch.
 	Asset *MintAsset

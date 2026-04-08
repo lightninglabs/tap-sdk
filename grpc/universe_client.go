@@ -40,25 +40,12 @@ func (u *universeClient) InsertProof(ctx context.Context, rawProof []byte,
 
 	rpcCtx = u.universeMac.WithMacaroonAuth(rpcCtx)
 
-	// Determine proof type based on whether this is issuance or transfer.
-	proofType := universerpc.ProofType_PROOF_TYPE_TRANSFER
+	uniID := marshalUniverseID(&entities.UniverseID{
+		AssetRef:  decoded.AssetRef,
+		ProofType: entities.ProofTypeTransfer,
+	})
 	if decoded.IsIssuance {
-		proofType = universerpc.ProofType_PROOF_TYPE_ISSUANCE
-	}
-
-	// Build the universe ID.
-	uniID := &universerpc.ID{
-		ProofType: proofType,
-		Id: &universerpc.ID_AssetId{
-			AssetId: decoded.AssetID[:],
-		},
-	}
-
-	// If there's a group key, use it instead of asset ID.
-	if decoded.GroupKey != nil {
-		uniID.Id = &universerpc.ID_GroupKey{
-			GroupKey: decoded.GroupKey[:],
-		}
+		uniID.ProofType = universerpc.ProofType_PROOF_TYPE_ISSUANCE
 	}
 
 	// Build the leaf key using outpoint and script key.
@@ -635,18 +622,27 @@ func (u *universeClient) SyncUniverse(ctx context.Context,
 
 // marshalUniverseID converts an SDK UniverseID to the RPC type.
 func marshalUniverseID(id *entities.UniverseID) *universerpc.ID {
+	if id == nil {
+		return nil
+	}
+
 	rpcID := &universerpc.ID{
 		ProofType: marshalProofType(id.ProofType),
 	}
 
+	assetID, groupKey, err := id.AssetRef.Specifier()
+	if err != nil {
+		return rpcID
+	}
+
 	switch {
-	case id.GroupKey != nil:
+	case groupKey != nil:
 		rpcID.Id = &universerpc.ID_GroupKey{
-			GroupKey: id.GroupKey[:],
+			GroupKey: (*groupKey)[:],
 		}
-	case id.AssetID != nil:
+	case assetID != nil:
 		rpcID.Id = &universerpc.ID_AssetId{
-			AssetId: id.AssetID[:],
+			AssetId: (*assetID)[:],
 		}
 	}
 
@@ -661,44 +657,55 @@ func unmarshalUniverseID(
 		return nil, fmt.Errorf("nil universe ID")
 	}
 
-	uniID := &entities.UniverseID{
-		ProofType: unmarshalProofType(rpcID.ProofType),
-	}
+	uniID := &entities.UniverseID{ProofType: unmarshalProofType(rpcID.ProofType)}
+
+	var assetID *entities.AssetID
+	var groupKey *entities.PubKey
 
 	switch v := rpcID.Id.(type) {
 	case *universerpc.ID_AssetId:
-		assetID, err := entities.ParseAssetID(v.AssetId)
+		parsedAssetID, err := entities.ParseAssetID(v.AssetId)
 		if err != nil {
 			return nil, fmt.Errorf("invalid asset ID: %w",
 				err)
 		}
-		uniID.AssetID = &assetID
+		assetID = &parsedAssetID
 
 	case *universerpc.ID_AssetIdStr:
-		assetID, err := entities.ParseAssetIDHex(v.AssetIdStr)
+		parsedAssetID, err := entities.ParseAssetIDHex(v.AssetIdStr)
 		if err != nil {
 			return nil, fmt.Errorf("invalid asset ID "+
 				"string: %w", err)
 		}
-		uniID.AssetID = &assetID
+		assetID = &parsedAssetID
 
 	case *universerpc.ID_GroupKey:
-		groupKey, err := entities.ParsePubKey(v.GroupKey)
+		parsedGroupKey, err := entities.ParsePubKey(v.GroupKey)
 		if err != nil {
 			return nil, fmt.Errorf("invalid group "+
 				"key: %w", err)
 		}
-		uniID.GroupKey = &groupKey
+		groupKey = &parsedGroupKey
 
 	case *universerpc.ID_GroupKeyStr:
-		groupKey, err := entities.ParsePubKeyHex(
+		parsedGroupKey, err := entities.ParsePubKeyHex(
 			v.GroupKeyStr,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("invalid group key "+
 				"string: %w", err)
 		}
-		uniID.GroupKey = &groupKey
+		groupKey = &parsedGroupKey
+	}
+
+	if assetID != nil || groupKey != nil {
+		assetRef, err := entities.AssetRefFromSpecifier(
+			assetID, groupKey,
+		)
+		if err != nil {
+			return nil, err
+		}
+		uniID.AssetRef = assetRef
 	}
 
 	return uniID, nil
@@ -779,10 +786,10 @@ func unmarshalUniverseRoot(
 	}
 
 	return &entities.UniverseRoot{
-		ID:               *uniID,
-		MSSMTRoot:        mssmtRoot,
-		AssetName:        rpcRoot.AssetName,
-		AmountsByAssetID: rpcRoot.AmountsByAssetId,
+		ID:                  *uniID,
+		MSSMTRoot:           mssmtRoot,
+		AssetName:           rpcRoot.AssetName,
+		AmountsByIssuanceID: rpcRoot.AmountsByAssetId,
 	}, nil
 }
 
@@ -994,8 +1001,11 @@ func marshalAssetStatsQuery(
 		),
 	}
 
-	if req.AssetIDFilter != nil {
-		rpcReq.AssetIdFilter = req.AssetIDFilter[:]
+	if req.AssetRefFilter != nil {
+		assetID, _, err := req.AssetRefFilter.Specifier()
+		if err == nil && assetID != nil {
+			rpcReq.AssetIdFilter = (*assetID)[:]
+		}
 	}
 
 	return rpcReq
@@ -1026,6 +1036,7 @@ func unmarshalAssetStatsSnapshot(
 				"key: %w", err)
 		}
 		snap.GroupKey = &groupKey
+		snap.AssetRef = entities.AssetRefFromGroupKey(groupKey)
 	}
 
 	if rpcSnap.GroupAnchor != nil {
@@ -1045,6 +1056,9 @@ func unmarshalAssetStatsSnapshot(
 			return nil, fmt.Errorf("asset: %w", err)
 		}
 		snap.Asset = asset
+		if snap.AssetRef.IsZero() {
+			snap.AssetRef = asset.AssetRef
+		}
 	}
 
 	return snap, nil
@@ -1070,7 +1084,8 @@ func unmarshalAssetStatsAsset(
 	}
 
 	return &entities.AssetStatsAsset{
-		AssetID:          assetID,
+		AssetRef:         entities.AssetRefFromAssetID(assetID),
+		IssuanceID:       assetID,
 		GenesisPoint:     rpcAsset.GenesisPoint,
 		TotalSupply:      rpcAsset.TotalSupply,
 		AssetName:        rpcAsset.AssetName,

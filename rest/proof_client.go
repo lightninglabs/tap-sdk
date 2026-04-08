@@ -33,12 +33,12 @@ type jsonOutpointReq struct {
 
 // ExportProof exports a proof file for a specific asset output.
 func (p *proofClient) ExportProof(ctx context.Context,
-	assetID entities.AssetID, scriptKey entities.PubKey,
+	issuanceID entities.AssetID, scriptKey entities.PubKey,
 	outpoint *entities.Outpoint) (*entities.ProofFile, error) {
 
 	body := &jsonExportProofRequest{
 		AssetID: base64.StdEncoding.EncodeToString(
-			assetID[:],
+			issuanceID[:],
 		),
 		ScriptKey: base64.StdEncoding.EncodeToString(
 			scriptKey[:],
@@ -172,14 +172,14 @@ type jsonRegisterTransferRequest struct {
 // RegisterTransfer registers an inbound transfer for an
 // interactive send.
 func (p *proofClient) RegisterTransfer(ctx context.Context,
-	assetID entities.AssetID, groupKey *entities.PubKey,
-	scriptKey entities.PubKey,
+	assetRef entities.AssetRef, scriptKey entities.PubKey,
 	outpoint entities.Outpoint) (*entities.RegisteredAsset, error) {
+	assetID, groupKey, err := assetRef.Specifier()
+	if err != nil {
+		return nil, err
+	}
 
 	body := &jsonRegisterTransferRequest{
-		AssetID: base64.StdEncoding.EncodeToString(
-			assetID[:],
-		),
 		ScriptKey: base64.StdEncoding.EncodeToString(
 			scriptKey[:],
 		),
@@ -191,14 +191,20 @@ func (p *proofClient) RegisterTransfer(ctx context.Context,
 		},
 	}
 
+	if assetID != nil {
+		body.AssetID = base64.StdEncoding.EncodeToString(
+			(*assetID)[:],
+		)
+	}
+
 	if groupKey != nil {
 		body.GroupKey = base64.StdEncoding.EncodeToString(
-			groupKey[:],
+			(*groupKey)[:],
 		)
 	}
 
 	var resp jsonRegisterTransferResponse
-	err := p.transport.doPost(
+	err = p.transport.doPost(
 		ctx, "/v1/taproot-assets/assets/transfers/register",
 		macaroon.ProofServiceMac, body, &resp,
 	)
@@ -210,7 +216,16 @@ func (p *proofClient) RegisterTransfer(ctx context.Context,
 		return nil, fmt.Errorf("invalid registered asset response")
 	}
 
-	return unmarshalRegisteredAsset(resp.RegisteredAsset)
+	registered, err := unmarshalRegisteredAsset(resp.RegisteredAsset)
+	if err != nil {
+		return nil, err
+	}
+
+	if registered.AssetRef.IsZero() {
+		registered.AssetRef = assetRef
+	}
+
+	return registered, nil
 }
 
 // unmarshalDecodedProof converts a JSON decoded proof to the entity
@@ -244,7 +259,7 @@ func unmarshalDecodedProof(
 		}
 
 		if len(assetIDBytes) == 32 {
-			copy(result.AssetID[:], assetIDBytes)
+			copy(result.IssuanceID[:], assetIDBytes)
 		}
 	}
 
@@ -298,7 +313,13 @@ func unmarshalDecodedProof(
 			)
 		}
 
-		result.GroupKey = &groupKey
+		result.AssetRef = entities.AssetRefFromGroupKey(groupKey)
+	}
+
+	if result.AssetRef.IsZero() {
+		result.AssetRef = entities.AssetRefFromAssetID(
+			result.IssuanceID,
+		)
 	}
 
 	// Populate prev IDs.
@@ -368,7 +389,7 @@ func unmarshalDecodedProof(
 			var decodedPrev entities.PrevID
 			decodedPrev.Outpoint = prevOutpoint
 			copy(
-				decodedPrev.AssetID[:],
+				decodedPrev.IssuanceID[:],
 				assetIDBytes,
 			)
 			copy(
@@ -412,7 +433,10 @@ func unmarshalRegisteredAsset(
 		}
 
 		if len(assetIDBytes) == 32 {
-			copy(result.AssetID[:], assetIDBytes)
+			copy(result.IssuanceID[:], assetIDBytes)
+			result.AssetRef = entities.AssetRefFromAssetID(
+				result.IssuanceID,
+			)
 		}
 	}
 

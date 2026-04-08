@@ -32,7 +32,8 @@ func NewProofClient(conn grpc.ClientConnInterface, timeout time.Duration,
 }
 
 // ExportProof exports a proof file for a specific asset output.
-func (p *proofClient) ExportProof(ctx context.Context, assetID entities.AssetID,
+func (p *proofClient) ExportProof(ctx context.Context,
+	issuanceID entities.AssetID,
 	scriptKey entities.PubKey, outpoint *entities.Outpoint) (*entities.ProofFile,
 	error) {
 
@@ -41,7 +42,7 @@ func (p *proofClient) ExportProof(ctx context.Context, assetID entities.AssetID,
 
 	rpcCtx = p.proofMac.WithMacaroonAuth(rpcCtx)
 	req := &taprpc.ExportProofRequest{
-		AssetId:   assetID[:],
+		AssetId:   issuanceID[:],
 		ScriptKey: scriptKey[:],
 	}
 	if outpoint != nil {
@@ -122,7 +123,7 @@ func (p *proofClient) DecodeProof(ctx context.Context,
 
 	// Copy asset ID.
 	if asset.AssetGenesis != nil && len(asset.AssetGenesis.AssetId) == 32 {
-		copy(result.AssetID[:], asset.AssetGenesis.AssetId)
+		copy(result.IssuanceID[:], asset.AssetGenesis.AssetId)
 	}
 
 	// Copy script key.
@@ -151,8 +152,14 @@ func (p *proofClient) DecodeProof(ctx context.Context,
 				return nil, fmt.Errorf("invalid group key: %w", err)
 			}
 
-			result.GroupKey = &groupKey
+			result.AssetRef = entities.AssetRefFromGroupKey(groupKey)
 		}
+	}
+
+	if result.AssetRef.IsZero() {
+		result.AssetRef = entities.AssetRefFromAssetID(
+			result.IssuanceID,
+		)
 	}
 
 	// Decode alt leaves if present.
@@ -198,7 +205,7 @@ func (p *proofClient) DecodeProof(ctx context.Context,
 
 			var decodedPrev entities.PrevID
 			decodedPrev.Outpoint = prevOutpoint
-			copy(decodedPrev.AssetID[:], prev.AssetId)
+			copy(decodedPrev.IssuanceID[:], prev.AssetId)
 			copy(decodedPrev.ScriptKey[:], prev.ScriptKey)
 
 			prevIDs = append(prevIDs, decodedPrev)
@@ -213,22 +220,34 @@ func (p *proofClient) DecodeProof(ctx context.Context,
 // RegisterTransfer registers an inbound transfer for an interactive send.
 // The proof must already be in the local universe before calling this.
 func (p *proofClient) RegisterTransfer(ctx context.Context,
-	assetID entities.AssetID, groupKey *entities.PubKey,
-	scriptKey entities.PubKey, outpoint entities.Outpoint) (
+	assetRef entities.AssetRef, scriptKey entities.PubKey,
+	outpoint entities.Outpoint) (
 	*entities.RegisteredAsset, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
 
 	rpcCtx = p.proofMac.WithMacaroonAuth(rpcCtx)
-	var groupKeyBytes []byte
-	if groupKey != nil {
-		groupKeyBytes = groupKey[:]
+	assetID, groupKey, err := assetRef.Specifier()
+	if err != nil {
+		return nil, err
 	}
 
 	resp, err := p.client.RegisterTransfer(rpcCtx, &taprpc.RegisterTransferRequest{
-		AssetId:   assetID[:],
-		GroupKey:  groupKeyBytes,
+		AssetId: func() []byte {
+			if assetID == nil {
+				return nil
+			}
+
+			return (*assetID)[:]
+		}(),
+		GroupKey: func() []byte {
+			if groupKey == nil {
+				return nil
+			}
+
+			return (*groupKey)[:]
+		}(),
 		ScriptKey: scriptKey[:],
 		Outpoint: &taprpc.OutPoint{
 			Txid:        outpoint.Txid[:],
@@ -245,12 +264,13 @@ func (p *proofClient) RegisterTransfer(ctx context.Context,
 
 	asset := resp.RegisteredAsset
 	result := &entities.RegisteredAsset{
-		Amount: asset.Amount,
+		Amount:   asset.Amount,
+		AssetRef: assetRef,
 	}
 
 	// Copy asset ID.
 	if asset.AssetGenesis != nil && len(asset.AssetGenesis.AssetId) == 32 {
-		copy(result.AssetID[:], asset.AssetGenesis.AssetId)
+		copy(result.IssuanceID[:], asset.AssetGenesis.AssetId)
 	}
 
 	// Copy script key.

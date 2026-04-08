@@ -76,7 +76,7 @@ func TestInteractiveTxBuilder_Execute(t *testing.T) {
 
 	// Execute interactive send
 	builder := newInteractiveTxBuilder(mockWalletKit, "tapassetr", 1)
-	builder.SetAsset(assetID, 1000).
+	builder.SetAsset(entities.AssetRefFromAssetID(assetID), 1000).
 		SetReceiverKeys(receiverKeys)
 
 	result, err := builder.Execute(ctx)
@@ -169,7 +169,7 @@ func TestInteractiveTxBuilder_WithAltLeaves(t *testing.T) {
 		expectedResult, nil)
 
 	builder := newInteractiveTxBuilder(mockWalletKit, "tapassetr", 1)
-	builder.SetAsset(assetID, 1000).
+	builder.SetAsset(entities.AssetRefFromAssetID(assetID), 1000).
 		SetReceiverKeys(receiverKeys).
 		WithAltLeaves(receiverKeys.ScriptKey.PubKey, altLeaves)
 
@@ -223,7 +223,7 @@ func TestInteractiveTxBuilder_Validation(t *testing.T) {
 
 	// Test missing receiver keys
 	builder := services.NewInteractiveTxBuilder()
-	builder.SetAsset(entities.AssetID{1, 2, 3}, 1000)
+	builder.SetAsset(entities.AssetRefFromAssetID(entities.AssetID{1, 2, 3}), 1000)
 
 	_, err := builder.Execute(ctx)
 	require.ErrorIs(t, err, ErrNoReceiverKeys)
@@ -240,7 +240,7 @@ func TestInteractiveTxBuilder_Validation(t *testing.T) {
 	copy(assetID[:], []byte("asset_id_32_bytes_long_enough!!!"))
 
 	builder3 := services.NewInteractiveTxBuilder()
-	builder3.SetAsset(assetID, 0).
+	builder3.SetAsset(entities.AssetRefFromAssetID(assetID), 0).
 		SetReceiverKeys(entities.DerivedKeys{
 			ScriptKey: entities.ScriptKey{
 				PubKey: entities.PubKey{1},
@@ -293,7 +293,7 @@ func TestInteractiveTxBuilder_AlreadyFinished(t *testing.T) {
 		expectedResult, nil)
 
 	builder := newInteractiveTxBuilder(mockWalletKit, "tapassetr", 1)
-	builder.SetAsset(assetID, 1000).SetReceiverKeys(receiverKeys)
+	builder.SetAsset(entities.AssetRefFromAssetID(assetID), 1000).SetReceiverKeys(receiverKeys)
 
 	// First execution succeeds
 	_, err := builder.Execute(ctx)

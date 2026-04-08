@@ -34,7 +34,7 @@ func TestMarshalUniverseID(t *testing.T) {
 		{
 			name: "by asset ID",
 			id: &entities.UniverseID{
-				AssetID:   &assetID,
+				AssetRef:  entities.AssetRefFromAssetID(assetID),
 				ProofType: entities.ProofTypeIssuance,
 			},
 			validate: func(t *testing.T,
@@ -54,7 +54,7 @@ func TestMarshalUniverseID(t *testing.T) {
 		{
 			name: "by group key",
 			id: &entities.UniverseID{
-				GroupKey:  &groupKey,
+				AssetRef:  entities.AssetRefFromGroupKey(groupKey),
 				ProofType: entities.ProofTypeTransfer,
 			},
 			validate: func(t *testing.T,
@@ -118,8 +118,7 @@ func TestUnmarshalUniverseID(t *testing.T) {
 			validate: func(t *testing.T,
 				id *entities.UniverseID) {
 
-				require.NotNil(t, id.AssetID)
-				require.Nil(t, id.GroupKey)
+				require.True(t, id.AssetRef.IsCollectible())
 				require.Equal(
 					t, entities.ProofTypeIssuance,
 					id.ProofType,
@@ -137,8 +136,7 @@ func TestUnmarshalUniverseID(t *testing.T) {
 			validate: func(t *testing.T,
 				id *entities.UniverseID) {
 
-				require.Nil(t, id.AssetID)
-				require.NotNil(t, id.GroupKey)
+				require.True(t, id.AssetRef.IsFungible())
 				require.Equal(
 					t, entities.ProofTypeTransfer,
 					id.ProofType,
@@ -374,7 +372,7 @@ func TestMarshalUniverseKey(t *testing.T) {
 
 	key := &entities.UniverseKey{
 		ID: entities.UniverseID{
-			AssetID:   &assetID,
+			AssetRef:  entities.AssetRefFromAssetID(assetID),
 			ProofType: entities.ProofTypeIssuance,
 		},
 		LeafKey: entities.AssetLeafKey{
@@ -482,7 +480,10 @@ func TestMarshalAssetStatsQuery(t *testing.T) {
 			name: "full query",
 			req: &entities.AssetStatsQuery{
 				AssetNameFilter: "test",
-				AssetIDFilter:   &assetID,
+				AssetRefFilter: func() *entities.AssetRef {
+					ref := entities.AssetRefFromAssetID(assetID)
+					return &ref
+				}(),
 				AssetTypeFilter: entities.FilterAssetNormal,
 				SortBy:          entities.SortByAssetName,
 				Offset:          10,

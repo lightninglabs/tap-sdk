@@ -1,37 +1,10 @@
 package entities
 
-// BalanceGroupBy specifies how ListBalances groups the returned balances.
-type BalanceGroupBy uint8
-
-const (
-	// BalanceGroupByUnspecified leaves the RPC grouping mode unset. This is
-	// useful for low-level callers that want raw daemon behavior instead of an
-	// SDK-imposed default.
-	BalanceGroupByUnspecified BalanceGroupBy = 0
-
-	// BalanceGroupByAssetID groups balances by asset ID.
-	BalanceGroupByAssetID BalanceGroupBy = 1
-
-	// BalanceGroupByGroupKey groups balances by group key.
-	BalanceGroupByGroupKey BalanceGroupBy = 2
-)
-
-// ListBalancesRequest specifies filters for querying wallet balances through
-// the raw TaprootAssets balance RPC.
-//
-// This type mirrors the daemon's grouping modes for advanced callers. The
-// higher-level SDK surface should still present fungible assets by group key
-// and collectibles by asset ID.
+// ListBalancesRequest specifies filters for querying wallet balances using the
+// SDK's semantic asset model.
 type ListBalancesRequest struct {
-	// GroupBy selects whether balances are grouped by asset ID or group key.
-	// The zero value leaves the RPC grouping mode unspecified.
-	GroupBy BalanceGroupBy
-
-	// AssetFilter restricts asset-ID grouped queries to a specific asset.
-	AssetFilter *AssetID
-
-	// GroupKeyFilter restricts group-key grouped queries to a specific group.
-	GroupKeyFilter *PubKey
+	// AssetRef restricts the result to a single asset.
+	AssetRef *AssetRef
 
 	// IncludeLeased includes assets that are currently leased by a pending
 	// transfer and therefore unavailable for coin selection.
@@ -42,39 +15,36 @@ type ListBalancesRequest struct {
 	ScriptKeyType *ScriptKeyTypeQuery
 }
 
-// AssetBalance represents the confirmed balance of a specific asset.
+// AssetBalance represents the confirmed balance of a semantic asset.
 type AssetBalance struct {
-	// AssetGenesis is the immutable genesis information of the asset.
+	// AssetRef is the SDK's user-facing identifier for the asset.
+	AssetRef AssetRef
+
+	// AssetGenesis is the immutable genesis information of a representative
+	// issuance for the asset.
 	AssetGenesis AssetGenesis
 
 	// Balance is the confirmed amount owned by the wallet.
 	Balance uint64
 
-	// GroupKey is the optional group key of the asset.
+	// GroupKey is the optional protocol group key of the representative
+	// issuance.
 	GroupKey *PubKey
 }
 
-// AssetGroupBalance represents the aggregate confirmed balance of an asset
-// group.
+// AssetGroupBalance represents the old raw group-key balance shape exposed by
+// tapd. It is kept for protocol-level helpers and backward-compatible tests,
+// but the preferred SDK balance surface is ListBalancesResponse.Balances keyed
+// by AssetRef.
 type AssetGroupBalance struct {
-	// GroupKey is the group key the balance belongs to. A nil value
-	// represents assets that do not belong to a group.
 	GroupKey *PubKey
-
-	// Balance is the confirmed amount owned by the wallet for the group.
-	Balance uint64
+	Balance  uint64
 }
 
-// ListBalancesResponse contains wallet balances grouped by either asset ID or
-// group key.
+// ListBalancesResponse contains wallet balances keyed by AssetRef.
 type ListBalancesResponse struct {
-	// AssetBalances is populated for asset-ID grouped queries. The map key is
-	// the hex-encoded asset ID returned by tapd.
-	AssetBalances map[string]*AssetBalance
-
-	// AssetGroupBalances is populated for group-key grouped queries. The map
-	// key is the hex-encoded group key returned by tapd.
-	AssetGroupBalances map[string]*AssetGroupBalance
+	// Balances is keyed by AssetRef.String().
+	Balances map[string]*AssetBalance
 
 	// UnconfirmedTransfers counts outgoing transfers that are not yet
 	// confirmed on-chain and therefore excluded from the reported balances.

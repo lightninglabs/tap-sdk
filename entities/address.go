@@ -32,9 +32,8 @@ type Address struct {
 	// This is the canonical representation used for sharing with senders.
 	Encoded string
 
-	// AssetID is the 32-byte asset identifier this address can receive.
-	// For V2 addresses with a group key, this may be empty (zero value).
-	AssetID AssetID
+	// AssetRef is the SDK's user-facing asset identifier for the address.
+	AssetRef AssetRef
 
 	// AssetType indicates whether this is a normal or collectible asset.
 	AssetType AssetType
@@ -42,10 +41,6 @@ type Address struct {
 	// Amount is the number of asset units expected at this address.
 	// For V2 addresses, this may be zero to allow sender-chosen amounts.
 	Amount uint64
-
-	// GroupKey is the optional group key for receiving any asset in a group.
-	// Only set for V2 addresses. If set, AssetID must be empty.
-	GroupKey *PubKey
 
 	// ScriptKey is the Taproot output key the asset will be locked to.
 	ScriptKey PubKey
@@ -74,19 +69,16 @@ type Address struct {
 // NewAddressRequest contains parameters for generating a new Taproot Asset
 // address.
 type NewAddressRequest struct {
-	// AssetID is the 32-byte asset identifier to receive.
-	// Required for V0/V1 addresses. For V2 addresses, either AssetID or
-	// GroupKey must be set, but not both.
-	AssetID *AssetID
+	// AssetRef is the SDK's user-facing identifier for the asset to receive.
+	// For V0/V1 addresses this must resolve to a concrete issuance asset ID.
+	// For V2 addresses it may resolve to either an issuance asset ID or a
+	// group key.
+	AssetRef AssetRef
 
 	// Amount is the number of asset units to receive.
 	// Required for V0/V1 addresses. Optional for V2 addresses (zero means
 	// sender chooses the amount).
 	Amount uint64
-
-	// GroupKey is the group key to receive any asset from a group.
-	// Only valid for V2 addresses. If set, AssetID must be nil.
-	GroupKey *PubKey
 
 	// ScriptKey is an optional custom script key for the receiving asset.
 	// If nil, tapd derives a BIP-86 key from its wallet.

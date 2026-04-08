@@ -1,6 +1,7 @@
 package grpc
 
 import (
+	"context"
 	"testing"
 
 	"github.com/lightninglabs/tap-sdk/entities"
@@ -12,16 +13,11 @@ const zeroGenesisPoint = "00000000000000000000000000000000" +
 	"00000000000000000000000000000000:1"
 
 func TestMarshalListBalancesRequest(t *testing.T) {
-	assetFilter := func() *entities.AssetID {
+	assetRef := func() *entities.AssetRef {
 		var id entities.AssetID
 		copy(id[:], testAssetID)
-		return &id
-	}()
-
-	groupKeyFilter := func() *entities.PubKey {
-		var key entities.PubKey
-		copy(key[:], testPubKey)
-		return &key
+		ref := entities.AssetRefFromAssetID(id)
+		return &ref
 	}()
 
 	explicitType := entities.ScriptKeyTypeBurn
@@ -32,21 +28,20 @@ func TestMarshalListBalancesRequest(t *testing.T) {
 		validate func(*testing.T, *taprpc.ListBalancesRequest)
 	}{
 		{
-			name: "nil request leaves grouping unspecified",
+			name: "nil request leaves raw filter fields unset",
 			req:  nil,
 			validate: func(t *testing.T,
 				rpcReq *taprpc.ListBalancesRequest) {
 
-				require.False(t, rpcReq.GetAssetId())
-				require.False(t, rpcReq.GetGroupKey())
+				require.Empty(t, rpcReq.AssetFilter)
+				require.Empty(t, rpcReq.GroupKeyFilter)
 				require.Nil(t, rpcReq.ScriptKeyType)
 			},
 		},
 		{
-			name: "asset balance query with explicit type",
+			name: "semantic balance query with explicit type",
 			req: &entities.ListBalancesRequest{
-				GroupBy:       entities.BalanceGroupByAssetID,
-				AssetFilter:   assetFilter,
+				AssetRef:      assetRef,
 				IncludeLeased: true,
 				ScriptKeyType: &entities.ScriptKeyTypeQuery{
 					ExplicitType: &explicitType,
@@ -55,8 +50,8 @@ func TestMarshalListBalancesRequest(t *testing.T) {
 			validate: func(t *testing.T,
 				rpcReq *taprpc.ListBalancesRequest) {
 
-				require.True(t, rpcReq.GetAssetId())
-				require.Equal(t, testAssetID, rpcReq.AssetFilter)
+				require.Empty(t, rpcReq.AssetFilter)
+				require.Empty(t, rpcReq.GroupKeyFilter)
 				require.True(t, rpcReq.IncludeLeased)
 				require.NotNil(t, rpcReq.ScriptKeyType)
 				require.Equal(
@@ -67,10 +62,8 @@ func TestMarshalListBalancesRequest(t *testing.T) {
 			},
 		},
 		{
-			name: "group balance query with all types",
+			name: "semantic balance query with all types",
 			req: &entities.ListBalancesRequest{
-				GroupBy:        entities.BalanceGroupByGroupKey,
-				GroupKeyFilter: groupKeyFilter,
 				ScriptKeyType: &entities.ScriptKeyTypeQuery{
 					AllTypes: true,
 				},
@@ -78,9 +71,8 @@ func TestMarshalListBalancesRequest(t *testing.T) {
 			validate: func(t *testing.T,
 				rpcReq *taprpc.ListBalancesRequest) {
 
-				require.False(t, rpcReq.GetAssetId())
-				require.True(t, rpcReq.GetGroupKey())
-				require.Equal(t, testPubKey, rpcReq.GroupKeyFilter)
+				require.Empty(t, rpcReq.AssetFilter)
+				require.Empty(t, rpcReq.GroupKeyFilter)
 				require.NotNil(t, rpcReq.ScriptKeyType)
 				require.True(t, rpcReq.ScriptKeyType.GetAllTypes())
 			},
@@ -514,12 +506,13 @@ func TestMarshalBurnAssetRequest(t *testing.T) {
 	tests := []struct {
 		name     string
 		req      *entities.BurnAssetRequest
+		wantErr  string
 		validate func(*testing.T, *taprpc.BurnAssetRequest)
 	}{
 		{
-			name: "burn by asset ID bytes",
+			name: "burn by asset ref",
 			req: &entities.BurnAssetRequest{
-				AssetID:          &assetID,
+				AssetRef:         entities.AssetRefFromAssetID(assetID),
 				AmountToBurn:     100,
 				ConfirmationText: "assets will be destroyed",
 				Note:             "test",
@@ -542,26 +535,28 @@ func TestMarshalBurnAssetRequest(t *testing.T) {
 			},
 		},
 		{
-			name: "burn by asset ID string",
+			name: "missing asset ref",
 			req: &entities.BurnAssetRequest{
-				AssetIDStr:       "deadbeef",
 				AmountToBurn:     50,
 				ConfirmationText: "assets will be destroyed",
 			},
-			validate: func(t *testing.T,
-				rpcReq *taprpc.BurnAssetRequest) {
-
-				require.Equal(
-					t, "deadbeef",
-					rpcReq.GetAssetIdStr(),
-				)
-			},
+			wantErr: "asset ref is required",
 		},
 	}
 
+	client := &walletClient{}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			rpcReq := marshalBurnAssetRequest(tc.req)
+			rpcReq, err := client.marshalBurnAssetRequest(
+				context.Background(), tc.req,
+			)
+			if tc.wantErr != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
 			tc.validate(t, rpcReq)
 		})
 	}
@@ -580,9 +575,12 @@ func TestMarshalFetchAssetMetaRequest(t *testing.T) {
 		validate func(*testing.T, *taprpc.FetchAssetMetaRequest)
 	}{
 		{
-			name: "fetch by asset ID",
+			name: "fetch by asset ref",
 			req: &entities.FetchAssetMetaRequest{
-				AssetID: &assetID,
+				AssetRef: func() *entities.AssetRef {
+					ref := entities.AssetRefFromAssetID(assetID)
+					return &ref
+				}(),
 			},
 			validate: func(t *testing.T,
 				rpcReq *taprpc.FetchAssetMetaRequest) {
@@ -609,9 +607,13 @@ func TestMarshalFetchAssetMetaRequest(t *testing.T) {
 		},
 	}
 
+	client := &walletClient{}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			rpcReq := marshalFetchAssetMetaRequest(tc.req)
+			rpcReq, err := client.marshalFetchAssetMetaRequest(
+				context.Background(), tc.req,
+			)
+			require.NoError(t, err)
 			tc.validate(t, rpcReq)
 		})
 	}

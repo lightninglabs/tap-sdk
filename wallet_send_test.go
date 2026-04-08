@@ -154,11 +154,10 @@ func (m *mockClient) DecodeProof(ctx context.Context,
 }
 
 func (m *mockClient) RegisterTransfer(ctx context.Context,
-	assetID entities.AssetID, groupKey *entities.PubKey,
-	scriptKey entities.PubKey,
+	assetRef entities.AssetRef, scriptKey entities.PubKey,
 	outpoint entities.Outpoint) (*entities.RegisteredAsset, error) {
 
-	args := m.Called(ctx, assetID, groupKey, scriptKey, outpoint)
+	args := m.Called(ctx, assetRef, scriptKey, outpoint)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -270,6 +269,18 @@ func (m *mockClient) InsertProof(ctx context.Context, rawProof []byte,
 }
 
 // --- MintClient ---
+
+func (m *mockClient) CreateAsset(ctx context.Context,
+	req *entities.CreateAssetRequest) (*entities.MintingBatch, error) {
+
+	panic("CreateAsset not expected in unit tests")
+}
+
+func (m *mockClient) CreateIssuance(ctx context.Context,
+	req *entities.CreateIssuanceRequest) (*entities.MintingBatch, error) {
+
+	panic("CreateIssuance not expected in unit tests")
+}
 
 func (m *mockClient) MintAsset(ctx context.Context,
 	req *entities.MintAssetRequest) (*entities.MintingBatch, error) {

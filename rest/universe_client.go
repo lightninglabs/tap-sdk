@@ -145,21 +145,20 @@ func (u *universeClient) InsertProof(ctx context.Context,
 	}
 
 	uniID := &jsonUniverseID{ProofType: proofType}
-
-	if decoded.GroupKey != nil {
-		uniID.GroupKey = hex.EncodeToString(
-			decoded.GroupKey[:],
-		)
+	assetPathKind, assetPathValue, err := universeAssetPath(
+		decoded.AssetRef,
+	)
+	if err != nil {
+		return err
+	}
+	if assetPathKind == "asset-id" {
+		uniID.AssetID = assetPathValue
 	} else {
-		uniID.AssetID = hex.EncodeToString(
-			decoded.AssetID[:],
-		)
+		uniID.GroupKey = assetPathValue
 	}
 
 	// Build the REST URL path. InsertProof uses a POST with
 	// path parameters for the universe key.
-	assetIDStr := hex.EncodeToString(decoded.AssetID[:])
-
 	// The gRPC-gateway REST path uses the human-readable txid
 	// (reversed byte order) and output index from the outpoint.
 	outpointStr := decoded.Outpoint.String()
@@ -170,8 +169,8 @@ func (u *universeClient) InsertProof(ctx context.Context,
 
 	path := fmt.Sprintf(
 		"/v1/taproot-assets/universe/proofs/"+
-			"asset-id/%s/%s/%d/%s",
-		assetIDStr, hashStr, index, scriptKeyStr,
+			"%s/%s/%s/%d/%s",
+		assetPathKind, assetPathValue, hashStr, index, scriptKeyStr,
 	)
 
 	body := &jsonUniverseProof{
@@ -190,7 +189,7 @@ func (u *universeClient) InsertProof(ctx context.Context,
 	}
 
 	var resp jsonInsertProofResponse
-	err := u.transport.doPost(
+	err = u.transport.doPost(
 		ctx, path, macaroon.UniverseServiceMac, body, &resp,
 	)
 	if err != nil {
@@ -211,6 +210,42 @@ func splitOutpoint(s string) [2]string {
 	}
 
 	return [2]string{s, "0"}
+}
+
+func universeAssetPath(assetRef entities.AssetRef) (string, string, error) {
+	assetID, groupKey, err := assetRef.Specifier()
+	if err != nil {
+		return "", "", err
+	}
+
+	if assetID != nil {
+		return "asset-id", hex.EncodeToString((*assetID)[:]), nil
+	}
+
+	if groupKey != nil {
+		return "group-key", hex.EncodeToString((*groupKey)[:]), nil
+	}
+
+	return "", "", fmt.Errorf("asset ref is required")
+}
+
+func universeJSONID(id entities.UniverseID) (*jsonUniverseID, error) {
+	jsonID := &jsonUniverseID{ProofType: marshalProofType(id.ProofType)}
+
+	assetID, groupKey, err := id.AssetRef.Specifier()
+	if err != nil {
+		return nil, err
+	}
+
+	if assetID != nil {
+		jsonID.AssetID = hex.EncodeToString((*assetID)[:])
+	}
+
+	if groupKey != nil {
+		jsonID.GroupKey = hex.EncodeToString((*groupKey)[:])
+	}
+
+	return jsonID, nil
 }
 
 // AssetRoots returns the known universe roots for all assets.
@@ -288,35 +323,22 @@ func (u *universeClient) QueryAssetRoots(ctx context.Context,
 		return nil, fmt.Errorf("nil universe ID")
 	}
 
+	pathKind, pathValue, err := universeAssetPath(id.AssetRef)
+	if err != nil {
+		return nil, err
+	}
+
 	var path string
 	proofTypeParam := "?id.proof_type=" + marshalProofType(
 		id.ProofType,
 	)
-
-	switch {
-	case id.AssetID != nil:
-		assetIDStr := hex.EncodeToString(id.AssetID[:])
-		path = fmt.Sprintf(
-			"/v1/taproot-assets/universe/roots/"+
-				"asset-id/%s%s",
-			assetIDStr, proofTypeParam,
-		)
-	case id.GroupKey != nil:
-		groupKeyStr := hex.EncodeToString(id.GroupKey[:])
-		path = fmt.Sprintf(
-			"/v1/taproot-assets/universe/roots/"+
-				"group-key/%s%s",
-			groupKeyStr, proofTypeParam,
-		)
-	default:
-		return nil, fmt.Errorf(
-			"universe ID must have either AssetID or " +
-				"GroupKey",
-		)
-	}
+	path = fmt.Sprintf(
+		"/v1/taproot-assets/universe/roots/%s/%s%s",
+		pathKind, pathValue, proofTypeParam,
+	)
 
 	var resp jsonQueryRootResponse
-	err := u.transport.doGet(
+	err = u.transport.doGet(
 		ctx, path, macaroon.UniverseServiceMac, &resp,
 	)
 	if err != nil {
@@ -348,21 +370,21 @@ func (u *universeClient) DeleteAssetRoot(ctx context.Context,
 	}
 
 	params := "?id.proof_type=" + marshalProofType(id.ProofType)
-
-	if id.AssetID != nil {
-		assetIDStr := hex.EncodeToString(id.AssetID[:])
-		params += "&id.asset_id_str=" + assetIDStr
+	jsonID, err := universeJSONID(*id)
+	if err != nil {
+		return err
 	}
-
-	if id.GroupKey != nil {
-		groupKeyStr := hex.EncodeToString(id.GroupKey[:])
-		params += "&id.group_key_str=" + groupKeyStr
+	if jsonID.AssetID != "" {
+		params += "&id.asset_id_str=" + jsonID.AssetID
+	}
+	if jsonID.GroupKey != "" {
+		params += "&id.group_key_str=" + jsonID.GroupKey
 	}
 
 	path := "/v1/taproot-assets/universe/delete" + params
 
 	var resp jsonDeleteRootResponse
-	err := u.transport.do(
+	err = u.transport.do(
 		ctx, "DELETE", path, macaroon.UniverseServiceMac, nil,
 		&resp,
 	)
@@ -382,30 +404,15 @@ func (u *universeClient) AssetLeafKeys(ctx context.Context,
 		return nil, fmt.Errorf("nil request")
 	}
 
-	var basePath string
-	switch {
-	case req.ID.AssetID != nil:
-		assetIDStr := hex.EncodeToString(req.ID.AssetID[:])
-		basePath = fmt.Sprintf(
-			"/v1/taproot-assets/universe/keys/"+
-				"asset-id/%s",
-			assetIDStr,
-		)
-	case req.ID.GroupKey != nil:
-		groupKeyStr := hex.EncodeToString(
-			req.ID.GroupKey[:],
-		)
-		basePath = fmt.Sprintf(
-			"/v1/taproot-assets/universe/keys/"+
-				"group-key/%s",
-			groupKeyStr,
-		)
-	default:
-		return nil, fmt.Errorf(
-			"universe ID must have either AssetID or " +
-				"GroupKey",
-		)
+	pathKind, pathValue, err := universeAssetPath(req.ID.AssetRef)
+	if err != nil {
+		return nil, err
 	}
+
+	basePath := fmt.Sprintf(
+		"/v1/taproot-assets/universe/keys/%s/%s",
+		pathKind, pathValue,
+	)
 
 	params := "?id.proof_type=" + marshalProofType(
 		req.ID.ProofType,
@@ -426,7 +433,7 @@ func (u *universeClient) AssetLeafKeys(ctx context.Context,
 	path := basePath + params
 
 	var resp jsonAssetLeafKeysResponse
-	err := u.transport.doGet(
+	err = u.transport.doGet(
 		ctx, path, macaroon.UniverseServiceMac, &resp,
 	)
 	if err != nil {
@@ -455,35 +462,22 @@ func (u *universeClient) AssetLeaves(ctx context.Context,
 		return nil, fmt.Errorf("nil universe ID")
 	}
 
+	pathKind, pathValue, err := universeAssetPath(id.AssetRef)
+	if err != nil {
+		return nil, err
+	}
+
 	var path string
 	proofTypeParam := "?proof_type=" + marshalProofType(
 		id.ProofType,
 	)
-
-	switch {
-	case id.AssetID != nil:
-		assetIDStr := hex.EncodeToString(id.AssetID[:])
-		path = fmt.Sprintf(
-			"/v1/taproot-assets/universe/leaves/"+
-				"asset-id/%s%s",
-			assetIDStr, proofTypeParam,
-		)
-	case id.GroupKey != nil:
-		groupKeyStr := hex.EncodeToString(id.GroupKey[:])
-		path = fmt.Sprintf(
-			"/v1/taproot-assets/universe/leaves/"+
-				"group-key/%s%s",
-			groupKeyStr, proofTypeParam,
-		)
-	default:
-		return nil, fmt.Errorf(
-			"universe ID must have either AssetID or " +
-				"GroupKey",
-		)
-	}
+	path = fmt.Sprintf(
+		"/v1/taproot-assets/universe/leaves/%s/%s%s",
+		pathKind, pathValue, proofTypeParam,
+	)
 
 	var resp jsonAssetLeavesResponse
-	err := u.transport.doGet(
+	err = u.transport.doGet(
 		ctx, path, macaroon.UniverseServiceMac, &resp,
 	)
 	if err != nil {
@@ -513,30 +507,15 @@ func (u *universeClient) QueryProof(ctx context.Context,
 		return nil, fmt.Errorf("nil universe key")
 	}
 
-	var basePath string
-	switch {
-	case key.ID.AssetID != nil:
-		assetIDStr := hex.EncodeToString(key.ID.AssetID[:])
-		basePath = fmt.Sprintf(
-			"/v1/taproot-assets/universe/proofs/"+
-				"asset-id/%s",
-			assetIDStr,
-		)
-
-	case key.ID.GroupKey != nil:
-		groupKeyStr := hex.EncodeToString(key.ID.GroupKey[:])
-		basePath = fmt.Sprintf(
-			"/v1/taproot-assets/universe/proofs/"+
-				"group-key/%s",
-			groupKeyStr,
-		)
-
-	default:
-		return nil, fmt.Errorf(
-			"universe ID must have either AssetID or " +
-				"GroupKey",
-		)
+	pathKind, pathValue, err := universeAssetPath(key.ID.AssetRef)
+	if err != nil {
+		return nil, err
 	}
+
+	basePath := fmt.Sprintf(
+		"/v1/taproot-assets/universe/proofs/%s/%s",
+		pathKind, pathValue,
+	)
 
 	hashStr := hex.EncodeToString(key.LeafKey.Outpoint.Txid[:])
 	index := key.LeafKey.Outpoint.Index
@@ -549,7 +528,7 @@ func (u *universeClient) QueryProof(ctx context.Context,
 	)
 
 	var resp jsonQueryProofResponse
-	err := u.transport.doGet(
+	err = u.transport.doGet(
 		ctx, path, macaroon.UniverseServiceMac, &resp,
 	)
 	if err != nil {
@@ -591,11 +570,14 @@ func (u *universeClient) QueryAssetStats(ctx context.Context,
 			)
 		}
 
-		if req.AssetIDFilter != nil {
-			assetIDStr := hex.EncodeToString(
-				req.AssetIDFilter[:],
-			)
-			p = append(p, "asset_id_filter="+assetIDStr)
+		if req.AssetRefFilter != nil {
+			assetID, _, err := req.AssetRefFilter.Specifier()
+			if err == nil && assetID != nil {
+				assetIDStr := hex.EncodeToString(
+					(*assetID)[:],
+				)
+				p = append(p, "asset_id_filter="+assetIDStr)
+			}
 		}
 
 		if req.AssetTypeFilter != 0 {
@@ -827,20 +809,9 @@ func (u *universeClient) SetFederationSyncConfig(
 		[]*jsonAssetFederationSyncConfig, 0, len(asset),
 	)
 	for _, a := range asset {
-		id := &jsonUniverseID{
-			ProofType: marshalProofType(a.ID.ProofType),
-		}
-
-		if a.ID.AssetID != nil {
-			id.AssetID = hex.EncodeToString(
-				a.ID.AssetID[:],
-			)
-		}
-
-		if a.ID.GroupKey != nil {
-			id.GroupKey = hex.EncodeToString(
-				a.ID.GroupKey[:],
-			)
+		id, err := universeJSONID(a.ID)
+		if err != nil {
+			return err
 		}
 
 		jsonAsset = append(jsonAsset,
@@ -952,20 +923,9 @@ func (u *universeClient) SyncUniverse(ctx context.Context,
 
 	jsonTargets := make([]*jsonSyncTarget, 0, len(req.SyncTargets))
 	for _, t := range req.SyncTargets {
-		id := &jsonUniverseID{
-			ProofType: marshalProofType(t.ID.ProofType),
-		}
-
-		if t.ID.AssetID != nil {
-			id.AssetID = hex.EncodeToString(
-				t.ID.AssetID[:],
-			)
-		}
-
-		if t.ID.GroupKey != nil {
-			id.GroupKey = hex.EncodeToString(
-				t.ID.GroupKey[:],
-			)
+		id, err := universeJSONID(t.ID)
+		if err != nil {
+			return nil, err
 		}
 
 		jsonTargets = append(jsonTargets, &jsonSyncTarget{

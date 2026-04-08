@@ -40,8 +40,8 @@ type Recipient struct {
 
 // InteractiveSendRequest represents a request to send assets interactively.
 type InteractiveSendRequest struct {
-	// AssetID is the 32-byte asset identifier.
-	AssetID AssetID
+	// AssetRef identifies the asset to send.
+	AssetRef AssetRef
 
 	// Amount is the number of asset units to send.
 	Amount uint64
@@ -79,8 +79,9 @@ type TransferInput struct {
 	// that was spent as an input.
 	AnchorPoint Outpoint
 
-	// AssetID is the 32-byte asset identifier of the asset that was spent.
-	AssetID AssetID
+	// IssuanceID is the 32-byte protocol-level identifier of the asset
+	// issuance/tranche that was spent.
+	IssuanceID AssetID
 
 	// ScriptKey is the 33-byte script key of the asset that was spent.
 	ScriptKey PubKey

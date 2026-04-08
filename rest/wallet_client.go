@@ -41,6 +41,7 @@ func (w *walletClient) ListAssets(ctx context.Context,
 	req *entities.ListAssetsRequest) ([]*entities.Asset, error) {
 
 	params := url.Values{}
+	var assetRefFilter *entities.AssetRef
 	if req != nil {
 		if req.WithWitness {
 			params.Set("with_witness", "true")
@@ -53,6 +54,19 @@ func (w *walletClient) ListAssets(ctx context.Context,
 		}
 		if req.IncludeUnconfirmedMints {
 			params.Set("include_unconfirmed_mints", "true")
+		}
+		if req.AssetRef != nil {
+			if err := req.AssetRef.Validate(); err != nil {
+				return nil, err
+			}
+
+			assetRefFilter = req.AssetRef
+			if groupKey, ok := req.AssetRef.GroupKey(); ok {
+				params.Set(
+					"group_key",
+					hex.EncodeToString(groupKey[:]),
+				)
+			}
 		}
 	}
 
@@ -76,13 +90,17 @@ func (w *walletClient) ListAssets(ctx context.Context,
 			return nil, err
 		}
 
+		if assetRefFilter != nil && asset.AssetRef != *assetRefFilter {
+			continue
+		}
+
 		assets = append(assets, asset)
 	}
 
 	return assets, nil
 }
 
-// ListBalances returns asset balances with optional grouping.
+// ListBalances returns asset balances keyed by AssetRef.
 func (w *walletClient) ListBalances(ctx context.Context,
 	req *entities.ListBalancesRequest) (
 	*entities.ListBalancesResponse, error) {
@@ -91,26 +109,6 @@ func (w *walletClient) ListBalances(ctx context.Context,
 	if req != nil {
 		if req.IncludeLeased {
 			params.Set("include_leased", "true")
-		}
-
-		switch req.GroupBy {
-		case entities.BalanceGroupByAssetID:
-			params.Set("asset_id", "true")
-		case entities.BalanceGroupByGroupKey:
-			params.Set("group_key", "true")
-		}
-
-		if req.AssetFilter != nil {
-			params.Set(
-				"asset_filter",
-				hex.EncodeToString(req.AssetFilter[:]),
-			)
-		}
-		if req.GroupKeyFilter != nil {
-			params.Set(
-				"group_key_filter",
-				hex.EncodeToString(req.GroupKeyFilter[:]),
-			)
 		}
 	}
 
@@ -127,32 +125,50 @@ func (w *walletClient) ListBalances(ctx context.Context,
 		return nil, err
 	}
 
+	assets, err := w.ListAssets(ctx, &entities.ListAssetsRequest{
+		IncludeLeased: req != nil && req.IncludeLeased,
+		AssetRef: func() *entities.AssetRef {
+			if req == nil {
+				return nil
+			}
+
+			return req.AssetRef
+		}(),
+		ScriptKeyType: func() *entities.ScriptKeyTypeQuery {
+			if req == nil {
+				return nil
+			}
+
+			return req.ScriptKeyType
+		}(),
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	result := &entities.ListBalancesResponse{
-		AssetBalances: make(
-			map[string]*entities.AssetBalance,
-		),
-		AssetGroupBalances: make(
-			map[string]*entities.AssetGroupBalance,
-		),
+		Balances:             make(map[string]*entities.AssetBalance),
 		UnconfirmedTransfers: resp.UnconfirmedTransfers,
 	}
 
-	for key, bal := range resp.AssetBalances {
-		balance, err := unmarshalAssetBalance(bal)
-		if err != nil {
-			return nil, err
+	for _, asset := range assets {
+		key := asset.AssetRef.String()
+		balance, ok := result.Balances[key]
+		if !ok {
+			balance = &entities.AssetBalance{
+				AssetRef:     asset.AssetRef,
+				AssetGenesis: asset.Genesis,
+			}
+
+			if asset.GroupKey != nil {
+				groupKey := asset.GroupKey.RawKey
+				balance.GroupKey = &groupKey
+			}
+
+			result.Balances[key] = balance
 		}
 
-		result.AssetBalances[key] = balance
-	}
-
-	for key, bal := range resp.AssetGroupBalances {
-		balance, err := unmarshalAssetGroupBalance(bal)
-		if err != nil {
-			return nil, err
-		}
-
-		result.AssetGroupBalances[key] = balance
+		balance.Balance += asset.Amount
 	}
 
 	return result, nil
@@ -280,17 +296,21 @@ func (w *walletClient) NewAddr(ctx context.Context,
 
 	body := &jsonNewAddrRequest{}
 	if req != nil {
-		if req.AssetID != nil {
+		assetID, groupKey, err := req.AssetRef.Specifier()
+		if err != nil && !req.AssetRef.IsZero() {
+			return nil, err
+		}
+		if assetID != nil {
 			body.AssetID = base64.StdEncoding.EncodeToString(
-				req.AssetID[:],
+				(*assetID)[:],
 			)
 		}
 		if req.Amount > 0 {
 			body.Amount = fmt.Sprintf("%d", req.Amount)
 		}
-		if req.GroupKey != nil {
+		if groupKey != nil {
 			body.GroupKey = base64.StdEncoding.EncodeToString(
-				req.GroupKey[:],
+				(*groupKey)[:],
 			)
 		}
 		if req.TapscriptSibling != nil {
@@ -530,17 +550,24 @@ func (w *walletClient) BurnAsset(ctx context.Context,
 	*entities.BurnAssetResponse, error) {
 
 	body := map[string]any{
-		"asset_id_str":      hex.EncodeToString(req.AssetID[:]),
 		"amount_to_burn":    fmt.Sprintf("%d", req.AmountToBurn),
 		"confirmation_text": req.ConfirmationText,
 	}
+
+	issuanceID, err := w.resolveIssuanceID(
+		ctx, req.AssetRef, req.AmountToBurn,
+	)
+	if err != nil {
+		return nil, err
+	}
+	body["asset_id_str"] = hex.EncodeToString(issuanceID[:])
 
 	if req.Note != "" {
 		body["note"] = req.Note
 	}
 
 	var resp jsonBurnAssetResponse
-	err := w.transport.doPost(
+	err = w.transport.doPost(
 		ctx, "/v1/taproot-assets/burn",
 		macaroon.AdminServiceMac, body, &resp,
 	)
@@ -558,9 +585,21 @@ func (w *walletClient) ListBurns(ctx context.Context,
 
 	params := url.Values{}
 	if req != nil {
-		if req.AssetID != nil {
-			params.Set("asset_id",
-				hex.EncodeToString(req.AssetID[:]))
+		if req.AssetRef != nil {
+			assetID, groupKey, err := req.AssetRef.Specifier()
+			if err != nil {
+				return nil, err
+			}
+
+			if assetID != nil {
+				params.Set("asset_id",
+					hex.EncodeToString((*assetID)[:]))
+			}
+
+			if groupKey != nil {
+				params.Set("group_key",
+					hex.EncodeToString((*groupKey)[:]))
+			}
 		}
 		if req.AnchorTxid != nil {
 			params.Set("anchor_txid",
@@ -602,10 +641,15 @@ func (w *walletClient) FetchAssetMeta(ctx context.Context,
 
 	var path string
 	switch {
-	case req.AssetID != nil:
+	case req.AssetRef != nil:
+		issuanceID, err := w.resolveIssuanceID(ctx, *req.AssetRef, 0)
+		if err != nil {
+			return nil, err
+		}
+
 		path = fmt.Sprintf(
 			"/v1/taproot-assets/assets/meta/asset-id/%s",
-			hex.EncodeToString(req.AssetID[:]),
+			hex.EncodeToString(issuanceID[:]),
 		)
 
 	case req.MetaHash != nil:
@@ -615,7 +659,7 @@ func (w *walletClient) FetchAssetMeta(ctx context.Context,
 		)
 
 	default:
-		return nil, fmt.Errorf("either asset_id or " +
+		return nil, fmt.Errorf("either asset_ref or " +
 			"meta_hash must be set")
 	}
 
@@ -651,6 +695,50 @@ func (w *walletClient) VerifyProof(ctx context.Context,
 	}
 
 	return unmarshalVerifyProofResponse(&resp)
+}
+
+func (w *walletClient) resolveIssuanceID(ctx context.Context,
+	assetRef entities.AssetRef, minAmount uint64) (entities.AssetID, error) {
+
+	if assetRef.IsZero() {
+		return entities.AssetID{}, fmt.Errorf("asset ref is required")
+	}
+
+	if assetID, ok := assetRef.AssetID(); ok {
+		return assetID, nil
+	}
+
+	assets, err := w.ListAssets(ctx, &entities.ListAssetsRequest{
+		AssetRef:      &assetRef,
+		IncludeLeased: true,
+	})
+	if err != nil {
+		return entities.AssetID{}, err
+	}
+
+	if len(assets) == 0 {
+		return entities.AssetID{}, fmt.Errorf("asset %s not found", assetRef)
+	}
+
+	var selected *entities.Asset
+	for _, asset := range assets {
+		if asset.Amount >= minAmount {
+			return asset.Genesis.IssuanceID, nil
+		}
+
+		if selected == nil || asset.Amount > selected.Amount {
+			selected = asset
+		}
+	}
+
+	if minAmount > 0 {
+		return entities.AssetID{}, fmt.Errorf(
+			"asset %s has no single issuance with at least %d units",
+			assetRef, minAmount,
+		)
+	}
+
+	return selected.Genesis.IssuanceID, nil
 }
 
 // marshalAssetVersionJSON converts an AssetVersion to a proto JSON
