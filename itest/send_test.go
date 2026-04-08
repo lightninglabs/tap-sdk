@@ -45,7 +45,9 @@ func TestAddressSend(t *testing.T) {
 	h.WaitForMint(ctx, h.AliceClient, batch.BatchKey,
 		60*time.Second)
 
-	// Find the minted asset to get its group key.
+	// Find the minted asset and resolve its canonical group key. The raw
+	// group key returned by ListAssets is not the identifier Bob's address
+	// bootstrap path looks up.
 	assets, err := h.AliceClient.ListAssets(ctx,
 		&entities.ListAssetsRequest{})
 	require.NoError(t, err)
@@ -62,13 +64,33 @@ func TestAddressSend(t *testing.T) {
 		"minted asset should have group key")
 
 	assetID := mintedAsset.Genesis.AssetID
-	groupKey := mintedAsset.GroupKey.RawKey
+	groups, err := h.AliceClient.ListGroups(ctx)
+	require.NoError(t, err)
+
+	var groupKey entities.PubKey
+	var foundGroupKey bool
+	for groupKeyHex, group := range groups {
+		for _, asset := range group.Assets {
+			if asset.ID != assetID {
+				continue
+			}
+
+			groupKey, err = entities.ParsePubKeyHex(groupKeyHex)
+			require.NoError(t, err)
+			foundGroupKey = true
+			break
+		}
+		if foundGroupKey {
+			break
+		}
+	}
+	require.True(t, foundGroupKey,
+		"minted asset group key not found in group listing")
 	t.Logf("Minted asset: id=%s, group=%x, amount=%d",
 		assetID, groupKey[:], mintedAsset.Amount)
 
-	// Allow issuance proof sync on both nodes, then add Alice as Bob's
-	// universe federation peer so the normal group-key bootstrap path can
-	// resolve the fungible asset before Bob creates a V2 address.
+	// Enable issuance federation sync and let Bob bootstrap the canonical
+	// group key from Alice when creating the V2 receive address.
 	issuanceSync := []entities.GlobalFederationSyncConfig{
 		{
 			ProofType:       entities.ProofTypeIssuance,
@@ -91,47 +113,9 @@ func TestAddressSend(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
-	// Address creation can still lag slightly behind federation bootstrap,
-	// so keep triggering the targeted issuance sync until Bob can observe
-	// the grouped universe root and create the V2 receive address.
-	syncReq := &entities.SyncRequest{
-		UniverseHost: aliceUniverseHost,
-		SyncMode:     entities.SyncIssuanceOnly,
-		SyncTargets: []entities.SyncTarget{{
-			ID: entities.UniverseID{
-				GroupKey:  &groupKey,
-				ProofType: entities.ProofTypeIssuance,
-			},
-		}},
-	}
-	uniID := entities.UniverseID{
-		GroupKey:  &groupKey,
-		ProofType: entities.ProofTypeIssuance,
-	}
-
 	v2 := entities.AddressVersionV2
 	var bobAddr *entities.Address
 	require.Eventually(t, func() bool {
-		synced, syncErr := h.BobClient.SyncUniverse(ctx, syncReq)
-		if syncErr != nil {
-			t.Logf("Bob universe sync failed: %v", syncErr)
-			return false
-		}
-
-		if len(synced) == 0 {
-			t.Log("Bob universe sync returned no diff")
-		}
-
-		roots, rootsErr := h.BobClient.QueryAssetRoots(ctx, &uniID)
-		if rootsErr != nil {
-			t.Logf("Bob group root not ready yet: %v", rootsErr)
-			return false
-		}
-		if roots.IssuanceRoot == nil {
-			t.Log("Bob group issuance root not ready yet")
-			return false
-		}
-
 		bobAddr, err = h.BobClient.NewAddr(ctx,
 			&entities.NewAddressRequest{
 				GroupKey:       &groupKey,
