@@ -92,10 +92,46 @@ func TestAddressSend(t *testing.T) {
 	require.NoError(t, err)
 
 	// Address creation can still lag slightly behind federation bootstrap,
-	// so retry until Bob can resolve the fungible group key locally.
+	// so keep triggering the targeted issuance sync until Bob can observe
+	// the grouped universe root and create the V2 receive address.
+	syncReq := &entities.SyncRequest{
+		UniverseHost: aliceUniverseHost,
+		SyncMode:     entities.SyncIssuanceOnly,
+		SyncTargets: []entities.SyncTarget{{
+			ID: entities.UniverseID{
+				GroupKey:  &groupKey,
+				ProofType: entities.ProofTypeIssuance,
+			},
+		}},
+	}
+	uniID := entities.UniverseID{
+		GroupKey:  &groupKey,
+		ProofType: entities.ProofTypeIssuance,
+	}
+
 	v2 := entities.AddressVersionV2
 	var bobAddr *entities.Address
 	require.Eventually(t, func() bool {
+		synced, syncErr := h.BobClient.SyncUniverse(ctx, syncReq)
+		if syncErr != nil {
+			t.Logf("Bob universe sync failed: %v", syncErr)
+			return false
+		}
+
+		if len(synced) == 0 {
+			t.Log("Bob universe sync returned no diff")
+		}
+
+		roots, rootsErr := h.BobClient.QueryAssetRoots(ctx, &uniID)
+		if rootsErr != nil {
+			t.Logf("Bob group root not ready yet: %v", rootsErr)
+			return false
+		}
+		if roots.IssuanceRoot == nil {
+			t.Log("Bob group issuance root not ready yet")
+			return false
+		}
+
 		bobAddr, err = h.BobClient.NewAddr(ctx,
 			&entities.NewAddressRequest{
 				GroupKey:       &groupKey,
@@ -108,7 +144,7 @@ func TestAddressSend(t *testing.T) {
 		}
 
 		return true
-	}, 30*time.Second, time.Second)
+	}, 45*time.Second, time.Second)
 	require.NotNil(t, bobAddr)
 	require.NotEmpty(t, bobAddr.Encoded)
 	t.Logf("Bob address: %s", bobAddr.Encoded)
