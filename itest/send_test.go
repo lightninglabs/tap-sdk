@@ -160,41 +160,43 @@ func TestAddressSend(t *testing.T) {
 	h.WaitForSync(h.BobClient, 30*time.Second)
 
 	// --- Step 5: Verify balances ---
-	// Bob should have received 200 units. Give some time for proof
-	// delivery.
-	var bobAssets []*entities.Asset
+	// Bob should have received 200 units for the minted asset group. Give
+	// some time for proof delivery and balance reconciliation.
+	balanceReq := &entities.ListBalancesRequest{
+		GroupBy:        entities.BalanceGroupByGroupKey,
+		GroupKeyFilter: &groupKey,
+	}
+
+	var bobBalance uint64
 	deadline := time.Now().Add(120 * time.Second)
 	for time.Now().Before(deadline) {
-		bobAssets, err = h.BobClient.ListAssets(ctx,
-			&entities.ListAssetsRequest{})
+		balances, err := h.BobClient.ListBalances(ctx, balanceReq)
 		if err == nil {
-			for _, a := range bobAssets {
-				if a.Genesis.AssetID == assetID &&
-					a.Amount == 200 {
-
+			for _, balance := range balances.AssetGroupBalances {
+				if balance != nil && balance.Balance == 200 {
+					bobBalance = balance.Balance
 					goto verified
 				}
 			}
 		}
 		time.Sleep(2 * time.Second)
 	}
-	t.Fatalf("Bob did not receive the asset within timeout")
+	t.Fatalf("Bob did not receive the asset group balance within timeout")
 
 verified:
-	t.Logf("Bob received 200 units of %s", assetID)
+	t.Logf("Bob received %d units for group %x", bobBalance, groupKey)
 
 	// Alice should have change: 5000 - 200 = 4800.
-	aliceAssets, err := h.AliceClient.ListAssets(ctx,
-		&entities.ListAssetsRequest{})
+	aliceBalances, err := h.AliceClient.ListBalances(ctx, balanceReq)
 	require.NoError(t, err)
 
 	var aliceBalance uint64
-	for _, a := range aliceAssets {
-		if a.Genesis.AssetID == assetID {
-			aliceBalance += a.Amount
+	for _, balance := range aliceBalances.AssetGroupBalances {
+		if balance != nil {
+			aliceBalance += balance.Balance
 		}
 	}
 	require.Equal(t, uint64(4800), aliceBalance,
-		"Alice should have 4800 units remaining")
-	t.Logf("Alice balance: %d", aliceBalance)
+		"Alice should have 4800 units remaining in the asset group")
+	t.Logf("Alice group balance: %d", aliceBalance)
 }
