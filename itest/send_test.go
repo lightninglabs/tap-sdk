@@ -89,19 +89,26 @@ func TestAddressSend(t *testing.T) {
 	t.Logf("Minted asset: id=%s, group=%x, amount=%d",
 		assetID, groupKey[:], mintedAsset.Amount)
 
-	// Enable issuance federation sync and let Bob bootstrap the canonical
-	// group key from Alice when creating the V2 receive address.
-	issuanceSync := []entities.GlobalFederationSyncConfig{
+	// Enable issuance federation sync so Bob can bootstrap the canonical
+	// group key from Alice when creating the V2 receive address. Also
+	// enable transfer sync because the V2 proof courier delivers transfer
+	// proofs through Bob's universe server.
+	globalSync := []entities.GlobalFederationSyncConfig{
 		{
 			ProofType:       entities.ProofTypeIssuance,
 			AllowSyncInsert: true,
 			AllowSyncExport: true,
 		},
+		{
+			ProofType:       entities.ProofTypeTransfer,
+			AllowSyncInsert: true,
+			AllowSyncExport: true,
+		},
 	}
-	err = h.AliceClient.SetFederationSyncConfig(ctx, issuanceSync, nil)
+	err = h.AliceClient.SetFederationSyncConfig(ctx, globalSync, nil)
 	require.NoError(t, err)
 
-	err = h.BobClient.SetFederationSyncConfig(ctx, issuanceSync, nil)
+	err = h.BobClient.SetFederationSyncConfig(ctx, globalSync, nil)
 	require.NoError(t, err)
 
 	aliceUniverseHost := envOr(
