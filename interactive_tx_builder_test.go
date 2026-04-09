@@ -293,7 +293,9 @@ func TestInteractiveTxBuilder_AlreadyFinished(t *testing.T) {
 		expectedResult, nil)
 
 	builder := newInteractiveTxBuilder(mockWalletKit, "tapassetr", 1)
-	builder.SetAsset(entities.AssetRefFromAssetID(assetID), 1000).SetReceiverKeys(receiverKeys)
+	builder.SetAsset(
+		entities.AssetRefFromAssetID(assetID), 1000,
+	).SetReceiverKeys(receiverKeys)
 
 	// First execution succeeds
 	_, err := builder.Execute(ctx)

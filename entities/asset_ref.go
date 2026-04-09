@@ -48,7 +48,8 @@ func AssetRefFromSpecifier(assetID *AssetID, groupKey *PubKey) (AssetRef,
 
 	switch {
 	case assetID != nil && groupKey != nil:
-		return "", fmt.Errorf("asset ref requires exactly one of asset ID or group key")
+		return "", fmt.Errorf("asset ref requires exactly one of " +
+			"asset ID or group key")
 
 	case groupKey != nil:
 		return AssetRefFromGroupKey(*groupKey), nil
@@ -57,7 +58,8 @@ func AssetRefFromSpecifier(assetID *AssetID, groupKey *PubKey) (AssetRef,
 		return AssetRefFromAssetID(*assetID), nil
 
 	default:
-		return "", fmt.Errorf("asset ref requires either an asset ID or group key")
+		return "", fmt.Errorf("asset ref requires either an asset " +
+			"ID or group key")
 	}
 }
 

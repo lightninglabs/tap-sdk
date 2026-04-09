@@ -174,6 +174,7 @@ type jsonRegisterTransferRequest struct {
 func (p *proofClient) RegisterTransfer(ctx context.Context,
 	assetRef entities.AssetRef, scriptKey entities.PubKey,
 	outpoint entities.Outpoint) (*entities.RegisteredAsset, error) {
+
 	assetID, groupKey, err := assetRef.Specifier()
 	if err != nil {
 		return nil, err

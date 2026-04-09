@@ -28,6 +28,7 @@ type UniverseID struct {
 // ID; collectible refs (asset ID) produce an asset-ID universe ID.
 func UniverseIDFromRef(
 	ref AssetRef, proofType ProofType) UniverseID {
+
 	return UniverseID{AssetRef: ref, ProofType: proofType}
 }
 
