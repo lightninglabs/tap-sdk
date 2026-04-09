@@ -13,20 +13,39 @@ import (
 type Wallet struct {
 	Client
 
-	networkHRP string
-	coinType   uint32
+	networkHRP              string
+	coinType                uint32
+	defaultProofCourierAddr string
+}
+
+// WalletOption configures optional Wallet behavior.
+type WalletOption func(*Wallet)
+
+// WithDefaultProofCourierAddr sets the default proof courier address used by
+// high-level V2 receive address helpers.
+func WithDefaultProofCourierAddr(addr string) WalletOption {
+	return func(w *Wallet) {
+		w.defaultProofCourierAddr = addr
+	}
 }
 
 // NewWallet creates a new Wallet instance.
-func NewWallet(client Client, network entities.Network) *Wallet {
+func NewWallet(client Client, network entities.Network,
+	opts ...WalletOption) *Wallet {
 	// Get network parameters for vPacket encoding.
 	networkHRP, coinType := getNetworkParams(network)
 
-	return &Wallet{
+	wallet := &Wallet{
 		Client:     client,
 		networkHRP: networkHRP,
 		coinType:   coinType,
 	}
+
+	for _, opt := range opts {
+		opt(wallet)
+	}
+
+	return wallet
 }
 
 // NewTxBuilder returns a new transaction builder for address-based transfers.
@@ -40,18 +59,21 @@ func (s *Wallet) NewInteractiveTxBuilder() *InteractiveTxBuilder {
 	return newInteractiveTxBuilder(s, s.networkHRP, s.coinType)
 }
 
-// NewReceiveAddress creates a V2 address for receiving the given asset.
-// The sender chooses the specific units and amount to send.
+// NewReceiveAddress creates a V2 address for receiving the given
+// asset. The sender chooses the specific units and amount to send.
 //
-// For more control (custom keys, V0/V1 addresses, explicit amounts), use
-// the lower-level NewAddr method on the client directly.
+// For more control (custom keys, V0/V1 addresses, explicit amounts),
+// use the lower-level NewAddr method on the client directly. If your
+// tapd does not expose a suitable default proof courier for V2
+// addresses, configure the wallet with WithDefaultProofCourierAddr.
 func (s *Wallet) NewReceiveAddress(ctx context.Context,
 	ref entities.AssetRef) (*entities.Address, error) {
 
 	v2 := entities.AddressVersionV2
 	req := &entities.NewAddressRequest{
-		AssetRef:       ref,
-		AddressVersion: &v2,
+		AssetRef:         ref,
+		ProofCourierAddr: s.defaultProofCourierAddr,
+		AddressVersion:   &v2,
 	}
 
 	addr, err := s.NewAddr(ctx, req)
