@@ -113,13 +113,19 @@ func TestAddressSend(t *testing.T) {
 	}})
 	require.NoError(t, err)
 
+	bobProofCourierAddr := envOr(
+		"TAPD_BOB_PROOF_COURIER_ADDR",
+		defaultBobProofCourierAddr,
+	)
+
 	v2 := entities.AddressVersionV2
 	var bobAddr *entities.Address
 	require.Eventually(t, func() bool {
 		bobAddr, err = h.BobClient.NewAddr(ctx,
 			&entities.NewAddressRequest{
-				GroupKey:       &groupKey,
-				AddressVersion: &v2,
+				GroupKey:         &groupKey,
+				ProofCourierAddr: bobProofCourierAddr,
+				AddressVersion:   &v2,
 			},
 		)
 		if err != nil {

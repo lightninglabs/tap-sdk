@@ -29,6 +29,11 @@ const (
 	// syncing directly from tapd-alice over the Docker network.
 	defaultAliceUniverseHost = "tapd-alice:10029"
 
+	// defaultBobProofCourierAddr is the proof courier address Alice's tapd
+	// should use when delivering proofs to Bob's V2 receive addresses over
+	// the Docker network.
+	defaultBobProofCourierAddr = "authmailbox+universerpc://tapd-bob:10029"
+
 	// defaultBobHost is the default gRPC host for tapd-bob.
 	defaultBobHost = "localhost:10030"
 
