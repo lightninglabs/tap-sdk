@@ -147,7 +147,7 @@ func (w *walletKitClient) FundTransfer(ctx context.Context,
 				OutputIndex: input.Outpoint.Index,
 			},
 			ID: base64.StdEncoding.EncodeToString(
-				input.AssetID[:],
+				input.IssuanceID[:],
 			),
 			ScriptKey: base64.StdEncoding.EncodeToString(
 				input.ScriptKey[:],
@@ -531,7 +531,7 @@ func (w *walletKitClient) ProveAssetOwnership(ctx context.Context,
 
 	body := map[string]any{
 		"asset_id": base64.StdEncoding.EncodeToString(
-			req.AssetID[:],
+			req.IssuanceID[:],
 		),
 		"script_key": base64.StdEncoding.EncodeToString(
 			req.ScriptKey[:],

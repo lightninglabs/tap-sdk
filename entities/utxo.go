@@ -40,8 +40,11 @@ type ListUtxosRequest struct {
 // AssetHumanReadable is a simplified asset representation used in
 // group listings.
 type AssetHumanReadable struct {
-	// ID is the 32-byte asset identifier.
-	ID AssetID
+	// AssetRef is the SDK's user-facing identifier for the asset.
+	AssetRef AssetRef
+
+	// IssuanceID is the 32-byte protocol-level identifier of this issuance.
+	IssuanceID AssetID
 
 	// Amount is the asset amount.
 	Amount uint64

@@ -48,6 +48,25 @@ func (m *mintClient) MintAsset(ctx context.Context,
 	return unmarshalMintingBatch(resp.PendingBatch)
 }
 
+// CreateAsset stages a brand-new asset in the pending minting batch.
+func (m *mintClient) CreateAsset(ctx context.Context,
+	req *entities.CreateAssetRequest) (*entities.MintingBatch, error) {
+
+	return m.MintAsset(ctx, mintAssetRequestFromCreateAsset(req))
+}
+
+// CreateIssuance stages an additional issuance in the pending minting batch.
+func (m *mintClient) CreateIssuance(ctx context.Context,
+	req *entities.CreateIssuanceRequest) (*entities.MintingBatch, error) {
+
+	mintReq, err := mintAssetRequestFromCreateIssuance(req)
+	if err != nil {
+		return nil, err
+	}
+
+	return m.MintAsset(ctx, mintReq)
+}
+
 // FundBatch funds the current pending minting batch.
 func (m *mintClient) FundBatch(ctx context.Context,
 	req *entities.FundBatchRequest) (*entities.VerboseMintingBatch, error) {
@@ -175,6 +194,79 @@ func marshalMintAssetRequest(
 		Asset:         marshalMintAsset(req.Asset),
 		ShortResponse: req.ShortResponse,
 	}
+}
+
+func mintAssetRequestFromCreateAsset(
+	req *entities.CreateAssetRequest) *entities.MintAssetRequest {
+
+	if req == nil {
+		return nil
+	}
+
+	asset := req.Asset
+	if asset == nil {
+		return &entities.MintAssetRequest{ShortResponse: req.ShortResponse}
+	}
+
+	return &entities.MintAssetRequest{
+		ShortResponse: req.ShortResponse,
+		Asset: &entities.MintAsset{
+			PendingMintAsset: entities.PendingMintAsset{
+				AssetVersion:       asset.AssetVersion,
+				AssetType:          asset.AssetType,
+				Name:               asset.Name,
+				AssetMeta:          asset.AssetMeta,
+				Amount:             asset.InitialSupply,
+				NewGroupedAsset:    asset.AllowIssuance,
+				GroupInternalKey:   asset.GroupInternalKey,
+				GroupTapscriptRoot: asset.GroupTapscriptRoot,
+				ScriptKey:          asset.ScriptKey,
+			},
+			DecimalDisplay:          asset.DecimalDisplay,
+			ExternalGroupKey:        asset.ExternalGroupKey,
+			EnableSupplyCommitments: asset.EnableSupplyCommitments,
+		},
+	}
+}
+
+func mintAssetRequestFromCreateIssuance(
+	req *entities.CreateIssuanceRequest) (*entities.MintAssetRequest, error) {
+
+	if req == nil {
+		return nil, nil
+	}
+
+	issuance := req.Issuance
+	if issuance == nil {
+		return &entities.MintAssetRequest{
+			ShortResponse: req.ShortResponse,
+		}, nil
+	}
+
+	groupKey, ok := issuance.AssetRef.GroupKey()
+	if !ok {
+		return nil, fmt.Errorf(
+			"asset ref must resolve to a group key to create an issuance",
+		)
+	}
+
+	return &entities.MintAssetRequest{
+		ShortResponse: req.ShortResponse,
+		Asset: &entities.MintAsset{
+			PendingMintAsset: entities.PendingMintAsset{
+				AssetVersion: issuance.AssetVersion,
+				AssetType:    issuance.AssetType,
+				Name:         issuance.Name,
+				AssetMeta:    issuance.AssetMeta,
+				Amount:       issuance.Amount,
+				GroupKey:     &groupKey,
+				ScriptKey:    issuance.ScriptKey,
+			},
+			GroupedAsset:     true,
+			DecimalDisplay:   issuance.DecimalDisplay,
+			ExternalGroupKey: issuance.ExternalGroupKey,
+		},
+	}, nil
 }
 
 func marshalMintAsset(asset *entities.MintAsset) *mintrpc.MintAsset {

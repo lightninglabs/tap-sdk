@@ -15,8 +15,8 @@ const (
 // FetchAssetMetaRequest specifies how to look up asset metadata. Exactly
 // one of the fields must be set.
 type FetchAssetMetaRequest struct {
-	// AssetID is the 32-byte asset ID.
-	AssetID *AssetID
+	// AssetRef identifies the asset whose metadata should be fetched.
+	AssetRef *AssetRef
 
 	// MetaHash is the 32-byte meta hash.
 	MetaHash *Hash

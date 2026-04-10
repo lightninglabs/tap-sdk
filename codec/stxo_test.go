@@ -48,8 +48,8 @@ func TestDeriveBurnKeyVectors(t *testing.T) {
 					Txid:  txid,
 					Index: 123,
 				},
-				AssetID:   assetID,
-				ScriptKey: scriptKey,
+				IssuanceID: assetID,
+				ScriptKey:  scriptKey,
 			}
 		}(),
 		expectedKey: "77493dcf8c7e6c1f214824409b2468af" +
@@ -83,9 +83,9 @@ func TestDeriveBurnKeyVectors(t *testing.T) {
 			copy(scriptKey[:], scriptKeyBytes)
 
 			return entities.PrevID{
-				Outpoint:  wireOutpoint,
-				AssetID:   assetID,
-				ScriptKey: scriptKey,
+				Outpoint:   wireOutpoint,
+				IssuanceID: assetID,
+				ScriptKey:  scriptKey,
 			}
 		}(),
 		expectedKey: "a76bc68f430c78cfdad6d72abf143de1" +

@@ -19,8 +19,9 @@ type PrevID struct {
 	// Outpoint is the bitcoin anchor output on chain.
 	Outpoint Outpoint
 
-	// AssetID is the 32-byte asset identifier of the previous asset tree.
-	AssetID AssetID
+	// IssuanceID is the 32-byte protocol-level asset identifier of the
+	// previous asset tree.
+	IssuanceID AssetID
 
 	// ScriptKey is the tweaked Taproot output key.
 	ScriptKey PubKey
@@ -61,8 +62,9 @@ type AssetGenesis struct {
 	// MetaHash is the meta data hash.
 	MetaHash Hash
 
-	// AssetID is the unique 32-byte asset identifier.
-	AssetID AssetID
+	// IssuanceID is the unique 32-byte protocol-level identifier for this
+	// specific issuance/tranche.
+	IssuanceID AssetID
 
 	// OutputIndex is the output index of the genesis transaction.
 	OutputIndex uint32
@@ -88,6 +90,11 @@ type AltLeaf struct {
 
 // Asset represents a Taproot Asset.
 type Asset struct {
+	// AssetRef is the SDK's user-facing identifier for the asset as a whole.
+	// For grouped/fungible assets this encodes the group key. For unique assets
+	// it encodes the issuance asset ID.
+	AssetRef AssetRef
+
 	// Version is the asset version.
 	Version uint8
 
@@ -109,7 +116,8 @@ type Asset struct {
 	// ScriptKey is the script key.
 	ScriptKey ScriptKey
 
-	// GroupKey is the optional group key.
+	// GroupKey is the optional protocol group key for this issuance.
+	// AssetRef should be used for user-facing asset identity.
 	GroupKey *GroupKey
 
 	// AltLeaves are the auxiliary leaves.

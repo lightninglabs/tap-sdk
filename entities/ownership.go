@@ -2,8 +2,12 @@ package entities
 
 // ProveOwnershipRequest specifies parameters for proving asset ownership.
 type ProveOwnershipRequest struct {
-	// AssetID is the 32-byte asset identifier.
-	AssetID AssetID
+	// AssetRef is the SDK's user-facing identifier for the asset.
+	AssetRef AssetRef
+
+	// IssuanceID is the 32-byte protocol-level identifier for the specific
+	// issuance/tranche being proven.
+	IssuanceID AssetID
 
 	// ScriptKey is the script key used to spend the asset.
 	ScriptKey PubKey

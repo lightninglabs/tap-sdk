@@ -2,13 +2,8 @@ package entities
 
 // BurnAssetRequest specifies parameters for burning asset units.
 type BurnAssetRequest struct {
-	// AssetID is the 32-byte asset identifier to burn. Either this or
-	// AssetIDStr must be set.
-	AssetID *AssetID
-
-	// AssetIDStr is the hex-encoded asset ID to burn. Either this or
-	// AssetID must be set.
-	AssetIDStr string
+	// AssetRef identifies which asset to burn units from.
+	AssetRef AssetRef
 
 	// AmountToBurn is the number of asset units to burn. Must be
 	// greater than zero.
@@ -33,11 +28,8 @@ type BurnAssetResponse struct {
 
 // ListBurnsRequest specifies filters for listing asset burns.
 type ListBurnsRequest struct {
-	// AssetID filters by the asset id of the burnt asset.
-	AssetID *AssetID
-
-	// TweakedGroupKey filters by the tweaked group key.
-	TweakedGroupKey *PubKey
+	// AssetRef filters by the burnt asset.
+	AssetRef *AssetRef
 
 	// AnchorTxid filters by the anchor transaction id.
 	AnchorTxid *Hash
@@ -48,11 +40,11 @@ type AssetBurn struct {
 	// Note is user-defined metadata for the burn.
 	Note string
 
-	// AssetID is the asset id of the burnt asset.
-	AssetID AssetID
+	// AssetRef is the SDK's user-facing identifier for the burnt asset.
+	AssetRef AssetRef
 
-	// TweakedGroupKey is the tweaked group key.
-	TweakedGroupKey *PubKey
+	// IssuanceID is the specific issuance/tranche that was burnt.
+	IssuanceID AssetID
 
 	// Amount is the number of burnt units.
 	Amount uint64

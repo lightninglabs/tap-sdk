@@ -14,19 +14,22 @@ const (
 	ProofTypeTransfer ProofType = 2
 )
 
-// UniverseID identifies a universe by asset ID or group key plus a proof
-// type.
+// UniverseID identifies a universe by AssetRef plus a proof type.
 type UniverseID struct {
-	// AssetID identifies the universe by a specific asset ID.
-	// Mutually exclusive with GroupKey.
-	AssetID *AssetID
-
-	// GroupKey identifies the universe by a group key.
-	// Mutually exclusive with AssetID.
-	GroupKey *PubKey
+	// AssetRef identifies the asset universe to query.
+	AssetRef AssetRef
 
 	// ProofType filters the universe by proof type.
 	ProofType ProofType
+}
+
+// UniverseIDFromRef constructs a UniverseID from an AssetRef and
+// proof type. Fungible refs (group key) produce a group-key universe
+// ID; collectible refs (asset ID) produce an asset-ID universe ID.
+func UniverseIDFromRef(
+	ref AssetRef, proofType ProofType) UniverseID {
+
+	return UniverseID{AssetRef: ref, ProofType: proofType}
 }
 
 // MerkleSumNode is a node in the Merkle-Sum Sparse Merkle Tree.
@@ -49,9 +52,9 @@ type UniverseRoot struct {
 	// AssetName is the human-readable name of the asset.
 	AssetName string
 
-	// AmountsByAssetID maps hex-encoded asset IDs to the number of units
-	// minted. For grouped assets this may contain more than one entry.
-	AmountsByAssetID map[string]uint64
+	// AmountsByIssuanceID maps hex-encoded issuance IDs to the number of units
+	// minted. For multi-issuance assets this may contain more than one entry.
+	AmountsByIssuanceID map[string]uint64
 }
 
 // AssetRootRequest configures pagination for AssetRoots queries.
@@ -205,8 +208,8 @@ type AssetStatsQuery struct {
 	// AssetNameFilter filters by asset name substring.
 	AssetNameFilter string
 
-	// AssetIDFilter filters by a specific asset ID.
-	AssetIDFilter *AssetID
+	// AssetRefFilter filters by a specific asset.
+	AssetRefFilter *AssetRef
 
 	// AssetTypeFilter restricts results to a specific asset type.
 	AssetTypeFilter AssetTypeFilter
@@ -226,8 +229,12 @@ type AssetStatsQuery struct {
 
 // AssetStatsAsset is a per-asset statistics record.
 type AssetStatsAsset struct {
-	// AssetID is the 32-byte asset identifier.
-	AssetID AssetID
+	// AssetRef is the SDK's user-facing identifier for the asset.
+	AssetRef AssetRef
+
+	// IssuanceID is the 32-byte protocol-level identifier for the specific
+	// issuance/tranche represented by this stats record.
+	IssuanceID AssetID
 
 	// GenesisPoint is the genesis outpoint string.
 	GenesisPoint string
@@ -256,6 +263,9 @@ type AssetStatsAsset struct {
 
 // AssetStatsSnapshot is a statistics snapshot for one asset or group.
 type AssetStatsSnapshot struct {
+	// AssetRef is the SDK's user-facing identifier for the asset.
+	AssetRef AssetRef
+
 	// GroupKey is the group key, if the asset belongs to a group.
 	GroupKey *PubKey
 

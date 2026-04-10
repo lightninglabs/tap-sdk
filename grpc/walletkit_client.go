@@ -50,7 +50,7 @@ func (m *walletKitClient) FundTransfer(ctx context.Context,
 				Txid:        input.Outpoint.Txid[:],
 				OutputIndex: input.Outpoint.Index,
 			},
-			Id:        input.AssetID[:],
+			Id:        input.IssuanceID[:],
 			ScriptKey: input.ScriptKey[:],
 		}
 	}
@@ -366,7 +366,7 @@ func (m *walletKitClient) ProveAssetOwnership(ctx context.Context,
 	authCtx, client := m.rawClientWithMacAuth(ctx)
 
 	rpcReq := &assetwalletrpc.ProveAssetOwnershipRequest{
-		AssetId:   req.AssetID[:],
+		AssetId:   req.IssuanceID[:],
 		ScriptKey: req.ScriptKey[:],
 		Outpoint: &taprpc.OutPoint{
 			Txid:        req.Outpoint.Txid[:],

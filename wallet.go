@@ -40,25 +40,53 @@ func (s *Wallet) NewInteractiveTxBuilder() *InteractiveTxBuilder {
 	return newInteractiveTxBuilder(s, s.networkHRP, s.coinType)
 }
 
-// NewReceiveAddress creates a V2 address for receiving any asset from a
-// group. This is the recommended way to receive assets, as it allows the
-// sender to choose which specific asset and amount to send from the group.
+// NewReceiveAddress creates a V2 address for receiving assets identified by
+// the given AssetRef.
 //
-// For more control (specific asset ID, custom keys, V0/V1 addresses), use
+// For fungible assets (AssetRef from group key), the address accepts any
+// tranche within the group and lets the sender choose the amount. For
+// collectibles (AssetRef from asset ID), the address targets the specific
+// asset.
+//
+// For more control (custom keys, V0/V1 addresses, explicit amounts), use
 // the lower-level NewAddr method on the client directly.
 func (s *Wallet) NewReceiveAddress(ctx context.Context,
-	groupKey entities.PubKey) (*entities.Address, error) {
+	ref entities.AssetRef) (*entities.Address, error) {
 
 	v2 := entities.AddressVersionV2
-	addr, err := s.NewAddr(ctx, &entities.NewAddressRequest{
-		GroupKey:       &groupKey,
+	req := &entities.NewAddressRequest{
+		AssetRef:       ref,
 		AddressVersion: &v2,
-	})
+	}
+
+	addr, err := s.NewAddr(ctx, req)
 	if err != nil {
 		return nil, wrapErr("NewReceiveAddress", err)
 	}
 
 	return addr, nil
+}
+
+// GetBalance returns the confirmed balance for the asset identified by ref.
+//
+// For fungible assets (group key), it returns the aggregate balance across
+// all tranches in the group. For collectibles (asset ID), it returns the
+// balance of the specific asset.
+func (s *Wallet) GetBalance(ctx context.Context,
+	ref entities.AssetRef) (uint64, error) {
+
+	resp, err := s.ListBalances(ctx, &entities.ListBalancesRequest{
+		AssetRef: &ref,
+	})
+	if err != nil {
+		return 0, wrapErr("GetBalance", err)
+	}
+
+	if balance, ok := resp.Balances[ref.String()]; ok {
+		return balance.Balance, nil
+	}
+
+	return 0, nil
 }
 
 // DeriveKeys derives a new script key and internal key for receiving assets.
@@ -127,8 +155,7 @@ func (s *Wallet) ImportProof(ctx context.Context,
 	// Step 3: Register the transfer using the last proof's details.
 	registered, err := s.RegisterTransfer(
 		ctx,
-		lastDecoded.AssetID,
-		lastDecoded.GroupKey,
+		lastDecoded.AssetRef,
 		lastDecoded.ScriptKey,
 		lastDecoded.Outpoint,
 	)

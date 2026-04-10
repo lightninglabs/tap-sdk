@@ -213,7 +213,7 @@ func unmarshalAssetGenesis(
 		FirstPrevOut: firstPrevOut,
 		Tag:          g.Name,
 		MetaHash:     metaHash,
-		AssetID:      assetID,
+		IssuanceID:   assetID,
 		OutputIndex:  g.OutputIndex,
 		Type:         parseAssetType(g.AssetType),
 	}, nil
@@ -287,6 +287,18 @@ func unmarshalAsset(a *jsonAsset) (*entities.Asset, error) {
 		}
 	}
 
+	asset.AssetRef = entities.AssetRefFromAsset(
+		asset.Genesis.IssuanceID,
+		func() *entities.PubKey {
+			if asset.GroupKey == nil {
+				return nil
+			}
+
+			rawKey := asset.GroupKey.RawKey
+			return &rawKey
+		}(),
+	)
+
 	return asset, nil
 }
 
@@ -347,24 +359,37 @@ func unmarshalAddr(a *jsonAddr) (*entities.Address, error) {
 	copy(addr.InternalKey[:], internalKeyBytes)
 	copy(addr.TaprootOutputKey[:], taprootOutputKeyBytes)
 
+	var assetID *entities.AssetID
 	assetIDBytes, err := parseHexBytes(a.AssetID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid asset ID: %w", err)
 	}
 
 	if len(assetIDBytes) == 32 {
-		copy(addr.AssetID[:], assetIDBytes)
+		var parsedAssetID entities.AssetID
+		copy(parsedAssetID[:], assetIDBytes)
+		assetID = &parsedAssetID
 	}
 
+	var groupKey *entities.PubKey
 	groupKeyBytes, err := parseHexBytes(a.GroupKey)
 	if err != nil {
 		return nil, fmt.Errorf("invalid group key: %w", err)
 	}
 
 	if len(groupKeyBytes) == 33 {
-		var gk entities.PubKey
-		copy(gk[:], groupKeyBytes)
-		addr.GroupKey = &gk
+		var parsedGroupKey entities.PubKey
+		copy(parsedGroupKey[:], groupKeyBytes)
+		groupKey = &parsedGroupKey
+	}
+
+	if assetID != nil || groupKey != nil {
+		addr.AssetRef, err = entities.AssetRefFromSpecifier(
+			assetID, groupKey,
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	tapscriptSibling, err := parseHexBytes(a.TapscriptSibling)
@@ -500,7 +525,7 @@ func unmarshalAssetTransfer(
 
 		inputs = append(inputs, entities.TransferInput{
 			AnchorPoint: anchorPoint,
-			AssetID:     assetID,
+			IssuanceID:  assetID,
 			ScriptKey:   scriptKey,
 			Amount:      amount,
 		})
@@ -543,74 +568,6 @@ func unmarshalAssetTransfer(
 		Label:                t.Label,
 		AnchorTx:             anchorTxBytes,
 	}, nil
-}
-
-// unmarshalAssetBalance converts a JSON balance to
-// entities.AssetBalance.
-func unmarshalAssetBalance(
-	b *jsonAssetBalance) (*entities.AssetBalance, error) {
-
-	if b == nil {
-		return nil, fmt.Errorf("nil asset balance")
-	}
-
-	genesis, err := unmarshalAssetGenesis(b.AssetGenesis)
-	if err != nil {
-		return nil, err
-	}
-
-	balance, err := parseUint64(b.Balance)
-	if err != nil {
-		return nil, fmt.Errorf("invalid balance: %w", err)
-	}
-
-	result := &entities.AssetBalance{
-		AssetGenesis: *genesis,
-		Balance:      balance,
-	}
-
-	groupKeyBytes, err := parseHexBytes(b.GroupKey)
-	if err != nil {
-		return nil, fmt.Errorf("invalid group key: %w", err)
-	}
-
-	if len(groupKeyBytes) == 33 {
-		var gk entities.PubKey
-		copy(gk[:], groupKeyBytes)
-		result.GroupKey = &gk
-	}
-
-	return result, nil
-}
-
-// unmarshalAssetGroupBalance converts a JSON group balance to
-// entities.AssetGroupBalance.
-func unmarshalAssetGroupBalance(
-	b *jsonAssetGroupBalance) (*entities.AssetGroupBalance, error) {
-
-	if b == nil {
-		return nil, fmt.Errorf("nil asset group balance")
-	}
-
-	balance, err := parseUint64(b.Balance)
-	if err != nil {
-		return nil, fmt.Errorf("invalid balance: %w", err)
-	}
-
-	result := &entities.AssetGroupBalance{Balance: balance}
-
-	groupKeyBytes, err := parseHexBytes(b.GroupKey)
-	if err != nil {
-		return nil, fmt.Errorf("invalid group key: %w", err)
-	}
-
-	if len(groupKeyBytes) == 33 {
-		var gk entities.PubKey
-		copy(gk[:], groupKeyBytes)
-		result.GroupKey = &gk
-	}
-
-	return result, nil
 }
 
 // unmarshalAddrEvent converts a JSON addr event to
@@ -1018,7 +975,8 @@ func unmarshalAssetHumanReadable(
 	}
 
 	return &entities.AssetHumanReadable{
-		ID:               assetID,
+		AssetRef:         entities.AssetRefFromAssetID(assetID),
+		IssuanceID:       assetID,
 		Amount:           amount,
 		LockTime:         a.LockTime,
 		RelativeLockTime: a.RelativeLockTime,
@@ -1095,11 +1053,11 @@ func unmarshalAssetBurn(
 	anchorTxid, _ := entities.ParseHash(txidBytes)
 
 	return &entities.AssetBurn{
-		Note:            b.Note,
-		AssetID:         assetID,
-		TweakedGroupKey: groupKey,
-		Amount:          amount,
-		AnchorTxid:      anchorTxid,
+		Note:       b.Note,
+		AssetRef:   entities.AssetRefFromAsset(assetID, groupKey),
+		IssuanceID: assetID,
+		Amount:     amount,
+		AnchorTxid: anchorTxid,
 	}, nil
 }
 
@@ -1182,9 +1140,10 @@ func unmarshalUniverseID(
 		return nil, fmt.Errorf("nil universe ID")
 	}
 
-	uniID := &entities.UniverseID{
-		ProofType: parseProofType(id.ProofType),
-	}
+	uniID := &entities.UniverseID{ProofType: parseProofType(id.ProofType)}
+
+	var assetID *entities.AssetID
+	var groupKey *entities.PubKey
 
 	if id.AssetID != "" {
 		assetIDBytes, err := parseHexBytes(id.AssetID)
@@ -1194,9 +1153,9 @@ func unmarshalUniverseID(
 		}
 
 		if len(assetIDBytes) == 32 {
-			var assetID entities.AssetID
-			copy(assetID[:], assetIDBytes)
-			uniID.AssetID = &assetID
+			var parsedAssetID entities.AssetID
+			copy(parsedAssetID[:], assetIDBytes)
+			assetID = &parsedAssetID
 		}
 	}
 
@@ -1208,10 +1167,20 @@ func unmarshalUniverseID(
 		}
 
 		if len(groupKeyBytes) == 33 {
-			var groupKey entities.PubKey
-			copy(groupKey[:], groupKeyBytes)
-			uniID.GroupKey = &groupKey
+			var parsedGroupKey entities.PubKey
+			copy(parsedGroupKey[:], groupKeyBytes)
+			groupKey = &parsedGroupKey
 		}
+	}
+
+	if assetID != nil || groupKey != nil {
+		assetRef, err := entities.AssetRefFromSpecifier(
+			assetID, groupKey,
+		)
+		if err != nil {
+			return nil, err
+		}
+		uniID.AssetRef = assetRef
 	}
 
 	return uniID, nil
@@ -1242,7 +1211,7 @@ func unmarshalUniverseRoot(
 	}
 
 	if len(r.AmountsByAssetID) > 0 {
-		root.AmountsByAssetID = make(map[string]uint64)
+		root.AmountsByIssuanceID = make(map[string]uint64)
 		for k, v := range r.AmountsByAssetID {
 			amount, err := parseUint64(v)
 			if err != nil {
@@ -1250,7 +1219,7 @@ func unmarshalUniverseRoot(
 					"invalid amount for %s: %w", k, err,
 				)
 			}
-			root.AmountsByAssetID[k] = amount
+			root.AmountsByIssuanceID[k] = amount
 		}
 	}
 
@@ -1498,7 +1467,8 @@ func unmarshalAssetStatsAsset(
 	}
 
 	return &entities.AssetStatsAsset{
-		AssetID:          assetID,
+		AssetRef:         entities.AssetRefFromAssetID(assetID),
+		IssuanceID:       assetID,
 		GenesisPoint:     a.GenesisPoint,
 		TotalSupply:      totalSupply,
 		AssetName:        a.AssetName,

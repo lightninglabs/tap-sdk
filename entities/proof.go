@@ -18,8 +18,12 @@ type DecodedProof struct {
 	// NumberOfProofs is the total number of proofs in the chain.
 	NumberOfProofs uint32
 
-	// AssetID is the 32-byte asset identifier.
-	AssetID AssetID
+	// AssetRef is the SDK's user-facing identifier for the asset.
+	AssetRef AssetRef
+
+	// IssuanceID is the 32-byte protocol-level identifier for the specific
+	// issuance/tranche described by the proof.
+	IssuanceID AssetID
 
 	// ScriptKey is the 33-byte script key.
 	ScriptKey PubKey
@@ -29,9 +33,6 @@ type DecodedProof struct {
 
 	// Outpoint is the output location in "txid:index" format.
 	Outpoint Outpoint
-
-	// GroupKey is the optional tweaked group key (if asset is grouped).
-	GroupKey *PubKey
 
 	// AltLeaves are auxiliary Taproot leaves committed alongside the asset.
 	// Each entry is the raw per-leaf TLV stream bytes (opaque).
@@ -60,8 +61,12 @@ type VerifyProofResponse struct {
 // importing a proof. This is returned when a receiver successfully imports
 // a proof from an interactive transfer.
 type RegisteredAsset struct {
-	// AssetID is the 32-byte asset identifier.
-	AssetID AssetID
+	// AssetRef is the SDK's user-facing identifier for the asset.
+	AssetRef AssetRef
+
+	// IssuanceID is the 32-byte protocol-level identifier for the specific
+	// issuance/tranche that was registered.
+	IssuanceID AssetID
 
 	// ScriptKey is the 33-byte script key for this asset.
 	ScriptKey PubKey
