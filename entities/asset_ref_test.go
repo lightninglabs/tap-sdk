@@ -41,8 +41,8 @@ func TestAssetRefFromGroupKey(t *testing.T) {
 
 	require.False(t, ref.IsZero())
 	require.NoError(t, ref.Validate())
-	require.True(t, ref.IsFungible())
-	require.False(t, ref.IsCollectible())
+	require.True(t, ref.IsGroupRef())
+	require.False(t, ref.IsAssetIDRef())
 
 	gotKey, ok := ref.GroupKey()
 	require.True(t, ok)
@@ -64,8 +64,8 @@ func TestAssetRefFromAssetID(t *testing.T) {
 
 	require.False(t, ref.IsZero())
 	require.NoError(t, ref.Validate())
-	require.True(t, ref.IsCollectible())
-	require.False(t, ref.IsFungible())
+	require.True(t, ref.IsAssetIDRef())
+	require.False(t, ref.IsGroupRef())
 
 	gotID, ok := ref.AssetID()
 	require.True(t, ok)

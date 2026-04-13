@@ -97,14 +97,14 @@ func (r AssetRef) Validate() error {
 	return err
 }
 
-// IsFungible returns true when the reference resolves to a group key.
-func (r AssetRef) IsFungible() bool {
+// IsGroupRef returns true when the reference encodes a group key.
+func (r AssetRef) IsGroupRef() bool {
 	kind, _, _, err := decodeAssetRefString(string(r))
 	return err == nil && kind == assetRefKindGroupKey
 }
 
-// IsCollectible returns true when the reference resolves to an asset ID.
-func (r AssetRef) IsCollectible() bool {
+// IsAssetIDRef returns true when the reference encodes an asset ID.
+func (r AssetRef) IsAssetIDRef() bool {
 	kind, _, _, err := decodeAssetRefString(string(r))
 	return err == nil && kind == assetRefKindAssetID
 }
