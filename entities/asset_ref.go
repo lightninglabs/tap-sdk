@@ -41,16 +41,13 @@ func AssetRefFromAssetID(assetID AssetID) AssetRef {
 	return encodeAssetRef(assetRefKindAssetID, assetID[:])
 }
 
-// AssetRefFromSpecifier creates an AssetRef from exactly one protocol
-// identifier.
+// AssetRefFromSpecifier creates an AssetRef from protocol identifiers.
+// When both are present, the group key takes precedence as the semantic
+// asset identity.
 func AssetRefFromSpecifier(assetID *AssetID, groupKey *PubKey) (AssetRef,
 	error) {
 
 	switch {
-	case assetID != nil && groupKey != nil:
-		return "", fmt.Errorf("asset ref requires exactly one of " +
-			"asset ID or group key")
-
 	case groupKey != nil:
 		return AssetRefFromGroupKey(*groupKey), nil
 

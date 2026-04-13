@@ -549,18 +549,32 @@ func (w *walletClient) BurnAsset(ctx context.Context,
 	req *entities.BurnAssetRequest) (
 	*entities.BurnAssetResponse, error) {
 
+	if req.AssetRef.IsZero() {
+		return nil, fmt.Errorf("asset ref is required")
+	}
+
+	assetID, groupKey, err := req.AssetRef.Specifier()
+	if err != nil {
+		return nil, err
+	}
+
 	body := map[string]any{
 		"amount_to_burn":    fmt.Sprintf("%d", req.AmountToBurn),
 		"confirmation_text": req.ConfirmationText,
 	}
 
-	issuanceID, err := w.resolveIssuanceID(
-		ctx, req.AssetRef, req.AmountToBurn,
-	)
-	if err != nil {
-		return nil, err
+	specifier := map[string]string{}
+	switch {
+	case groupKey != nil:
+		specifier["group_key_str"] = hex.EncodeToString(
+			(*groupKey)[:],
+		)
+	case assetID != nil:
+		specifier["asset_id_str"] = hex.EncodeToString(
+			(*assetID)[:],
+		)
 	}
-	body["asset_id_str"] = hex.EncodeToString(issuanceID[:])
+	body["asset_specifier"] = specifier
 
 	if req.Note != "" {
 		body["note"] = req.Note
@@ -642,14 +656,20 @@ func (w *walletClient) FetchAssetMeta(ctx context.Context,
 	var path string
 	switch {
 	case req.AssetRef != nil:
-		issuanceID, err := w.resolveIssuanceID(ctx, *req.AssetRef, 0)
+		assetID, _, err := req.AssetRef.Specifier()
 		if err != nil {
 			return nil, err
 		}
 
+		if assetID == nil {
+			return nil, fmt.Errorf("metadata lookup " +
+				"requires an asset-ID ref; tapd does " +
+				"not support group-key metadata lookup")
+		}
+
 		path = fmt.Sprintf(
 			"/v1/taproot-assets/assets/meta/asset-id/%s",
-			hex.EncodeToString(issuanceID[:]),
+			hex.EncodeToString((*assetID)[:]),
 		)
 
 	case req.MetaHash != nil:
@@ -695,50 +715,6 @@ func (w *walletClient) VerifyProof(ctx context.Context,
 	}
 
 	return unmarshalVerifyProofResponse(&resp)
-}
-
-func (w *walletClient) resolveIssuanceID(ctx context.Context,
-	assetRef entities.AssetRef, minAmount uint64) (entities.AssetID, error) {
-
-	if assetRef.IsZero() {
-		return entities.AssetID{}, fmt.Errorf("asset ref is required")
-	}
-
-	if assetID, ok := assetRef.AssetID(); ok {
-		return assetID, nil
-	}
-
-	assets, err := w.ListAssets(ctx, &entities.ListAssetsRequest{
-		AssetRef:      &assetRef,
-		IncludeLeased: true,
-	})
-	if err != nil {
-		return entities.AssetID{}, err
-	}
-
-	if len(assets) == 0 {
-		return entities.AssetID{}, fmt.Errorf("asset %s not found", assetRef)
-	}
-
-	var selected *entities.Asset
-	for _, asset := range assets {
-		if asset.Amount >= minAmount {
-			return asset.Genesis.IssuanceID, nil
-		}
-
-		if selected == nil || asset.Amount > selected.Amount {
-			selected = asset
-		}
-	}
-
-	if minAmount > 0 {
-		return entities.AssetID{}, fmt.Errorf(
-			"asset %s has no single issuance with at least %d units",
-			assetRef, minAmount,
-		)
-	}
-
-	return selected.Genesis.IssuanceID, nil
 }
 
 // marshalAssetVersionJSON converts an AssetVersion to a proto JSON

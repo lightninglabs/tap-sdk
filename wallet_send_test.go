@@ -282,17 +282,6 @@ func (m *mockClient) CreateIssuance(ctx context.Context,
 	panic("CreateIssuance not expected in unit tests")
 }
 
-func (m *mockClient) MintAsset(ctx context.Context,
-	req *entities.MintAssetRequest) (*entities.MintingBatch, error) {
-
-	args := m.Called(ctx, req)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-
-	return args.Get(0).(*entities.MintingBatch), args.Error(1)
-}
-
 func (m *mockClient) FundBatch(ctx context.Context,
 	req *entities.FundBatchRequest) (*entities.VerboseMintingBatch,
 	error) {

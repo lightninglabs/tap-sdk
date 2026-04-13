@@ -40,10 +40,13 @@ func (u *universeClient) InsertProof(ctx context.Context, rawProof []byte,
 
 	rpcCtx = u.universeMac.WithMacaroonAuth(rpcCtx)
 
-	uniID := marshalUniverseID(&entities.UniverseID{
+	uniID, err := marshalUniverseID(&entities.UniverseID{
 		AssetRef:  decoded.AssetRef,
 		ProofType: entities.ProofTypeTransfer,
 	})
+	if err != nil {
+		return err
+	}
 	if decoded.IsIssuance {
 		uniID.ProofType = universerpc.ProofType_PROOF_TYPE_ISSUANCE
 	}
@@ -125,8 +128,13 @@ func (u *universeClient) QueryAssetRoots(ctx context.Context,
 
 	rpcCtx = u.universeMac.WithMacaroonAuth(rpcCtx)
 
+	rpcID, err := marshalUniverseID(id)
+	if err != nil {
+		return nil, err
+	}
+
 	rpcReq := &universerpc.AssetRootQuery{
-		Id: marshalUniverseID(id),
+		Id: rpcID,
 	}
 
 	resp, err := u.client.QueryAssetRoots(rpcCtx, rpcReq)
@@ -164,11 +172,16 @@ func (u *universeClient) DeleteAssetRoot(ctx context.Context,
 
 	rpcCtx = u.universeMac.WithMacaroonAuth(rpcCtx)
 
-	rpcReq := &universerpc.DeleteRootQuery{
-		Id: marshalUniverseID(id),
+	rpcID, err := marshalUniverseID(id)
+	if err != nil {
+		return err
 	}
 
-	_, err := u.client.DeleteAssetRoot(rpcCtx, rpcReq)
+	rpcReq := &universerpc.DeleteRootQuery{
+		Id: rpcID,
+	}
+
+	_, err = u.client.DeleteAssetRoot(rpcCtx, rpcReq)
 	return err
 }
 
@@ -182,8 +195,13 @@ func (u *universeClient) AssetLeafKeys(ctx context.Context,
 
 	rpcCtx = u.universeMac.WithMacaroonAuth(rpcCtx)
 
+	rpcID, err := marshalUniverseID(&req.ID)
+	if err != nil {
+		return nil, err
+	}
+
 	rpcReq := &universerpc.AssetLeafKeysRequest{
-		Id: marshalUniverseID(&req.ID),
+		Id: rpcID,
 	}
 	if req != nil {
 		rpcReq.Offset = req.Offset
@@ -217,7 +235,12 @@ func (u *universeClient) AssetLeaves(ctx context.Context,
 
 	rpcCtx = u.universeMac.WithMacaroonAuth(rpcCtx)
 
-	resp, err := u.client.AssetLeaves(rpcCtx, marshalUniverseID(id))
+	rpcID, err := marshalUniverseID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := u.client.AssetLeaves(rpcCtx, rpcID)
 	if err != nil {
 		return nil, err
 	}
@@ -243,7 +266,10 @@ func (u *universeClient) QueryProof(ctx context.Context,
 
 	rpcCtx = u.universeMac.WithMacaroonAuth(rpcCtx)
 
-	rpcKey := marshalUniverseKey(key)
+	rpcKey, err := marshalUniverseKey(key)
+	if err != nil {
+		return nil, err
+	}
 
 	resp, err := u.client.QueryProof(rpcCtx, rpcKey)
 	if err != nil {
@@ -470,10 +496,15 @@ func (u *universeClient) SetFederationSyncConfig(ctx context.Context,
 		len(asset),
 	)
 	for _, a := range asset {
+		rpcID, err := marshalUniverseID(&a.ID)
+		if err != nil {
+			return err
+		}
+
 		rpcAsset = append(
 			rpcAsset,
 			&universerpc.AssetFederationSyncConfig{
-				Id:              marshalUniverseID(&a.ID),
+				Id:              rpcID,
 				AllowSyncInsert: a.AllowSyncInsert,
 				AllowSyncExport: a.AllowSyncExport,
 			},
@@ -501,7 +532,12 @@ func (u *universeClient) QueryFederationSyncConfig(ctx context.Context,
 
 	rpcIDs := make([]*universerpc.ID, 0, len(ids))
 	for i := range ids {
-		rpcIDs = append(rpcIDs, marshalUniverseID(&ids[i]))
+		rpcID, err := marshalUniverseID(&ids[i])
+		if err != nil {
+			return nil, err
+		}
+
+		rpcIDs = append(rpcIDs, rpcID)
 	}
 
 	resp, err := u.client.QueryFederationSyncConfig(
@@ -583,11 +619,16 @@ func (u *universeClient) SyncUniverse(ctx context.Context,
 		len(req.SyncTargets),
 	)
 	for i := range req.SyncTargets {
+		rpcID, err := marshalUniverseID(
+			&req.SyncTargets[i].ID,
+		)
+		if err != nil {
+			return nil, err
+		}
+
 		rpcTargets = append(
 			rpcTargets, &universerpc.SyncTarget{
-				Id: marshalUniverseID(
-					&req.SyncTargets[i].ID,
-				),
+				Id: rpcID,
 			},
 		)
 	}
@@ -621,9 +662,11 @@ func (u *universeClient) SyncUniverse(ctx context.Context,
 }
 
 // marshalUniverseID converts an SDK UniverseID to the RPC type.
-func marshalUniverseID(id *entities.UniverseID) *universerpc.ID {
+func marshalUniverseID(
+	id *entities.UniverseID) (*universerpc.ID, error) {
+
 	if id == nil {
-		return nil
+		return nil, fmt.Errorf("nil universe ID")
 	}
 
 	rpcID := &universerpc.ID{
@@ -632,7 +675,8 @@ func marshalUniverseID(id *entities.UniverseID) *universerpc.ID {
 
 	assetID, groupKey, err := id.AssetRef.Specifier()
 	if err != nil {
-		return rpcID
+		return nil, fmt.Errorf("invalid universe asset "+
+			"ref: %w", err)
 	}
 
 	switch {
@@ -646,7 +690,7 @@ func marshalUniverseID(id *entities.UniverseID) *universerpc.ID {
 		}
 	}
 
-	return rpcID
+	return rpcID, nil
 }
 
 // unmarshalUniverseID converts an RPC universe ID to the SDK type.
@@ -880,10 +924,15 @@ func unmarshalAssetLeaf(
 
 // marshalUniverseKey converts an SDK UniverseKey to the RPC type.
 func marshalUniverseKey(
-	key *entities.UniverseKey) *universerpc.UniverseKey {
+	key *entities.UniverseKey) (*universerpc.UniverseKey, error) {
+
+	rpcID, err := marshalUniverseID(&key.ID)
+	if err != nil {
+		return nil, err
+	}
 
 	rpcKey := &universerpc.UniverseKey{
-		Id: marshalUniverseID(&key.ID),
+		Id: rpcID,
 		LeafKey: &universerpc.AssetKey{
 			Outpoint: &universerpc.AssetKey_OpStr{
 				OpStr: key.LeafKey.Outpoint.String(),
@@ -894,7 +943,7 @@ func marshalUniverseKey(
 		},
 	}
 
-	return rpcKey
+	return rpcKey, nil
 }
 
 // unmarshalAssetProofResponse converts an RPC AssetProofResponse to the
@@ -1003,9 +1052,18 @@ func marshalAssetStatsQuery(
 
 	if req.AssetRefFilter != nil {
 		assetID, _, err := req.AssetRefFilter.Specifier()
-		if err == nil && assetID != nil {
+		if err != nil {
+			return nil
+		}
+
+		if assetID != nil {
 			rpcReq.AssetIdFilter = (*assetID)[:]
 		}
+
+		// NOTE: tapd's QueryAssetStats does not support
+		// group-key filtering. A group-key AssetRef is
+		// silently ignored here; the caller should filter
+		// client-side or use an asset-ID ref.
 	}
 
 	return rpcReq

@@ -1,7 +1,6 @@
 package grpc
 
 import (
-	"context"
 	"testing"
 
 	"github.com/lightninglabs/tap-sdk/entities"
@@ -510,7 +509,7 @@ func TestMarshalBurnAssetRequest(t *testing.T) {
 		validate func(*testing.T, *taprpc.BurnAssetRequest)
 	}{
 		{
-			name: "burn by asset ref",
+			name: "burn by asset ID ref",
 			req: &entities.BurnAssetRequest{
 				AssetRef:         entities.AssetRefFromAssetID(assetID),
 				AmountToBurn:     100,
@@ -520,17 +519,39 @@ func TestMarshalBurnAssetRequest(t *testing.T) {
 			validate: func(t *testing.T,
 				rpcReq *taprpc.BurnAssetRequest) {
 
+				require.NotNil(t, rpcReq.AssetSpecifier)
 				require.Equal(
 					t, testAssetID,
-					rpcReq.GetAssetId(),
+					rpcReq.AssetSpecifier.GetAssetId(),
 				)
 				require.Equal(
 					t, uint64(100),
 					rpcReq.AmountToBurn,
 				)
+			},
+		},
+		{
+			name: "burn by group key ref",
+			req: &entities.BurnAssetRequest{
+				AssetRef: func() entities.AssetRef {
+					var gk entities.PubKey
+					copy(gk[:], testPubKey)
+					return entities.AssetRefFromGroupKey(gk)
+				}(),
+				AmountToBurn:     200,
+				ConfirmationText: "assets will be destroyed",
+			},
+			validate: func(t *testing.T,
+				rpcReq *taprpc.BurnAssetRequest) {
+
+				require.NotNil(t, rpcReq.AssetSpecifier)
 				require.Equal(
-					t, "assets will be destroyed",
-					rpcReq.ConfirmationText,
+					t, testPubKey,
+					rpcReq.AssetSpecifier.GetGroupKey(),
+				)
+				require.Equal(
+					t, uint64(200),
+					rpcReq.AmountToBurn,
 				)
 			},
 		},
@@ -544,12 +565,9 @@ func TestMarshalBurnAssetRequest(t *testing.T) {
 		},
 	}
 
-	client := &walletClient{}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			rpcReq, err := client.marshalBurnAssetRequest(
-				context.Background(), tc.req,
-			)
+			rpcReq, err := marshalBurnAssetRequest(tc.req)
 			if tc.wantErr != "" {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.wantErr)
@@ -607,12 +625,9 @@ func TestMarshalFetchAssetMetaRequest(t *testing.T) {
 		},
 	}
 
-	client := &walletClient{}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			rpcReq, err := client.marshalFetchAssetMetaRequest(
-				context.Background(), tc.req,
-			)
+			rpcReq, err := marshalFetchAssetMetaRequest(tc.req)
 			require.NoError(t, err)
 			tc.validate(t, rpcReq)
 		})
