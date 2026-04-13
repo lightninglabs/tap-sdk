@@ -105,43 +105,46 @@ func (w *walletClient) ListBalances(ctx context.Context,
 	req *entities.ListBalancesRequest) (
 	*entities.ListBalancesResponse, error) {
 
-	params := url.Values{}
+	// Always request per-asset-id balances so we get genesis
+	// info and group keys. The SDK re-aggregates entries with
+	// the same group key into AssetRef-keyed balances.
+	params := url.Values{
+		"asset_id": {"true"},
+	}
 	if req != nil {
 		if req.IncludeLeased {
 			params.Set("include_leased", "true")
 		}
+
+		if req.AssetRef != nil {
+			assetID, groupKey, _ := req.AssetRef.Specifier()
+
+			switch {
+			case groupKey != nil:
+				params.Set(
+					"group_key_filter",
+					hex.EncodeToString(
+						(*groupKey)[:],
+					),
+				)
+			case assetID != nil:
+				params.Set(
+					"asset_filter",
+					hex.EncodeToString(
+						(*assetID)[:],
+					),
+				)
+			}
+		}
 	}
 
-	path := "/v1/taproot-assets/assets/balance"
-	if len(params) > 0 {
-		path += "?" + params.Encode()
-	}
+	path := "/v1/taproot-assets/assets/balance?" +
+		params.Encode()
 
 	var resp jsonListBalancesResponse
 	err := w.transport.doGet(
 		ctx, path, macaroon.AdminServiceMac, &resp,
 	)
-	if err != nil {
-		return nil, err
-	}
-
-	assets, err := w.ListAssets(ctx, &entities.ListAssetsRequest{
-		IncludeLeased: req != nil && req.IncludeLeased,
-		AssetRef: func() *entities.AssetRef {
-			if req == nil {
-				return nil
-			}
-
-			return req.AssetRef
-		}(),
-		ScriptKeyType: func() *entities.ScriptKeyTypeQuery {
-			if req == nil {
-				return nil
-			}
-
-			return req.ScriptKeyType
-		}(),
-	})
 	if err != nil {
 		return nil, err
 	}
@@ -153,24 +156,62 @@ func (w *walletClient) ListBalances(ctx context.Context,
 		UnconfirmedTransfers: resp.UnconfirmedTransfers,
 	}
 
-	for _, asset := range assets {
-		key := asset.AssetRef.String()
+	for _, ab := range resp.AssetBalances {
+		genesis, err := unmarshalAssetGenesis(
+			ab.AssetGenesis,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("balance "+
+				"genesis: %w", err)
+		}
+
+		var (
+			ref      entities.AssetRef
+			groupKey *entities.PubKey
+		)
+
+		if ab.GroupKey != "" {
+			gkBytes, err := parseHexBytes(
+				ab.GroupKey,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("balance "+
+					"group key: %w", err)
+			}
+
+			gk, err := entities.ParsePubKey(gkBytes)
+			if err != nil {
+				return nil, fmt.Errorf("balance "+
+					"group key: %w", err)
+			}
+
+			ref = entities.AssetRefFromGroupKey(gk)
+			groupKey = &gk
+		} else {
+			ref = entities.AssetRefFromAssetID(
+				genesis.IssuanceID,
+			)
+		}
+
+		bal, err := parseUint64(ab.Balance)
+		if err != nil {
+			return nil, fmt.Errorf("balance "+
+				"amount: %w", err)
+		}
+
+		key := ref.String()
 		balance, ok := result.Balances[key]
 		if !ok {
 			balance = &entities.AssetBalance{
-				AssetRef:     asset.AssetRef,
-				AssetGenesis: asset.Genesis,
-			}
-
-			if asset.GroupKey != nil {
-				groupKey := asset.GroupKey.RawKey
-				balance.GroupKey = &groupKey
+				AssetRef:     ref,
+				AssetGenesis: *genesis,
+				GroupKey:     groupKey,
 			}
 
 			result.Balances[key] = balance
 		}
 
-		balance.Balance += asset.Amount
+		balance.Balance += bal
 	}
 
 	return result, nil
