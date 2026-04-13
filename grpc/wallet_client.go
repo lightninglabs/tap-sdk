@@ -125,8 +125,8 @@ func (s *walletClient) ListAssets(ctx context.Context,
 }
 
 func (s *walletClient) ListBalances(ctx context.Context,
-	req *entities.ListBalancesRequest) (*entities.ListBalancesResponse,
-	error) {
+	req *entities.ListBalancesRequest) (
+	*entities.ListBalancesResponse, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
@@ -140,27 +140,6 @@ func (s *walletClient) ListBalances(ctx context.Context,
 		return nil, err
 	}
 
-	assets, err := s.ListAssets(ctx, &entities.ListAssetsRequest{
-		IncludeLeased: req != nil && req.IncludeLeased,
-		AssetRef: func() *entities.AssetRef {
-			if req == nil {
-				return nil
-			}
-
-			return req.AssetRef
-		}(),
-		ScriptKeyType: func() *entities.ScriptKeyTypeQuery {
-			if req == nil {
-				return nil
-			}
-
-			return req.ScriptKeyType
-		}(),
-	})
-	if err != nil {
-		return nil, err
-	}
-
 	result := &entities.ListBalancesResponse{
 		Balances: make(
 			map[string]*entities.AssetBalance,
@@ -168,24 +147,50 @@ func (s *walletClient) ListBalances(ctx context.Context,
 		UnconfirmedTransfers: rawResp.UnconfirmedTransfers,
 	}
 
-	for _, asset := range assets {
-		key := asset.AssetRef.String()
+	for _, ab := range rawResp.AssetBalances {
+		genesis, err := unmarshalAssetGenesis(
+			ab.AssetGenesis,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("balance genesis: "+
+				"%w", err)
+		}
+
+		var (
+			ref      entities.AssetRef
+			groupKey *entities.PubKey
+		)
+
+		if len(ab.GroupKey) > 0 {
+			gk, err := entities.ParsePubKey(
+				ab.GroupKey,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("balance "+
+					"group key: %w", err)
+			}
+
+			ref = entities.AssetRefFromGroupKey(gk)
+			groupKey = &gk
+		} else {
+			ref = entities.AssetRefFromAssetID(
+				genesis.IssuanceID,
+			)
+		}
+
+		key := ref.String()
 		balance, ok := result.Balances[key]
 		if !ok {
 			balance = &entities.AssetBalance{
-				AssetRef:     asset.AssetRef,
-				AssetGenesis: asset.Genesis,
-			}
-
-			if asset.GroupKey != nil {
-				groupKey := asset.GroupKey.RawKey
-				balance.GroupKey = &groupKey
+				AssetRef:     ref,
+				AssetGenesis: *genesis,
+				GroupKey:     groupKey,
 			}
 
 			result.Balances[key] = balance
 		}
 
-		balance.Balance += asset.Amount
+		balance.Balance += ab.Balance
 	}
 
 	return result, nil
@@ -565,13 +570,34 @@ func (s *walletClient) AddrReceives(ctx context.Context,
 func marshalListBalancesRequest(
 	req *entities.ListBalancesRequest) *taprpc.ListBalancesRequest {
 
-	rpcReq := &taprpc.ListBalancesRequest{}
+	// Always group by asset_id so we get per-tranche balances
+	// with genesis info and group keys. The SDK re-aggregates
+	// entries with the same group key into AssetRef-keyed
+	// balances.
+	rpcReq := &taprpc.ListBalancesRequest{
+		GroupBy: &taprpc.ListBalancesRequest_AssetId{
+			AssetId: true,
+		},
+	}
 	if req == nil {
 		return rpcReq
 	}
 
 	rpcReq.IncludeLeased = req.IncludeLeased
-	rpcReq.ScriptKeyType = marshalScriptKeyTypeQuery(req.ScriptKeyType)
+	rpcReq.ScriptKeyType = marshalScriptKeyTypeQuery(
+		req.ScriptKeyType,
+	)
+
+	if req.AssetRef != nil {
+		assetID, groupKey, _ := req.AssetRef.Specifier()
+
+		switch {
+		case groupKey != nil:
+			rpcReq.GroupKeyFilter = (*groupKey)[:]
+		case assetID != nil:
+			rpcReq.AssetFilter = (*assetID)[:]
+		}
+	}
 
 	return rpcReq
 }

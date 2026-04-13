@@ -12,12 +12,13 @@ const zeroGenesisPoint = "00000000000000000000000000000000" +
 	"00000000000000000000000000000000:1"
 
 func TestMarshalListBalancesRequest(t *testing.T) {
-	assetRef := func() *entities.AssetRef {
-		var id entities.AssetID
-		copy(id[:], testAssetID)
-		ref := entities.AssetRefFromAssetID(id)
-		return &ref
-	}()
+	var assetID entities.AssetID
+	copy(assetID[:], testAssetID)
+	assetIDRef := entities.AssetRefFromAssetID(assetID)
+
+	var groupPubKey entities.PubKey
+	copy(groupPubKey[:], testPubKey)
+	groupKeyRef := entities.AssetRefFromGroupKey(groupPubKey)
 
 	explicitType := entities.ScriptKeyTypeBurn
 
@@ -27,20 +28,60 @@ func TestMarshalListBalancesRequest(t *testing.T) {
 		validate func(*testing.T, *taprpc.ListBalancesRequest)
 	}{
 		{
-			name: "nil request leaves raw filter fields unset",
+			name: "nil request groups by asset_id",
 			req:  nil,
 			validate: func(t *testing.T,
 				rpcReq *taprpc.ListBalancesRequest) {
 
+				require.True(
+					t, rpcReq.GetAssetId(),
+				)
 				require.Empty(t, rpcReq.AssetFilter)
 				require.Empty(t, rpcReq.GroupKeyFilter)
 				require.Nil(t, rpcReq.ScriptKeyType)
 			},
 		},
 		{
-			name: "semantic balance query with explicit type",
+			name: "asset ID ref sets asset filter",
 			req: &entities.ListBalancesRequest{
-				AssetRef:      assetRef,
+				AssetRef: &assetIDRef,
+			},
+			validate: func(t *testing.T,
+				rpcReq *taprpc.ListBalancesRequest) {
+
+				require.True(
+					t, rpcReq.GetAssetId(),
+				)
+				require.Equal(
+					t, assetID[:],
+					rpcReq.AssetFilter,
+				)
+				require.Empty(
+					t, rpcReq.GroupKeyFilter,
+				)
+			},
+		},
+		{
+			name: "group key ref sets group key filter",
+			req: &entities.ListBalancesRequest{
+				AssetRef: &groupKeyRef,
+			},
+			validate: func(t *testing.T,
+				rpcReq *taprpc.ListBalancesRequest) {
+
+				require.True(
+					t, rpcReq.GetAssetId(),
+				)
+				require.Empty(t, rpcReq.AssetFilter)
+				require.Equal(
+					t, groupPubKey[:],
+					rpcReq.GroupKeyFilter,
+				)
+			},
+		},
+		{
+			name: "explicit script key type",
+			req: &entities.ListBalancesRequest{
 				IncludeLeased: true,
 				ScriptKeyType: &entities.ScriptKeyTypeQuery{
 					ExplicitType: &explicitType,
@@ -49,10 +90,10 @@ func TestMarshalListBalancesRequest(t *testing.T) {
 			validate: func(t *testing.T,
 				rpcReq *taprpc.ListBalancesRequest) {
 
-				require.Empty(t, rpcReq.AssetFilter)
-				require.Empty(t, rpcReq.GroupKeyFilter)
 				require.True(t, rpcReq.IncludeLeased)
-				require.NotNil(t, rpcReq.ScriptKeyType)
+				require.NotNil(
+					t, rpcReq.ScriptKeyType,
+				)
 				require.Equal(
 					t,
 					taprpc.ScriptKeyType_SCRIPT_KEY_BURN,
@@ -61,7 +102,7 @@ func TestMarshalListBalancesRequest(t *testing.T) {
 			},
 		},
 		{
-			name: "semantic balance query with all types",
+			name: "all script key types",
 			req: &entities.ListBalancesRequest{
 				ScriptKeyType: &entities.ScriptKeyTypeQuery{
 					AllTypes: true,
@@ -70,10 +111,13 @@ func TestMarshalListBalancesRequest(t *testing.T) {
 			validate: func(t *testing.T,
 				rpcReq *taprpc.ListBalancesRequest) {
 
-				require.Empty(t, rpcReq.AssetFilter)
-				require.Empty(t, rpcReq.GroupKeyFilter)
-				require.NotNil(t, rpcReq.ScriptKeyType)
-				require.True(t, rpcReq.ScriptKeyType.GetAllTypes())
+				require.NotNil(
+					t, rpcReq.ScriptKeyType,
+				)
+				require.True(
+					t,
+					rpcReq.ScriptKeyType.GetAllTypes(),
+				)
 			},
 		},
 	}
