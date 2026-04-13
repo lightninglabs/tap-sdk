@@ -16,46 +16,49 @@ func TestNewReceiveAddress_UsesGroupKeyAndV2(t *testing.T) {
 	ctx := context.Background()
 
 	groupKey := entities.PubKey{2, 1, 2, 3}
+	ref := entities.AssetRefFromGroupKey(groupKey)
 	expectedAddr := &entities.Address{
 		Encoded:        "taprt1qqtestaddress",
-		GroupKey:       &groupKey,
+		AssetRef:       ref,
 		AddressVersion: entities.AddressVersionV2,
 	}
 
 	mc.On("NewAddr", ctx, mock.MatchedBy(
 		func(req *entities.NewAddressRequest) bool {
-			if req == nil || req.GroupKey == nil ||
+			if req == nil ||
 				req.AddressVersion == nil {
 
 				return false
 			}
 
-			return req.AssetID == nil &&
+			return req.AssetRef == ref &&
 				req.Amount == 0 &&
-				*req.GroupKey == groupKey &&
 				*req.AddressVersion ==
 					entities.AddressVersionV2
 		},
 	)).Return(expectedAddr, nil)
 
-	addr, err := w.NewReceiveAddress(ctx, groupKey)
+	addr, err := w.NewReceiveAddress(ctx, ref)
 	require.NoError(t, err)
 	require.Equal(t, expectedAddr, addr)
 
 	mc.AssertExpectations(t)
 }
 
-func TestNewReceiveAddress_Error(t *testing.T) {
+func TestNewReceiveAddress_RPCError(t *testing.T) {
 	mc := new(mockClient)
 	w := NewWallet(mc, entities.NetworkRegtest)
 	ctx := context.Background()
 
 	groupKey := entities.PubKey{2, 9, 9, 9}
+	ref := entities.AssetRefFromGroupKey(groupKey)
 	expectedErr := errors.New("new address failed")
 
-	mc.On("NewAddr", ctx, mock.Anything).Return(nil, expectedErr)
+	mc.On("NewAddr", ctx, mock.Anything).Return(
+		nil, expectedErr,
+	)
 
-	_, err := w.NewReceiveAddress(ctx, groupKey)
+	_, err := w.NewReceiveAddress(ctx, ref)
 	require.Error(t, err)
 	require.ErrorIs(t, err, expectedErr)
 
@@ -120,30 +123,42 @@ func TestDeriveKeys(t *testing.T) {
 				tc.scriptKey, tc.scriptErr,
 			)
 			if tc.scriptErr == nil {
-				mc.On("DeriveInternalKey", ctx).Return(
+				mc.On(
+					"DeriveInternalKey", ctx,
+				).Return(
 					tc.internalKey, tc.internalErr,
 				)
 			}
 
 			derived, err := w.DeriveKeys(ctx)
-			if tc.scriptErr != nil || tc.internalErr != nil {
+			if tc.scriptErr != nil ||
+				tc.internalErr != nil {
+
 				require.Error(t, err)
 
 				var sdkErr *Error
 				require.ErrorAs(t, err, &sdkErr)
-				require.Equal(t, "DeriveKeys", sdkErr.Op)
+				require.Equal(
+					t, "DeriveKeys", sdkErr.Op,
+				)
 
 				if tc.scriptErr != nil {
-					require.ErrorIs(t, err, tc.scriptErr)
+					require.ErrorIs(
+						t, err, tc.scriptErr,
+					)
 				} else {
-					require.ErrorIs(t, err, tc.internalErr)
+					require.ErrorIs(
+						t, err, tc.internalErr,
+					)
 				}
 			} else {
 				require.NoError(t, err)
-				require.Equal(t, &entities.DerivedKeys{
-					ScriptKey:   *scriptKey,
-					InternalKey: *internalKey,
-				}, derived)
+				require.Equal(
+					t, &entities.DerivedKeys{
+						ScriptKey:   *scriptKey,
+						InternalKey: *internalKey,
+					}, derived,
+				)
 			}
 
 			mc.AssertExpectations(t)
