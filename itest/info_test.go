@@ -6,36 +6,34 @@ import (
 	"context"
 	"testing"
 
+	tapsdk "github.com/lightninglabs/tap-sdk"
+	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/require"
 )
 
-// TestGetInfo verifies that we can connect to both tapd instances and
-// retrieve valid node information.
+// TestGetInfo verifies that we can connect to both tapd instances and retrieve
+// valid node information.
 func TestGetInfo(t *testing.T) {
 	h := NewTestHarness(t)
 	ctx := context.Background()
 
-	// Alice's tapd should respond with valid info.
-	aliceInfo, err := h.AliceClient.GetInfo(ctx)
-	require.NoError(t, err)
-	require.NotEmpty(t, aliceInfo.Version)
-	require.Equal(t, "regtest", aliceInfo.Network)
-	require.NotEmpty(t, aliceInfo.LndVersion)
+	assertNode := func(name string, client tapsdk.Client) *entities.Info {
+		t.Helper()
 
-	t.Logf("Alice tapd: version=%s, lnd=%s, block=%d",
-		aliceInfo.Version, aliceInfo.LndVersion,
-		aliceInfo.BlockHeight)
+		info, err := client.GetInfo(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, info.Version)
+		require.Equal(t, "regtest", info.Network)
+		require.NotEmpty(t, info.LndVersion)
 
-	// Bob's tapd should respond with valid info.
-	bobInfo, err := h.BobClient.GetInfo(ctx)
-	require.NoError(t, err)
-	require.NotEmpty(t, bobInfo.Version)
-	require.Equal(t, "regtest", bobInfo.Network)
+		t.Logf("%s tapd: version=%s, lnd=%s, block=%d",
+			name, info.Version, info.LndVersion, info.BlockHeight)
 
-	t.Logf("Bob tapd: version=%s, lnd=%s, block=%d",
-		bobInfo.Version, bobInfo.LndVersion,
-		bobInfo.BlockHeight)
+		return info
+	}
 
-	// Both nodes should see the same block height.
+	aliceInfo := assertNode("Alice", h.AliceClient)
+	bobInfo := assertNode("Bob", h.BobClient)
+
 	require.Equal(t, aliceInfo.BlockHeight, bobInfo.BlockHeight)
 }
