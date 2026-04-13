@@ -55,23 +55,6 @@ type PendingMintAsset struct {
 	ScriptKey *ScriptKey
 }
 
-// MintAsset describes a new asset to stage in a minting batch.
-type MintAsset struct {
-	PendingMintAsset
-
-	// GroupedAsset allows minting into an existing group.
-	GroupedAsset bool
-
-	// DecimalDisplay is the wallet display precision for the asset.
-	DecimalDisplay uint32
-
-	// ExternalGroupKey enables external signing for group issuance.
-	ExternalGroupKey *ExternalKey
-
-	// EnableSupplyCommitments enables supply commitment support.
-	EnableSupplyCommitments bool
-}
-
 // BatchState is the lifecycle state of a minting batch.
 type BatchState uint8
 
@@ -347,18 +330,6 @@ type CreateIssuance struct {
 type CreateIssuanceRequest struct {
 	// Issuance is the issuance to stage.
 	Issuance *CreateIssuance
-
-	// ShortResponse asks the daemon to omit existing batch assets.
-	ShortResponse bool
-}
-
-// MintAssetRequest adds an asset to the pending mint batch.
-//
-// Deprecated: prefer CreateAssetRequest or CreateIssuanceRequest depending on
-// whether the caller is defining a new asset or extending an existing one.
-type MintAssetRequest struct {
-	// Asset is the asset to add to the batch.
-	Asset *MintAsset
 
 	// ShortResponse asks the daemon to omit existing batch assets.
 	ShortResponse bool

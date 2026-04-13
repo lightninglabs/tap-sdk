@@ -147,7 +147,9 @@ func (w *walletClient) ListBalances(ctx context.Context,
 	}
 
 	result := &entities.ListBalancesResponse{
-		Balances:             make(map[string]*entities.AssetBalance),
+		Balances: make(
+			map[string]*entities.AssetBalance,
+		),
 		UnconfirmedTransfers: resp.UnconfirmedTransfers,
 	}
 

@@ -19,7 +19,7 @@ func TestMarshalMintAssetRequest(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		req      *entities.MintAssetRequest
+		req      *mintAssetRequest
 		validate func(*testing.T, *mintrpc.MintAssetRequest)
 	}{
 		{
@@ -33,9 +33,9 @@ func TestMarshalMintAssetRequest(t *testing.T) {
 		},
 		{
 			name: "full request",
-			req: &entities.MintAssetRequest{
-				ShortResponse: true,
-				Asset: &entities.MintAsset{
+			req: &mintAssetRequest{
+				shortResponse: true,
+				asset: &mintAsset{
 					PendingMintAsset: entities.PendingMintAsset{
 						AssetVersion:    entities.AssetVersionV1,
 						AssetType:       entities.AssetTypeNormal,
@@ -74,16 +74,16 @@ func TestMarshalMintAssetRequest(t *testing.T) {
 							TapTweak: []byte{0x01, 0x02},
 						},
 					},
-					GroupedAsset:   true,
-					DecimalDisplay: 2,
-					ExternalGroupKey: &entities.ExternalKey{
+					groupedAsset:   true,
+					decimalDisplay: 2,
+					externalGroupKey: &entities.ExternalKey{
 						XPub:           "xpub-test",
 						DerivationPath: "m/86'/0'/0'/0/7",
 						MasterFingerprint: [4]byte{
 							0xde, 0xad, 0xbe, 0xef,
 						},
 					},
-					EnableSupplyCommitments: true,
+					enableSupplyCommitments: true,
 				},
 			},
 			validate: func(t *testing.T, rpcReq *mintrpc.MintAssetRequest) {

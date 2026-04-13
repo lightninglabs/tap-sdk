@@ -30,9 +30,28 @@ func NewMintClient(conn grpc.ClientConnInterface, timeout time.Duration,
 	}
 }
 
-// MintAsset adds an asset to the pending minting batch.
-func (m *mintClient) MintAsset(ctx context.Context,
-	req *entities.MintAssetRequest) (*entities.MintingBatch, error) {
+// mintAssetRequest is the low-level RPC request shape for MintAsset.
+// It is internal to this package; callers use CreateAssetRequest or
+// CreateIssuanceRequest instead.
+type mintAssetRequest struct {
+	asset         *mintAsset
+	shortResponse bool
+}
+
+// mintAsset describes a new asset to stage in a minting batch.
+type mintAsset struct {
+	entities.PendingMintAsset
+
+	groupedAsset            bool
+	decimalDisplay          uint32
+	externalGroupKey        *entities.ExternalKey
+	enableSupplyCommitments bool
+}
+
+// mintAssetRPC adds an asset to the pending minting batch using the
+// internal request type.
+func (m *mintClient) mintAssetRPC(ctx context.Context,
+	req *mintAssetRequest) (*entities.MintingBatch, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, m.timeout)
 	defer cancel()
@@ -50,21 +69,26 @@ func (m *mintClient) MintAsset(ctx context.Context,
 
 // CreateAsset stages a brand-new asset in the pending minting batch.
 func (m *mintClient) CreateAsset(ctx context.Context,
-	req *entities.CreateAssetRequest) (*entities.MintingBatch, error) {
+	req *entities.CreateAssetRequest) (*entities.MintingBatch,
+	error) {
 
-	return m.MintAsset(ctx, mintAssetRequestFromCreateAsset(req))
+	return m.mintAssetRPC(
+		ctx, mintAssetRequestFromCreateAsset(req),
+	)
 }
 
-// CreateIssuance stages an additional issuance in the pending minting batch.
+// CreateIssuance stages an additional issuance in the pending
+// minting batch.
 func (m *mintClient) CreateIssuance(ctx context.Context,
-	req *entities.CreateIssuanceRequest) (*entities.MintingBatch, error) {
+	req *entities.CreateIssuanceRequest) (*entities.MintingBatch,
+	error) {
 
 	mintReq, err := mintAssetRequestFromCreateIssuance(req)
 	if err != nil {
 		return nil, err
 	}
 
-	return m.MintAsset(ctx, mintReq)
+	return m.mintAssetRPC(ctx, mintReq)
 }
 
 // FundBatch funds the current pending minting batch.
@@ -183,21 +207,8 @@ func (m *mintClient) ListBatches(ctx context.Context,
 	return batches, nil
 }
 
-func marshalMintAssetRequest(
-	req *entities.MintAssetRequest) *mintrpc.MintAssetRequest {
-
-	if req == nil {
-		return &mintrpc.MintAssetRequest{}
-	}
-
-	return &mintrpc.MintAssetRequest{
-		Asset:         marshalMintAsset(req.Asset),
-		ShortResponse: req.ShortResponse,
-	}
-}
-
 func mintAssetRequestFromCreateAsset(
-	req *entities.CreateAssetRequest) *entities.MintAssetRequest {
+	req *entities.CreateAssetRequest) *mintAssetRequest {
 
 	if req == nil {
 		return nil
@@ -205,12 +216,14 @@ func mintAssetRequestFromCreateAsset(
 
 	asset := req.Asset
 	if asset == nil {
-		return &entities.MintAssetRequest{ShortResponse: req.ShortResponse}
+		return &mintAssetRequest{
+			shortResponse: req.ShortResponse,
+		}
 	}
 
-	return &entities.MintAssetRequest{
-		ShortResponse: req.ShortResponse,
-		Asset: &entities.MintAsset{
+	return &mintAssetRequest{
+		shortResponse: req.ShortResponse,
+		asset: &mintAsset{
 			PendingMintAsset: entities.PendingMintAsset{
 				AssetVersion:       asset.AssetVersion,
 				AssetType:          asset.AssetType,
@@ -222,15 +235,16 @@ func mintAssetRequestFromCreateAsset(
 				GroupTapscriptRoot: asset.GroupTapscriptRoot,
 				ScriptKey:          asset.ScriptKey,
 			},
-			DecimalDisplay:          asset.DecimalDisplay,
-			ExternalGroupKey:        asset.ExternalGroupKey,
-			EnableSupplyCommitments: asset.EnableSupplyCommitments,
+			decimalDisplay:          asset.DecimalDisplay,
+			externalGroupKey:        asset.ExternalGroupKey,
+			enableSupplyCommitments: asset.EnableSupplyCommitments,
 		},
 	}
 }
 
 func mintAssetRequestFromCreateIssuance(
-	req *entities.CreateIssuanceRequest) (*entities.MintAssetRequest, error) {
+	req *entities.CreateIssuanceRequest) (*mintAssetRequest,
+	error) {
 
 	if req == nil {
 		return nil, nil
@@ -238,21 +252,20 @@ func mintAssetRequestFromCreateIssuance(
 
 	issuance := req.Issuance
 	if issuance == nil {
-		return &entities.MintAssetRequest{
-			ShortResponse: req.ShortResponse,
+		return &mintAssetRequest{
+			shortResponse: req.ShortResponse,
 		}, nil
 	}
 
 	groupKey, ok := issuance.AssetRef.GroupKey()
 	if !ok {
-		return nil, fmt.Errorf(
-			"asset ref must resolve to a group key to create an issuance",
-		)
+		return nil, fmt.Errorf("asset ref must resolve " +
+			"to a group key to create an issuance")
 	}
 
-	return &entities.MintAssetRequest{
-		ShortResponse: req.ShortResponse,
-		Asset: &entities.MintAsset{
+	return &mintAssetRequest{
+		shortResponse: req.ShortResponse,
+		asset: &mintAsset{
 			PendingMintAsset: entities.PendingMintAsset{
 				AssetVersion: issuance.AssetVersion,
 				AssetType:    issuance.AssetType,
@@ -262,33 +275,50 @@ func mintAssetRequestFromCreateIssuance(
 				GroupKey:     &groupKey,
 				ScriptKey:    issuance.ScriptKey,
 			},
-			GroupedAsset:     true,
-			DecimalDisplay:   issuance.DecimalDisplay,
-			ExternalGroupKey: issuance.ExternalGroupKey,
+			groupedAsset:     true,
+			decimalDisplay:   issuance.DecimalDisplay,
+			externalGroupKey: issuance.ExternalGroupKey,
 		},
 	}, nil
 }
 
-func marshalMintAsset(asset *entities.MintAsset) *mintrpc.MintAsset {
+func marshalMintAssetRequest(
+	req *mintAssetRequest) *mintrpc.MintAssetRequest {
+
+	if req == nil {
+		return &mintrpc.MintAssetRequest{}
+	}
+
+	return &mintrpc.MintAssetRequest{
+		Asset:         marshalMintAsset(req.asset),
+		ShortResponse: req.shortResponse,
+	}
+}
+
+func marshalMintAsset(asset *mintAsset) *mintrpc.MintAsset {
 	if asset == nil {
 		return nil
 	}
 
 	rpcAsset := &mintrpc.MintAsset{
-		AssetVersion:            taprpc.AssetVersion(asset.AssetVersion),
-		AssetType:               taprpc.AssetType(asset.AssetType),
-		Name:                    asset.Name,
-		Amount:                  asset.Amount,
-		NewGroupedAsset:         asset.NewGroupedAsset,
-		GroupedAsset:            asset.GroupedAsset,
-		GroupAnchor:             asset.GroupAnchor,
-		GroupTapscriptRoot:      asset.GroupTapscriptRoot,
-		ScriptKey:               marshalScriptKey(asset.ScriptKey),
-		DecimalDisplay:          asset.DecimalDisplay,
-		ExternalGroupKey:        marshalExternalKey(asset.ExternalGroupKey),
-		EnableSupplyCommitments: asset.EnableSupplyCommitments,
-		GroupInternalKey:        marshalKeyDescriptor(asset.GroupInternalKey),
-		AssetMeta:               marshalAssetMeta(asset.AssetMeta),
+		AssetVersion:       taprpc.AssetVersion(asset.AssetVersion),
+		AssetType:          taprpc.AssetType(asset.AssetType),
+		Name:               asset.Name,
+		Amount:             asset.Amount,
+		NewGroupedAsset:    asset.NewGroupedAsset,
+		GroupedAsset:       asset.groupedAsset,
+		GroupAnchor:        asset.GroupAnchor,
+		GroupTapscriptRoot: asset.GroupTapscriptRoot,
+		ScriptKey:          marshalScriptKey(asset.ScriptKey),
+		DecimalDisplay:     asset.decimalDisplay,
+		ExternalGroupKey: marshalExternalKey(
+			asset.externalGroupKey,
+		),
+		EnableSupplyCommitments: asset.enableSupplyCommitments,
+		GroupInternalKey: marshalKeyDescriptor(
+			asset.GroupInternalKey,
+		),
+		AssetMeta: marshalAssetMeta(asset.AssetMeta),
 	}
 
 	if asset.GroupKey != nil {
