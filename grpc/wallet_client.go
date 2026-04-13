@@ -943,7 +943,7 @@ func (s *walletClient) BurnAsset(ctx context.Context,
 
 	rpcCtx = s.adminMac.WithMacaroonAuth(rpcCtx)
 
-	rpcReq, err := s.marshalBurnAssetRequest(ctx, req)
+	rpcReq, err := marshalBurnAssetRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -1035,7 +1035,7 @@ func (s *walletClient) FetchAssetMeta(ctx context.Context,
 
 	rpcCtx = s.adminMac.WithMacaroonAuth(rpcCtx)
 
-	rpcReq, err := s.marshalFetchAssetMetaRequest(ctx, req)
+	rpcReq, err := marshalFetchAssetMetaRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -1227,32 +1227,59 @@ func unmarshalAssetBurn(
 }
 
 // marshalBurnAssetRequest converts a BurnAssetRequest to an RPC request.
-func (s *walletClient) marshalBurnAssetRequest(ctx context.Context,
+func marshalBurnAssetRequest(
 	req *entities.BurnAssetRequest) (*taprpc.BurnAssetRequest, error) {
 
-	rpcReq := &taprpc.BurnAssetRequest{
-		AmountToBurn:     req.AmountToBurn,
-		ConfirmationText: req.ConfirmationText,
-		Note:             req.Note,
-	}
-
-	issuanceID, err := s.resolveIssuanceID(
-		ctx, req.AssetRef, req.AmountToBurn,
-	)
+	spec, err := marshalAssetSpecifier(req.AssetRef)
 	if err != nil {
 		return nil, err
 	}
 
-	rpcReq.Asset = &taprpc.BurnAssetRequest_AssetId{
-		AssetId: issuanceID[:],
+	return &taprpc.BurnAssetRequest{
+		AmountToBurn:     req.AmountToBurn,
+		ConfirmationText: req.ConfirmationText,
+		Note:             req.Note,
+		AssetSpecifier:   spec,
+	}, nil
+}
+
+// marshalAssetSpecifier converts an AssetRef to a taprpc AssetSpecifier.
+func marshalAssetSpecifier(
+	ref entities.AssetRef) (*taprpc.AssetSpecifier, error) {
+
+	if ref.IsZero() {
+		return nil, fmt.Errorf("asset ref is required")
 	}
 
-	return rpcReq, nil
+	assetID, groupKey, err := ref.Specifier()
+	if err != nil {
+		return nil, err
+	}
+
+	switch {
+	case groupKey != nil:
+		return &taprpc.AssetSpecifier{
+			Id: &taprpc.AssetSpecifier_GroupKey{
+				GroupKey: (*groupKey)[:],
+			},
+		}, nil
+
+	case assetID != nil:
+		return &taprpc.AssetSpecifier{
+			Id: &taprpc.AssetSpecifier_AssetId{
+				AssetId: (*assetID)[:],
+			},
+		}, nil
+
+	default:
+		return nil, fmt.Errorf("asset ref must contain an " +
+			"asset ID or group key")
+	}
 }
 
 // marshalFetchAssetMetaRequest converts a FetchAssetMetaRequest to an
 // RPC request.
-func (s *walletClient) marshalFetchAssetMetaRequest(ctx context.Context,
+func marshalFetchAssetMetaRequest(
 	req *entities.FetchAssetMetaRequest) (*taprpc.FetchAssetMetaRequest,
 	error) {
 
@@ -1263,13 +1290,19 @@ func (s *walletClient) marshalFetchAssetMetaRequest(ctx context.Context,
 	}
 
 	if req.AssetRef != nil {
-		issuanceID, err := s.resolveIssuanceID(ctx, *req.AssetRef, 0)
+		assetID, _, err := req.AssetRef.Specifier()
 		if err != nil {
 			return nil, err
 		}
 
+		if assetID == nil {
+			return nil, fmt.Errorf("metadata lookup " +
+				"requires an asset-ID ref; tapd does " +
+				"not support group-key metadata lookup")
+		}
+
 		rpcReq.Asset = &taprpc.FetchAssetMetaRequest_AssetId{
-			AssetId: issuanceID[:],
+			AssetId: (*assetID)[:],
 		}
 	} else if req.MetaHash != nil {
 		rpcReq.Asset = &taprpc.FetchAssetMetaRequest_MetaHash{
@@ -1375,48 +1408,4 @@ func unmarshalDecodedProof(
 	}
 
 	return proof, nil
-}
-
-func (s *walletClient) resolveIssuanceID(ctx context.Context,
-	assetRef entities.AssetRef, minAmount uint64) (entities.AssetID, error) {
-
-	if assetRef.IsZero() {
-		return entities.AssetID{}, fmt.Errorf("asset ref is required")
-	}
-
-	if assetID, ok := assetRef.AssetID(); ok {
-		return assetID, nil
-	}
-
-	assets, err := s.ListAssets(ctx, &entities.ListAssetsRequest{
-		AssetRef:      &assetRef,
-		IncludeLeased: true,
-	})
-	if err != nil {
-		return entities.AssetID{}, err
-	}
-
-	if len(assets) == 0 {
-		return entities.AssetID{}, fmt.Errorf("asset %s not found", assetRef)
-	}
-
-	var selected *entities.Asset
-	for _, asset := range assets {
-		if asset.Amount >= minAmount {
-			return asset.Genesis.IssuanceID, nil
-		}
-
-		if selected == nil || asset.Amount > selected.Amount {
-			selected = asset
-		}
-	}
-
-	if minAmount > 0 {
-		return entities.AssetID{}, fmt.Errorf(
-			"asset %s has no single issuance with at least %d units",
-			assetRef, minAmount,
-		)
-	}
-
-	return selected.Genesis.IssuanceID, nil
 }

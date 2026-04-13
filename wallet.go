@@ -40,13 +40,8 @@ func (s *Wallet) NewInteractiveTxBuilder() *InteractiveTxBuilder {
 	return newInteractiveTxBuilder(s, s.networkHRP, s.coinType)
 }
 
-// NewReceiveAddress creates a V2 address for receiving assets identified by
-// the given AssetRef.
-//
-// For fungible assets (AssetRef from group key), the address accepts any
-// tranche within the group and lets the sender choose the amount. For
-// collectibles (AssetRef from asset ID), the address targets the specific
-// asset.
+// NewReceiveAddress creates a V2 address for receiving the given asset.
+// The sender chooses the specific units and amount to send.
 //
 // For more control (custom keys, V0/V1 addresses, explicit amounts), use
 // the lower-level NewAddr method on the client directly.
@@ -67,11 +62,9 @@ func (s *Wallet) NewReceiveAddress(ctx context.Context,
 	return addr, nil
 }
 
-// GetBalance returns the confirmed balance for the asset identified by ref.
-//
-// For fungible assets (group key), it returns the aggregate balance across
-// all tranches in the group. For collectibles (asset ID), it returns the
-// balance of the specific asset.
+// GetBalance returns the confirmed balance for the given asset. If the
+// wallet holds units across multiple issuances, the total is aggregated
+// into a single sum.
 func (s *Wallet) GetBalance(ctx context.Context,
 	ref entities.AssetRef) (uint64, error) {
 

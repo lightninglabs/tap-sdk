@@ -305,12 +305,6 @@ type MintClient interface {
 	CreateIssuance(ctx context.Context,
 		req *entities.CreateIssuanceRequest) (*entities.MintingBatch, error)
 
-	// MintAsset stages a new mint request using tapd's raw overloaded shape.
-	//
-	// Deprecated: prefer CreateAsset or CreateIssuance.
-	MintAsset(ctx context.Context,
-		req *entities.MintAssetRequest) (*entities.MintingBatch, error)
-
 	// FundBatch funds the current pending mint batch.
 	FundBatch(ctx context.Context,
 		req *entities.FundBatchRequest) (*entities.VerboseMintingBatch,

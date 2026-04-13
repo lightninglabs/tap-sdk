@@ -190,12 +190,6 @@ func (m *refMockClient) CreateIssuance(ctx context.Context,
 	panic("CreateIssuance: unexpected call")
 }
 
-func (m *refMockClient) MintAsset(ctx context.Context,
-	req *entities.MintAssetRequest) (*entities.MintingBatch, error) {
-
-	panic("MintAsset: unexpected call")
-}
-
 func (m *refMockClient) FundBatch(ctx context.Context,
 	req *entities.FundBatchRequest) (*entities.VerboseMintingBatch,
 	error) {

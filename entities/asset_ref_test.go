@@ -188,8 +188,10 @@ func TestAssetRefFromSpecifier(t *testing.T) {
 	_, err = AssetRefFromSpecifier(nil, nil)
 	require.Error(t, err)
 
-	_, err = AssetRefFromSpecifier(&assetID, &groupKey)
-	require.Error(t, err)
+	// When both are set, group key takes precedence.
+	ref, err = AssetRefFromSpecifier(&assetID, &groupKey)
+	require.NoError(t, err)
+	require.Equal(t, AssetRefFromGroupKey(groupKey), ref)
 }
 
 func TestUniverseIDFromRef_GroupKey(t *testing.T) {

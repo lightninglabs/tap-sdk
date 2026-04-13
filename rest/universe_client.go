@@ -572,12 +572,21 @@ func (u *universeClient) QueryAssetStats(ctx context.Context,
 
 		if req.AssetRefFilter != nil {
 			assetID, _, err := req.AssetRefFilter.Specifier()
-			if err == nil && assetID != nil {
+			if err != nil {
+				return nil, err
+			}
+
+			if assetID != nil {
 				assetIDStr := hex.EncodeToString(
 					(*assetID)[:],
 				)
 				p = append(p, "asset_id_filter="+assetIDStr)
 			}
+
+			// NOTE: tapd's QueryAssetStats does not support
+			// group-key filtering. A group-key AssetRef is
+			// silently ignored here; the caller should
+			// filter client-side or use an asset-ID ref.
 		}
 
 		if req.AssetTypeFilter != 0 {

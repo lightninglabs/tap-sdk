@@ -29,6 +29,7 @@ func TestMarshalUniverseID(t *testing.T) {
 	tests := []struct {
 		name     string
 		id       *entities.UniverseID
+		wantErr  bool
 		validate func(*testing.T, *universerpc.ID)
 	}{
 		{
@@ -72,24 +73,20 @@ func TestMarshalUniverseID(t *testing.T) {
 			},
 		},
 		{
-			name: "unspecified",
-			id:   &entities.UniverseID{},
-			validate: func(t *testing.T,
-				rpcID *universerpc.ID) {
-
-				require.Nil(t, rpcID.Id)
-				require.Equal(
-					t,
-					universerpc.ProofType_PROOF_TYPE_UNSPECIFIED,
-					rpcID.ProofType,
-				)
-			},
+			name:    "unspecified",
+			id:      &entities.UniverseID{},
+			wantErr: true,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			rpcID := marshalUniverseID(tc.id)
+			rpcID, err := marshalUniverseID(tc.id)
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
 			tc.validate(t, rpcID)
 		})
 	}
@@ -381,7 +378,8 @@ func TestMarshalUniverseKey(t *testing.T) {
 		},
 	}
 
-	rpcKey := marshalUniverseKey(key)
+	rpcKey, err := marshalUniverseKey(key)
+	require.NoError(t, err)
 	require.NotNil(t, rpcKey)
 	require.NotNil(t, rpcKey.Id)
 	require.NotNil(t, rpcKey.LeafKey)

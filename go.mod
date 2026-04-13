@@ -8,7 +8,7 @@ require (
 	github.com/btcsuite/btcd/btcutil v1.1.6
 	github.com/btcsuite/btcd/btcutil/psbt v1.1.10
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0
-	github.com/lightninglabs/taproot-assets/taprpc v1.0.12-0.20260331014027-dcab8eceee2d
+	github.com/lightninglabs/taproot-assets/taprpc v1.0.12-0.20260413123009-b3d5a2b297e8
 	github.com/stretchr/testify v1.10.0
 	google.golang.org/grpc v1.79.3
 )
