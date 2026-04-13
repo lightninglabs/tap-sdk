@@ -115,7 +115,7 @@ func TestUnmarshalUniverseID(t *testing.T) {
 			validate: func(t *testing.T,
 				id *entities.UniverseID) {
 
-				require.True(t, id.AssetRef.IsCollectible())
+				require.True(t, id.AssetRef.IsAssetIDRef())
 				require.Equal(
 					t, entities.ProofTypeIssuance,
 					id.ProofType,
@@ -133,7 +133,7 @@ func TestUnmarshalUniverseID(t *testing.T) {
 			validate: func(t *testing.T,
 				id *entities.UniverseID) {
 
-				require.True(t, id.AssetRef.IsFungible())
+				require.True(t, id.AssetRef.IsGroupRef())
 				require.Equal(
 					t, entities.ProofTypeTransfer,
 					id.ProofType,
