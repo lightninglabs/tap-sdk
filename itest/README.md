@@ -44,7 +44,7 @@ separate wallets.
 | `TestMintCollectible` | Mint a collectible (NFT) asset |
 | `TestAddressSend` | Mint → create address → send → verify receipt |
 | `TestProofOperations` | Export, unpack, and decode proofs |
-| `TestBalanceQueries` | ListBalances by asset ID and group key |
+| `TestBalanceQueries` | AssetRef-based balance queries for fungible and collectible assets |
 | `TestErrorHandling` | Invalid inputs return proper errors |
 
 ## Environment Variables
@@ -61,6 +61,7 @@ Override default connection settings with:
 | `TAPD_BOB_TLS` | Auto-extracted from container | Bob's TLS cert path |
 | `TAPD_ALICE_MAC` | Auto-extracted from container | Alice's macaroon path |
 | `TAPD_BOB_MAC` | Auto-extracted from container | Bob's macaroon path |
+| `TAPD_BOB_PROOF_COURIER_ADDR` | `authmailbox+universerpc://tapd-bob:10029` | Bob's default proof courier for V2 receive addresses |
 
 ## CI
 
