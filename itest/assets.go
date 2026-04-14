@@ -53,6 +53,12 @@ func (h *TestHarness) MintAssetAndConfirm(ctx context.Context,
 		60*time.Second)
 	resultAsset := h.WaitForAssetByTag(ctx, h.AliceClient,
 		asset.Name, 60*time.Second)
+	if resultAsset == nil {
+		return nil, fmt.Errorf("minted asset %q not found", asset.Name)
+	}
+
+	h.WaitForBalance(ctx, h.AliceWallet, resultAsset.AssetRef,
+		resultAsset.Amount, 60*time.Second)
 
 	return &MintResult{
 		Asset: resultAsset,
