@@ -3,8 +3,9 @@
 - Repository: `github.com/lightninglabs/tap-sdk`
 - Active focus: PR #37, regtest integration suite cleanup and refactor.
 - Branch: `feat/integration-tests`, rebased onto `origin/main`.
-- Current state: mint helpers now wait for confirmed balances, grouped receive
-  flows explicitly bootstrap the issuance universe before creating V2
+- Current state: mint helpers now stop at wallet visibility, balance waits are
+  explicit at the call sites with longer slack for grouped assets, grouped
+  receive flows explicitly bootstrap the issuance universe before creating V2
   addresses, and the bitcoind miner wallet is created only when missing.
 - Local validation: `go test ./...` and `go test -tags=itest -run '^$' ./itest/...`
   pass after the latest refactor.
