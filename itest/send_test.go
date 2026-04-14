@@ -24,6 +24,7 @@ func TestAddressSend(t *testing.T) {
 	require.True(t, minted.Asset.AssetRef.IsGroupRef())
 
 	h.EnableUniverseBootstrap(ctx)
+	h.WaitForGroupBootstrap(ctx, minted.Asset.AssetRef, 60*time.Second)
 
 	bobAddr := h.WaitForReceiveAddress(ctx, h.BobWallet,
 		minted.Asset.AssetRef, 60*time.Second)

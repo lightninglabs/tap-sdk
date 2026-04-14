@@ -159,8 +159,10 @@ func (h *TestHarness) WaitForSync(client tapsdk.Client,
 }
 
 // WaitForMint polls ListBatches until the given batch key reaches FINALIZED.
-func (h *TestHarness) WaitForMint(ctx context.Context, client tapsdk.Client,
-	batchKey entities.PubKey, timeout time.Duration) *entities.VerboseMintingBatch {
+func (h *TestHarness) WaitForMint(
+	ctx context.Context, client tapsdk.Client,
+	batchKey entities.PubKey, timeout time.Duration,
+) *entities.VerboseMintingBatch {
 
 	h.t.Helper()
 
@@ -252,9 +254,10 @@ func (h *TestHarness) WaitForBalance(ctx context.Context, wallet *tapsdk.Wallet,
 
 // WaitForReceiveAddress retries Wallet.NewReceiveAddress until the receiver is
 // ready to bootstrap the requested asset.
-func (h *TestHarness) WaitForReceiveAddress(ctx context.Context,
-	wallet *tapsdk.Wallet, ref entities.AssetRef,
-	timeout time.Duration) *entities.Address {
+func (h *TestHarness) WaitForReceiveAddress(
+	ctx context.Context, wallet *tapsdk.Wallet,
+	ref entities.AssetRef, timeout time.Duration,
+) *entities.Address {
 
 	h.t.Helper()
 
@@ -309,6 +312,52 @@ func (h *TestHarness) EnableUniverseBootstrap(ctx context.Context) {
 	require.NoError(h.t, h.BobClient.AddFederationServer(ctx,
 		[]entities.FederationServer{{Host: aliceUniverseHost}}),
 	)
+}
+
+// WaitForGroupBootstrap waits for Bob to learn the issuance universe for a
+// grouped asset before creating a V2 receive address.
+func (h *TestHarness) WaitForGroupBootstrap(ctx context.Context,
+	ref entities.AssetRef, timeout time.Duration) {
+
+	h.t.Helper()
+	require.True(h.t, ref.IsGroupRef(),
+		"group bootstrap requires a fungible group ref")
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	issuanceID := entities.UniverseIDFromRef(ref,
+		entities.ProofTypeIssuance)
+
+	require.Eventually(h.t, func() bool {
+		_, err := h.BobClient.SyncUniverse(timeoutCtx,
+			&entities.SyncRequest{
+				UniverseHost: envOr(
+					"TAPD_ALICE_UNIVERSE_HOST",
+					defaultAliceUniverseHost,
+				),
+				SyncMode: entities.SyncIssuanceOnly,
+				SyncTargets: []entities.SyncTarget{{
+					ID: issuanceID,
+				}},
+			},
+		)
+		if err != nil {
+			h.t.Logf("group bootstrap sync not ready for %s: %v",
+				ref, err)
+			return false
+		}
+
+		roots, err := h.BobClient.QueryAssetRoots(timeoutCtx,
+			&issuanceID)
+		if err != nil {
+			h.t.Logf("group bootstrap roots not ready for %s: %v",
+				ref, err)
+			return false
+		}
+
+		return roots.IssuanceRoot != nil
+	}, timeout, time.Second)
 }
 
 // envOr returns the environment variable value or the fallback.
