@@ -18,7 +18,7 @@ import (
 func (h *TestHarness) MineBlocks(n int) {
 	h.t.Helper()
 
-	h.bitcoindRPCWalletIgnoreErr("createwallet", `"miner"`)
+	h.ensureMinerWallet()
 
 	addr := h.bitcoindRPCWallet(
 		"miner", "getnewaddress", `""`, `"bech32"`,
@@ -31,6 +31,18 @@ func (h *TestHarness) MineBlocks(n int) {
 		fmt.Sprintf(`"%s"`, addr),
 	)
 	h.t.Logf("Mined %d blocks: %s", n, truncate(result, 120))
+}
+
+// ensureMinerWallet creates the regtest miner wallet once if needed.
+func (h *TestHarness) ensureMinerWallet() {
+	h.t.Helper()
+
+	wallets := h.bitcoindRPC("listwallets")
+	if strings.Contains(wallets, `"miner"`) {
+		return
+	}
+
+	h.bitcoindRPC("createwallet", `"miner"`)
 }
 
 // FundLndWallet sends BTC from bitcoind to Alice's LND wallet and waits for
@@ -117,35 +129,6 @@ func (h *TestHarness) bitcoindRPCWallet(wallet, method string,
 	}
 
 	return string(out)
-}
-
-// bitcoindRPCWalletIgnoreErr is like bitcoindRPC but silently ignores errors.
-// It is used for idempotent calls like createwallet.
-func (h *TestHarness) bitcoindRPCWalletIgnoreErr(method string,
-	params ...string) {
-
-	h.t.Helper()
-
-	paramStr := strings.Join(params, ", ")
-	body := fmt.Sprintf(
-		`{"jsonrpc":"1.0","id":"test","method":"%s","params":[%s]}`,
-		method, paramStr,
-	)
-
-	url := fmt.Sprintf(
-		"http://%s:%s@%s/",
-		bitcoindUser, bitcoindPass, h.bitcoindHost,
-	)
-
-	// nolint:gosec
-	out, _ := exec.Command(
-		"curl", "-s", "-X", "POST",
-		"-H", "Content-Type: application/json",
-		"-d", body, url,
-	).CombinedOutput()
-
-	h.t.Logf("bitcoindRPCIgnoreErr %s: %s",
-		method, truncate(string(out), 200))
 }
 
 // bitcoindRPC executes a bitcoin-cli RPC command against the regtest bitcoind.
