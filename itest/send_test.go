@@ -3,7 +3,6 @@
 package itest
 
 import (
-	"context"
 	"testing"
 
 	"github.com/lightninglabs/tap-sdk/entities"
@@ -13,24 +12,17 @@ import (
 // TestAddressSend verifies the full V2 address send flow using the opinionated
 // Wallet helpers.
 func TestAddressSend(t *testing.T) {
-	h := NewTestHarness(t)
-	ctx := context.Background()
+	h, ctx := newFundedHarness(t)
 
-	h.FundLndWallet()
-
-	minted, err := h.MintGroupedAsset(ctx, "send-token", 5000)
+	minted, err := h.MintGroupedAsset(t, ctx, "send-token", 5000)
 	require.NoError(t, err)
-	require.True(t, minted.Asset.AssetRef.IsGroupRef())
-	h.WaitForBalance(ctx, h.AliceWallet, minted.Asset.AssetRef, 5000,
-		balanceTimeoutFor(minted.Asset.AssetRef))
+	require.True(t, minted.Ref.IsGroupRef())
+	h.WaitForBalance(t, ctx, h.AliceWallet, minted.Ref, 5000,
+		balanceTimeoutFor(minted.Ref))
 
-	h.EnableUniverseBootstrap(ctx)
-	h.WaitForGroupBootstrap(ctx, minted.Asset.AssetRef, defaultWaitTimeout)
-
-	bobAddr := h.WaitForReceiveAddress(ctx, h.BobWallet,
-		minted.Asset.AssetRef, defaultWaitTimeout)
+	bobAddr := h.CreateGroupedReceiveAddress(t, ctx, minted.Ref)
 	require.NotEmpty(t, bobAddr.Encoded)
-	require.Equal(t, minted.Asset.AssetRef, bobAddr.AssetRef)
+	require.Equal(t, minted.Ref, bobAddr.AssetRef)
 	require.Equal(t, entities.AddressVersionV2, bobAddr.AddressVersion)
 	t.Logf("Bob address: %s", bobAddr.Encoded)
 
@@ -39,18 +31,17 @@ func TestAddressSend(t *testing.T) {
 	require.NotEmpty(t, transfer.AnchorTxid)
 	t.Logf("Send tx: %s", transfer.AnchorTxid)
 
-	h.MineBlocks(defaultMineBlocks)
-	h.WaitForSync(h.AliceClient, defaultSyncTimeout)
-	h.WaitForSync(h.BobClient, defaultSyncTimeout)
+	h.MineBlocks(t, defaultMineBlocks)
+	h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
+	h.WaitForSync(t, ctx, h.BobClient, defaultSyncTimeout)
 
-	bobBalance := h.WaitForBalance(ctx, h.BobWallet,
-		minted.Asset.AssetRef, 200,
-		balanceTimeoutFor(minted.Asset.AssetRef))
-	t.Logf("Bob balance for %s: %d", minted.Asset.AssetRef, bobBalance)
+	bobBalance := h.WaitForBalance(t, ctx, h.BobWallet,
+		minted.Ref, 200,
+		balanceTimeoutFor(minted.Ref))
+	t.Logf("Bob balance for %s: %d", minted.Ref, bobBalance)
 
-	aliceBalance := h.WaitForBalance(ctx, h.AliceWallet,
-		minted.Asset.AssetRef, 4800,
-		balanceTimeoutFor(minted.Asset.AssetRef))
-	t.Logf("Alice balance for %s: %d", minted.Asset.AssetRef,
-		aliceBalance)
+	aliceBalance := h.WaitForBalance(t, ctx, h.AliceWallet,
+		minted.Ref, 4800,
+		balanceTimeoutFor(minted.Ref))
+	t.Logf("Alice balance for %s: %d", minted.Ref, aliceBalance)
 }

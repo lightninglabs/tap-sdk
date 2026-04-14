@@ -4,10 +4,12 @@ package itest
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -15,84 +17,86 @@ import (
 
 // MineBlocks mines the specified number of blocks via bitcoind using the miner
 // wallet.
-func (h *TestHarness) MineBlocks(n int) {
-	h.t.Helper()
+func (h *TestHarness) MineBlocks(t testing.TB, n int) {
+	t.Helper()
 
-	h.ensureMinerWallet()
+	h.ensureMinerWallet(t)
 
 	addr := h.bitcoindRPCWallet(
+		t,
 		"miner", "getnewaddress", `""`, `"bech32"`,
 	)
 	addr = strings.TrimSpace(strings.Trim(addr, `"`))
 
 	result := h.bitcoindRPCWallet(
+		t,
 		"miner", "generatetoaddress",
 		fmt.Sprintf("%d", n),
 		fmt.Sprintf(`"%s"`, addr),
 	)
-	h.t.Logf("Mined %d blocks: %s", n, truncate(result, 120))
+	t.Logf("Mined %d blocks: %s", n, truncate(result, 120))
 }
 
 // ensureMinerWallet creates the regtest miner wallet once if needed.
-func (h *TestHarness) ensureMinerWallet() {
-	h.t.Helper()
+func (h *TestHarness) ensureMinerWallet(t testing.TB) {
+	t.Helper()
 
-	wallets := h.bitcoindRPC("listwallets")
+	wallets := h.bitcoindRPC(t, "listwallets")
 	if strings.Contains(wallets, `"miner"`) {
 		return
 	}
 
-	h.bitcoindRPC("createwallet", `"miner"`)
+	h.bitcoindRPC(t, "createwallet", `"miner"`)
 }
 
 // FundLndWallet sends BTC from bitcoind to Alice's LND wallet and waits for
 // both tapd nodes to catch up.
-func (h *TestHarness) FundLndWallet() {
-	h.t.Helper()
+func (h *TestHarness) FundLndWallet(t testing.TB, ctx context.Context) {
+	t.Helper()
 
-	h.MineBlocks(110)
+	h.MineBlocks(t, 110)
 
-	aliceAddr := h.lndNewAddress("tap-sdk-lnd-alice")
-	h.t.Logf("Alice LND address: %s", aliceAddr)
+	aliceAddr := h.lndNewAddress(t, "tap-sdk-lnd-alice")
+	t.Logf("Alice LND address: %s", aliceAddr)
 
-	h.bitcoindRPCWallet("miner", "sendtoaddress",
+	h.bitcoindRPCWallet(t, "miner", "sendtoaddress",
 		fmt.Sprintf(`"%s"`, aliceAddr), `1.0`)
 
-	h.MineBlocks(defaultMineBlocks)
+	h.MineBlocks(t, defaultMineBlocks)
 
-	h.t.Logf("Funded Alice LND wallet and mined %d confirms",
+	t.Logf("Funded Alice LND wallet and mined %d confirms",
 		defaultMineBlocks)
 
-	h.WaitForSync(h.AliceClient, 60*time.Second)
-	h.WaitForSync(h.BobClient, 60*time.Second)
+	h.WaitForSync(t, ctx, h.AliceClient, 60*time.Second)
+	h.WaitForSync(t, ctx, h.BobClient, 60*time.Second)
 }
 
 // lndNewAddress generates a new p2wkh address from an LND container using
 // lncli.
-func (h *TestHarness) lndNewAddress(container string) string {
-	h.t.Helper()
+func (h *TestHarness) lndNewAddress(t testing.TB, container string) string {
+	t.Helper()
 
 	out, err := exec.Command(
 		"docker", "exec", container,
 		"lncli", "--network=regtest", "newaddress", "p2wkh",
 	).CombinedOutput()
-	require.NoError(h.t, err,
+	require.NoError(t, err,
 		"lncli newaddress failed: %s", string(out))
 
 	var resp struct {
 		Address string `json:"address"`
 	}
-	require.NoError(h.t, json.Unmarshal(out, &resp),
+	require.NoError(t, json.Unmarshal(out, &resp),
 		"failed to parse lncli output: %s", string(out))
 
 	return resp.Address
 }
 
 // bitcoindRPCWallet calls bitcoind JSON-RPC targeting a specific named wallet.
-func (h *TestHarness) bitcoindRPCWallet(wallet, method string,
+func (h *TestHarness) bitcoindRPCWallet(t testing.TB,
+	wallet, method string,
 	params ...string) string {
-
-	h.t.Helper()
+	t.Helper()
 
 	paramStr := strings.Join(params, ", ")
 	body := fmt.Sprintf(
@@ -111,7 +115,7 @@ func (h *TestHarness) bitcoindRPCWallet(wallet, method string,
 		"-d", body,
 		url,
 	).CombinedOutput()
-	require.NoError(h.t, err,
+	require.NoError(t, err,
 		"bitcoind RPC (%s, wallet=%s) failed: %s",
 		method, wallet, string(out))
 
@@ -123,7 +127,7 @@ func (h *TestHarness) bitcoindRPCWallet(wallet, method string,
 		if string(rpcResp.Error) != "null" &&
 			string(rpcResp.Error) != "" {
 
-			h.t.Logf("bitcoind RPC error: %s", string(rpcResp.Error))
+			t.Logf("bitcoind RPC error: %s", string(rpcResp.Error))
 		}
 		return string(rpcResp.Result)
 	}
@@ -133,10 +137,9 @@ func (h *TestHarness) bitcoindRPCWallet(wallet, method string,
 
 // bitcoindRPC executes a bitcoin-cli RPC command against the regtest bitcoind.
 // If bitcoin-cli is unavailable, it falls back to curl-based JSON-RPC.
-func (h *TestHarness) bitcoindRPC(method string,
+func (h *TestHarness) bitcoindRPC(t testing.TB, method string,
 	params ...string) string {
-
-	h.t.Helper()
+	t.Helper()
 
 	args := []string{
 		"-regtest",
@@ -153,17 +156,16 @@ func (h *TestHarness) bitcoindRPC(method string,
 	cmd.Stdout = &stdout
 
 	if err := cmd.Run(); err != nil {
-		return h.bitcoindCurlRPC(method, params...)
+		return h.bitcoindCurlRPC(t, method, params...)
 	}
 
 	return stdout.String()
 }
 
 // bitcoindCurlRPC performs a JSON-RPC call to bitcoind via curl.
-func (h *TestHarness) bitcoindCurlRPC(method string,
+func (h *TestHarness) bitcoindCurlRPC(t testing.TB, method string,
 	params ...string) string {
-
-	h.t.Helper()
+	t.Helper()
 
 	jsonParams := make([]json.RawMessage, 0, len(params))
 	for _, p := range params {
@@ -183,7 +185,7 @@ func (h *TestHarness) bitcoindCurlRPC(method string,
 		Method:  method,
 		Params:  jsonParams,
 	})
-	require.NoError(h.t, err)
+	require.NoError(t, err)
 
 	url := fmt.Sprintf("http://%s:%s@%s/",
 		bitcoindUser, bitcoindPass, h.bitcoindHost)
@@ -197,7 +199,7 @@ func (h *TestHarness) bitcoindCurlRPC(method string,
 	cmd.Stderr = &stderr
 
 	err = cmd.Run()
-	require.NoError(h.t, err,
+	require.NoError(t, err,
 		"bitcoind RPC %s failed: %s", method, stderr.String())
 
 	type rpcResponse struct {
@@ -206,10 +208,10 @@ func (h *TestHarness) bitcoindCurlRPC(method string,
 	}
 	var resp rpcResponse
 	err = json.Unmarshal(stdout.Bytes(), &resp)
-	require.NoError(h.t, err)
+	require.NoError(t, err)
 
 	if string(resp.Error) != "null" && string(resp.Error) != "" {
-		h.t.Fatalf("bitcoind RPC %s error: %s", method,
+		t.Fatalf("bitcoind RPC %s error: %s", method,
 			string(resp.Error))
 	}
 

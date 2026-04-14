@@ -72,8 +72,6 @@ type tapdNodeConfig struct {
 // TestHarness holds the SDK clients and helper state shared by the regtest
 // integration tests.
 type TestHarness struct {
-	t *testing.T
-
 	AliceClient tapsdk.Client
 	BobClient   tapsdk.Client
 
@@ -85,7 +83,7 @@ type TestHarness struct {
 
 // NewTestHarness creates a new TestHarness by connecting to the regtest
 // services described in docker-compose.yml.
-func NewTestHarness(t *testing.T) *TestHarness {
+func NewTestHarness(t testing.TB) *TestHarness {
 	t.Helper()
 
 	aliceClient := newTapdClient(t, tapdNodeConfig{
@@ -116,7 +114,6 @@ func NewTestHarness(t *testing.T) *TestHarness {
 	)
 
 	return &TestHarness{
-		t:            t,
 		AliceClient:  aliceClient,
 		BobClient:    bobClient,
 		AliceWallet:  aliceWallet,
@@ -125,7 +122,7 @@ func NewTestHarness(t *testing.T) *TestHarness {
 	}
 }
 
-func newTapdClient(t *testing.T, spec tapdNodeConfig) tapsdk.Client {
+func newTapdClient(t testing.TB, spec tapdNodeConfig) tapsdk.Client {
 	t.Helper()
 
 	tlsPath := os.Getenv(spec.tlsEnv)
@@ -159,15 +156,12 @@ func newTapdClient(t *testing.T, spec tapdNodeConfig) tapsdk.Client {
 }
 
 // WaitForSync polls GetInfo until the node reports synced_to_chain.
-func (h *TestHarness) WaitForSync(client tapsdk.Client,
-	timeout time.Duration) {
+func (h *TestHarness) WaitForSync(t testing.TB, ctx context.Context,
+	client tapsdk.Client, timeout time.Duration) {
 
-	h.t.Helper()
+	t.Helper()
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	require.Eventually(h.t, func() bool {
+	require.Eventually(t, func() bool {
 		info, err := client.GetInfo(ctx)
 		return err == nil && info.SyncedToChain
 	}, timeout, 500*time.Millisecond)
@@ -175,18 +169,15 @@ func (h *TestHarness) WaitForSync(client tapsdk.Client,
 
 // WaitForMint polls ListBatches until the given batch key reaches FINALIZED.
 func (h *TestHarness) WaitForMint(
-	ctx context.Context, client tapsdk.Client,
+	t testing.TB, ctx context.Context, client tapsdk.Client,
 	batchKey entities.PubKey, timeout time.Duration,
 ) *entities.VerboseMintingBatch {
 
-	h.t.Helper()
-
-	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+	t.Helper()
 
 	var finalized *entities.VerboseMintingBatch
-	require.Eventually(h.t, func() bool {
-		batches, err := client.ListBatches(timeoutCtx,
+	require.Eventually(t, func() bool {
+		batches, err := client.ListBatches(ctx,
 			&entities.ListBatchesRequest{
 				BatchKey: &batchKey,
 			},
@@ -211,18 +202,15 @@ func (h *TestHarness) WaitForMint(
 
 // WaitForAssetByTag polls ListAssets until the asset with the given tag is
 // visible in the wallet.
-func (h *TestHarness) WaitForAssetByTag(ctx context.Context,
+func (h *TestHarness) WaitForAssetByTag(t testing.TB, ctx context.Context,
 	client tapsdk.Client, tag string,
 	timeout time.Duration) *entities.Asset {
 
-	h.t.Helper()
-
-	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+	t.Helper()
 
 	var found *entities.Asset
-	require.Eventually(h.t, func() bool {
-		assets, err := client.ListAssets(timeoutCtx,
+	require.Eventually(t, func() bool {
+		assets, err := client.ListAssets(ctx,
 			&entities.ListAssetsRequest{},
 		)
 		if err != nil {
@@ -244,24 +232,39 @@ func (h *TestHarness) WaitForAssetByTag(ctx context.Context,
 
 // WaitForBalance polls Wallet.GetBalance until the given asset reaches the
 // expected amount.
-func (h *TestHarness) WaitForBalance(ctx context.Context, wallet *tapsdk.Wallet,
-	ref entities.AssetRef, amount uint64,
+func (h *TestHarness) WaitForBalance(t testing.TB, ctx context.Context,
+	wallet *tapsdk.Wallet, ref entities.AssetRef, amount uint64,
 	timeout time.Duration) uint64 {
 
-	h.t.Helper()
-
-	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+	t.Helper()
 
 	var balance uint64
-	require.Eventually(h.t, func() bool {
-		got, err := wallet.GetBalance(timeoutCtx, ref)
+	require.Eventually(t, func() bool {
+		resp, err := wallet.ListBalances(ctx, &entities.ListBalancesRequest{
+			AssetRef: &ref,
+		})
 		if err != nil {
+			t.Logf("balance lookup not ready for %s: %v", ref, err)
 			return false
 		}
 
-		balance = got
-		return got == amount
+		assetBalance, ok := resp.Balances[ref.String()]
+		if !ok {
+			t.Logf("balance for %s not visible yet (want %d, "+
+				"unconfirmed=%d)", ref, amount,
+				resp.UnconfirmedTransfers)
+			balance = 0
+			return false
+		}
+
+		balance = assetBalance.Balance
+		if balance != amount {
+			t.Logf("balance for %s = %d, want %d (unconfirmed=%d)",
+				ref, balance, amount,
+				resp.UnconfirmedTransfers)
+		}
+
+		return balance == amount
 	}, timeout, time.Second)
 
 	return balance
@@ -270,20 +273,17 @@ func (h *TestHarness) WaitForBalance(ctx context.Context, wallet *tapsdk.Wallet,
 // WaitForReceiveAddress retries Wallet.NewReceiveAddress until the receiver is
 // ready to bootstrap the requested asset.
 func (h *TestHarness) WaitForReceiveAddress(
-	ctx context.Context, wallet *tapsdk.Wallet,
+	t testing.TB, ctx context.Context, wallet *tapsdk.Wallet,
 	ref entities.AssetRef, timeout time.Duration,
 ) *entities.Address {
 
-	h.t.Helper()
-
-	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+	t.Helper()
 
 	var addr *entities.Address
-	require.Eventually(h.t, func() bool {
-		candidate, err := wallet.NewReceiveAddress(timeoutCtx, ref)
+	require.Eventually(t, func() bool {
+		candidate, err := wallet.NewReceiveAddress(ctx, ref)
 		if err != nil {
-			h.t.Logf("receive address bootstrap not ready for %s: %v",
+			t.Logf("receive address bootstrap not ready for %s: %v",
 				ref, err)
 			return false
 		}
@@ -297,8 +297,9 @@ func (h *TestHarness) WaitForReceiveAddress(
 
 // EnableUniverseBootstrap configures both tapd nodes for the regtest universe
 // sync path used by the V2 receive-address flow.
-func (h *TestHarness) EnableUniverseBootstrap(ctx context.Context) {
-	h.t.Helper()
+func (h *TestHarness) EnableUniverseBootstrap(t testing.TB,
+	ctx context.Context) {
+	t.Helper()
 
 	globalSync := []entities.GlobalFederationSyncConfig{
 		{
@@ -313,10 +314,10 @@ func (h *TestHarness) EnableUniverseBootstrap(ctx context.Context) {
 		},
 	}
 
-	require.NoError(h.t,
+	require.NoError(t,
 		h.AliceClient.SetFederationSyncConfig(ctx, globalSync, nil),
 	)
-	require.NoError(h.t,
+	require.NoError(t,
 		h.BobClient.SetFederationSyncConfig(ctx, globalSync, nil),
 	)
 
@@ -324,28 +325,26 @@ func (h *TestHarness) EnableUniverseBootstrap(ctx context.Context) {
 		"TAPD_ALICE_UNIVERSE_HOST",
 		defaultAliceUniverseHost,
 	)
-	require.NoError(h.t, h.BobClient.AddFederationServer(ctx,
+	require.NoError(t, h.BobClient.AddFederationServer(ctx,
 		[]entities.FederationServer{{Host: aliceUniverseHost}}),
 	)
 }
 
 // WaitForGroupBootstrap waits for Bob to learn the issuance universe for a
 // grouped asset before creating a V2 receive address.
-func (h *TestHarness) WaitForGroupBootstrap(ctx context.Context,
+func (h *TestHarness) WaitForGroupBootstrap(t testing.TB,
+	ctx context.Context,
 	ref entities.AssetRef, timeout time.Duration) {
 
-	h.t.Helper()
-	require.True(h.t, ref.IsGroupRef(),
+	t.Helper()
+	require.True(t, ref.IsGroupRef(),
 		"group bootstrap requires a fungible group ref")
-
-	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 
 	issuanceID := entities.UniverseIDFromRef(ref,
 		entities.ProofTypeIssuance)
 
-	require.Eventually(h.t, func() bool {
-		_, err := h.BobClient.SyncUniverse(timeoutCtx,
+	require.Eventually(t, func() bool {
+		_, err := h.BobClient.SyncUniverse(ctx,
 			&entities.SyncRequest{
 				UniverseHost: envOr(
 					"TAPD_ALICE_UNIVERSE_HOST",
@@ -358,21 +357,36 @@ func (h *TestHarness) WaitForGroupBootstrap(ctx context.Context,
 			},
 		)
 		if err != nil {
-			h.t.Logf("group bootstrap sync not ready for %s: %v",
+			t.Logf("group bootstrap sync not ready for %s: %v",
 				ref, err)
 			return false
 		}
 
-		roots, err := h.BobClient.QueryAssetRoots(timeoutCtx,
+		roots, err := h.BobClient.QueryAssetRoots(ctx,
 			&issuanceID)
 		if err != nil {
-			h.t.Logf("group bootstrap roots not ready for %s: %v",
+			t.Logf("group bootstrap roots not ready for %s: %v",
 				ref, err)
 			return false
 		}
 
 		return roots.IssuanceRoot != nil
 	}, timeout, time.Second)
+}
+
+// CreateGroupedReceiveAddress bootstraps Bob for a grouped fungible receive
+// flow, then creates the V2 receive address.
+func (h *TestHarness) CreateGroupedReceiveAddress(t testing.TB,
+	ctx context.Context, ref entities.AssetRef) *entities.Address {
+
+	t.Helper()
+
+	h.EnableUniverseBootstrap(t, ctx)
+	h.WaitForGroupBootstrap(t, ctx, ref, defaultWaitTimeout)
+
+	return h.WaitForReceiveAddress(
+		t, ctx, h.BobWallet, ref, defaultWaitTimeout,
+	)
 }
 
 // envOr returns the environment variable value or the fallback.
@@ -387,7 +401,7 @@ func envOr(key, fallback string) string {
 // temporary directory and returns the local path. The temp file is cleaned up
 // when the test finishes. It retries a few times with a short delay to handle
 // slow container startup.
-func extractDockerFile(t *testing.T, container,
+func extractDockerFile(t testing.TB, container,
 	containerPath string) string {
 
 	t.Helper()

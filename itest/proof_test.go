@@ -3,7 +3,6 @@
 package itest
 
 import (
-	"context"
 	"testing"
 
 	"github.com/lightninglabs/tap-sdk/entities"
@@ -13,12 +12,9 @@ import (
 // TestProofOperations verifies proof export, unpack, and decode operations on
 // a minted asset.
 func TestProofOperations(t *testing.T) {
-	h := NewTestHarness(t)
-	ctx := context.Background()
+	h, ctx := newFundedHarness(t)
 
-	h.FundLndWallet()
-
-	minted, err := h.MintAssetAndConfirm(ctx, &entities.CreateAsset{
+	minted, err := h.MintAssetAndConfirm(t, ctx, &entities.CreateAsset{
 		AssetType:     entities.AssetTypeNormal,
 		Name:          "proof-token",
 		InitialSupply: 100,

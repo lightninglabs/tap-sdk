@@ -35,6 +35,16 @@ bitcoind (regtest)
 Two independent tapd nodes allow testing send/receive flows between
 separate wallets.
 
+## Helper Structure
+
+- `newFundedHarness(t)` builds a fresh harness per test case and funds Alice's
+  LND wallet up front.
+- `MintResult.Ref` carries the semantic `AssetRef` that high-level wallet
+  helpers should use, so grouped fungible tests do not depend on the raw group
+  key shape returned by `ListAssets`.
+- `CreateGroupedReceiveAddress(...)` centralizes the V2 grouped receive
+  bootstrap flow for Bob.
+
 ## Test Scenarios
 
 | Test | Description |
