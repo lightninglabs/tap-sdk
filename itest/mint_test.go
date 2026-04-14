@@ -28,8 +28,10 @@ func TestMintAsset(t *testing.T) {
 	require.Equal(t, uint64(1000), minted.Asset.Amount)
 	require.Equal(t, "test-token", minted.Asset.Genesis.Tag)
 
-	balance, err := h.AliceWallet.GetBalance(ctx, minted.Asset.AssetRef)
-	require.NoError(t, err)
+	balance := h.WaitForBalance(ctx, h.AliceWallet,
+		minted.Asset.AssetRef, 1000,
+		balanceTimeoutFor(minted.Asset.AssetRef),
+	)
 	require.Equal(t, uint64(1000), balance)
 }
 
@@ -51,7 +53,9 @@ func TestMintCollectible(t *testing.T) {
 	require.Equal(t, uint64(1), minted.Asset.Amount)
 	require.Equal(t, "test-nft", minted.Asset.Genesis.Tag)
 
-	balance, err := h.AliceWallet.GetBalance(ctx, minted.Asset.AssetRef)
-	require.NoError(t, err)
+	balance := h.WaitForBalance(ctx, h.AliceWallet,
+		minted.Asset.AssetRef, 1,
+		balanceTimeoutFor(minted.Asset.AssetRef),
+	)
 	require.Equal(t, uint64(1), balance)
 }

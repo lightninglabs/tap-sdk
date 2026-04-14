@@ -5,7 +5,6 @@ package itest
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/lightninglabs/tap-sdk/entities"
 )
@@ -47,18 +46,15 @@ func (h *TestHarness) MintAssetAndConfirm(ctx context.Context,
 	}
 
 	h.MineBlocks(defaultMineBlocks)
-	h.WaitForSync(h.AliceClient, 60*time.Second)
+	h.WaitForSync(h.AliceClient, defaultWaitTimeout)
 
 	finalized := h.WaitForMint(ctx, h.AliceClient, batch.BatchKey,
-		60*time.Second)
+		defaultWaitTimeout)
 	resultAsset := h.WaitForAssetByTag(ctx, h.AliceClient,
-		asset.Name, 60*time.Second)
+		asset.Name, defaultWaitTimeout)
 	if resultAsset == nil {
 		return nil, fmt.Errorf("minted asset %q not found", asset.Name)
 	}
-
-	h.WaitForBalance(ctx, h.AliceWallet, resultAsset.AssetRef,
-		resultAsset.Amount, 60*time.Second)
 
 	return &MintResult{
 		Asset: resultAsset,

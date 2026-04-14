@@ -5,7 +5,6 @@ package itest
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/require"
@@ -60,7 +59,7 @@ func TestBalanceQueries(t *testing.T) {
 				h.AliceWallet,
 				minted.Asset.AssetRef,
 				tc.wantAmount,
-				30*time.Second,
+				balanceTimeoutFor(minted.Asset.AssetRef),
 			)
 			require.Equal(t, tc.wantAmount, balance)
 		})

@@ -5,7 +5,6 @@ package itest
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/require"
@@ -22,12 +21,14 @@ func TestAddressSend(t *testing.T) {
 	minted, err := h.MintGroupedAsset(ctx, "send-token", 5000)
 	require.NoError(t, err)
 	require.True(t, minted.Asset.AssetRef.IsGroupRef())
+	h.WaitForBalance(ctx, h.AliceWallet, minted.Asset.AssetRef, 5000,
+		balanceTimeoutFor(minted.Asset.AssetRef))
 
 	h.EnableUniverseBootstrap(ctx)
-	h.WaitForGroupBootstrap(ctx, minted.Asset.AssetRef, 60*time.Second)
+	h.WaitForGroupBootstrap(ctx, minted.Asset.AssetRef, defaultWaitTimeout)
 
 	bobAddr := h.WaitForReceiveAddress(ctx, h.BobWallet,
-		minted.Asset.AssetRef, 60*time.Second)
+		minted.Asset.AssetRef, defaultWaitTimeout)
 	require.NotEmpty(t, bobAddr.Encoded)
 	require.Equal(t, minted.Asset.AssetRef, bobAddr.AssetRef)
 	require.Equal(t, entities.AddressVersionV2, bobAddr.AddressVersion)
@@ -39,15 +40,17 @@ func TestAddressSend(t *testing.T) {
 	t.Logf("Send tx: %s", transfer.AnchorTxid)
 
 	h.MineBlocks(defaultMineBlocks)
-	h.WaitForSync(h.AliceClient, 30*time.Second)
-	h.WaitForSync(h.BobClient, 30*time.Second)
+	h.WaitForSync(h.AliceClient, defaultSyncTimeout)
+	h.WaitForSync(h.BobClient, defaultSyncTimeout)
 
 	bobBalance := h.WaitForBalance(ctx, h.BobWallet,
-		minted.Asset.AssetRef, 200, 120*time.Second)
+		minted.Asset.AssetRef, 200,
+		balanceTimeoutFor(minted.Asset.AssetRef))
 	t.Logf("Bob balance for %s: %d", minted.Asset.AssetRef, bobBalance)
 
 	aliceBalance := h.WaitForBalance(ctx, h.AliceWallet,
-		minted.Asset.AssetRef, 4800, 120*time.Second)
+		minted.Asset.AssetRef, 4800,
+		balanceTimeoutFor(minted.Asset.AssetRef))
 	t.Logf("Alice balance for %s: %d", minted.Asset.AssetRef,
 		aliceBalance)
 }

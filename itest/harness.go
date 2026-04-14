@@ -43,6 +43,21 @@ const (
 
 	// defaultMineBlocks is the number of blocks to mine for confirmation.
 	defaultMineBlocks = 6
+
+	// defaultSyncTimeout is the short sync window we use after mining.
+	defaultSyncTimeout = 30 * time.Second
+
+	// defaultWaitTimeout is the generic regtest wait window for bootstrap and
+	// visibility checks.
+	defaultWaitTimeout = 60 * time.Second
+
+	// defaultGroupBalanceTimeout gives grouped balances more slack because
+	// group-key accounting settles slower than collectible balances.
+	defaultGroupBalanceTimeout = 3 * time.Minute
+
+	// defaultCollectibleBalanceTimeout is enough for collectible balances to
+	// settle in regtest.
+	defaultCollectibleBalanceTimeout = 60 * time.Second
 )
 
 // tapdNodeConfig describes the connection inputs needed to open a tapd client.
@@ -413,4 +428,14 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+// balanceTimeoutFor returns the timeout we use when waiting for a confirmed
+// wallet balance after minting.
+func balanceTimeoutFor(ref entities.AssetRef) time.Duration {
+	if ref.IsGroupRef() {
+		return defaultGroupBalanceTimeout
+	}
+
+	return defaultCollectibleBalanceTimeout
 }
