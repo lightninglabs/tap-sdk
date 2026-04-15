@@ -62,7 +62,7 @@ func TestMarshalListBalancesRequest(t *testing.T) {
 			},
 		},
 		{
-			name: "group key ref sets group key filter",
+			name: "group key ref filters client side",
 			req: &entities.ListBalancesRequest{
 				AssetRef: &groupKeyRef,
 			},
@@ -73,10 +73,7 @@ func TestMarshalListBalancesRequest(t *testing.T) {
 					t, rpcReq.GetAssetId(),
 				)
 				require.Empty(t, rpcReq.AssetFilter)
-				require.Equal(
-					t, groupPubKey[:],
-					rpcReq.GroupKeyFilter,
-				)
+				require.Empty(t, rpcReq.GroupKeyFilter)
 			},
 		},
 		{
@@ -127,6 +124,67 @@ func TestMarshalListBalancesRequest(t *testing.T) {
 			rpcReq := marshalListBalancesRequest(tc.req)
 			require.NotNil(t, rpcReq)
 			tc.validate(t, rpcReq)
+		})
+	}
+}
+
+func TestFilterSemanticBalances(t *testing.T) {
+	var groupKey entities.PubKey
+	copy(groupKey[:], testPubKey)
+	groupRef := entities.AssetRefFromGroupKey(groupKey)
+
+	var assetID entities.AssetID
+	copy(assetID[:], testAssetID)
+	assetRef := entities.AssetRefFromAssetID(assetID)
+
+	tests := []struct {
+		name    string
+		req     *entities.ListBalancesRequest
+		resp    *entities.ListBalancesResponse
+		wantLen int
+		wantKey string
+	}{
+		{
+			name: "nil request keeps all balances",
+			resp: &entities.ListBalancesResponse{
+				Balances: map[string]*entities.AssetBalance{
+					groupRef.String(): {AssetRef: groupRef, Balance: 5},
+					assetRef.String(): {AssetRef: assetRef, Balance: 1},
+				},
+			},
+			wantLen: 2,
+		},
+		{
+			name: "matching ref keeps single balance",
+			req:  &entities.ListBalancesRequest{AssetRef: &groupRef},
+			resp: &entities.ListBalancesResponse{
+				Balances: map[string]*entities.AssetBalance{
+					groupRef.String(): {AssetRef: groupRef, Balance: 5},
+					assetRef.String(): {AssetRef: assetRef, Balance: 1},
+				},
+			},
+			wantLen: 1,
+			wantKey: groupRef.String(),
+		},
+		{
+			name: "missing ref returns empty set",
+			req:  &entities.ListBalancesRequest{AssetRef: &groupRef},
+			resp: &entities.ListBalancesResponse{
+				Balances: map[string]*entities.AssetBalance{
+					assetRef.String(): {AssetRef: assetRef, Balance: 1},
+				},
+			},
+			wantLen: 0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			filterSemanticBalances(tc.resp, tc.req)
+			require.Len(t, tc.resp.Balances, tc.wantLen)
+			if tc.wantKey != "" {
+				require.Contains(t, tc.resp.Balances, tc.wantKey)
+			}
 		})
 	}
 }

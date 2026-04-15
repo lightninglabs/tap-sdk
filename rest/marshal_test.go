@@ -83,6 +83,72 @@ func TestParseBase64Bytes(t *testing.T) {
 	}
 }
 
+func TestFilterSemanticBalances(t *testing.T) {
+	var groupKey entities.PubKey
+	groupKey[0] = 0x02
+	for i := 1; i < len(groupKey); i++ {
+		groupKey[i] = byte(i)
+	}
+	groupRef := entities.AssetRefFromGroupKey(groupKey)
+
+	var assetID entities.AssetID
+	for i := range assetID {
+		assetID[i] = byte(i + 1)
+	}
+	assetRef := entities.AssetRefFromAssetID(assetID)
+
+	tests := []struct {
+		name    string
+		req     *entities.ListBalancesRequest
+		resp    *entities.ListBalancesResponse
+		wantLen int
+		wantKey string
+	}{
+		{
+			name: "nil request keeps all balances",
+			resp: &entities.ListBalancesResponse{
+				Balances: map[string]*entities.AssetBalance{
+					groupRef.String(): {AssetRef: groupRef, Balance: 5},
+					assetRef.String(): {AssetRef: assetRef, Balance: 1},
+				},
+			},
+			wantLen: 2,
+		},
+		{
+			name: "matching ref keeps single balance",
+			req:  &entities.ListBalancesRequest{AssetRef: &groupRef},
+			resp: &entities.ListBalancesResponse{
+				Balances: map[string]*entities.AssetBalance{
+					groupRef.String(): {AssetRef: groupRef, Balance: 5},
+					assetRef.String(): {AssetRef: assetRef, Balance: 1},
+				},
+			},
+			wantLen: 1,
+			wantKey: groupRef.String(),
+		},
+		{
+			name: "missing ref returns empty set",
+			req:  &entities.ListBalancesRequest{AssetRef: &groupRef},
+			resp: &entities.ListBalancesResponse{
+				Balances: map[string]*entities.AssetBalance{
+					assetRef.String(): {AssetRef: assetRef, Balance: 1},
+				},
+			},
+			wantLen: 0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			filterSemanticBalances(tc.resp, tc.req)
+			require.Len(t, tc.resp.Balances, tc.wantLen)
+			if tc.wantKey != "" {
+				require.Contains(t, tc.resp.Balances, tc.wantKey)
+			}
+		})
+	}
+}
+
 func TestParseUint64(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -120,13 +120,6 @@ func (w *walletClient) ListBalances(ctx context.Context,
 			assetID, groupKey, _ := req.AssetRef.Specifier()
 
 			switch {
-			case groupKey != nil:
-				params.Set(
-					"group_key_filter",
-					hex.EncodeToString(
-						(*groupKey)[:],
-					),
-				)
 			case assetID != nil:
 				params.Set(
 					"asset_filter",
@@ -134,6 +127,12 @@ func (w *walletClient) ListBalances(ctx context.Context,
 						(*assetID)[:],
 					),
 				)
+
+			// tapd only supports group_key_filter when the daemon groups by
+			// group key. The SDK groups by asset_id to preserve genesis
+			// metadata, so grouped refs must be filtered client-side after
+			// semantic re-aggregation.
+			case groupKey != nil:
 			}
 		}
 	}
@@ -214,7 +213,28 @@ func (w *walletClient) ListBalances(ctx context.Context,
 		balance.Balance += bal
 	}
 
+	filterSemanticBalances(result, req)
+
 	return result, nil
+}
+
+func filterSemanticBalances(resp *entities.ListBalancesResponse,
+	req *entities.ListBalancesRequest) {
+
+	if resp == nil || req == nil || req.AssetRef == nil {
+		return
+	}
+
+	key := req.AssetRef.String()
+	balance, ok := resp.Balances[key]
+	if !ok {
+		resp.Balances = map[string]*entities.AssetBalance{}
+		return
+	}
+
+	resp.Balances = map[string]*entities.AssetBalance{
+		key: balance,
+	}
 }
 
 // ListTransfers lists outgoing transfers with optional filtering.

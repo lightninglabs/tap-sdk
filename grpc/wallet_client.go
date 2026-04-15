@@ -193,7 +193,28 @@ func (s *walletClient) ListBalances(ctx context.Context,
 		balance.Balance += ab.Balance
 	}
 
+	filterSemanticBalances(result, req)
+
 	return result, nil
+}
+
+func filterSemanticBalances(resp *entities.ListBalancesResponse,
+	req *entities.ListBalancesRequest) {
+
+	if resp == nil || req == nil || req.AssetRef == nil {
+		return
+	}
+
+	key := req.AssetRef.String()
+	balance, ok := resp.Balances[key]
+	if !ok {
+		resp.Balances = map[string]*entities.AssetBalance{}
+		return
+	}
+
+	resp.Balances = map[string]*entities.AssetBalance{
+		key: balance,
+	}
 }
 
 func (s *walletClient) ListTransfers(ctx context.Context,
@@ -592,10 +613,14 @@ func marshalListBalancesRequest(
 		assetID, groupKey, _ := req.AssetRef.Specifier()
 
 		switch {
-		case groupKey != nil:
-			rpcReq.GroupKeyFilter = (*groupKey)[:]
 		case assetID != nil:
 			rpcReq.AssetFilter = (*assetID)[:]
+
+		// tapd only supports group_key_filter when the daemon itself groups
+		// by group key. We intentionally group by asset_id to preserve
+		// genesis metadata, so grouped refs must be filtered client-side
+		// after semantic re-aggregation.
+		case groupKey != nil:
 		}
 	}
 
