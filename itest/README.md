@@ -37,13 +37,16 @@ separate wallets.
 
 ## Helper Structure
 
-- `newFundedHarness(t)` builds a fresh harness per test case and funds Alice's
-  LND wallet up front.
+- `newHarnessContext(t)` builds a fresh connected harness for tests that only
+  need the two tapd clients.
+- `newFundedHarness(t)` builds a fresh funded harness per test case so asset
+  flow tests do not repeat the wallet-funding setup.
 - `MintResult.Ref` carries the semantic `AssetRef` that high-level wallet
   helpers should use, so grouped fungible tests do not depend on the raw group
   key shape returned by `ListAssets`.
 - `CreateGroupedReceiveAddress(...)` centralizes the V2 grouped receive
-  bootstrap flow for Bob.
+  bootstrap flow for Bob and retries until the real end condition, successful
+  grouped address creation, is ready.
 
 ## Test Scenarios
 
