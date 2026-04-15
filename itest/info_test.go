@@ -3,7 +3,6 @@
 package itest
 
 import (
-	"context"
 	"testing"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
@@ -14,8 +13,7 @@ import (
 // TestGetInfo verifies that we can connect to both tapd instances and retrieve
 // valid node information.
 func TestGetInfo(t *testing.T) {
-	h := NewTestHarness(t)
-	ctx := context.Background()
+	h, ctx := newHarnessContext(t)
 
 	assertNode := func(name string, client tapsdk.Client) *entities.Info {
 		t.Helper()

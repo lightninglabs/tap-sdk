@@ -3,7 +3,6 @@
 package itest
 
 import (
-	"context"
 	"testing"
 
 	"github.com/lightninglabs/tap-sdk/entities"
@@ -12,8 +11,7 @@ import (
 
 // TestErrorHandling verifies the SDK returns proper errors for invalid input.
 func TestErrorHandling(t *testing.T) {
-	h := NewTestHarness(t)
-	ctx := context.Background()
+	h, ctx := newHarnessContext(t)
 
 	tests := []struct {
 		name string

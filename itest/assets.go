@@ -4,6 +4,7 @@ package itest
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"testing"
 	"time"
@@ -135,7 +136,13 @@ func parseGroupRefKey(s string) (entities.PubKey, error) {
 			s)
 	}
 
-	return entities.ParsePubKeyHex(s)
+	groupKeyBytes, err := hex.DecodeString(s)
+	if err != nil {
+		return entities.PubKey{}, fmt.Errorf("invalid group key %q: %w",
+			s, err)
+	}
+
+	return entities.ParseTaprootPubKey(groupKeyBytes)
 }
 
 // MintGroupedAsset mints a fungible asset that uses the canonical group key as

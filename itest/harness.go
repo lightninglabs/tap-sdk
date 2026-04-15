@@ -330,63 +330,60 @@ func (h *TestHarness) EnableUniverseBootstrap(t testing.TB,
 	)
 }
 
-// WaitForGroupBootstrap waits for Bob to learn the issuance universe for a
-// grouped asset before creating a V2 receive address.
-func (h *TestHarness) WaitForGroupBootstrap(t testing.TB,
-	ctx context.Context,
-	ref entities.AssetRef, timeout time.Duration) {
+func (h *TestHarness) syncUniverseTarget(ctx context.Context,
+	id entities.UniverseID) error {
+
+	_, err := h.BobClient.SyncUniverse(ctx,
+		&entities.SyncRequest{
+			UniverseHost: envOr(
+				"TAPD_ALICE_UNIVERSE_HOST",
+				defaultAliceUniverseHost,
+			),
+			SyncMode: entities.SyncIssuanceOnly,
+			SyncTargets: []entities.SyncTarget{{
+				ID: id,
+			}},
+		},
+	)
+	return err
+}
+
+// CreateGroupedReceiveAddress bootstraps Bob for a grouped fungible receive
+// flow and only returns once the actual V2 receive address can be created.
+func (h *TestHarness) CreateGroupedReceiveAddress(t testing.TB,
+	ctx context.Context, ref entities.AssetRef) *entities.Address {
 
 	t.Helper()
 	require.True(t, ref.IsGroupRef(),
-		"group bootstrap requires a fungible group ref")
+		"grouped receive requires a fungible group ref")
 
-	issuanceID := entities.UniverseIDFromRef(ref,
-		entities.ProofTypeIssuance)
+	h.EnableUniverseBootstrap(t, ctx)
 
+	issuanceID := entities.UniverseIDFromRef(
+		ref, entities.ProofTypeIssuance,
+	)
+
+	var addr *entities.Address
 	require.Eventually(t, func() bool {
-		_, err := h.BobClient.SyncUniverse(ctx,
-			&entities.SyncRequest{
-				UniverseHost: envOr(
-					"TAPD_ALICE_UNIVERSE_HOST",
-					defaultAliceUniverseHost,
-				),
-				SyncMode: entities.SyncIssuanceOnly,
-				SyncTargets: []entities.SyncTarget{{
-					ID: issuanceID,
-				}},
-			},
-		)
+		err := h.syncUniverseTarget(ctx, issuanceID)
 		if err != nil {
 			t.Logf("group bootstrap sync not ready for %s: %v",
 				ref, err)
 			return false
 		}
 
-		roots, err := h.BobClient.QueryAssetRoots(ctx,
-			&issuanceID)
+		candidate, err := h.BobWallet.NewReceiveAddress(ctx, ref)
 		if err != nil {
-			t.Logf("group bootstrap roots not ready for %s: %v",
+			t.Logf("group receive address not ready for %s: %v",
 				ref, err)
 			return false
 		}
 
-		return roots.IssuanceRoot != nil
-	}, timeout, time.Second)
-}
+		addr = candidate
+		return true
+	}, defaultWaitTimeout, time.Second)
 
-// CreateGroupedReceiveAddress bootstraps Bob for a grouped fungible receive
-// flow, then creates the V2 receive address.
-func (h *TestHarness) CreateGroupedReceiveAddress(t testing.TB,
-	ctx context.Context, ref entities.AssetRef) *entities.Address {
-
-	t.Helper()
-
-	h.EnableUniverseBootstrap(t, ctx)
-	h.WaitForGroupBootstrap(t, ctx, ref, defaultWaitTimeout)
-
-	return h.WaitForReceiveAddress(
-		t, ctx, h.BobWallet, ref, defaultWaitTimeout,
-	)
+	return addr
 }
 
 // envOr returns the environment variable value or the fallback.
