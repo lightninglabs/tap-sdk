@@ -142,7 +142,19 @@ func parseGroupRefKey(s string) (entities.PubKey, error) {
 			s, err)
 	}
 
-	return entities.ParseTaprootPubKey(groupKeyBytes)
+	switch len(groupKeyBytes) {
+	case 33:
+		return entities.ParsePubKey(groupKeyBytes)
+
+	case 32:
+		return entities.ParseTaprootPubKey(groupKeyBytes)
+
+	default:
+		return entities.PubKey{}, fmt.Errorf(
+			"invalid group key %q: expected 32 or 33 bytes, got %d",
+			s, len(groupKeyBytes),
+		)
+	}
 }
 
 // MintGroupedAsset mints a fungible asset that uses the canonical group key as
