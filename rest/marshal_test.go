@@ -7,6 +7,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func testGroupKey(t *testing.T) entities.PubKey {
+	t.Helper()
+
+	key, err := entities.ParsePubKeyHex(
+		"0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+	)
+	require.NoError(t, err)
+
+	return key
+}
+
 func TestParseHexBytes(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -84,11 +95,7 @@ func TestParseBase64Bytes(t *testing.T) {
 }
 
 func TestFilterSemanticBalances(t *testing.T) {
-	var groupKey entities.PubKey
-	groupKey[0] = 0x02
-	for i := 1; i < len(groupKey); i++ {
-		groupKey[i] = byte(i)
-	}
+	groupKey := testGroupKey(t)
 	groupRef := entities.AssetRefFromGroupKey(groupKey)
 
 	var assetID entities.AssetID
@@ -147,6 +154,124 @@ func TestFilterSemanticBalances(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestShouldFallbackToGroupBalance(t *testing.T) {
+	groupKey := testGroupKey(t)
+	groupRef := entities.AssetRefFromGroupKey(groupKey)
+
+	var assetID entities.AssetID
+	for i := range assetID {
+		assetID[i] = byte(i + 1)
+	}
+	assetRef := entities.AssetRefFromAssetID(assetID)
+
+	tests := []struct {
+		name string
+		req  *entities.ListBalancesRequest
+		resp *entities.ListBalancesResponse
+		want bool
+	}{
+		{
+			name: "group ref with empty result falls back",
+			req:  &entities.ListBalancesRequest{AssetRef: &groupRef},
+			resp: &entities.ListBalancesResponse{
+				Balances: map[string]*entities.AssetBalance{},
+			},
+			want: true,
+		},
+		{
+			name: "group ref with populated result skips fallback",
+			req:  &entities.ListBalancesRequest{AssetRef: &groupRef},
+			resp: &entities.ListBalancesResponse{
+				Balances: map[string]*entities.AssetBalance{
+					groupRef.String(): {
+						AssetRef: groupRef,
+						Balance:  5,
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "asset id refs never fall back",
+			req:  &entities.ListBalancesRequest{AssetRef: &assetRef},
+			resp: &entities.ListBalancesResponse{
+				Balances: map[string]*entities.AssetBalance{},
+			},
+			want: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want,
+				shouldFallbackToGroupBalance(tc.req, tc.resp))
+		})
+	}
+}
+
+func TestFindGroupBalance(t *testing.T) {
+	groupKey := testGroupKey(t)
+
+	balance, ok := findGroupBalance(
+		map[string]*jsonAssetGroupBalance{
+			groupKey.String(): {Balance: "21"},
+		},
+		groupKey,
+	)
+	require.True(t, ok)
+	require.Equal(t, "21", balance.Balance)
+
+	balance, ok = findGroupBalance(
+		map[string]*jsonAssetGroupBalance{
+			"unexpected": {Balance: "34"},
+		},
+		groupKey,
+	)
+	require.True(t, ok)
+	require.Equal(t, "34", balance.Balance)
+
+	_, ok = findGroupBalance(
+		map[string]*jsonAssetGroupBalance{
+			"first":  {Balance: "1"},
+			"second": {Balance: "2"},
+		},
+		groupKey,
+	)
+	require.False(t, ok)
+}
+
+func TestNewSemanticGroupBalanceResponse(t *testing.T) {
+	groupKey := testGroupKey(t)
+	ref := entities.AssetRefFromGroupKey(groupKey)
+
+	var issuanceID entities.AssetID
+	for i := range issuanceID {
+		issuanceID[i] = byte(i + 1)
+	}
+
+	asset := &entities.Asset{
+		AssetRef: ref,
+		Genesis: entities.AssetGenesis{
+			Tag:        "test-group",
+			IssuanceID: issuanceID,
+		},
+	}
+
+	resp, err := newSemanticGroupBalanceResponse(
+		ref, groupKey, asset, 55, 2,
+	)
+	require.NoError(t, err)
+	require.Len(t, resp.Balances, 1)
+	require.Equal(t, uint64(2), resp.UnconfirmedTransfers)
+
+	balance := resp.Balances[ref.String()]
+	require.NotNil(t, balance)
+	require.Equal(t, uint64(55), balance.Balance)
+	require.Equal(t, asset.Genesis, balance.AssetGenesis)
+	require.NotNil(t, balance.GroupKey)
+	require.Equal(t, groupKey, *balance.GroupKey)
 }
 
 func TestParseUint64(t *testing.T) {

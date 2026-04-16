@@ -194,6 +194,9 @@ func (s *walletClient) ListBalances(ctx context.Context,
 	}
 
 	filterSemanticBalances(result, req)
+	if shouldFallbackToGroupBalance(req, result) {
+		return s.listSemanticGroupBalance(ctx, req)
+	}
 
 	return result, nil
 }
@@ -215,6 +218,132 @@ func filterSemanticBalances(resp *entities.ListBalancesResponse,
 	resp.Balances = map[string]*entities.AssetBalance{
 		key: balance,
 	}
+}
+
+func shouldFallbackToGroupBalance(req *entities.ListBalancesRequest,
+	resp *entities.ListBalancesResponse) bool {
+
+	if req == nil || req.AssetRef == nil || resp == nil {
+		return false
+	}
+
+	return req.AssetRef.IsGroupRef() && len(resp.Balances) == 0
+}
+
+func (s *walletClient) listSemanticGroupBalance(ctx context.Context,
+	req *entities.ListBalancesRequest) (*entities.ListBalancesResponse,
+	error) {
+
+	groupKey, ok := req.AssetRef.GroupKey()
+	if !ok {
+		return nil, fmt.Errorf("group balance fallback requires a group " +
+			"asset ref")
+	}
+
+	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+
+	rpcCtx = s.adminMac.WithMacaroonAuth(rpcCtx)
+	rawResp, err := s.client.ListBalances(rpcCtx,
+		&taprpc.ListBalancesRequest{
+			GroupBy: &taprpc.ListBalancesRequest_GroupKey{
+				GroupKey: true,
+			},
+			GroupKeyFilter: groupKey[:],
+			IncludeLeased:  req.IncludeLeased,
+			ScriptKeyType: marshalScriptKeyTypeQuery(
+				req.ScriptKeyType,
+			),
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	groupBalance, ok := findGroupBalance(
+		rawResp.AssetGroupBalances, groupKey,
+	)
+	if !ok {
+		return &entities.ListBalancesResponse{
+			Balances:             map[string]*entities.AssetBalance{},
+			UnconfirmedTransfers: rawResp.UnconfirmedTransfers,
+		}, nil
+	}
+
+	representative, err := s.groupRepresentativeAsset(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	return newSemanticGroupBalanceResponse(
+		*req.AssetRef, groupKey, representative, groupBalance.Balance,
+		rawResp.UnconfirmedTransfers,
+	)
+}
+
+func findGroupBalance(groupBalances map[string]*taprpc.AssetGroupBalance,
+	groupKey entities.PubKey) (*taprpc.AssetGroupBalance, bool) {
+
+	if len(groupBalances) == 0 {
+		return nil, false
+	}
+
+	balance, ok := groupBalances[hex.EncodeToString(groupKey[:])]
+	if ok {
+		return balance, true
+	}
+
+	if len(groupBalances) != 1 {
+		return nil, false
+	}
+
+	for _, candidate := range groupBalances {
+		return candidate, candidate != nil
+	}
+
+	return nil, false
+}
+
+func (s *walletClient) groupRepresentativeAsset(ctx context.Context,
+	req *entities.ListBalancesRequest) (*entities.Asset, error) {
+
+	assets, err := s.ListAssets(ctx, &entities.ListAssetsRequest{
+		AssetRef:      req.AssetRef,
+		IncludeLeased: req.IncludeLeased,
+		ScriptKeyType: req.ScriptKeyType,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if len(assets) == 0 {
+		return nil, fmt.Errorf("missing representative asset for %s",
+			req.AssetRef)
+	}
+
+	return assets[0], nil
+}
+
+func newSemanticGroupBalanceResponse(ref entities.AssetRef,
+	groupKey entities.PubKey, asset *entities.Asset, balance,
+	unconfirmed uint64) (*entities.ListBalancesResponse, error) {
+
+	if asset == nil {
+		return nil, fmt.Errorf("group balance requires a representative " +
+			"asset")
+	}
+
+	return &entities.ListBalancesResponse{
+		Balances: map[string]*entities.AssetBalance{
+			ref.String(): {
+				AssetRef:     ref,
+				AssetGenesis: asset.Genesis,
+				Balance:      balance,
+				GroupKey:     &groupKey,
+			},
+		},
+		UnconfirmedTransfers: unconfirmed,
+	}, nil
 }
 
 func (s *walletClient) ListTransfers(ctx context.Context,
