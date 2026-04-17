@@ -128,6 +128,14 @@ func (s *walletClient) ListBalances(ctx context.Context,
 	req *entities.ListBalancesRequest) (
 	*entities.ListBalancesResponse, error) {
 
+	// Group refs must round-trip through tapd's group-by-group_key
+	// mode — the server only honors group_key_filter in that mode,
+	// and a wallet that learned about the group through universe
+	// bootstrap has no per-asset-id rows yet.
+	if req != nil && req.AssetRef != nil && req.AssetRef.IsGroupRef() {
+		return s.listGroupBalance(ctx, req)
+	}
+
 	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
@@ -193,51 +201,19 @@ func (s *walletClient) ListBalances(ctx context.Context,
 		balance.Balance += ab.Balance
 	}
 
-	filterSemanticBalances(result, req)
-	if shouldFallbackToGroupBalance(req, result) {
-		return s.listSemanticGroupBalance(ctx, req)
-	}
-
 	return result, nil
 }
 
-func filterSemanticBalances(resp *entities.ListBalancesResponse,
-	req *entities.ListBalancesRequest) {
-
-	if resp == nil || req == nil || req.AssetRef == nil {
-		return
-	}
-
-	key := req.AssetRef.String()
-	balance, ok := resp.Balances[key]
-	if !ok {
-		resp.Balances = map[string]*entities.AssetBalance{}
-		return
-	}
-
-	resp.Balances = map[string]*entities.AssetBalance{
-		key: balance,
-	}
-}
-
-func shouldFallbackToGroupBalance(req *entities.ListBalancesRequest,
-	resp *entities.ListBalancesResponse) bool {
-
-	if req == nil || req.AssetRef == nil || resp == nil {
-		return false
-	}
-
-	return req.AssetRef.IsGroupRef() && len(resp.Balances) == 0
-}
-
-func (s *walletClient) listSemanticGroupBalance(ctx context.Context,
+// listGroupBalance queries a single-group balance via tapd's
+// group-by-group_key mode. The server returns only the aggregate for the
+// requested group, so genesis metadata is enriched from ListAssets.
+func (s *walletClient) listGroupBalance(ctx context.Context,
 	req *entities.ListBalancesRequest) (*entities.ListBalancesResponse,
 	error) {
 
 	groupKey, ok := req.AssetRef.GroupKey()
 	if !ok {
-		return nil, fmt.Errorf("group balance fallback requires a group " +
-			"asset ref")
+		return nil, fmt.Errorf("group balance requires a group asset ref")
 	}
 
 	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
@@ -260,14 +236,16 @@ func (s *walletClient) listSemanticGroupBalance(ctx context.Context,
 		return nil, err
 	}
 
-	groupBalance, ok := findGroupBalance(
-		rawResp.AssetGroupBalances, groupKey,
-	)
-	if !ok {
-		return &entities.ListBalancesResponse{
-			Balances:             map[string]*entities.AssetBalance{},
-			UnconfirmedTransfers: rawResp.UnconfirmedTransfers,
-		}, nil
+	result := &entities.ListBalancesResponse{
+		Balances:             map[string]*entities.AssetBalance{},
+		UnconfirmedTransfers: rawResp.UnconfirmedTransfers,
+	}
+
+	groupBalance, ok := rawResp.AssetGroupBalances[
+		hex.EncodeToString(groupKey[:]),
+	]
+	if !ok || groupBalance == nil || groupBalance.Balance == 0 {
+		return result, nil
 	}
 
 	representative, err := s.groupRepresentativeAsset(ctx, req)
@@ -275,35 +253,18 @@ func (s *walletClient) listSemanticGroupBalance(ctx context.Context,
 		return nil, err
 	}
 
-	return newSemanticGroupBalanceResponse(
-		*req.AssetRef, groupKey, representative, groupBalance.Balance,
-		rawResp.UnconfirmedTransfers,
-	)
+	result.Balances[req.AssetRef.String()] = &entities.AssetBalance{
+		AssetRef:     *req.AssetRef,
+		AssetGenesis: representative.Genesis,
+		Balance:      groupBalance.Balance,
+		GroupKey:     &groupKey,
+	}
+
+	return result, nil
 }
 
-func findGroupBalance(groupBalances map[string]*taprpc.AssetGroupBalance,
-	groupKey entities.PubKey) (*taprpc.AssetGroupBalance, bool) {
-
-	if len(groupBalances) == 0 {
-		return nil, false
-	}
-
-	balance, ok := groupBalances[hex.EncodeToString(groupKey[:])]
-	if ok {
-		return balance, true
-	}
-
-	if len(groupBalances) != 1 {
-		return nil, false
-	}
-
-	for _, candidate := range groupBalances {
-		return candidate, candidate != nil
-	}
-
-	return nil, false
-}
-
+// groupRepresentativeAsset returns any asset from the group so that the
+// balance response carries the genesis metadata callers expect.
 func (s *walletClient) groupRepresentativeAsset(ctx context.Context,
 	req *entities.ListBalancesRequest) (*entities.Asset, error) {
 
@@ -322,28 +283,6 @@ func (s *walletClient) groupRepresentativeAsset(ctx context.Context,
 	}
 
 	return assets[0], nil
-}
-
-func newSemanticGroupBalanceResponse(ref entities.AssetRef,
-	groupKey entities.PubKey, asset *entities.Asset, balance,
-	unconfirmed uint64) (*entities.ListBalancesResponse, error) {
-
-	if asset == nil {
-		return nil, fmt.Errorf("group balance requires a representative " +
-			"asset")
-	}
-
-	return &entities.ListBalancesResponse{
-		Balances: map[string]*entities.AssetBalance{
-			ref.String(): {
-				AssetRef:     ref,
-				AssetGenesis: asset.Genesis,
-				Balance:      balance,
-				GroupKey:     &groupKey,
-			},
-		},
-		UnconfirmedTransfers: unconfirmed,
-	}, nil
 }
 
 func (s *walletClient) ListTransfers(ctx context.Context,
@@ -720,10 +659,8 @@ func (s *walletClient) AddrReceives(ctx context.Context,
 func marshalListBalancesRequest(
 	req *entities.ListBalancesRequest) *taprpc.ListBalancesRequest {
 
-	// Always group by asset_id so we get per-tranche balances
-	// with genesis info and group keys. The SDK re-aggregates
-	// entries with the same group key into AssetRef-keyed
-	// balances.
+	// Group by asset_id so we get per-tranche balances with genesis info
+	// and group keys. Group-ref lookups take a separate code path.
 	rpcReq := &taprpc.ListBalancesRequest{
 		GroupBy: &taprpc.ListBalancesRequest_AssetId{
 			AssetId: true,
@@ -734,22 +671,11 @@ func marshalListBalancesRequest(
 	}
 
 	rpcReq.IncludeLeased = req.IncludeLeased
-	rpcReq.ScriptKeyType = marshalScriptKeyTypeQuery(
-		req.ScriptKeyType,
-	)
+	rpcReq.ScriptKeyType = marshalScriptKeyTypeQuery(req.ScriptKeyType)
 
 	if req.AssetRef != nil {
-		assetID, groupKey, _ := req.AssetRef.Specifier()
-
-		switch {
-		case assetID != nil:
+		if assetID, _, _ := req.AssetRef.Specifier(); assetID != nil {
 			rpcReq.AssetFilter = (*assetID)[:]
-
-		// tapd only supports group_key_filter when the daemon itself groups
-		// by group key. We intentionally group by asset_id to preserve
-		// genesis metadata, so grouped refs must be filtered client-side
-		// after semantic re-aggregation.
-		case groupKey != nil:
 		}
 	}
 
