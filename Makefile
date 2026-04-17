@@ -114,6 +114,58 @@ unit-race:
 	@$(call print, "Running unit race tests.")
 	env CGO_ENABLED=1 GORACE="history_size=7 halt_on_errors=1" $(GOTEST) -race ./...
 
+# =====================
+# INTEGRATION TESTS
+# =====================
+#
+# itest flavours:
+#   itest         → pinned taproot-assets image (CI-safe, same as `itest-up` + tests).
+#   itest-main    → rebuilds tapd from taproot-assets `main` for unreleased features.
+#
+# itest-up / itest-down / itest-up-main / itest-down-main manage the
+# Docker Compose stack without running the Go tests.
+
+ITEST_COMPOSE := itest/docker-compose.yml
+ITEST_COMPOSE_MAIN := $(ITEST_COMPOSE) -f itest/docker-compose.local.yml
+ITEST_TIMEOUT ?= 20m
+ITEST_ARGS ?=
+
+itest-up:
+	@$(call print, "Starting itest stack (pinned tapd image).")
+	$(DOCKER) compose -f $(ITEST_COMPOSE) up -d
+	@bash itest/scripts/wait-healthy.sh
+
+itest-down:
+	@$(call print, "Stopping itest stack.")
+	$(DOCKER) compose -f $(ITEST_COMPOSE) down -v
+
+itest-up-main:
+	@$(call print, "Starting itest stack (tapd built from taproot-assets main).")
+	$(DOCKER) compose -f $(ITEST_COMPOSE_MAIN) up -d --build
+	@bash itest/scripts/wait-healthy.sh
+
+itest-down-main:
+	@$(call print, "Stopping itest stack (main build).")
+	$(DOCKER) compose -f $(ITEST_COMPOSE_MAIN) down -v
+
+itest-run:
+	@$(call print, "Running itest Go suite against the pinned image.")
+	$(GOTEST) -tags=itest -timeout=$(ITEST_TIMEOUT) $(ITEST_ARGS) ./itest/...
+
+itest-run-main:
+	@$(call print, "Running itest Go suite including tapd-main gated tests.")
+	TAP_SDK_TAPD_MAIN=1 $(GOTEST) -tags=itest -timeout=$(ITEST_TIMEOUT) $(ITEST_ARGS) ./itest/...
+
+itest: itest-up
+	@set -e; \
+	trap '$(MAKE) itest-down' EXIT; \
+	$(MAKE) itest-run
+
+itest-main: itest-up-main
+	@set -e; \
+	trap '$(MAKE) itest-down-main' EXIT; \
+	$(MAKE) itest-run-main
+
 # =========
 # UTILITIES
 # =========
@@ -135,6 +187,14 @@ lint-fix: docker-tools
 	build \
 	unit \
 	unit-race \
+	itest \
+	itest-main \
+	itest-up \
+	itest-up-main \
+	itest-down \
+	itest-down-main \
+	itest-run \
+	itest-run-main \
 	fmt \
 	lint \
 	lint-fix

@@ -1,6 +1,8 @@
 # Integration Tests (regtest)
 
 End-to-end tests that run against real `tapd` instances in regtest mode.
+Every SDK-level test runs against both the `grpc` and `rest` transports
+so the two clients stay in lock-step.
 
 ## Prerequisites
 
@@ -10,55 +12,108 @@ End-to-end tests that run against real `tapd` instances in regtest mode.
 
 ## Quick Start
 
+The Makefile drives the whole flow — stack up, wait-healthy, Go tests,
+and teardown — so both local dev and CI run the same commands.
+
 ```bash
-# Start the test infrastructure.
-docker compose -f itest/docker-compose.yml up -d
+# Full run against the pinned taproot-assets image (same thing CI does).
+make itest
 
-# Wait for all services to become healthy (check with docker ps).
-docker ps --format "table {{.Names}}\t{{.Status}}"
-
-# Run the integration tests.
-go test -v -tags=itest -timeout=20m ./itest/...
-
-# Tear down.
-docker compose -f itest/docker-compose.yml down -v
+# Or break it apart for iteration:
+make itest-up     # start + wait-healthy
+make itest-run    # just the Go tests
+make itest-down   # stop + clean volumes
 ```
+
+### Running against tapd built from `main`
+
+The default compose file pins `lightninglabs/taproot-assets:v0.7.2`.
+Some tests (e.g. `TestBurnAssetByGroupKey`) require features that only
+ship in tapd `main`, so they are skipped unless `TAP_SDK_TAPD_MAIN=1`.
+
+To run the full suite against a locally-built tapd:
+
+```bash
+make itest-main            # up (rebuild) + tests (TAP_SDK_TAPD_MAIN=1) + down
+# or piece-wise:
+make itest-up-main
+make itest-run-main
+make itest-down-main
+```
+
+`docker-compose.local.yml` rebuilds the `tap-sdk/tapd:local` image from
+the upstream `taproot-assets` `main` Dockerfile each time. CI does not
+use this override.
+
+### Common Make knobs
+
+| Variable | Purpose |
+|---|---|
+| `ITEST_TIMEOUT` | `go test -timeout=` value. Default `20m`. |
+| `ITEST_ARGS` | Extra flags forwarded to `go test` (e.g. `ITEST_ARGS='-run TestAddressSend'`). |
 
 ## Architecture
 
 ```
-bitcoind (regtest)
-├── lnd-alice ← tapd-alice (port 10029)
-└── lnd-bob  ← tapd-bob  (port 10030)
+bitcoind (regtest)                  [bitcoin/bitcoin image]
+├── lnd-alice  ← tapd-alice         (gRPC 10029, REST 8089)
+└── lnd-bob    ← tapd-bob           (gRPC 10030, REST 8090)
 ```
 
-Two independent tapd nodes allow testing send/receive flows between
-separate wallets.
+Each daemon is configured through a checked-in config file under
+`itest/{bitcoin,lnd,tapd}/` — the compose file only layers them into
+the containers.
+
+## Transport Matrix
+
+Tests that exercise the SDK surface use `runForTransports(t, fn)` and
+appear in `go test` output as:
+
+```
+--- PASS: TestGetInfo
+    --- PASS: TestGetInfo/grpc
+    --- PASS: TestGetInfo/rest
+```
+
+To narrow a run to a single transport, set `TAP_SDK_TRANSPORTS`:
+
+```bash
+TAP_SDK_TRANSPORTS=grpc go test -v -tags=itest ./itest/...
+```
+
+Streaming event subscriptions (`TestEventListener...`) are gRPC-only —
+the REST transport does not implement WebSocket streams yet.
 
 ## Helper Structure
 
-- `newHarnessContext(t)` builds a fresh connected harness for tests that only
-  need the two tapd clients.
-- `newFundedHarness(t)` builds a fresh funded harness per test case so asset
-  flow tests do not repeat the wallet-funding setup.
+- `NewTestHarness(t)` / `NewTestHarnessWithTransport(t, transport)` wires
+  Alice and Bob SDK clients + wallets against the requested transport.
+- `newHarnessContext(t)` / `newHarnessContextFor(t, transport)` produce a
+  harness plus background context for connection-only tests.
+- `newFundedHarness(t)` / `newFundedHarnessFor(t, transport)` bootstrap
+  Alice's LND wallet with coins so asset tests do not repeat funding.
 - `MintResult.Ref` carries the semantic `AssetRef` that high-level wallet
-  helpers should use, so grouped fungible tests do not depend on the raw group
-  key shape returned by `ListAssets`.
-- `CreateGroupedReceiveAddress(...)` centralizes the V2 grouped receive
-  bootstrap flow for Bob and retries until the real end condition, successful
-  grouped address creation, is ready.
+  helpers should use, so grouped fungible tests do not depend on the raw
+  group-key shape returned by `ListAssets`.
+- `CreateGroupedReceiveAddress(...)` centralises the V2 grouped receive
+  bootstrap flow for Bob and retries until the receiver is ready.
 
 ## Test Scenarios
 
 | Test | Description |
 |------|-------------|
 | `TestGetInfo` | Connect and verify node information |
-| `TestMintAsset` | Full minting lifecycle (fungible) |
+| `TestMintAsset` | Mint a grouped fungible asset + list groups/batches |
 | `TestMintCollectible` | Mint a collectible (NFT) asset |
-| `TestAddressSend` | Mint → create address → send → verify receipt |
-| `TestProofOperations` | Export, unpack, and decode proofs |
-| `TestBalanceQueries` | AssetRef-based balance queries for fungible and collectible assets |
+| `TestCancelBatch` | Stage a batch and cancel before finalization |
+| `TestAddressSend` | Mint → address → send → verify balances, transfers and receive events |
+| `TestProofOperations` | Export, unpack, decode, and verify proofs |
+| `TestBalanceQueries` | AssetRef-based balance queries (fungible + collectible), `Wallet.GetBalance` parity |
+| `TestWalletSurface` | ListAssets/ListUtxos/ListGroups/FetchAssetMeta round-trips |
+| `TestBurnAsset` | Burn + ListBurns lifecycle |
 | `TestErrorHandling` | Invalid inputs return proper errors |
+| `TestEventListenerMintAndSend` | `tapsdk.NewEventListener` delivers mint/send/receive events |
+| `TestTLSAndMacaroonGuards` | Valid creds connect; bad TLS/macaroon rejected |
 
 ## Environment Variables
 
@@ -66,20 +121,15 @@ Override default connection settings with:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `TAP_SDK_TRANSPORTS` | `grpc,rest` | Comma-separated list of transports to exercise |
 | `TAPD_ALICE_HOST` | `localhost:10029` | Alice's tapd gRPC address |
+| `TAPD_ALICE_REST` | `https://localhost:8089` | Alice's tapd REST address |
 | `TAPD_ALICE_UNIVERSE_HOST` | `tapd-alice:10029` | Alice's tapd address as seen from Bob's container during universe sync |
 | `TAPD_BOB_HOST` | `localhost:10030` | Bob's tapd gRPC address |
+| `TAPD_BOB_REST` | `https://localhost:8090` | Bob's tapd REST address |
 | `BITCOIND_HOST` | `localhost:18443` | bitcoind RPC address |
 | `TAPD_ALICE_TLS` | Auto-extracted from container | Alice's TLS cert path |
 | `TAPD_BOB_TLS` | Auto-extracted from container | Bob's TLS cert path |
 | `TAPD_ALICE_MAC` | Auto-extracted from container | Alice's macaroon path |
 | `TAPD_BOB_MAC` | Auto-extracted from container | Bob's macaroon path |
 | `TAPD_BOB_PROOF_COURIER_ADDR` | `authmailbox+universerpc://tapd-bob:10029` | Bob's default proof courier for V2 receive addresses |
-
-## CI
-
-The `regtest.yml` workflow runs on:
-- Manual dispatch (`workflow_dispatch`)
-- Every pull request
-
-Container logs are uploaded as artifacts on failure.

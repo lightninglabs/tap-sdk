@@ -3,6 +3,9 @@ name: Integration tests (regtest)
 on:
   workflow_dispatch:
   pull_request:
+  push:
+    branches:
+      - main
 
 defaults:
   run:
@@ -27,70 +30,18 @@ jobs:
         with:
           go-version: '${{ env.GO_VERSION }}'
 
-      - name: Start Docker Compose stack
-        run: |
-          docker compose -f itest/docker-compose.yml up -d
-          echo "Waiting for services to become healthy..."
-
-          # Helper: wait for a container's health to become "healthy".
-          wait_healthy() {
-            local container="$1"
-            local max_wait="$2"
-            local elapsed=0
-            while [ $elapsed -lt $max_wait ]; do
-              status=$(docker inspect --format='{{.State.Health.Status}}' "$container" 2>/dev/null || echo "missing")
-              if [ "$status" = "healthy" ]; then
-                echo "$container is healthy"
-                return 0
-              fi
-              echo "  $container status: $status (${elapsed}s / ${max_wait}s)"
-              sleep 5
-              elapsed=$((elapsed + 5))
-            done
-            echo "ERROR: $container never became healthy after ${max_wait}s"
-            docker logs "$container" 2>&1 | tail -50
-            return 1
-          }
-
-          # bitcoind, lnd-alice, lnd-bob have health checks in
-          # docker-compose; wait for them first.
-          wait_healthy tap-sdk-bitcoind 60
-          wait_healthy tap-sdk-lnd-alice 120
-          wait_healthy tap-sdk-lnd-bob 120
-
-          # Mine a few blocks so LND nodes can fully activate and tapd
-          # can start syncing. The test harness FundLndWallet() handles
-          # mining coinbase-maturity blocks and funding LND wallets.
-          echo "Mining initial blocks for chain activation..."
-          docker exec tap-sdk-bitcoind bitcoin-cli \
-            -regtest -rpcuser=devuser -rpcpassword=devpass \
-            createwallet "miner" >/dev/null 2>&1 || true
-          ADDR=$(docker exec tap-sdk-bitcoind bitcoin-cli \
-            -regtest -rpcuser=devuser -rpcpassword=devpass \
-            -rpcwallet=miner getnewaddress)
-          docker exec tap-sdk-bitcoind bitcoin-cli \
-            -regtest -rpcuser=devuser -rpcpassword=devpass \
-            -rpcwallet=miner generatetoaddress 1 "$ADDR" >/dev/null
-          echo "Mined 1 block for activation"
-
-          # Now wait for tapd instances.
-          wait_healthy tap-sdk-tapd-alice 180
-          wait_healthy tap-sdk-tapd-bob 180
-
-          # Final verification: tapd macaroons must exist.
-          for c in tap-sdk-tapd-alice tap-sdk-tapd-bob; do
-            docker exec "$c" ls -la /root/.tapd/data/regtest/admin.macaroon
-          done
-          echo "All services ready"
+      - name: Start regtest stack (pinned image)
+        run: make itest-up
 
       - name: Run integration tests
-        run: go test -v -tags=itest -timeout=20m ./itest/...
+        run: make itest-run
 
       - name: Collect container logs on failure
         if: failure()
         run: |
           mkdir -p /tmp/container-logs
-          for c in tap-sdk-bitcoind tap-sdk-lnd-alice tap-sdk-lnd-bob tap-sdk-tapd-alice tap-sdk-tapd-bob; do
+          for c in tap-sdk-bitcoind tap-sdk-lnd-alice tap-sdk-lnd-bob \
+                   tap-sdk-tapd-alice tap-sdk-tapd-bob; do
             docker logs "$c" > "/tmp/container-logs/$c.log" 2>&1 || true
           done
 
@@ -102,6 +53,6 @@ jobs:
           path: /tmp/container-logs/
           retention-days: 7
 
-      - name: Tear down Docker Compose stack
+      - name: Tear down regtest stack
         if: always()
-        run: docker compose -f itest/docker-compose.yml down -v
+        run: make itest-down
