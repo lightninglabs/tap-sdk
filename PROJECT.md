@@ -1,33 +1,66 @@
 # tap-sdk Project State
 
 - Repository: `github.com/lightninglabs/tap-sdk`
-- Active focus: PR #37, regtest integration suite cleanup and refactor.
-- Branch: `feat/integration-tests`, now at local changes on top of
-  `21d1dbe` (`multi: fall back to grouped balance lookups`).
-- Live PR state at 2026-04-16 20:14 UTC before this maintenance slice:
-  - PR #37 is open on `feat/integration-tests`
-  - no comments, reviews, review threads, or other actionable feedback
-  - `Format check`, `Lint check`, `Compilation check`, and `Unit tests`
-    are green
-  - `Regtest integration tests` is the only failing check
-- Failure mode diagnosed in this run: the remaining regtest failure was not in
-  the balance transports anymore. The itest helper that recovers the semantic
-  grouped `AssetRef` from `ListGroups` hex keys was parsing 33-byte compressed
-  group keys through `ParseTaprootPubKey`, which normalizes them via x-only
-  Schnorr parsing. That flips odd-Y compressed pubkeys, so the tests could end
-  up polling balances and creating receive addresses with a different group key
-  than tapd actually minted.
-- Current fix: `itest/parseGroupRefKey` now preserves exact 33-byte compressed
-  group keys with `ParsePubKey`, while still accepting 32-byte x-only inputs
-  through the taproot fallback path. Added focused itest unit coverage to lock
-  down both behaviors.
+- Active focus: PR #37, integration test PR review follow-up.
+- Branch: `feat/integration-tests`
+- Checked on: 2026-04-17 20:03 UTC
+- Current state: review fixes pushed, CI running again
+
+## Open PRs
+
+### PR #37
+
+- Title: `itest: add integration test suite (regtest)`
+- Branch: `feat/integration-tests`
+- State before this slice: open, not draft, targets `main`
+- Merge state before this slice: `CLEAN`
+- Live feedback before coding:
+  - one pending review from `darioAnongba`
+  - two pending review threads
+  - no issue comments or standalone review comments
+  - all checks green from the previous push:
+    - `Format check` ✅
+    - `Lint check` ✅
+    - `Compilation check` ✅
+    - `Unit tests` ✅
+    - `Regtest integration tests` ✅
+- Actionable feedback handled in this slice:
+  - run the regtest workflow on every pull request, not only when `itest/`
+    or the workflow changes
+  - stop using `lncm/bitcoind` in the integration test compose stack, use
+    `bitcoin/bitcoin:30.2`
+- Changes made:
+  - updated `.github/workflows/regtest.yml` so `pull_request` runs without a
+    path filter
+  - updated `itest/README.md` to document that regtest runs on every PR
+  - updated `itest/docker-compose.yml` to use `bitcoin/bitcoin:30.2`
 - Local validation after the fix:
   - `go test ./...` ✅
   - `go test -tags=itest -run '^$' ./itest/...` ✅
-  - `go test -tags=itest -run
-    '^(TestParseGroupRefKeyPreservesCompressedKey|TestParseGroupRefKeyXOnlyFallback)$'
-    ./itest/...` ✅
-- Full regtest execution is still not possible locally in this environment
-  because `docker` is unavailable, so CI remains the source of truth for the
-  real integration run after the next push.
-- No changelog entry yet. This repo is still pre-release.
+- Local environment limit:
+  - full regtest execution is still impossible here because `docker` is not
+    available, so GitHub Actions remains the source of truth for the real
+    end-to-end run after the next push
+
+### PR #39
+
+- Title: `examples: add tutorials and runnable examples`
+- Branch: `docs/tutorials-and-examples`
+- State: open, not draft, targets `main`
+- Status: untouched in this slice
+
+## Repo hygiene
+
+Completed on 2026-04-17 20:03 UTC.
+
+- `git fetch origin --prune`
+- `git checkout main`
+- `git pull --ff-only origin main`
+- checked local branches already fully merged into `main`
+- no branches were deleted, because none besides `main` were fully merged
+
+## Next trigger
+
+- wait for the re-run on PR #37 to finish
+- resume only if PR #37 gets more review feedback or a failing check
+- do not start a new PR while #37 and #39 remain open

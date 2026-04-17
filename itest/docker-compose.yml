@@ -9,7 +9,7 @@
 services:
   # ---------- Bitcoin Core (regtest) ----------
   bitcoind:
-    image: lncm/bitcoind:v28.0
+    image: bitcoin/bitcoin:30.2
     container_name: tap-sdk-bitcoind
     command:
       - -regtest

@@ -80,6 +80,6 @@ Override default connection settings with:
 
 The `regtest.yml` workflow runs on:
 - Manual dispatch (`workflow_dispatch`)
-- PRs that modify `itest/` or the workflow itself
+- Every pull request
 
 Container logs are uploaded as artifacts on failure.

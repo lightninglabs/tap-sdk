@@ -1,14 +1,8 @@
 name: Integration tests (regtest)
 
 on:
-  # Manual trigger only — integration tests require a Docker Compose
-  # stack and are expensive to run.
   workflow_dispatch:
-  # Also run when the itest directory or this workflow changes.
   pull_request:
-    paths:
-      - 'itest/**'
-      - '.github/workflows/regtest.yml'
 
 defaults:
   run:
