@@ -10,28 +10,34 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestGetInfo verifies that we can connect to both tapd instances and retrieve
-// valid node information.
+// TestGetInfo verifies that we can connect to both tapd instances and
+// retrieve valid node information, across every transport.
 func TestGetInfo(t *testing.T) {
-	h, ctx := newHarnessContext(t)
+	runForTransports(t, func(t *testing.T, transport Transport) {
+		h, ctx := newHarnessContextFor(t, transport)
 
-	assertNode := func(name string, client tapsdk.Client) *entities.Info {
-		t.Helper()
+		assertNode := func(
+			name string, client tapsdk.Client,
+		) *entities.Info {
 
-		info, err := client.GetInfo(ctx)
-		require.NoError(t, err)
-		require.NotEmpty(t, info.Version)
-		require.Equal(t, "regtest", info.Network)
-		require.NotEmpty(t, info.LndVersion)
+			t.Helper()
 
-		t.Logf("%s tapd: version=%s, lnd=%s, block=%d",
-			name, info.Version, info.LndVersion, info.BlockHeight)
+			info, err := client.GetInfo(ctx)
+			require.NoError(t, err)
+			require.NotEmpty(t, info.Version)
+			require.Equal(t, "regtest", info.Network)
+			require.NotEmpty(t, info.LndVersion)
 
-		return info
-	}
+			t.Logf("%s tapd (%s): version=%s, lnd=%s, block=%d",
+				name, transport, info.Version,
+				info.LndVersion, info.BlockHeight)
 
-	aliceInfo := assertNode("Alice", h.AliceClient)
-	bobInfo := assertNode("Bob", h.BobClient)
+			return info
+		}
 
-	require.Equal(t, aliceInfo.BlockHeight, bobInfo.BlockHeight)
+		aliceInfo := assertNode("Alice", h.AliceClient)
+		bobInfo := assertNode("Bob", h.BobClient)
+
+		require.Equal(t, aliceInfo.BlockHeight, bobInfo.BlockHeight)
+	})
 }

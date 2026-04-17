@@ -14,6 +14,7 @@ import (
 	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/entities"
 	tapgrpc "github.com/lightninglabs/tap-sdk/grpc"
+	taprest "github.com/lightninglabs/tap-sdk/rest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,12 +22,19 @@ const (
 	// defaultAliceHost is the default host-side gRPC address for tapd-alice.
 	defaultAliceHost = "localhost:10029"
 
+	// defaultAliceRestHost is the default host-side REST address for
+	// tapd-alice.
+	defaultAliceRestHost = "https://localhost:8089"
+
 	// defaultAliceUniverseHost is the address tapd-bob should use when syncing
 	// directly from tapd-alice over the Docker network.
 	defaultAliceUniverseHost = "tapd-alice:10029"
 
 	// defaultBobHost is the default gRPC host for tapd-bob.
 	defaultBobHost = "localhost:10030"
+
+	// defaultBobRestHost is the default REST host for tapd-bob.
+	defaultBobRestHost = "https://localhost:8090"
 
 	// defaultBobProofCourierAddr is the default proof courier address Bob uses
 	// for V2 receive addresses.
@@ -60,13 +68,26 @@ const (
 	defaultCollectibleBalanceTimeout = 60 * time.Second
 )
 
+// Transport selects the SDK client transport used by the harness.
+type Transport string
+
+const (
+	// TransportGRPC creates the SDK client via the grpc package.
+	TransportGRPC Transport = "grpc"
+
+	// TransportREST creates the SDK client via the rest package.
+	TransportREST Transport = "rest"
+)
+
 // tapdNodeConfig describes the connection inputs needed to open a tapd client.
 type tapdNodeConfig struct {
-	hostEnv     string
-	defaultHost string
-	tlsEnv      string
-	macaroonEnv string
-	container   string
+	grpcHostEnv     string
+	defaultGRPCHost string
+	restHostEnv     string
+	defaultRESTHost string
+	tlsEnv          string
+	macaroonEnv     string
+	container       string
 }
 
 // TestHarness holds the SDK clients and helper state shared by the regtest
@@ -78,33 +99,51 @@ type TestHarness struct {
 	AliceWallet *tapsdk.Wallet
 	BobWallet   *tapsdk.Wallet
 
+	Transport    Transport
 	bitcoindHost string
 }
 
-// NewTestHarness creates a new TestHarness by connecting to the regtest
-// services described in docker-compose.yml.
+// NewTestHarness creates a new TestHarness over the gRPC transport.
 func NewTestHarness(t testing.TB) *TestHarness {
 	t.Helper()
 
-	aliceClient := newTapdClient(t, tapdNodeConfig{
-		hostEnv:     "TAPD_ALICE_HOST",
-		defaultHost: defaultAliceHost,
-		tlsEnv:      "TAPD_ALICE_TLS",
-		macaroonEnv: "TAPD_ALICE_MAC",
-		container:   "tap-sdk-tapd-alice",
-	})
+	return NewTestHarnessWithTransport(t, TransportGRPC)
+}
+
+// NewTestHarnessWithTransport creates a harness whose SDK clients speak
+// the requested transport.
+func NewTestHarnessWithTransport(t testing.TB,
+	transport Transport) *TestHarness {
+
+	t.Helper()
+
+	aliceSpec := tapdNodeConfig{
+		grpcHostEnv:     "TAPD_ALICE_HOST",
+		defaultGRPCHost: defaultAliceHost,
+		restHostEnv:     "TAPD_ALICE_REST",
+		defaultRESTHost: defaultAliceRestHost,
+		tlsEnv:          "TAPD_ALICE_TLS",
+		macaroonEnv:     "TAPD_ALICE_MAC",
+		container:       "tap-sdk-tapd-alice",
+	}
+
+	bobSpec := tapdNodeConfig{
+		grpcHostEnv:     "TAPD_BOB_HOST",
+		defaultGRPCHost: defaultBobHost,
+		restHostEnv:     "TAPD_BOB_REST",
+		defaultRESTHost: defaultBobRestHost,
+		tlsEnv:          "TAPD_BOB_TLS",
+		macaroonEnv:     "TAPD_BOB_MAC",
+		container:       "tap-sdk-tapd-bob",
+	}
+
+	aliceClient := newTapdClient(t, transport, aliceSpec)
+	bobClient := newTapdClient(t, transport, bobSpec)
 
 	bobProofCourierAddr := envOr(
 		"TAPD_BOB_PROOF_COURIER_ADDR",
 		defaultBobProofCourierAddr,
 	)
-	bobClient := newTapdClient(t, tapdNodeConfig{
-		hostEnv:     "TAPD_BOB_HOST",
-		defaultHost: defaultBobHost,
-		tlsEnv:      "TAPD_BOB_TLS",
-		macaroonEnv: "TAPD_BOB_MAC",
-		container:   "tap-sdk-tapd-bob",
-	})
 
 	aliceWallet := tapsdk.NewWallet(aliceClient, entities.NetworkRegtest)
 	bobWallet := tapsdk.NewWallet(
@@ -118,11 +157,14 @@ func NewTestHarness(t testing.TB) *TestHarness {
 		BobClient:    bobClient,
 		AliceWallet:  aliceWallet,
 		BobWallet:    bobWallet,
+		Transport:    transport,
 		bitcoindHost: envOr("BITCOIND_HOST", defaultBitcoindHost),
 	}
 }
 
-func newTapdClient(t testing.TB, spec tapdNodeConfig) tapsdk.Client {
+func newTapdClient(t testing.TB, transport Transport,
+	spec tapdNodeConfig) tapsdk.Client {
+
 	t.Helper()
 
 	tlsPath := os.Getenv(spec.tlsEnv)
@@ -139,20 +181,40 @@ func newTapdClient(t testing.TB, spec tapdNodeConfig) tapsdk.Client {
 		)
 	}
 
-	cfg := &tapgrpc.Config{
-		Host:         envOr(spec.hostEnv, spec.defaultHost),
-		Network:      entities.NetworkRegtest,
-		TLSPath:      tlsPath,
-		MacaroonPath: macaroonPath,
+	switch transport {
+	case TransportGRPC:
+		cfg := &tapgrpc.Config{
+			Host:         envOr(spec.grpcHostEnv, spec.defaultGRPCHost),
+			Network:      entities.NetworkRegtest,
+			TLSPath:      tlsPath,
+			MacaroonPath: macaroonPath,
+		}
+
+		client, err := tapgrpc.NewClient(cfg)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = client.Close() })
+
+		return client
+
+	case TransportREST:
+		cfg := &taprest.Config{
+			BaseURL:      envOr(spec.restHostEnv, spec.defaultRESTHost),
+			Network:      entities.NetworkRegtest,
+			TLSPath:      tlsPath,
+			MacaroonPath: macaroonPath,
+		}
+
+		client, err := taprest.NewClient(cfg)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = client.Close() })
+
+		return client
+
+	default:
+		require.FailNowf(t, "unsupported transport",
+			"transport %q", transport)
+		return nil
 	}
-
-	client, err := tapgrpc.NewClient(cfg)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_ = client.Close()
-	})
-
-	return client
 }
 
 // WaitForSync polls GetInfo until the node reports synced_to_chain.
