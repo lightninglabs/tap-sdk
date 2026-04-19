@@ -130,6 +130,15 @@ ITEST_COMPOSE_MAIN := $(ITEST_COMPOSE) -f itest/docker-compose.local.yml
 ITEST_TIMEOUT ?= 20m
 ITEST_ARGS ?=
 
+# Optional: narrow to a subset of Go tests via -run.
+#   make itest-run case=TestMintAsset
+#   make itest-run-main case='TestBurn.*'
+ifneq ($(case),)
+ITEST_RUN_FLAG := -run '$(case)'
+else
+ITEST_RUN_FLAG :=
+endif
+
 itest-up:
 	@$(call print, "Starting itest stack (pinned tapd image).")
 	$(DOCKER) compose -f $(ITEST_COMPOSE) up -d
@@ -150,11 +159,11 @@ itest-down-main:
 
 itest-run:
 	@$(call print, "Running itest Go suite against the pinned image.")
-	$(GOTEST) -tags=itest -timeout=$(ITEST_TIMEOUT) $(ITEST_ARGS) ./itest/...
+	$(GOTEST) -tags=itest -timeout=$(ITEST_TIMEOUT) $(ITEST_RUN_FLAG) $(ITEST_ARGS) ./itest/...
 
 itest-run-main:
 	@$(call print, "Running itest Go suite including tapd-main gated tests.")
-	TAP_SDK_TAPD_MAIN=1 $(GOTEST) -tags=itest -timeout=$(ITEST_TIMEOUT) $(ITEST_ARGS) ./itest/...
+	TAP_SDK_TAPD_MAIN=1 $(GOTEST) -tags=itest -timeout=$(ITEST_TIMEOUT) $(ITEST_RUN_FLAG) $(ITEST_ARGS) ./itest/...
 
 itest: itest-up
 	@set -e; \

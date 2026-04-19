@@ -3,9 +3,17 @@
 package itest
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/lightninglabs/tap-sdk/entities"
 	tapgrpc "github.com/lightninglabs/tap-sdk/grpc"
@@ -40,9 +48,10 @@ func TestTLSAndMacaroonGuards(t *testing.T) {
 	})
 
 	t.Run("grpc wrong tls cert rejected", func(t *testing.T) {
-		// A self-signed cert that does not match tapd's leaf.
+		// A real but unrelated self-signed cert that tapd did not
+		// issue.
 		bogusTLS := writeTempFile(t, "bogus-tls.cert",
-			[]byte(bogusTLSPEM),
+			bogusTLSPEM(t),
 		)
 
 		client, err := tapgrpc.NewClient(&tapgrpc.Config{
@@ -98,7 +107,7 @@ func TestTLSAndMacaroonGuards(t *testing.T) {
 
 	t.Run("rest wrong tls cert rejected", func(t *testing.T) {
 		bogusTLS := writeTempFile(t, "bogus-tls.cert",
-			[]byte(bogusTLSPEM),
+			bogusTLSPEM(t),
 		)
 
 		client, err := taprest.NewClient(&taprest.Config{
@@ -124,17 +133,36 @@ func writeTempFile(t *testing.T, name string, contents []byte) string {
 	return path
 }
 
-// bogusTLSPEM is an unrelated self-signed cert generated solely for this
-// test. It must not be trusted by tapd, so the SDK has to refuse the
+// bogusTLSPEM returns a freshly-generated self-signed certificate PEM
+// that tapd does not trust, so the SDK is forced to refuse the
 // handshake.
-const bogusTLSPEM = `-----BEGIN CERTIFICATE-----
-MIIBWDCB/qADAgECAhEAuL7uMTgzX6vNlVbUK8zt0jAKBggqhkjOPQQDAjASMRAw
-DgYDVQQDEwdpbnZhbGlkMB4XDTI1MDEwMTAwMDAwMFoXDTM1MDEwMTAwMDAwMFow
-EjEQMA4GA1UEAxMHaW52YWxpZDBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABDaW
-9Ae+lXLeWJp39v+XoFl/B2FyGuPnnlMFVWPUq2PkKS7WPIZkAKjKH45dySEyrS01
-R+gXv2X2+9q6gtQxexmjMjAwMA4GA1UdDwEB/wQEAwIChDAPBgNVHRMBAf8EBTAD
-AQH/MA0GA1UdDgQGBAQEBAQEMAoGCCqGSM49BAMCA0gAMEUCIQDjDsvoW3fB/AYG
-zQP2vKdg88m4ezlG/Mrnlff7ii4BhAIgKjlPMVfR4RFMDhhnlzuvabgeIHZ1K/r3
-cs3r7yQ/C6Y=
------END CERTIFICATE-----
-`
+func bogusTLSPEM(t *testing.T) []byte {
+	t.Helper()
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	require.NoError(t, err)
+
+	template := &x509.Certificate{
+		SerialNumber:          serial,
+		Subject:               pkix.Name{CommonName: "itest-bogus"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		KeyUsage: x509.KeyUsageCertSign |
+			x509.KeyUsageDigitalSignature,
+	}
+
+	der, err := x509.CreateCertificate(
+		rand.Reader, template, template, &key.PublicKey, key,
+	)
+	require.NoError(t, err)
+
+	return pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: der,
+	})
+}

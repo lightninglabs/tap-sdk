@@ -49,8 +49,9 @@ use this override.
 
 | Variable | Purpose |
 |---|---|
+| `case` | Restrict to tests matching a regex (`make itest-run case=TestMintAsset`). |
 | `ITEST_TIMEOUT` | `go test -timeout=` value. Default `20m`. |
-| `ITEST_ARGS` | Extra flags forwarded to `go test` (e.g. `ITEST_ARGS='-run TestAddressSend'`). |
+| `ITEST_ARGS` | Extra flags forwarded to `go test` (e.g. `ITEST_ARGS='-count=2'`). |
 
 ## Architecture
 

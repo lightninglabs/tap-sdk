@@ -387,9 +387,18 @@ func (h *TestHarness) EnableUniverseBootstrap(t testing.TB,
 		"TAPD_ALICE_UNIVERSE_HOST",
 		defaultAliceUniverseHost,
 	)
-	require.NoError(t, h.BobClient.AddFederationServer(ctx,
-		[]entities.FederationServer{{Host: aliceUniverseHost}}),
+	err := h.BobClient.AddFederationServer(ctx,
+		[]entities.FederationServer{{Host: aliceUniverseHost}},
 	)
+	// AddFederationServer is not idempotent: a stack kept alive
+	// across tests (as compose does) will have Alice already
+	// registered. Swallow that specific error so the rest of the
+	// harness flow can proceed.
+	if err != nil && !strings.Contains(
+		err.Error(), "universe server already added",
+	) {
+		require.NoError(t, err)
+	}
 }
 
 func (h *TestHarness) syncUniverseTarget(ctx context.Context,
