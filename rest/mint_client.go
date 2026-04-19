@@ -144,7 +144,7 @@ func (m *mintClient) SealBatch(ctx context.Context,
 		body.ShortResponse = req.ShortResponse
 
 		for _, w := range req.GroupWitnesses {
-			gID := base64.StdEncoding.EncodeToString(
+			gID := hex.EncodeToString(
 				w.GenesisID[:],
 			)
 			body.GroupWitnesses = append(
@@ -241,7 +241,11 @@ func (m *mintClient) ListBatches(ctx context.Context,
 	batchKeyPath := ""
 	if req != nil {
 		if req.BatchKey != nil {
-			batchKeyPath = hex.EncodeToString(
+			// grpc-gateway encodes `bytes` path parameters as
+			// URL-safe base64 without padding. Hex is not
+			// accepted — the server silently returns an empty
+			// result set.
+			batchKeyPath = base64.RawURLEncoding.EncodeToString(
 				req.BatchKey[:],
 			)
 		}
@@ -449,7 +453,7 @@ func marshalAssetMetaJSON(
 	}
 
 	result := &jsonAssetMeta{
-		Data: base64.StdEncoding.EncodeToString(meta.Data),
+		Data: hex.EncodeToString(meta.Data),
 	}
 
 	if meta.MetaHash != (entities.Hash{}) {

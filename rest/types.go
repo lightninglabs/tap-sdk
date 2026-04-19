@@ -38,7 +38,9 @@ type jsonAssetGroup struct {
 
 // jsonAsset is the JSON shape of taprpc.Asset.
 type jsonAsset struct {
-	Version          uint32           `json:"version"`
+	// Version is serialised as the proto enum name (e.g.
+	// "ASSET_VERSION_V0") by grpc-gateway.
+	Version          string           `json:"version"`
 	AssetGenesis     *jsonGenesisInfo `json:"asset_genesis"`
 	Amount           string           `json:"amount"`
 	LockTime         int32            `json:"lock_time"`
@@ -67,17 +69,23 @@ type jsonAssetGroupBalance struct {
 }
 
 // jsonListBalancesResponse is the JSON shape of
-// taprpc.ListBalancesResponse.
+// taprpc.ListBalancesResponse. grpc-gateway emits uint64 proto fields
+// as strings, so UnconfirmedTransfers is a string and parsed by the
+// unmarshal helper.
 type jsonListBalancesResponse struct {
 	AssetBalances        map[string]*jsonAssetBalance      `json:"asset_balances"`        //nolint:lll
 	AssetGroupBalances   map[string]*jsonAssetGroupBalance `json:"asset_group_balances"`  //nolint:lll
-	UnconfirmedTransfers uint64                            `json:"unconfirmed_transfers"` //nolint:lll
+	UnconfirmedTransfers string                            `json:"unconfirmed_transfers"` //nolint:lll
 }
 
-// jsonAnchorInfo is the JSON shape of taprpc.AnchorInfo.
+// jsonAnchorInfo is the JSON shape of taprpc.TransferOutputAnchor
+// (nested inside TransferOutput). The corresponding proto fields are
+// plain `outpoint` / `value` — not the `anchor_*` names that the
+// top-level AnchorInfo message uses. Value is an int64 proto field
+// which grpc-gateway serialises as a JSON string.
 type jsonAnchorInfo struct {
-	Outpoint string `json:"anchor_outpoint"`
-	Value    int64  `json:"anchor_value"`
+	Outpoint string `json:"outpoint"`
+	Value    string `json:"value"`
 }
 
 // jsonTransferOutput is the JSON shape of taprpc.TransferOutput.
@@ -105,10 +113,10 @@ type jsonBlockHash struct {
 // jsonAssetTransfer is the JSON shape of
 // taprpc.AssetTransfer.
 type jsonAssetTransfer struct {
-	TransferTimestamp  int64  `json:"transfer_timestamp"`
+	TransferTimestamp  string `json:"transfer_timestamp"`
 	AnchorTxHash       string `json:"anchor_tx_hash"`
 	AnchorTxHeightHint uint32 `json:"anchor_tx_height_hint"`
-	AnchorTxChainFees  int64  `json:"anchor_tx_chain_fees"`
+	AnchorTxChainFees  string `json:"anchor_tx_chain_fees"`
 
 	Inputs  []*jsonTransferInput  `json:"inputs"`
 	Outputs []*jsonTransferOutput `json:"outputs"`
@@ -220,7 +228,9 @@ type jsonDecodedProof struct {
 	NumberOfProofs uint32             `json:"number_of_proofs"`
 	Asset          *jsonDecodedAsset  `json:"asset"`
 	GenesisReveal  *jsonGenesisReveal `json:"genesis_reveal"`
-	AltLeaves      []any              `json:"alt_leaves"`
+	// AltLeaves is a proto `bytes` field — hex-encoded on the wire
+	// thanks to UseHexForBytes.
+	AltLeaves string `json:"alt_leaves"`
 }
 
 // jsonDecodeProofResponse is the JSON shape of
@@ -425,9 +435,23 @@ type jsonListUtxosResponse struct {
 	ManagedUtxos map[string]*jsonManagedUtxo `json:"managed_utxos"`
 }
 
+// jsonAssetHumanReadable is the JSON shape of taprpc.AssetHumanReadable,
+// the simplified asset record returned by ListGroups (distinct from the
+// full jsonAsset used by ListAssets).
+type jsonAssetHumanReadable struct {
+	ID               string `json:"id"`
+	Amount           string `json:"amount"`
+	LockTime         int32  `json:"lock_time"`
+	RelativeLockTime int32  `json:"relative_lock_time"`
+	Tag              string `json:"tag"`
+	MetaHash         string `json:"meta_hash"`
+	Type             string `json:"type"`
+	Version          string `json:"version"`
+}
+
 // jsonGroupedAssets is the JSON shape of taprpc.GroupedAssets.
 type jsonGroupedAssets struct {
-	Assets []*jsonAsset `json:"assets"`
+	Assets []*jsonAssetHumanReadable `json:"assets"`
 }
 
 // jsonListGroupsResponse is the JSON shape of

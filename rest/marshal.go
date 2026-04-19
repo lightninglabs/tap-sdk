@@ -11,7 +11,8 @@ import (
 )
 
 // parseHexBytes decodes a hex string into a byte slice, returning nil
-// for empty input.
+// for empty input. tapd's REST gateway uses UseHexForBytes, so all
+// proto `bytes` fields in JSON bodies travel as hex.
 func parseHexBytes(s string) ([]byte, error) {
 	if s == "" {
 		return nil, nil
@@ -20,14 +21,32 @@ func parseHexBytes(s string) ([]byte, error) {
 	return hex.DecodeString(s)
 }
 
-// parseBase64Bytes decodes a base64 string (standard encoding with
-// padding) into a byte slice.
+// parseBase64Bytes decodes a base64 string into a byte slice. Only a
+// few endpoints (WebSocket streaming, grpc-gateway path params) still
+// ship bytes as base64; proto3 JSON allows any of the four variants so
+// we try each in turn.
 func parseBase64Bytes(s string) ([]byte, error) {
 	if s == "" {
 		return nil, nil
 	}
 
-	return base64.StdEncoding.DecodeString(s)
+	encodings := []*base64.Encoding{
+		base64.StdEncoding,
+		base64.RawStdEncoding,
+		base64.URLEncoding,
+		base64.RawURLEncoding,
+	}
+
+	var lastErr error
+	for _, enc := range encodings {
+		out, err := enc.DecodeString(s)
+		if err == nil {
+			return out, nil
+		}
+		lastErr = err
+	}
+
+	return nil, lastErr
 }
 
 // parseUint64 parses a JSON string-encoded uint64. The gRPC-gateway
@@ -249,7 +268,7 @@ func unmarshalAsset(a *jsonAsset) (*entities.Asset, error) {
 	}
 
 	asset := &entities.Asset{
-		Version:          uint8(a.Version),
+		Version:          uint8(parseAssetVersion(a.Version)),
 		Genesis:          *genesis,
 		Amount:           amount,
 		LockTime:         uint64(a.LockTime),
@@ -260,30 +279,19 @@ func unmarshalAsset(a *jsonAsset) (*entities.Asset, error) {
 		},
 	}
 
-	if a.AssetGroup != nil && a.AssetGroup.RawGroupKey != "" {
-		rawKeyBytes, err := parseHexBytes(a.AssetGroup.RawGroupKey)
+	if a.AssetGroup != nil {
+		gk, err := unmarshalAssetGroup(a.AssetGroup)
 		if err != nil {
-			return nil, fmt.Errorf("invalid raw group key: %w",
-				err)
+			return nil, err
 		}
 
-		if len(rawKeyBytes) == 33 {
-			var rawKey [33]byte
-			copy(rawKey[:], rawKeyBytes)
-
-			tapscriptRoot, err := parseHexBytes(
-				a.AssetGroup.TapscriptRoot,
-			)
-			if err != nil {
-				return nil, fmt.Errorf(
-					"invalid tapscript root: %w", err,
-				)
-			}
-
-			asset.GroupKey = &entities.GroupKey{
-				RawKey:        rawKey,
-				TapscriptRoot: tapscriptRoot,
-			}
+		// tapd keys all group lookups by the tweaked key. Only
+		// publish the GroupKey entity when we actually have it,
+		// so the SDK's AssetRef stays round-trippable through every
+		// subsequent ListBalances / ListAssets call.
+		var zero entities.PubKey
+		if gk != nil && gk.TweakedKey != zero {
+			asset.GroupKey = gk
 		}
 	}
 
@@ -294,12 +302,52 @@ func unmarshalAsset(a *jsonAsset) (*entities.Asset, error) {
 				return nil
 			}
 
-			rawKey := asset.GroupKey.RawKey
-			return &rawKey
+			tweaked := asset.GroupKey.TweakedKey
+			return &tweaked
 		}(),
 	)
 
 	return asset, nil
+}
+
+// unmarshalAssetGroup extracts both the raw and tweaked group keys from
+// the JSON shape. Returns nil when the group has no usable key material.
+func unmarshalAssetGroup(g *jsonAssetGroup) (*entities.GroupKey, error) {
+	if g == nil {
+		return nil, nil
+	}
+
+	tapscriptRoot, err := parseHexBytes(g.TapscriptRoot)
+	if err != nil {
+		return nil, fmt.Errorf("invalid tapscript root: %w", err)
+	}
+
+	gk := &entities.GroupKey{TapscriptRoot: tapscriptRoot}
+
+	if g.RawGroupKey != "" {
+		raw, err := parseHexBytes(g.RawGroupKey)
+		if err != nil {
+			return nil, fmt.Errorf("invalid raw group key: %w",
+				err)
+		}
+		if len(raw) == 33 {
+			copy(gk.RawKey[:], raw)
+		}
+	}
+
+	if g.TweakedGroupKey != "" {
+		tweaked, err := parseHexBytes(g.TweakedGroupKey)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"invalid tweaked group key: %w", err,
+			)
+		}
+		if len(tweaked) == 33 {
+			copy(gk.TweakedKey[:], tweaked)
+		}
+	}
+
+	return gk, nil
 }
 
 // unmarshalAddr converts a JSON addr to entities.Address.
@@ -435,7 +483,7 @@ func unmarshalAssetTransfer(
 				err)
 		}
 
-		proofBlob, err := parseBase64Bytes(out.NewProofBlob)
+		proofBlob, err := parseHexBytes(out.NewProofBlob)
 		if err != nil {
 			return nil, fmt.Errorf("invalid proof blob: %w", err)
 		}
@@ -464,8 +512,15 @@ func unmarshalAssetTransfer(
 					"outpoint: %w", err)
 			}
 
+			value, err := parseInt64(out.Anchor.Value)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"invalid anchor value: %w", err,
+				)
+			}
+
 			output.AnchorOutpoint = op
-			output.AnchorValue = out.Anchor.Value
+			output.AnchorValue = value
 		}
 
 		outputs = append(outputs, output)
@@ -549,17 +604,29 @@ func unmarshalAssetTransfer(
 		}
 	}
 
-	anchorTxBytes, err := parseBase64Bytes(t.AnchorTx)
+	anchorTxBytes, err := parseHexBytes(t.AnchorTx)
 	if err != nil {
 		return nil, fmt.Errorf("invalid anchor_tx: %w", err)
 	}
 
+	transferTimestamp, err := parseInt64(t.TransferTimestamp)
+	if err != nil {
+		return nil, fmt.Errorf("invalid transfer_timestamp: %w", err)
+	}
+
+	anchorChainFees, err := parseInt64(t.AnchorTxChainFees)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"invalid anchor_tx_chain_fees: %w", err,
+		)
+	}
+
 	return &entities.AssetTransfer{
-		TransferTimestamp:    t.TransferTimestamp,
+		TransferTimestamp:    transferTimestamp,
 		TransferTxid:         transferTxid,
 		AnchorTxid:           anchorTxid,
 		AnchorTxHeightHint:   t.AnchorTxHeightHint,
-		AnchorTxChainFees:    t.AnchorTxChainFees,
+		AnchorTxChainFees:    anchorChainFees,
 		Inputs:               inputs,
 		Outputs:              outputs,
 		AnchorTxBlockHash:    blockHash,
@@ -704,7 +771,7 @@ func unmarshalMintingBatch(
 		return nil, fmt.Errorf("invalid created_at: %w", err)
 	}
 
-	batchPsbt, err := parseBase64Bytes(b.BatchPsbt)
+	batchPsbt, err := parseHexBytes(b.BatchPsbt)
 	if err != nil {
 		return nil, fmt.Errorf("invalid batch_psbt: %w", err)
 	}
@@ -833,7 +900,9 @@ func unmarshalAssetMeta(
 		return nil, fmt.Errorf("nil asset meta")
 	}
 
-	data, err := parseBase64Bytes(m.Data)
+	// tapd's REST gateway is configured with UseHexForBytes, so
+	// proto `bytes` fields are hex-encoded on the wire.
+	data, err := parseHexBytes(m.Data)
 	if err != nil {
 		return nil, fmt.Errorf("invalid meta data: %w", err)
 	}
@@ -940,10 +1009,10 @@ func unmarshalGroupedAssets(
 	}, nil
 }
 
-// unmarshalAssetHumanReadable converts a JSON asset to a simplified
-// AssetHumanReadable entity used in group listings.
+// unmarshalAssetHumanReadable converts the simplified proto
+// AssetHumanReadable (used by ListGroups) into the SDK entity.
 func unmarshalAssetHumanReadable(
-	a *jsonAsset) (*entities.AssetHumanReadable, error) {
+	a *jsonAssetHumanReadable) (*entities.AssetHumanReadable, error) {
 
 	if a == nil {
 		return nil, fmt.Errorf("nil asset")
@@ -955,23 +1024,21 @@ func unmarshalAssetHumanReadable(
 	}
 
 	var assetID entities.AssetID
+	if a.ID != "" {
+		idBytes, err := parseHexBytes(a.ID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid asset id: %w", err)
+		}
+		copy(assetID[:], idBytes)
+	}
+
 	var metaHash entities.Hash
-	var tag string
-	var assetType entities.AssetType
-
-	if a.AssetGenesis != nil {
-		idBytes, err := parseHexBytes(a.AssetGenesis.AssetID)
-		if err == nil {
-			copy(assetID[:], idBytes)
+	if a.MetaHash != "" {
+		hashBytes, err := parseHexBytes(a.MetaHash)
+		if err != nil {
+			return nil, fmt.Errorf("invalid meta hash: %w", err)
 		}
-
-		hashBytes, err := parseHexBytes(a.AssetGenesis.MetaHash)
-		if err == nil {
-			metaHash, _ = entities.ParseHash(hashBytes)
-		}
-
-		tag = a.AssetGenesis.Name
-		assetType = parseAssetType(a.AssetGenesis.AssetType)
+		metaHash, _ = entities.ParseHash(hashBytes)
 	}
 
 	return &entities.AssetHumanReadable{
@@ -980,10 +1047,10 @@ func unmarshalAssetHumanReadable(
 		Amount:           amount,
 		LockTime:         a.LockTime,
 		RelativeLockTime: a.RelativeLockTime,
-		Tag:              tag,
+		Tag:              a.Tag,
 		MetaHash:         metaHash,
-		Type:             assetType,
-		Version:          uint8(a.Version),
+		Type:             parseAssetType(a.Type),
+		Version:          uint8(parseAssetVersion(a.Version)),
 	}, nil
 }
 
