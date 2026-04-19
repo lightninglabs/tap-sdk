@@ -263,7 +263,7 @@ func (s *walletClient) listGroupBalance(ctx context.Context,
 	return result, nil
 }
 
-// groupRepresentativeAsset returns any asset from the group so that the
+// groupRepresentativeAsset returns any asset from the group so the
 // balance response carries the genesis metadata callers expect.
 func (s *walletClient) groupRepresentativeAsset(ctx context.Context,
 	req *entities.ListBalancesRequest) (*entities.Asset, error) {
@@ -367,13 +367,26 @@ func unmarshalAsset(rpcAsset *taprpc.Asset) (*entities.Asset, error) {
 	}
 
 	if rpcAsset.AssetGroup != nil {
-		if len(rpcAsset.AssetGroup.RawGroupKey) == 33 {
-			var rawKey [33]byte
-			copy(rawKey[:], rpcAsset.AssetGroup.RawGroupKey)
-			asset.GroupKey = &entities.GroupKey{
-				RawKey:        rawKey,
-				TapscriptRoot: rpcAsset.AssetGroup.TapscriptRoot,
-			}
+		g := rpcAsset.AssetGroup
+		gk := &entities.GroupKey{
+			TapscriptRoot: g.TapscriptRoot,
+		}
+
+		if len(g.RawGroupKey) == 33 {
+			copy(gk.RawKey[:], g.RawGroupKey)
+		}
+
+		if len(g.TweakedGroupKey) == 33 {
+			copy(gk.TweakedKey[:], g.TweakedGroupKey)
+		}
+
+		// tapd keys all group lookups by the tweaked key. Only
+		// publish the GroupKey entity when we actually have it, so
+		// the SDK's AssetRef stays round-trippable through every
+		// subsequent ListBalances / ListAssets call.
+		var zero entities.PubKey
+		if gk.TweakedKey != zero {
+			asset.GroupKey = gk
 		}
 	}
 
@@ -384,8 +397,8 @@ func unmarshalAsset(rpcAsset *taprpc.Asset) (*entities.Asset, error) {
 				return nil
 			}
 
-			rawKey := asset.GroupKey.RawKey
-			return &rawKey
+			tweaked := asset.GroupKey.TweakedKey
+			return &tweaked
 		}(),
 	)
 
