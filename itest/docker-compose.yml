@@ -1,0 +1,118 @@
+# tap-sdk integration test infrastructure.
+# bitcoind (regtest) ← lnd-alice + lnd-bob ← tapd-alice + tapd-bob
+#
+# Usage:
+#   docker compose -f itest/docker-compose.yml up -d
+#   go test -v -tags=itest ./itest/...
+#   docker compose -f itest/docker-compose.yml down -v
+
+services:
+  # ---------- Bitcoin Core (regtest) ----------
+  bitcoind:
+    image: bitcoin/bitcoin:30.2
+    container_name: tap-sdk-bitcoind
+    restart: unless-stopped
+    command:
+      - -conf=/etc/bitcoin/bitcoin.conf
+      - -datadir=/home/bitcoin/.bitcoin
+    volumes:
+      - ./bitcoin/bitcoin.conf:/etc/bitcoin/bitcoin.conf:ro
+      - bitcoind-data:/home/bitcoin/.bitcoin
+    ports:
+      - "18443:18443"
+      - "28334:28334"
+      - "28335:28335"
+    healthcheck:
+      test: ["CMD", "bitcoin-cli", "-regtest",
+             "-rpcuser=devuser", "-rpcpassword=devpass",
+             "getblockchaininfo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ---------- LND Alice ----------
+  lnd-alice:
+    image: lightninglabs/lnd:v0.20.1-beta
+    container_name: tap-sdk-lnd-alice
+    restart: unless-stopped
+    depends_on:
+      bitcoind:
+        condition: service_healthy
+    volumes:
+      - ./lnd/alice.conf:/root/.lnd/lnd.conf:ro
+      - lnd-alice-data:/root/.lnd
+    ports:
+      - "10009:10009"
+    healthcheck:
+      test: ["CMD", "lncli", "--network=regtest", "getinfo"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # ---------- LND Bob ----------
+  lnd-bob:
+    image: lightninglabs/lnd:v0.20.1-beta
+    container_name: tap-sdk-lnd-bob
+    restart: unless-stopped
+    depends_on:
+      bitcoind:
+        condition: service_healthy
+    volumes:
+      - ./lnd/bob.conf:/root/.lnd/lnd.conf:ro
+      - lnd-bob-data:/root/.lnd
+    ports:
+      - "10010:10009"
+    healthcheck:
+      test: ["CMD", "lncli", "--network=regtest", "getinfo"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # ---------- tapd Alice ----------
+  tapd-alice:
+    image: lightninglabs/taproot-assets:v0.7.2
+    container_name: tap-sdk-tapd-alice
+    restart: unless-stopped
+    depends_on:
+      lnd-alice:
+        condition: service_healthy
+    volumes:
+      - ./tapd/alice.conf:/root/.tapd/tapd.conf:ro
+      - lnd-alice-data:/root/.lnd:ro
+      - tapd-alice-data:/root/.tapd
+    ports:
+      - "10029:10029"
+      - "8089:8089"
+    healthcheck:
+      test: ["CMD", "tapcli", "--network=regtest", "getinfo"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # ---------- tapd Bob ----------
+  tapd-bob:
+    image: lightninglabs/taproot-assets:v0.7.2
+    container_name: tap-sdk-tapd-bob
+    restart: unless-stopped
+    depends_on:
+      lnd-bob:
+        condition: service_healthy
+    volumes:
+      - ./tapd/bob.conf:/root/.tapd/tapd.conf:ro
+      - lnd-bob-data:/root/.lnd:ro
+      - tapd-bob-data:/root/.tapd
+    ports:
+      - "10030:10029"
+      - "8090:8089"
+    healthcheck:
+      test: ["CMD", "tapcli", "--network=regtest", "getinfo"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  bitcoind-data:
+  lnd-alice-data:
+  lnd-bob-data:
+  tapd-alice-data:
+  tapd-bob-data:

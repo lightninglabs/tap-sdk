@@ -128,6 +128,14 @@ func (s *walletClient) ListBalances(ctx context.Context,
 	req *entities.ListBalancesRequest) (
 	*entities.ListBalancesResponse, error) {
 
+	// Group refs must round-trip through tapd's group-by-group_key
+	// mode — the server only honors group_key_filter in that mode,
+	// and a wallet that learned about the group through universe
+	// bootstrap has no per-asset-id rows yet.
+	if req != nil && req.AssetRef != nil && req.AssetRef.IsGroupRef() {
+		return s.listGroupBalance(ctx, req)
+	}
+
 	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
@@ -194,6 +202,85 @@ func (s *walletClient) ListBalances(ctx context.Context,
 	}
 
 	return result, nil
+}
+
+// listGroupBalance queries a single-group balance via tapd's
+// group-by-group_key mode. The server returns only the aggregate for the
+// requested group, so genesis metadata is enriched from ListAssets.
+func (s *walletClient) listGroupBalance(ctx context.Context,
+	req *entities.ListBalancesRequest) (*entities.ListBalancesResponse,
+	error) {
+
+	groupKey, ok := req.AssetRef.GroupKey()
+	if !ok {
+		return nil, fmt.Errorf("group balance requires a group asset ref")
+	}
+
+	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+
+	rpcCtx = s.adminMac.WithMacaroonAuth(rpcCtx)
+	rawResp, err := s.client.ListBalances(rpcCtx,
+		&taprpc.ListBalancesRequest{
+			GroupBy: &taprpc.ListBalancesRequest_GroupKey{
+				GroupKey: true,
+			},
+			GroupKeyFilter: groupKey[:],
+			IncludeLeased:  req.IncludeLeased,
+			ScriptKeyType: marshalScriptKeyTypeQuery(
+				req.ScriptKeyType,
+			),
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &entities.ListBalancesResponse{
+		Balances:             map[string]*entities.AssetBalance{},
+		UnconfirmedTransfers: rawResp.UnconfirmedTransfers,
+	}
+
+	groupBalance, ok := rawResp.AssetGroupBalances[hex.EncodeToString(groupKey[:])]
+	if !ok || groupBalance == nil || groupBalance.Balance == 0 {
+		return result, nil
+	}
+
+	representative, err := s.groupRepresentativeAsset(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	result.Balances[req.AssetRef.String()] = &entities.AssetBalance{
+		AssetRef:     *req.AssetRef,
+		AssetGenesis: representative.Genesis,
+		Balance:      groupBalance.Balance,
+		GroupKey:     &groupKey,
+	}
+
+	return result, nil
+}
+
+// groupRepresentativeAsset returns any asset from the group so the
+// balance response carries the genesis metadata callers expect.
+func (s *walletClient) groupRepresentativeAsset(ctx context.Context,
+	req *entities.ListBalancesRequest) (*entities.Asset, error) {
+
+	assets, err := s.ListAssets(ctx, &entities.ListAssetsRequest{
+		AssetRef:      req.AssetRef,
+		IncludeLeased: req.IncludeLeased,
+		ScriptKeyType: req.ScriptKeyType,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if len(assets) == 0 {
+		return nil, fmt.Errorf("missing representative asset for %s",
+			req.AssetRef)
+	}
+
+	return assets[0], nil
 }
 
 func (s *walletClient) ListTransfers(ctx context.Context,
@@ -278,13 +365,26 @@ func unmarshalAsset(rpcAsset *taprpc.Asset) (*entities.Asset, error) {
 	}
 
 	if rpcAsset.AssetGroup != nil {
-		if len(rpcAsset.AssetGroup.RawGroupKey) == 33 {
-			var rawKey [33]byte
-			copy(rawKey[:], rpcAsset.AssetGroup.RawGroupKey)
-			asset.GroupKey = &entities.GroupKey{
-				RawKey:        rawKey,
-				TapscriptRoot: rpcAsset.AssetGroup.TapscriptRoot,
-			}
+		g := rpcAsset.AssetGroup
+		gk := &entities.GroupKey{
+			TapscriptRoot: g.TapscriptRoot,
+		}
+
+		if len(g.RawGroupKey) == 33 {
+			copy(gk.RawKey[:], g.RawGroupKey)
+		}
+
+		if len(g.TweakedGroupKey) == 33 {
+			copy(gk.TweakedKey[:], g.TweakedGroupKey)
+		}
+
+		// tapd keys all group lookups by the tweaked key. Only
+		// publish the GroupKey entity when we actually have it, so
+		// the SDK's AssetRef stays round-trippable through every
+		// subsequent ListBalances / ListAssets call.
+		var zero entities.PubKey
+		if gk.TweakedKey != zero {
+			asset.GroupKey = gk
 		}
 	}
 
@@ -295,8 +395,8 @@ func unmarshalAsset(rpcAsset *taprpc.Asset) (*entities.Asset, error) {
 				return nil
 			}
 
-			rawKey := asset.GroupKey.RawKey
-			return &rawKey
+			tweaked := asset.GroupKey.TweakedKey
+			return &tweaked
 		}(),
 	)
 
@@ -570,10 +670,8 @@ func (s *walletClient) AddrReceives(ctx context.Context,
 func marshalListBalancesRequest(
 	req *entities.ListBalancesRequest) *taprpc.ListBalancesRequest {
 
-	// Always group by asset_id so we get per-tranche balances
-	// with genesis info and group keys. The SDK re-aggregates
-	// entries with the same group key into AssetRef-keyed
-	// balances.
+	// Group by asset_id so we get per-tranche balances with genesis info
+	// and group keys. Group-ref lookups take a separate code path.
 	rpcReq := &taprpc.ListBalancesRequest{
 		GroupBy: &taprpc.ListBalancesRequest_AssetId{
 			AssetId: true,
@@ -584,17 +682,10 @@ func marshalListBalancesRequest(
 	}
 
 	rpcReq.IncludeLeased = req.IncludeLeased
-	rpcReq.ScriptKeyType = marshalScriptKeyTypeQuery(
-		req.ScriptKeyType,
-	)
+	rpcReq.ScriptKeyType = marshalScriptKeyTypeQuery(req.ScriptKeyType)
 
 	if req.AssetRef != nil {
-		assetID, groupKey, _ := req.AssetRef.Specifier()
-
-		switch {
-		case groupKey != nil:
-			rpcReq.GroupKeyFilter = (*groupKey)[:]
-		case assetID != nil:
+		if assetID, _, _ := req.AssetRef.Specifier(); assetID != nil {
 			rpcReq.AssetFilter = (*assetID)[:]
 		}
 	}

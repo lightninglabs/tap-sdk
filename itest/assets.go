@@ -1,0 +1,183 @@
+//go:build itest
+
+package itest
+
+import (
+	"context"
+	"encoding/hex"
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/lightninglabs/tap-sdk/entities"
+	"github.com/stretchr/testify/require"
+)
+
+// MintResult captures a confirmed mint together with the semantic AssetRef to
+// use for high-level wallet operations.
+type MintResult struct {
+	Asset *entities.Asset
+	Batch *entities.VerboseMintingBatch
+	Ref   entities.AssetRef
+}
+
+// MintAssetAndConfirm stages, finalizes, mines, and waits for a mint to become
+// visible in Alice's wallet.
+func (h *TestHarness) MintAssetAndConfirm(t testing.TB,
+	ctx context.Context, asset *entities.CreateAsset) (*MintResult, error) {
+
+	t.Helper()
+
+	if asset == nil {
+		return nil, fmt.Errorf("mint asset is nil")
+	}
+
+	if asset.Name == "" {
+		return nil, fmt.Errorf("mint asset name is required")
+	}
+
+	batch, err := h.AliceClient.CreateAsset(ctx, &entities.CreateAssetRequest{
+		Asset:         asset,
+		ShortResponse: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = h.AliceClient.FinalizeBatch(ctx,
+		&entities.FinalizeBatchRequest{ShortResponse: true},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	h.MineBlocks(t, defaultMineBlocks)
+	h.WaitForSync(t, ctx, h.AliceClient, defaultWaitTimeout)
+
+	finalized := h.WaitForMint(t, ctx, h.AliceClient, batch.BatchKey,
+		defaultWaitTimeout)
+	resultAsset := h.WaitForAssetByTag(t, ctx, h.AliceClient,
+		asset.Name, defaultWaitTimeout)
+	if resultAsset == nil {
+		return nil, fmt.Errorf("minted asset %q not found", asset.Name)
+	}
+
+	semanticRef := h.WaitForSemanticAssetRef(
+		t, ctx, resultAsset, defaultWaitTimeout,
+	)
+
+	return &MintResult{
+		Asset: resultAsset,
+		Batch: finalized,
+		Ref:   semanticRef,
+	}, nil
+}
+
+// WaitForSemanticAssetRef resolves the user-facing AssetRef to use for a
+// minted asset. Fungible assets use the canonical group key exposed by
+// ListGroups, while collectibles keep their issuance asset ID.
+func (h *TestHarness) WaitForSemanticAssetRef(t testing.TB,
+	ctx context.Context, asset *entities.Asset,
+	timeout time.Duration) entities.AssetRef {
+
+	t.Helper()
+
+	if asset == nil {
+		require.FailNow(t, "minted asset is nil")
+	}
+
+	if asset.AssetRef.IsAssetIDRef() {
+		return asset.AssetRef
+	}
+
+	var ref entities.AssetRef
+	require.Eventually(t, func() bool {
+		groups, err := h.AliceClient.ListGroups(ctx)
+		if err != nil {
+			t.Logf("group lookup not ready for %s: %v",
+				asset.Genesis.Tag, err)
+			return false
+		}
+
+		for key, group := range groups {
+			for _, candidate := range group.Assets {
+				if candidate == nil ||
+					candidate.IssuanceID != asset.Genesis.IssuanceID {
+
+					continue
+				}
+
+				groupKey, err := parseGroupRefKey(key)
+				if err != nil {
+					t.Logf("group key %q for %s is invalid: %v",
+						key, asset.Genesis.Tag, err)
+					return false
+				}
+
+				ref = entities.AssetRefFromGroupKey(groupKey)
+				return true
+			}
+		}
+
+		return false
+	}, timeout, time.Second)
+
+	return ref
+}
+
+func parseGroupRefKey(s string) (entities.PubKey, error) {
+	if ref, err := entities.ParseAssetRef(s); err == nil {
+		groupKey, ok := ref.GroupKey()
+		if ok {
+			return groupKey, nil
+		}
+
+		return entities.PubKey{}, fmt.Errorf("asset ref %q is not a group ref",
+			s)
+	}
+
+	groupKeyBytes, err := hex.DecodeString(s)
+	if err != nil {
+		return entities.PubKey{}, fmt.Errorf("invalid group key %q: %w",
+			s, err)
+	}
+
+	switch len(groupKeyBytes) {
+	case 33:
+		return entities.ParsePubKey(groupKeyBytes)
+
+	case 32:
+		return entities.ParseTaprootPubKey(groupKeyBytes)
+
+	default:
+		return entities.PubKey{}, fmt.Errorf(
+			"invalid group key %q: expected 32 or 33 bytes, got %d",
+			s, len(groupKeyBytes),
+		)
+	}
+}
+
+// MintGroupedAsset mints a fungible asset that uses the canonical group key as
+// the user-facing identifier.
+func (h *TestHarness) MintGroupedAsset(t testing.TB, ctx context.Context,
+	name string, amount uint64) (*MintResult, error) {
+
+	return h.MintAssetAndConfirm(t, ctx, &entities.CreateAsset{
+		AssetType:     entities.AssetTypeNormal,
+		Name:          name,
+		InitialSupply: amount,
+		AllowIssuance: true,
+	})
+}
+
+// MintCollectibleAsset mints a collectible that uses the issuance asset ID as
+// the user-facing identifier.
+func (h *TestHarness) MintCollectibleAsset(t testing.TB, ctx context.Context,
+	name string) (*MintResult, error) {
+
+	return h.MintAssetAndConfirm(t, ctx, &entities.CreateAsset{
+		AssetType:     entities.AssetTypeCollectible,
+		Name:          name,
+		InitialSupply: 1,
+	})
+}

@@ -2,7 +2,6 @@ package rest
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 
@@ -141,15 +140,15 @@ func (w *walletKitClient) FundTransfer(ctx context.Context,
 	for _, input := range inputs {
 		rpcInputs = append(rpcInputs, &jsonPrevIDReq{
 			Outpoint: &jsonOutpointReq{
-				Txid: base64.StdEncoding.EncodeToString(
+				Txid: hex.EncodeToString(
 					input.Outpoint.Txid[:],
 				),
 				OutputIndex: input.Outpoint.Index,
 			},
-			ID: base64.StdEncoding.EncodeToString(
+			ID: hex.EncodeToString(
 				input.IssuanceID[:],
 			),
-			ScriptKey: base64.StdEncoding.EncodeToString(
+			ScriptKey: hex.EncodeToString(
 				input.ScriptKey[:],
 			),
 		})
@@ -185,7 +184,7 @@ func (w *walletKitClient) FundTransfer(ctx context.Context,
 		return nil, err
 	}
 
-	fundedPsbt, err := parseBase64Bytes(resp.FundedPsbt)
+	fundedPsbt, err := parseHexBytes(resp.FundedPsbt)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"invalid funded_psbt: %w", err,
@@ -194,7 +193,7 @@ func (w *walletKitClient) FundTransfer(ctx context.Context,
 
 	passivePsbts := make([][]byte, 0, len(resp.PassiveAssetPsbts))
 	for _, p := range resp.PassiveAssetPsbts {
-		psbt, err := parseBase64Bytes(p)
+		psbt, err := parseHexBytes(p)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"invalid passive_asset_psbt: %w", err,
@@ -215,7 +214,7 @@ func (w *walletKitClient) FundInteractivePsbt(ctx context.Context,
 	psbt []byte) (*entities.FundedTransfer, error) {
 
 	body := &jsonFundVirtualPsbtRequest{
-		Psbt: base64.StdEncoding.EncodeToString(psbt),
+		Psbt: hex.EncodeToString(psbt),
 	}
 
 	var resp jsonFundVirtualPsbtResponse
@@ -227,7 +226,7 @@ func (w *walletKitClient) FundInteractivePsbt(ctx context.Context,
 		return nil, err
 	}
 
-	fundedPsbt, err := parseBase64Bytes(resp.FundedPsbt)
+	fundedPsbt, err := parseHexBytes(resp.FundedPsbt)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"invalid funded_psbt: %w", err,
@@ -236,7 +235,7 @@ func (w *walletKitClient) FundInteractivePsbt(ctx context.Context,
 
 	passivePsbts := make([][]byte, 0, len(resp.PassiveAssetPsbts))
 	for _, p := range resp.PassiveAssetPsbts {
-		psbt, err := parseBase64Bytes(p)
+		psbt, err := parseHexBytes(p)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"invalid passive_asset_psbt: %w", err,
@@ -263,7 +262,7 @@ func (w *walletKitClient) SignVirtualPsbt(ctx context.Context,
 	fundedPsbt []byte) ([]byte, error) {
 
 	body := &jsonSignVirtualPsbtRequest{
-		FundedPsbt: base64.StdEncoding.EncodeToString(
+		FundedPsbt: hex.EncodeToString(
 			fundedPsbt,
 		),
 	}
@@ -277,7 +276,7 @@ func (w *walletKitClient) SignVirtualPsbt(ctx context.Context,
 		return nil, err
 	}
 
-	return parseBase64Bytes(resp.SignedPsbt)
+	return parseHexBytes(resp.SignedPsbt)
 }
 
 // jsonCommitVirtualPsbtsRequest is the JSON body for
@@ -298,7 +297,7 @@ func (w *walletKitClient) CommitVirtualPsbts(ctx context.Context,
 	for _, p := range virtualPsbts {
 		vPsbts = append(
 			vPsbts,
-			base64.StdEncoding.EncodeToString(p),
+			hex.EncodeToString(p),
 		)
 	}
 
@@ -306,7 +305,7 @@ func (w *walletKitClient) CommitVirtualPsbts(ctx context.Context,
 	for _, p := range passivePsbts {
 		pPsbts = append(
 			pPsbts,
-			base64.StdEncoding.EncodeToString(p),
+			hex.EncodeToString(p),
 		)
 	}
 
@@ -327,7 +326,7 @@ func (w *walletKitClient) CommitVirtualPsbts(ctx context.Context,
 		return nil, err
 	}
 
-	anchorPsbt, err := parseBase64Bytes(resp.AnchorPsbt)
+	anchorPsbt, err := parseHexBytes(resp.AnchorPsbt)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"invalid anchor_psbt: %w", err,
@@ -336,7 +335,7 @@ func (w *walletKitClient) CommitVirtualPsbts(ctx context.Context,
 
 	vPsbtBytes := make([][]byte, 0, len(resp.VirtualPsbts))
 	for _, p := range resp.VirtualPsbts {
-		psbt, err := parseBase64Bytes(p)
+		psbt, err := parseHexBytes(p)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"invalid virtual_psbt: %w", err,
@@ -350,7 +349,7 @@ func (w *walletKitClient) CommitVirtualPsbts(ctx context.Context,
 		[][]byte, 0, len(resp.PassiveAssetPsbts),
 	)
 	for _, p := range resp.PassiveAssetPsbts {
-		psbt, err := parseBase64Bytes(p)
+		psbt, err := parseHexBytes(p)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"invalid passive_psbt: %w", err,
@@ -382,7 +381,7 @@ func (w *walletKitClient) AnchorVirtualPsbts(ctx context.Context,
 	for _, p := range signedPsbts {
 		psbts = append(
 			psbts,
-			base64.StdEncoding.EncodeToString(p),
+			hex.EncodeToString(p),
 		)
 	}
 
@@ -425,7 +424,7 @@ func (w *walletKitClient) PublishAndLogTransfer(ctx context.Context,
 	for _, p := range virtualPsbts {
 		vPsbts = append(
 			vPsbts,
-			base64.StdEncoding.EncodeToString(p),
+			hex.EncodeToString(p),
 		)
 	}
 
@@ -433,12 +432,12 @@ func (w *walletKitClient) PublishAndLogTransfer(ctx context.Context,
 	for _, p := range passivePsbts {
 		pPsbts = append(
 			pPsbts,
-			base64.StdEncoding.EncodeToString(p),
+			hex.EncodeToString(p),
 		)
 	}
 
 	body := &jsonPublishAndLogRequest{
-		AnchorPsbt: base64.StdEncoding.EncodeToString(
+		AnchorPsbt: hex.EncodeToString(
 			anchorPsbt,
 		),
 		VirtualPsbts:          vPsbts,
@@ -460,7 +459,7 @@ func (w *walletKitClient) PublishAndLogTransfer(ctx context.Context,
 		return nil, fmt.Errorf("invalid transfer response")
 	}
 
-	anchorTx, err := parseBase64Bytes(resp.Transfer.AnchorTx)
+	anchorTx, err := parseHexBytes(resp.Transfer.AnchorTx)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"invalid anchor_tx: %w", err,
@@ -530,10 +529,10 @@ func (w *walletKitClient) ProveAssetOwnership(ctx context.Context,
 	*entities.OwnershipProof, error) {
 
 	body := map[string]any{
-		"asset_id": base64.StdEncoding.EncodeToString(
+		"asset_id": hex.EncodeToString(
 			req.IssuanceID[:],
 		),
-		"script_key": base64.StdEncoding.EncodeToString(
+		"script_key": hex.EncodeToString(
 			req.ScriptKey[:],
 		),
 		"outpoint": map[string]any{
@@ -543,7 +542,7 @@ func (w *walletKitClient) ProveAssetOwnership(ctx context.Context,
 	}
 
 	if len(req.Challenge) > 0 {
-		body["challenge"] = base64.StdEncoding.EncodeToString(
+		body["challenge"] = hex.EncodeToString(
 			req.Challenge,
 		)
 	}
@@ -557,7 +556,7 @@ func (w *walletKitClient) ProveAssetOwnership(ctx context.Context,
 		return nil, err
 	}
 
-	proofBytes, err := parseBase64Bytes(resp.ProofWithWitness)
+	proofBytes, err := parseHexBytes(resp.ProofWithWitness)
 	if err != nil {
 		return nil, fmt.Errorf("decode ownership proof: %w",
 			err)
@@ -574,7 +573,7 @@ func (w *walletKitClient) VerifyAssetOwnership(ctx context.Context,
 	*entities.VerifyOwnershipResponse, error) {
 
 	body := map[string]any{
-		"proof_with_witness": base64.StdEncoding.EncodeToString(
+		"proof_with_witness": hex.EncodeToString(
 			req.ProofWithWitness,
 		),
 	}
@@ -617,7 +616,7 @@ func (w *walletKitClient) DeclareScriptKey(ctx context.Context,
 	*entities.ScriptKey, error) {
 
 	keyDesc := map[string]any{
-		"raw_key_bytes": base64.StdEncoding.EncodeToString(
+		"raw_key_bytes": hex.EncodeToString(
 			req.ScriptKey.KeyDesc.RawKeyBytes[:],
 		),
 		"key_loc": map[string]any{
@@ -627,14 +626,14 @@ func (w *walletKitClient) DeclareScriptKey(ctx context.Context,
 	}
 
 	scriptKeyMap := map[string]any{
-		"pub_key": base64.StdEncoding.EncodeToString(
+		"pub_key": hex.EncodeToString(
 			req.ScriptKey.PubKey[:],
 		),
 		"key_desc": keyDesc,
 	}
 
 	if len(req.ScriptKey.TapTweak) > 0 {
-		scriptKeyMap["tap_tweak"] = base64.StdEncoding.EncodeToString(
+		scriptKeyMap["tap_tweak"] = hex.EncodeToString(
 			req.ScriptKey.TapTweak,
 		)
 	}
@@ -676,7 +675,7 @@ func (w *walletKitClient) ExportBackup(ctx context.Context,
 		return nil, err
 	}
 
-	backup, err := parseBase64Bytes(resp.Backup)
+	backup, err := parseHexBytes(resp.Backup)
 	if err != nil {
 		return nil, fmt.Errorf("invalid backup: %w", err)
 	}
@@ -689,7 +688,7 @@ func (w *walletKitClient) ImportBackup(ctx context.Context,
 	backup []byte) (uint32, error) {
 
 	body := &jsonImportAssetsFromBackupRequest{
-		Backup: base64.StdEncoding.EncodeToString(backup),
+		Backup: hex.EncodeToString(backup),
 	}
 
 	var resp jsonImportAssetsFromBackupResponse

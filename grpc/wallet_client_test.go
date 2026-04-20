@@ -62,7 +62,10 @@ func TestMarshalListBalancesRequest(t *testing.T) {
 			},
 		},
 		{
-			name: "group key ref sets group key filter",
+			// Group refs take a separate code path in
+			// ListBalances, so the asset-id marshaller
+			// produces no filter for them.
+			name: "group key ref leaves filters unset",
 			req: &entities.ListBalancesRequest{
 				AssetRef: &groupKeyRef,
 			},
@@ -73,10 +76,7 @@ func TestMarshalListBalancesRequest(t *testing.T) {
 					t, rpcReq.GetAssetId(),
 				)
 				require.Empty(t, rpcReq.AssetFilter)
-				require.Equal(
-					t, groupPubKey[:],
-					rpcReq.GroupKeyFilter,
-				)
+				require.Empty(t, rpcReq.GroupKeyFilter)
 			},
 		},
 		{

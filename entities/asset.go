@@ -74,9 +74,21 @@ type AssetGenesis struct {
 }
 
 // GroupKey represents a group key.
+//
+// tapd distinguishes the raw group key from the tweaked form that is
+// actually committed on chain. The tweaked key is derived from the raw
+// key plus the genesis point and asset type; it is the identifier tapd
+// uses in every queryable map (ListBalances, ListGroups, filters on
+// ListAssets). Callers that need to round-trip a group through the SDK
+// must therefore use the tweaked key — which is what AssetRef encodes.
 type GroupKey struct {
-	// RawKey is the raw group key bytes.
+	// RawKey is the raw group key bytes (33-byte compressed secp256k1),
+	// before Taproot tweaking.
 	RawKey PubKey
+
+	// TweakedKey is the on-chain, Taproot-tweaked group key. Lookups
+	// against the daemon must use this key.
+	TweakedKey PubKey
 
 	// TapscriptRoot is the tapscript root of the group key.
 	TapscriptRoot []byte

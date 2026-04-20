@@ -2,7 +2,7 @@ package rest
 
 import (
 	"context"
-	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/lightninglabs/tap-sdk/entities"
@@ -37,17 +37,17 @@ func (p *proofClient) ExportProof(ctx context.Context,
 	outpoint *entities.Outpoint) (*entities.ProofFile, error) {
 
 	body := &jsonExportProofRequest{
-		AssetID: base64.StdEncoding.EncodeToString(
+		AssetID: hex.EncodeToString(
 			issuanceID[:],
 		),
-		ScriptKey: base64.StdEncoding.EncodeToString(
+		ScriptKey: hex.EncodeToString(
 			scriptKey[:],
 		),
 	}
 
 	if outpoint != nil {
 		body.Outpoint = &jsonOutpointReq{
-			Txid: base64.StdEncoding.EncodeToString(
+			Txid: hex.EncodeToString(
 				outpoint.Txid[:],
 			),
 			OutputIndex: outpoint.Index,
@@ -63,7 +63,7 @@ func (p *proofClient) ExportProof(ctx context.Context,
 		return nil, err
 	}
 
-	rawProof, err := parseBase64Bytes(resp.RawProofFile)
+	rawProof, err := parseHexBytes(resp.RawProofFile)
 	if err != nil {
 		return nil, fmt.Errorf("invalid raw_proof_file: %w", err)
 	}
@@ -96,7 +96,7 @@ func (p *proofClient) UnpackProofFile(ctx context.Context,
 	rawProofFile []byte) ([][]byte, error) {
 
 	body := &jsonUnpackProofFileRequest{
-		RawProofFile: base64.StdEncoding.EncodeToString(
+		RawProofFile: hex.EncodeToString(
 			rawProofFile,
 		),
 	}
@@ -112,7 +112,7 @@ func (p *proofClient) UnpackProofFile(ctx context.Context,
 
 	proofs := make([][]byte, 0, len(resp.RawProofs))
 	for _, rawProof := range resp.RawProofs {
-		proofBytes, err := parseBase64Bytes(rawProof)
+		proofBytes, err := parseHexBytes(rawProof)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"invalid raw proof: %w", err,
@@ -137,7 +137,7 @@ func (p *proofClient) DecodeProof(ctx context.Context,
 	rawProof []byte) (*entities.DecodedProof, error) {
 
 	body := &jsonDecodeProofRequest{
-		RawProof: base64.StdEncoding.EncodeToString(
+		RawProof: hex.EncodeToString(
 			rawProof,
 		),
 		WithMetaReveal:    true,
@@ -181,11 +181,11 @@ func (p *proofClient) RegisterTransfer(ctx context.Context,
 	}
 
 	body := &jsonRegisterTransferRequest{
-		ScriptKey: base64.StdEncoding.EncodeToString(
+		ScriptKey: hex.EncodeToString(
 			scriptKey[:],
 		),
 		Outpoint: &jsonOutpointReq{
-			Txid: base64.StdEncoding.EncodeToString(
+			Txid: hex.EncodeToString(
 				outpoint.Txid[:],
 			),
 			OutputIndex: outpoint.Index,
@@ -193,13 +193,13 @@ func (p *proofClient) RegisterTransfer(ctx context.Context,
 	}
 
 	if assetID != nil {
-		body.AssetID = base64.StdEncoding.EncodeToString(
+		body.AssetID = hex.EncodeToString(
 			(*assetID)[:],
 		)
 	}
 
 	if groupKey != nil {
-		body.GroupKey = base64.StdEncoding.EncodeToString(
+		body.GroupKey = hex.EncodeToString(
 			(*groupKey)[:],
 		)
 	}

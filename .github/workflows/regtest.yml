@@ -1,0 +1,58 @@
+name: Integration tests (regtest)
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  GOPATH: /home/runner/work/go
+  GO_VERSION: '1.25.7'
+
+jobs:
+  regtest:
+    name: Regtest integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: git checkout
+        uses: actions/checkout@v4
+
+      - name: Setup go ${{ env.GO_VERSION }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: '${{ env.GO_VERSION }}'
+
+      - name: Start regtest stack (pinned image)
+        run: make itest-up
+
+      - name: Run integration tests
+        run: make itest-run
+
+      - name: Collect container logs on failure
+        if: failure()
+        run: |
+          mkdir -p /tmp/container-logs
+          for c in tap-sdk-bitcoind tap-sdk-lnd-alice tap-sdk-lnd-bob \
+                   tap-sdk-tapd-alice tap-sdk-tapd-bob; do
+            docker logs "$c" > "/tmp/container-logs/$c.log" 2>&1 || true
+          done
+
+      - name: Upload container logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-logs
+          path: /tmp/container-logs/
+          retention-days: 7
+
+      - name: Tear down regtest stack
+        if: always()
+        run: make itest-down

@@ -62,9 +62,13 @@ func (w *walletClient) ListAssets(ctx context.Context,
 
 			assetRefFilter = req.AssetRef
 			if groupKey, ok := req.AssetRef.GroupKey(); ok {
+				// grpc-gateway rejects hex for `bytes` query
+				// params; it expects URL-safe base64.
 				params.Set(
 					"group_key",
-					hex.EncodeToString(groupKey[:]),
+					base64.URLEncoding.EncodeToString(
+						groupKey[:],
+					),
 				)
 			}
 		}
@@ -105,9 +109,17 @@ func (w *walletClient) ListBalances(ctx context.Context,
 	req *entities.ListBalancesRequest) (
 	*entities.ListBalancesResponse, error) {
 
-	// Always request per-asset-id balances so we get genesis
-	// info and group keys. The SDK re-aggregates entries with
-	// the same group key into AssetRef-keyed balances.
+	// Group refs must round-trip through tapd's group-by-group_key
+	// mode — the server only honors group_key_filter in that mode,
+	// and a wallet that learned about the group through universe
+	// bootstrap has no per-asset-id rows yet.
+	if req != nil && req.AssetRef != nil && req.AssetRef.IsGroupRef() {
+		return w.listGroupBalance(ctx, req)
+	}
+
+	// Request per-asset-id balances so we get genesis info and
+	// group keys. The SDK re-aggregates entries with the same
+	// group key into AssetRef-keyed balances.
 	params := url.Values{
 		"asset_id": {"true"},
 	}
@@ -117,20 +129,13 @@ func (w *walletClient) ListBalances(ctx context.Context,
 		}
 
 		if req.AssetRef != nil {
-			assetID, groupKey, _ := req.AssetRef.Specifier()
-
-			switch {
-			case groupKey != nil:
-				params.Set(
-					"group_key_filter",
-					hex.EncodeToString(
-						(*groupKey)[:],
-					),
-				)
-			case assetID != nil:
+			assetID, _, _ := req.AssetRef.Specifier()
+			if assetID != nil {
+				// grpc-gateway wants URL-safe base64 for
+				// `bytes` query params.
 				params.Set(
 					"asset_filter",
-					hex.EncodeToString(
+					base64.URLEncoding.EncodeToString(
 						(*assetID)[:],
 					),
 				)
@@ -149,11 +154,16 @@ func (w *walletClient) ListBalances(ctx context.Context,
 		return nil, err
 	}
 
+	unconfirmed, err := parseUint64(resp.UnconfirmedTransfers)
+	if err != nil {
+		return nil, fmt.Errorf("unconfirmed_transfers: %w", err)
+	}
+
 	result := &entities.ListBalancesResponse{
 		Balances: make(
 			map[string]*entities.AssetBalance,
 		),
-		UnconfirmedTransfers: resp.UnconfirmedTransfers,
+		UnconfirmedTransfers: unconfirmed,
 	}
 
 	for _, ab := range resp.AssetBalances {
@@ -215,6 +225,100 @@ func (w *walletClient) ListBalances(ctx context.Context,
 	}
 
 	return result, nil
+}
+
+// listGroupBalance queries a single-group balance via tapd's
+// group-by-group_key mode. The server returns only the aggregate for
+// the requested group, so genesis metadata is enriched from ListAssets.
+func (w *walletClient) listGroupBalance(ctx context.Context,
+	req *entities.ListBalancesRequest) (*entities.ListBalancesResponse,
+	error) {
+
+	groupKey, ok := req.AssetRef.GroupKey()
+	if !ok {
+		return nil, fmt.Errorf("group balance requires a group asset ref")
+	}
+
+	// grpc-gateway decodes query-string `bytes` fields as URL-safe
+	// base64 (padding optional). Hex is rejected.
+	params := url.Values{
+		"group_key": {"true"},
+		"group_key_filter": {
+			base64.URLEncoding.EncodeToString(groupKey[:]),
+		},
+	}
+	if req.IncludeLeased {
+		params.Set("include_leased", "true")
+	}
+
+	path := "/v1/taproot-assets/assets/balance?" + params.Encode()
+
+	var resp jsonListBalancesResponse
+	err := w.transport.doGet(
+		ctx, path, macaroon.AdminServiceMac, &resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	unconfirmed, err := parseUint64(resp.UnconfirmedTransfers)
+	if err != nil {
+		return nil, fmt.Errorf("unconfirmed_transfers: %w", err)
+	}
+
+	result := &entities.ListBalancesResponse{
+		Balances:             map[string]*entities.AssetBalance{},
+		UnconfirmedTransfers: unconfirmed,
+	}
+
+	groupBalance, ok := resp.AssetGroupBalances[hex.EncodeToString(groupKey[:])]
+	if !ok || groupBalance == nil {
+		return result, nil
+	}
+
+	amount, err := parseUint64(groupBalance.Balance)
+	if err != nil {
+		return nil, fmt.Errorf("balance amount: %w", err)
+	}
+	if amount == 0 {
+		return result, nil
+	}
+
+	representative, err := w.groupRepresentativeAsset(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	result.Balances[req.AssetRef.String()] = &entities.AssetBalance{
+		AssetRef:     *req.AssetRef,
+		AssetGenesis: representative.Genesis,
+		Balance:      amount,
+		GroupKey:     &groupKey,
+	}
+
+	return result, nil
+}
+
+// groupRepresentativeAsset returns any asset from the group so the
+// balance response carries the genesis metadata callers expect.
+func (w *walletClient) groupRepresentativeAsset(ctx context.Context,
+	req *entities.ListBalancesRequest) (*entities.Asset, error) {
+
+	assets, err := w.ListAssets(ctx, &entities.ListAssetsRequest{
+		AssetRef:      req.AssetRef,
+		IncludeLeased: req.IncludeLeased,
+		ScriptKeyType: req.ScriptKeyType,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if len(assets) == 0 {
+		return nil, fmt.Errorf("missing representative asset for %s",
+			req.AssetRef)
+	}
+
+	return assets[0], nil
 }
 
 // ListTransfers lists outgoing transfers with optional filtering.
@@ -344,7 +448,7 @@ func (w *walletClient) NewAddr(ctx context.Context,
 			return nil, err
 		}
 		if assetID != nil {
-			body.AssetID = base64.StdEncoding.EncodeToString(
+			body.AssetID = hex.EncodeToString(
 				(*assetID)[:],
 			)
 		}
@@ -352,7 +456,7 @@ func (w *walletClient) NewAddr(ctx context.Context,
 			body.Amount = fmt.Sprintf("%d", req.Amount)
 		}
 		if groupKey != nil {
-			body.GroupKey = base64.StdEncoding.EncodeToString(
+			body.GroupKey = hex.EncodeToString(
 				(*groupKey)[:],
 			)
 		}
@@ -640,6 +744,10 @@ func (w *walletClient) ListBurns(ctx context.Context,
 	req *entities.ListBurnsRequest) ([]*entities.AssetBurn,
 	error) {
 
+	// grpc-gateway decodes query-string `bytes` fields as URL-safe
+	// base64 (padding optional). Hex is rejected even though the
+	// rest of tapd's REST surface uses UseHexForBytes for JSON
+	// bodies.
 	params := url.Values{}
 	if req != nil {
 		if req.AssetRef != nil {
@@ -650,17 +758,19 @@ func (w *walletClient) ListBurns(ctx context.Context,
 
 			if assetID != nil {
 				params.Set("asset_id",
-					hex.EncodeToString((*assetID)[:]))
+					base64.URLEncoding.EncodeToString(
+						(*assetID)[:]))
 			}
 
 			if groupKey != nil {
 				params.Set("group_key",
-					hex.EncodeToString((*groupKey)[:]))
+					base64.URLEncoding.EncodeToString(
+						(*groupKey)[:]))
 			}
 		}
 		if req.AnchorTxid != nil {
 			params.Set("anchor_txid",
-				hex.EncodeToString(
+				base64.URLEncoding.EncodeToString(
 					req.AnchorTxid[:],
 				))
 		}
@@ -743,7 +853,7 @@ func (w *walletClient) VerifyProof(ctx context.Context,
 	*entities.VerifyProofResponse, error) {
 
 	body := map[string]any{
-		"raw_proof_file": base64.StdEncoding.EncodeToString(
+		"raw_proof_file": hex.EncodeToString(
 			rawProofFile,
 		),
 	}
