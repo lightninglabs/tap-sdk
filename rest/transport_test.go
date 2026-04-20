@@ -10,6 +10,7 @@ import (
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/macaroon"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -20,15 +21,21 @@ import (
 func TestTransportDoGetReturnsTypedGatewayError(t *testing.T) {
 	t.Parallel()
 
+	// Mirror tapd's real wire format: grpc-gateway emits `details` as
+	// a JSON array of protobuf Any messages. Earlier revisions typed
+	// this field as `string`, which silently fell through to the
+	// opaque path and dropped the gRPC code.
+	const body = `{"code":3,"message":"bad input","details":` +
+		`[{"@type":"type.googleapis.com/x","reason":"bad"}]}`
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,
 		r *http.Request) {
 
-		require.Equal(t, "/v1/test", r.URL.Path)
+		assert.Equal(t, "/v1/test", r.URL.Path)
 
 		w.WriteHeader(http.StatusBadRequest)
-		_, err := fmt.Fprint(w, `{"code":3,"message":"bad input",`+
-			`"details":"group key filter"}`)
-		require.NoError(t, err)
+		_, err := fmt.Fprint(w, body)
+		assert.NoError(t, err)
 	}))
 	defer srv.Close()
 
@@ -50,7 +57,7 @@ func TestTransportDoGetReturnsTypedGatewayError(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
 	require.Equal(t, codes.InvalidArgument, apiErr.GRPCCode)
 	require.Equal(t, "bad input", apiErr.Message)
-	require.Equal(t, "group key filter", apiErr.Details)
+	require.Contains(t, apiErr.Details, `"reason":"bad"`)
 
 	st, ok := status.FromError(err)
 	require.True(t, ok)
@@ -73,7 +80,7 @@ func TestTransportDoGetOpaqueErrorUsesUnknownCode(t *testing.T) {
 
 		w.WriteHeader(http.StatusInternalServerError)
 		_, err := fmt.Fprint(w, "upstream exploded")
-		require.NoError(t, err)
+		assert.NoError(t, err)
 	}))
 	defer srv.Close()
 
