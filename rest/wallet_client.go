@@ -271,9 +271,7 @@ func (w *walletClient) listGroupBalance(ctx context.Context,
 		UnconfirmedTransfers: unconfirmed,
 	}
 
-	groupBalance, ok := resp.AssetGroupBalances[
-		hex.EncodeToString(groupKey[:]),
-	]
+	groupBalance, ok := resp.AssetGroupBalances[hex.EncodeToString(groupKey[:])]
 	if !ok || groupBalance == nil {
 		return result, nil
 	}

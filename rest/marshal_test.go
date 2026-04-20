@@ -7,17 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func testGroupKey(t *testing.T) entities.PubKey {
-	t.Helper()
-
-	key, err := entities.ParsePubKeyHex(
-		"0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
-	)
-	require.NoError(t, err)
-
-	return key
-}
-
 func TestParseHexBytes(t *testing.T) {
 	tests := []struct {
 		name    string

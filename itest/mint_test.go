@@ -82,8 +82,8 @@ func TestCancelBatch(t *testing.T) {
 		_, err := h.AliceClient.CreateAsset(ctx,
 			&entities.CreateAssetRequest{
 				Asset: &entities.CreateAsset{
-					AssetType: entities.AssetTypeNormal,
-					Name:      "cancel-token",
+					AssetType:     entities.AssetTypeNormal,
+					Name:          "cancel-token",
 					InitialSupply: 10,
 				},
 				ShortResponse: true,
