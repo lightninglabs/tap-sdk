@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/lightninglabs/tap-sdk/macaroon"
+	"google.golang.org/grpc/codes"
 )
 
 const (
@@ -126,6 +127,7 @@ func (t *transport) do(ctx context.Context, method, path string,
 
 			return &APIError{
 				StatusCode: resp.StatusCode,
+				GRPCCode:   grpcCodeFromGateway(apiErr.Code),
 				Message:    apiErr.Message,
 				Details:    apiErr.Details,
 			}
@@ -133,6 +135,7 @@ func (t *transport) do(ctx context.Context, method, path string,
 
 		return &APIError{
 			StatusCode: resp.StatusCode,
+			GRPCCode:   codes.Unknown,
 			Message:    string(respBody),
 		}
 	}
@@ -145,6 +148,16 @@ func (t *transport) do(ctx context.Context, method, path string,
 	}
 
 	return nil
+}
+
+// grpcCodeFromGateway validates the grpc-gateway error code before exposing
+// it through the SDK error surface.
+func grpcCodeFromGateway(code int) codes.Code {
+	if code < int(codes.OK) || code > int(codes.Unauthenticated) {
+		return codes.Unknown
+	}
+
+	return codes.Code(code)
 }
 
 // newHTTPClient creates an *http.Client with TLS configured per the
