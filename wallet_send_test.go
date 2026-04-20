@@ -2,9 +2,9 @@ package tapsdk
 
 import (
 	"context"
-	"errors"
 	"testing"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -702,23 +702,85 @@ func (m *mockClient) Close() error {
 
 // --- Tests ---
 
-// v2Addr is a V2 tap address with no embedded amount (sender-chosen).
-func v2Addr(encoded string) *entities.Address {
-	return &entities.Address{
-		Encoded:        encoded,
-		AddressVersion: entities.AddressVersionV2,
-	}
+// testKey derives a valid compressed secp256k1 public key from a small
+// scalar, so fixture addresses the SDK decodes locally actually parse.
+func testKey(t *testing.T, scalar byte) entities.PubKey {
+	t.Helper()
+
+	priv, _ := btcec.PrivKeyFromBytes([]byte{scalar})
+	pk, err := entities.ParsePubKey(priv.PubKey().SerializeCompressed())
+	require.NoError(t, err)
+	return pk
 }
 
-// embeddedAddr is an address that embeds the given amount.
-func embeddedAddr(encoded string, amount uint64,
-	version entities.AddressVersion) *entities.Address {
-
-	return &entities.Address{
-		Encoded:        encoded,
-		Amount:         amount,
-		AddressVersion: version,
+// testAssetID returns a deterministic asset ID for fixture addresses.
+func testAssetID() entities.AssetID {
+	var id entities.AssetID
+	for i := range id {
+		id[i] = byte(i + 1)
 	}
+	return id
+}
+
+// encodeV2NoAmount builds a real bech32m-encoded V2 Tap address with
+// no embedded amount so Wallet.Send's local decoder actually parses.
+// seed distinguishes otherwise-identical addresses across recipients
+// in a single test.
+func encodeV2NoAmount(t *testing.T, seed ...byte) string {
+	t.Helper()
+
+	s := byte(13)
+	if len(seed) == 1 {
+		s = seed[0]
+	}
+
+	addr := &entities.Address{
+		AddressVersion:   entities.AddressVersionV2,
+		AssetVersion:     entities.AssetVersionV0,
+		AssetRef:         entities.AssetRefFromGroupKey(testKey(t, s)),
+		ScriptKey:        testKey(t, 7),
+		InternalKey:      testKey(t, 11),
+		ProofCourierAddr: "authmailbox+universerpc://localhost:10029",
+	}
+
+	encoded, err := entities.EncodeAddress(
+		addr, entities.NetworkRegtest,
+	)
+	require.NoError(t, err)
+	return encoded
+}
+
+// encodeEmbedded builds an address carrying an embedded amount so the
+// TapAddresses path is exercised. seed distinguishes otherwise-
+// identical addresses across recipients in a single test.
+func encodeEmbedded(t *testing.T, amount uint64,
+	version entities.AddressVersion, seed ...byte) string {
+
+	t.Helper()
+
+	s := byte(17)
+	if len(seed) == 1 {
+		s = seed[0]
+	}
+
+	id := testAssetID()
+	// Mutate the first byte so the AssetRef differs between seeds.
+	id[0] = s
+
+	addr := &entities.Address{
+		AddressVersion: version,
+		AssetVersion:   entities.AssetVersionV0,
+		AssetRef:       entities.AssetRefFromAssetID(id),
+		Amount:         amount,
+		ScriptKey:      testKey(t, 7),
+		InternalKey:    testKey(t, 11),
+	}
+
+	encoded, err := entities.EncodeAddress(
+		addr, entities.NetworkRegtest,
+	)
+	require.NoError(t, err)
+	return encoded
 }
 
 func TestSend_WithAmount(t *testing.T) {
@@ -726,7 +788,7 @@ func TestSend_WithAmount(t *testing.T) {
 	w := NewWallet(mc, entities.NetworkRegtest)
 	ctx := context.Background()
 
-	addr := "taprt1qxyz_v2_address"
+	addr := encodeV2NoAmount(t)
 	amount := uint64(500)
 	feeRate := uint32(25)
 	label := "test-send"
@@ -736,7 +798,6 @@ func TestSend_WithAmount(t *testing.T) {
 		Label:      label,
 	}
 
-	mc.On("DecodeAddr", ctx, addr).Return(v2Addr(addr), nil)
 	mc.On("SendAsset", ctx, mock.MatchedBy(
 		func(req *entities.SendAssetRequest) bool {
 			return len(req.Recipients) == 1 &&
@@ -763,15 +824,10 @@ func TestSend_ZeroAmount_UsesAddressEmbedded(t *testing.T) {
 	w := NewWallet(mc, entities.NetworkRegtest)
 	ctx := context.Background()
 
-	addr := "taprt1qxyz_v0_address"
+	addr := encodeEmbedded(t, 42, entities.AddressVersionV0)
 
-	expectedTransfer := &entities.AssetTransfer{
-		AnchorTxid: "def456",
-	}
+	expectedTransfer := &entities.AssetTransfer{AnchorTxid: "def456"}
 
-	mc.On("DecodeAddr", ctx, addr).Return(
-		embeddedAddr(addr, 42, entities.AddressVersionV0), nil,
-	)
 	mc.On("SendAsset", ctx, mock.MatchedBy(
 		func(req *entities.SendAssetRequest) bool {
 			return len(req.TapAddresses) == 1 &&
@@ -794,8 +850,7 @@ func TestSend_V2_AmountRequired(t *testing.T) {
 	w := NewWallet(mc, entities.NetworkRegtest)
 	ctx := context.Background()
 
-	addr := "taprt1qnoamount_v2"
-	mc.On("DecodeAddr", ctx, addr).Return(v2Addr(addr), nil)
+	addr := encodeV2NoAmount(t)
 
 	_, err := w.Send(ctx, addr, 0)
 	require.ErrorIs(t, err, ErrAmountRequired)
@@ -810,10 +865,7 @@ func TestSend_AmountMismatch(t *testing.T) {
 	w := NewWallet(mc, entities.NetworkRegtest)
 	ctx := context.Background()
 
-	addr := "taprt1qembedded_v1"
-	mc.On("DecodeAddr", ctx, addr).Return(
-		embeddedAddr(addr, 100, entities.AddressVersionV1), nil,
-	)
+	addr := encodeEmbedded(t, 100, entities.AddressVersionV1)
 
 	_, err := w.Send(ctx, addr, 250)
 	require.ErrorIs(t, err, ErrAmountMismatch)
@@ -829,10 +881,7 @@ func TestSend_AmountMatchesEmbedded(t *testing.T) {
 	w := NewWallet(mc, entities.NetworkRegtest)
 	ctx := context.Background()
 
-	addr := "taprt1qembedded_match_v1"
-	mc.On("DecodeAddr", ctx, addr).Return(
-		embeddedAddr(addr, 100, entities.AddressVersionV1), nil,
-	)
+	addr := encodeEmbedded(t, 100, entities.AddressVersionV1)
 	mc.On("SendAsset", ctx, mock.MatchedBy(
 		func(req *entities.SendAssetRequest) bool {
 			return len(req.TapAddresses) == 1 &&
@@ -848,17 +897,15 @@ func TestSend_AmountMatchesEmbedded(t *testing.T) {
 	mc.AssertExpectations(t)
 }
 
-func TestSend_DecodeAddrError(t *testing.T) {
+// TestSend_DecodeError surfaces an error when the address string is
+// not a valid bech32m Tap address.
+func TestSend_DecodeError(t *testing.T) {
 	mc := new(mockClient)
 	w := NewWallet(mc, entities.NetworkRegtest)
 	ctx := context.Background()
 
-	mc.On("DecodeAddr", ctx, "not-a-tap-address").Return(
-		nil, errBadAddress,
-	)
-
 	_, err := w.Send(ctx, "not-a-tap-address", 10)
-	require.ErrorIs(t, err, errBadAddress)
+	require.Error(t, err)
 
 	mc.AssertExpectations(t)
 }
@@ -868,14 +915,12 @@ func TestSend_Error(t *testing.T) {
 	w := NewWallet(mc, entities.NetworkRegtest)
 	ctx := context.Background()
 
-	mc.On("DecodeAddr", ctx, "taprt1qfoo").Return(
-		v2Addr("taprt1qfoo"), nil,
-	)
+	addr := encodeV2NoAmount(t)
 	mc.On("SendAsset", ctx, mock.Anything).Return(
 		nil, context.DeadlineExceeded,
 	)
 
-	_, err := w.Send(ctx, "taprt1qfoo", 100)
+	_, err := w.Send(ctx, addr, 100)
 	require.Error(t, err)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 
@@ -887,13 +932,9 @@ func TestSend_WithSkipProofCourierPingCheck(t *testing.T) {
 	w := NewWallet(mc, entities.NetworkRegtest)
 	ctx := context.Background()
 
-	expectedTransfer := &entities.AssetTransfer{
-		AnchorTxid: "ghi789",
-	}
+	addr := encodeV2NoAmount(t)
+	expectedTransfer := &entities.AssetTransfer{AnchorTxid: "ghi789"}
 
-	mc.On("DecodeAddr", ctx, "taprt1qbar").Return(
-		v2Addr("taprt1qbar"), nil,
-	)
 	mc.On("SendAsset", ctx, mock.MatchedBy(
 		func(req *entities.SendAssetRequest) bool {
 			return req.SkipProofCourierPingCheck
@@ -901,7 +942,7 @@ func TestSend_WithSkipProofCourierPingCheck(t *testing.T) {
 	).Return(expectedTransfer, nil)
 
 	transfer, err := w.Send(
-		ctx, "taprt1qbar", 42,
+		ctx, addr, 42,
 		WithSkipProofCourierPingCheck(),
 	)
 	require.NoError(t, err)
@@ -910,36 +951,27 @@ func TestSend_WithSkipProofCourierPingCheck(t *testing.T) {
 	mc.AssertExpectations(t)
 }
 
-// errBadAddress is a sentinel used to exercise the DecodeAddr failure
-// path without relying on a specific tapd error type.
-var errBadAddress = errors.New("bad address")
-
 func TestSendMulti_MultipleRecipients(t *testing.T) {
 	mc := new(mockClient)
 	w := NewWallet(mc, entities.NetworkRegtest)
 	ctx := context.Background()
 
+	aliceAddr := encodeV2NoAmount(t, 21)
+	bobAddr := encodeV2NoAmount(t, 22)
+
 	recipients := []entities.Recipient{
-		{Address: "taprt1qalice", Amount: 100},
-		{Address: "taprt1qbob", Amount: 200},
+		{Address: aliceAddr, Amount: 100},
+		{Address: bobAddr, Amount: 200},
 	}
 
-	expectedTransfer := &entities.AssetTransfer{
-		AnchorTxid: "multi123",
-	}
+	expectedTransfer := &entities.AssetTransfer{AnchorTxid: "multi123"}
 
-	mc.On("DecodeAddr", ctx, "taprt1qalice").Return(
-		v2Addr("taprt1qalice"), nil,
-	)
-	mc.On("DecodeAddr", ctx, "taprt1qbob").Return(
-		v2Addr("taprt1qbob"), nil,
-	)
 	mc.On("SendAsset", ctx, mock.MatchedBy(
 		func(req *entities.SendAssetRequest) bool {
 			return len(req.Recipients) == 2 &&
-				req.Recipients[0].Address == "taprt1qalice" &&
+				req.Recipients[0].Address == aliceAddr &&
 				req.Recipients[0].Amount == 100 &&
-				req.Recipients[1].Address == "taprt1qbob" &&
+				req.Recipients[1].Address == bobAddr &&
 				req.Recipients[1].Amount == 200
 		}),
 	).Return(expectedTransfer, nil)
@@ -956,28 +988,21 @@ func TestSendMulti_EmbeddedAmounts(t *testing.T) {
 	w := NewWallet(mc, entities.NetworkRegtest)
 	ctx := context.Background()
 
+	aliceAddr := encodeEmbedded(t, 50, entities.AddressVersionV0, 31)
+	bobAddr := encodeEmbedded(t, 75, entities.AddressVersionV0, 32)
+
 	recipients := []entities.Recipient{
-		{Address: "taprt1qalice_v0"},
-		{Address: "taprt1qbob_v0"},
+		{Address: aliceAddr},
+		{Address: bobAddr},
 	}
 
-	expectedTransfer := &entities.AssetTransfer{
-		AnchorTxid: "multi_v0",
-	}
+	expectedTransfer := &entities.AssetTransfer{AnchorTxid: "multi_v0"}
 
-	mc.On("DecodeAddr", ctx, "taprt1qalice_v0").Return(
-		embeddedAddr("taprt1qalice_v0", 50,
-			entities.AddressVersionV0), nil,
-	)
-	mc.On("DecodeAddr", ctx, "taprt1qbob_v0").Return(
-		embeddedAddr("taprt1qbob_v0", 75,
-			entities.AddressVersionV0), nil,
-	)
 	mc.On("SendAsset", ctx, mock.MatchedBy(
 		func(req *entities.SendAssetRequest) bool {
 			return len(req.TapAddresses) == 2 &&
-				req.TapAddresses[0] == "taprt1qalice_v0" &&
-				req.TapAddresses[1] == "taprt1qbob_v0" &&
+				req.TapAddresses[0] == aliceAddr &&
+				req.TapAddresses[1] == bobAddr &&
 				len(req.Recipients) == 0
 		}),
 	).Return(expectedTransfer, nil)
@@ -1008,18 +1033,14 @@ func TestSendMulti_WithOptions(t *testing.T) {
 	w := NewWallet(mc, entities.NetworkRegtest)
 	ctx := context.Background()
 
-	recipients := []entities.Recipient{
-		{Address: "taprt1qalice", Amount: 50},
-	}
+	addr := encodeV2NoAmount(t)
+	recipients := []entities.Recipient{{Address: addr, Amount: 50}}
 
 	expectedTransfer := &entities.AssetTransfer{
 		AnchorTxid: "opts123",
 		Label:      "batch-payment",
 	}
 
-	mc.On("DecodeAddr", ctx, "taprt1qalice").Return(
-		v2Addr("taprt1qalice"), nil,
-	)
 	mc.On("SendAsset", ctx, mock.MatchedBy(
 		func(req *entities.SendAssetRequest) bool {
 			return req.FeeRate == 10 &&
@@ -1049,25 +1070,20 @@ func TestSendMulti_MixedRoutes(t *testing.T) {
 	w := NewWallet(mc, entities.NetworkRegtest)
 	ctx := context.Background()
 
+	explicitAddr := encodeV2NoAmount(t, 41)
+	embeddedAddr := encodeEmbedded(t, 75, entities.AddressVersionV1, 42)
+
 	recipients := []entities.Recipient{
-		{Address: "taprt1qexplicit", Amount: 200},
-		{Address: "taprt1qembedded"}, // amount 0, embedded is 75
+		{Address: explicitAddr, Amount: 200},
+		{Address: embeddedAddr}, // amount 0; embedded is 75
 	}
 
-	mc.On("DecodeAddr", ctx, "taprt1qexplicit").Return(
-		v2Addr("taprt1qexplicit"), nil,
-	)
-	mc.On("DecodeAddr", ctx, "taprt1qembedded").Return(
-		embeddedAddr(
-			"taprt1qembedded", 75, entities.AddressVersionV1,
-		), nil,
-	)
 	mc.On("SendAsset", ctx, mock.MatchedBy(
 		func(req *entities.SendAssetRequest) bool {
 			return len(req.Recipients) == 2 &&
-				req.Recipients[0].Address == "taprt1qexplicit" &&
+				req.Recipients[0].Address == explicitAddr &&
 				req.Recipients[0].Amount == 200 &&
-				req.Recipients[1].Address == "taprt1qembedded" &&
+				req.Recipients[1].Address == embeddedAddr &&
 				req.Recipients[1].Amount == 75 &&
 				len(req.TapAddresses) == 0
 		}),
@@ -1086,13 +1102,8 @@ func TestSendMulti_AmountRequired(t *testing.T) {
 	w := NewWallet(mc, entities.NetworkRegtest)
 	ctx := context.Background()
 
-	recipients := []entities.Recipient{
-		{Address: "taprt1qnoamount"},
-	}
-
-	mc.On("DecodeAddr", ctx, "taprt1qnoamount").Return(
-		v2Addr("taprt1qnoamount"), nil,
-	)
+	addr := encodeV2NoAmount(t)
+	recipients := []entities.Recipient{{Address: addr}}
 
 	_, err := w.SendMulti(ctx, recipients)
 	require.ErrorIs(t, err, ErrAmountRequired)

@@ -199,7 +199,10 @@ func (s *Wallet) ImportProof(ctx context.Context,
 func (s *Wallet) Send(ctx context.Context, addr string,
 	amount uint64, opts ...SendOption) (*entities.AssetTransfer, error) {
 
-	decoded, err := s.DecodeAddr(ctx, addr)
+	// Decode locally: the SDK can read a bech32m Tap address from the
+	// string alone, so Send does not spend an RPC round-trip just to
+	// learn the embedded amount or address version.
+	decoded, err := entities.DecodeAddress(addr)
 	if err != nil {
 		return nil, wrapErr("Send", err)
 	}
@@ -268,12 +271,11 @@ func (s *Wallet) SendMulti(ctx context.Context,
 		return nil, wrapErr("SendMulti", ErrNoRecipients)
 	}
 
-	// Decode once per recipient so we can validate amounts and pick the
-	// right request mode without assuming the caller knows each
-	// address's version.
+	// Decode each address locally so we can validate amounts and pick
+	// the right request mode without spending one RPC per recipient.
 	decoded := make([]*entities.Address, len(recipients))
 	for i, r := range recipients {
-		addr, err := s.DecodeAddr(ctx, r.Address)
+		addr, err := entities.DecodeAddress(r.Address)
 		if err != nil {
 			return nil, wrapErr("SendMulti", err)
 		}
