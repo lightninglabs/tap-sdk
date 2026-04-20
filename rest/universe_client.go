@@ -213,17 +213,16 @@ func splitOutpoint(s string) [2]string {
 }
 
 func universeAssetPath(assetRef entities.AssetRef) (string, string, error) {
-	assetID, groupKey, err := assetRef.Specifier()
-	if err != nil {
+	if err := assetRef.Validate(); err != nil {
 		return "", "", err
 	}
 
-	if assetID != nil {
-		return "asset-id", hex.EncodeToString((*assetID)[:]), nil
+	if assetID, ok := assetRef.AssetID(); ok {
+		return "asset-id", hex.EncodeToString(assetID[:]), nil
 	}
 
-	if groupKey != nil {
-		return "group-key", hex.EncodeToString((*groupKey)[:]), nil
+	if groupKey, ok := assetRef.GroupKey(); ok {
+		return "group-key", hex.EncodeToString(groupKey[:]), nil
 	}
 
 	return "", "", fmt.Errorf("asset ref is required")
@@ -232,17 +231,16 @@ func universeAssetPath(assetRef entities.AssetRef) (string, string, error) {
 func universeJSONID(id entities.UniverseID) (*jsonUniverseID, error) {
 	jsonID := &jsonUniverseID{ProofType: marshalProofType(id.ProofType)}
 
-	assetID, groupKey, err := id.AssetRef.Specifier()
-	if err != nil {
+	if err := id.AssetRef.Validate(); err != nil {
 		return nil, err
 	}
 
-	if assetID != nil {
-		jsonID.AssetID = hex.EncodeToString((*assetID)[:])
+	if assetID, ok := id.AssetRef.AssetID(); ok {
+		jsonID.AssetID = hex.EncodeToString(assetID[:])
 	}
 
-	if groupKey != nil {
-		jsonID.GroupKey = hex.EncodeToString((*groupKey)[:])
+	if groupKey, ok := id.AssetRef.GroupKey(); ok {
+		jsonID.GroupKey = hex.EncodeToString(groupKey[:])
 	}
 
 	return jsonID, nil
@@ -571,15 +569,12 @@ func (u *universeClient) QueryAssetStats(ctx context.Context,
 		}
 
 		if req.AssetRefFilter != nil {
-			assetID, _, err := req.AssetRefFilter.Specifier()
-			if err != nil {
+			if err := req.AssetRefFilter.Validate(); err != nil {
 				return nil, err
 			}
 
-			if assetID != nil {
-				assetIDStr := hex.EncodeToString(
-					(*assetID)[:],
-				)
+			if assetID, ok := req.AssetRefFilter.AssetID(); ok {
+				assetIDStr := hex.EncodeToString(assetID[:])
 				p = append(p, "asset_id_filter="+assetIDStr)
 			}
 

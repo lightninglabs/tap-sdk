@@ -685,8 +685,8 @@ func marshalListBalancesRequest(
 	rpcReq.ScriptKeyType = marshalScriptKeyTypeQuery(req.ScriptKeyType)
 
 	if req.AssetRef != nil {
-		if assetID, _, _ := req.AssetRef.Specifier(); assetID != nil {
-			rpcReq.AssetFilter = (*assetID)[:]
+		if assetID, ok := req.AssetRef.AssetID(); ok {
+			rpcReq.AssetFilter = assetID[:]
 		}
 	}
 
@@ -830,17 +830,16 @@ func marshalNewAddrRequest(
 	}
 
 	if !req.AssetRef.IsZero() {
-		assetID, groupKey, err := req.AssetRef.Specifier()
-		if err != nil {
+		if err := req.AssetRef.Validate(); err != nil {
 			return nil, err
 		}
 
-		if assetID != nil {
-			rpcReq.AssetId = (*assetID)[:]
+		if assetID, ok := req.AssetRef.AssetID(); ok {
+			rpcReq.AssetId = assetID[:]
 		}
 
-		if groupKey != nil {
-			rpcReq.GroupKey = (*groupKey)[:]
+		if groupKey, ok := req.AssetRef.GroupKey(); ok {
+			rpcReq.GroupKey = groupKey[:]
 		}
 	}
 
@@ -1109,17 +1108,16 @@ func (s *walletClient) ListBurns(ctx context.Context,
 	rpcReq := &taprpc.ListBurnsRequest{}
 	if req != nil {
 		if req.AssetRef != nil {
-			assetID, groupKey, err := req.AssetRef.Specifier()
-			if err != nil {
+			if err := req.AssetRef.Validate(); err != nil {
 				return nil, err
 			}
 
-			if assetID != nil {
-				rpcReq.AssetId = (*assetID)[:]
+			if assetID, ok := req.AssetRef.AssetID(); ok {
+				rpcReq.AssetId = assetID[:]
 			}
 
-			if groupKey != nil {
-				rpcReq.TweakedGroupKey = (*groupKey)[:]
+			if groupKey, ok := req.AssetRef.GroupKey(); ok {
+				rpcReq.TweakedGroupKey = groupKey[:]
 			}
 		}
 		if req.AnchorTxid != nil {
@@ -1370,30 +1368,28 @@ func marshalAssetSpecifier(
 		return nil, fmt.Errorf("asset ref is required")
 	}
 
-	assetID, groupKey, err := ref.Specifier()
-	if err != nil {
+	if err := ref.Validate(); err != nil {
 		return nil, err
 	}
 
-	switch {
-	case groupKey != nil:
+	if groupKey, ok := ref.GroupKey(); ok {
 		return &taprpc.AssetSpecifier{
 			Id: &taprpc.AssetSpecifier_GroupKey{
-				GroupKey: (*groupKey)[:],
+				GroupKey: groupKey[:],
 			},
 		}, nil
+	}
 
-	case assetID != nil:
+	if assetID, ok := ref.AssetID(); ok {
 		return &taprpc.AssetSpecifier{
 			Id: &taprpc.AssetSpecifier_AssetId{
-				AssetId: (*assetID)[:],
+				AssetId: assetID[:],
 			},
 		}, nil
-
-	default:
-		return nil, fmt.Errorf("asset ref must contain an " +
-			"asset ID or group key")
 	}
+
+	return nil, fmt.Errorf("asset ref must contain an " +
+		"asset ID or group key")
 }
 
 // marshalFetchAssetMetaRequest converts a FetchAssetMetaRequest to an
@@ -1409,19 +1405,19 @@ func marshalFetchAssetMetaRequest(
 	}
 
 	if req.AssetRef != nil {
-		assetID, _, err := req.AssetRef.Specifier()
-		if err != nil {
+		if err := req.AssetRef.Validate(); err != nil {
 			return nil, err
 		}
 
-		if assetID == nil {
+		assetID, ok := req.AssetRef.AssetID()
+		if !ok {
 			return nil, fmt.Errorf("metadata lookup " +
 				"requires an asset-ID ref; tapd does " +
 				"not support group-key metadata lookup")
 		}
 
 		rpcReq.Asset = &taprpc.FetchAssetMetaRequest_AssetId{
-			AssetId: (*assetID)[:],
+			AssetId: assetID[:],
 		}
 	} else if req.MetaHash != nil {
 		rpcReq.Asset = &taprpc.FetchAssetMetaRequest_MetaHash{
