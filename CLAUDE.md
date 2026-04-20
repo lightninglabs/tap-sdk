@@ -103,7 +103,9 @@ func (e *Error) IsInvalidArgument() bool
 - Follow Lightning Labs conventions (see `.gemini/styleguide.md`)
 
 **Git commits:** Format as `subsystem: description`
-(e.g., `entities: add new key type`)
+(e.g., `entities: add new key type`). Keep messages concise — subject
+under ~70 characters; a short body (one or two paragraphs at most)
+when it helps, explaining *why*, not the diff.
 
 **Function wrapping:**
 ```go
