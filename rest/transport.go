@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/lightninglabs/tap-sdk/macaroon"
+	"google.golang.org/grpc/codes"
 )
 
 const (
@@ -48,10 +49,14 @@ func newTransport(cfg *Config, macaroons macaroon.Pouch) (*transport, error) {
 }
 
 // apiError is the JSON structure returned by gRPC-gateway on error.
+// Details is typed as RawMessage because tapd emits it as a JSON
+// array (the default grpc-gateway shape) — a plain string field would
+// fail to unmarshal and send us down the opaque fallback path, losing
+// the embedded gRPC code.
 type apiError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-	Details string `json:"details,omitempty"`
+	Code    int             `json:"code"`
+	Message string          `json:"message"`
+	Details json.RawMessage `json:"details,omitempty"`
 }
 
 // doGet performs an authenticated GET request and decodes the
@@ -126,13 +131,15 @@ func (t *transport) do(ctx context.Context, method, path string,
 
 			return &APIError{
 				StatusCode: resp.StatusCode,
+				GRPCCode:   grpcCodeFromGateway(apiErr.Code),
 				Message:    apiErr.Message,
-				Details:    apiErr.Details,
+				Details:    detailsString(apiErr.Details),
 			}
 		}
 
 		return &APIError{
 			StatusCode: resp.StatusCode,
+			GRPCCode:   codes.Unknown,
 			Message:    string(respBody),
 		}
 	}
@@ -145,6 +152,33 @@ func (t *transport) do(ctx context.Context, method, path string,
 	}
 
 	return nil
+}
+
+// detailsString renders the grpc-gateway details payload as a string
+// for the public APIError surface. Empty, null, or empty-array details
+// collapse to "" so Error() omits the parenthetical.
+func detailsString(raw json.RawMessage) string {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return ""
+	}
+
+	switch string(trimmed) {
+	case "null", "[]", `""`:
+		return ""
+	}
+
+	return string(trimmed)
+}
+
+// grpcCodeFromGateway validates the grpc-gateway error code before exposing
+// it through the SDK error surface.
+func grpcCodeFromGateway(code int) codes.Code {
+	if code < int(codes.OK) || code > int(codes.Unauthenticated) {
+		return codes.Unknown
+	}
+
+	return codes.Code(code)
 }
 
 // newHTTPClient creates an *http.Client with TLS configured per the
