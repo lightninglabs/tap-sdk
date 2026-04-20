@@ -21,12 +21,23 @@ type Wallet struct {
 // WalletOption configures optional Wallet behavior.
 type WalletOption func(*Wallet)
 
+const authMailboxUniverseCourierScheme = "authmailbox+universerpc://"
+
 // WithDefaultProofCourierAddr sets the default proof courier address used by
 // high-level V2 receive address helpers.
 func WithDefaultProofCourierAddr(addr string) WalletOption {
 	return func(w *Wallet) {
 		w.defaultProofCourierAddr = addr
 	}
+}
+
+// WithAuthMailboxCourier configures the default proof courier for high-level
+// V2 receive address helpers using the auth mailbox transport. The host should
+// include the port, for example "tapd.example:10029".
+func WithAuthMailboxCourier(host string) WalletOption {
+	return WithDefaultProofCourierAddr(
+		authMailboxUniverseCourierScheme + host,
+	)
 }
 
 // NewWallet creates a new Wallet instance.
@@ -65,7 +76,8 @@ func (s *Wallet) NewInteractiveTxBuilder() *InteractiveTxBuilder {
 // For more control (custom keys, V0/V1 addresses, explicit amounts),
 // use the lower-level NewAddr method on the client directly. If your
 // tapd does not expose a suitable default proof courier for V2
-// addresses, configure the wallet with WithDefaultProofCourierAddr.
+// addresses, configure the wallet with WithAuthMailboxCourier or
+// WithDefaultProofCourierAddr.
 func (s *Wallet) NewReceiveAddress(ctx context.Context,
 	ref entities.AssetRef) (*entities.Address, error) {
 

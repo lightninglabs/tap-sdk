@@ -80,3 +80,42 @@ func TestNewReceiveAddress_UsesDefaultProofCourierAddr(t *testing.T) {
 
 	mc.AssertExpectations(t)
 }
+
+func TestNewReceiveAddress_UsesAuthMailboxCourier(t *testing.T) {
+	ctx := context.Background()
+	mc := new(mockClient)
+
+	var groupKey entities.PubKey
+	copy(
+		groupKey[:],
+		[]byte("group_key_pubkey_33_bytes_longgg!!"),
+	)
+	ref := entities.AssetRefFromGroupKey(groupKey)
+
+	host := "tapd.example:10029"
+	proofCourierAddr := "authmailbox+universerpc://" + host
+	expectedAddr := &entities.Address{Encoded: "tap1example"}
+	mc.On("NewAddr", ctx, mock.MatchedBy(func(
+		req *entities.NewAddressRequest) bool {
+
+		if req == nil || req.AddressVersion == nil {
+			return false
+		}
+
+		return req.AssetRef == ref &&
+			*req.AddressVersion ==
+				entities.AddressVersionV2 &&
+			req.ProofCourierAddr == proofCourierAddr
+	})).Return(expectedAddr, nil)
+
+	wallet := NewWallet(
+		mc, entities.NetworkRegtest,
+		WithAuthMailboxCourier(host),
+	)
+
+	addr, err := wallet.NewReceiveAddress(ctx, ref)
+	require.NoError(t, err)
+	require.Equal(t, expectedAddr, addr)
+
+	mc.AssertExpectations(t)
+}

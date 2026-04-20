@@ -36,9 +36,9 @@ const (
 	// defaultBobRestHost is the default REST host for tapd-bob.
 	defaultBobRestHost = "https://localhost:8090"
 
-	// defaultBobProofCourierAddr is the default proof courier address Bob uses
-	// for V2 receive addresses.
-	defaultBobProofCourierAddr = "authmailbox+universerpc://tapd-bob:10029"
+	// defaultBobProofCourierHost is the auth mailbox endpoint Bob uses for V2
+	// receive addresses.
+	defaultBobProofCourierHost = "tapd-bob:10029"
 
 	// defaultBitcoindHost is the default RPC host for bitcoind.
 	defaultBitcoindHost = "localhost:18443"
@@ -140,16 +140,24 @@ func NewTestHarnessWithTransport(t testing.TB,
 	aliceClient := newTapdClient(t, transport, aliceSpec)
 	bobClient := newTapdClient(t, transport, bobSpec)
 
-	bobProofCourierAddr := envOr(
-		"TAPD_BOB_PROOF_COURIER_ADDR",
-		defaultBobProofCourierAddr,
+	bobWalletOpt := tapsdk.WithAuthMailboxCourier(
+		defaultBobProofCourierHost,
 	)
+
+	if bobProofCourierAddr := os.Getenv(
+		"TAPD_BOB_PROOF_COURIER_ADDR",
+	); bobProofCourierAddr != "" {
+
+		bobWalletOpt = tapsdk.WithDefaultProofCourierAddr(
+			bobProofCourierAddr,
+		)
+	}
 
 	aliceWallet := tapsdk.NewWallet(aliceClient, entities.NetworkRegtest)
 	bobWallet := tapsdk.NewWallet(
 		bobClient,
 		entities.NetworkRegtest,
-		tapsdk.WithDefaultProofCourierAddr(bobProofCourierAddr),
+		bobWalletOpt,
 	)
 
 	return &TestHarness{
