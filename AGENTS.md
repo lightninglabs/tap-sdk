@@ -95,6 +95,11 @@ Follow Lightning Labs conventions (see `.gemini/styleguide.md`):
 
 Format: `subsystem: short description`
 
+Keep commit messages concise. The subject line should be under ~70
+characters; the body (when needed) should be a couple of short
+paragraphs at most. Do not restate the diff — explain the *why*, not
+the *what*. Avoid bullet lists of every field changed.
+
 Examples:
 - `entities: add FetchAsset request and response types`
 - `grpc: wrap ListBalances RPC`
