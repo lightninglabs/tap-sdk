@@ -143,4 +143,17 @@ var (
 			"AssetRefFromAssetID for interactive " +
 			"transfers",
 	)
+
+	// ErrAmountRequired is returned when attempting to send to a V2
+	// address that does not embed an amount without specifying one.
+	ErrAmountRequired = errors.New(
+		"amount required for V2 address without an embedded amount",
+	)
+
+	// ErrAmountMismatch is returned when the caller provides an
+	// explicit amount that does not match the amount embedded in the
+	// destination address.
+	ErrAmountMismatch = errors.New(
+		"amount does not match the address-embedded amount",
+	)
 )
