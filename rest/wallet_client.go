@@ -129,14 +129,13 @@ func (w *walletClient) ListBalances(ctx context.Context,
 		}
 
 		if req.AssetRef != nil {
-			assetID, _, _ := req.AssetRef.Specifier()
-			if assetID != nil {
+			if assetID, ok := req.AssetRef.AssetID(); ok {
 				// grpc-gateway wants URL-safe base64 for
 				// `bytes` query params.
 				params.Set(
 					"asset_filter",
 					base64.URLEncoding.EncodeToString(
-						(*assetID)[:],
+						assetID[:],
 					),
 				)
 			}
@@ -443,22 +442,19 @@ func (w *walletClient) NewAddr(ctx context.Context,
 
 	body := &jsonNewAddrRequest{}
 	if req != nil {
-		assetID, groupKey, err := req.AssetRef.Specifier()
-		if err != nil && !req.AssetRef.IsZero() {
-			return nil, err
+		if !req.AssetRef.IsZero() {
+			if err := req.AssetRef.Validate(); err != nil {
+				return nil, err
+			}
 		}
-		if assetID != nil {
-			body.AssetID = hex.EncodeToString(
-				(*assetID)[:],
-			)
+		if assetID, ok := req.AssetRef.AssetID(); ok {
+			body.AssetID = hex.EncodeToString(assetID[:])
 		}
 		if req.Amount > 0 {
 			body.Amount = fmt.Sprintf("%d", req.Amount)
 		}
-		if groupKey != nil {
-			body.GroupKey = hex.EncodeToString(
-				(*groupKey)[:],
-			)
+		if groupKey, ok := req.AssetRef.GroupKey(); ok {
+			body.GroupKey = hex.EncodeToString(groupKey[:])
 		}
 		if req.TapscriptSibling != nil {
 			body.TapscriptSibling = hex.EncodeToString(
@@ -700,8 +696,7 @@ func (w *walletClient) BurnAsset(ctx context.Context,
 		return nil, fmt.Errorf("asset ref is required")
 	}
 
-	assetID, groupKey, err := req.AssetRef.Specifier()
-	if err != nil {
+	if err := req.AssetRef.Validate(); err != nil {
 		return nil, err
 	}
 
@@ -712,14 +707,12 @@ func (w *walletClient) BurnAsset(ctx context.Context,
 
 	specifier := map[string]string{}
 	switch {
-	case groupKey != nil:
-		specifier["group_key_str"] = hex.EncodeToString(
-			(*groupKey)[:],
-		)
-	case assetID != nil:
-		specifier["asset_id_str"] = hex.EncodeToString(
-			(*assetID)[:],
-		)
+	case req.AssetRef.IsGroupRef():
+		groupKey, _ := req.AssetRef.GroupKey()
+		specifier["group_key_str"] = hex.EncodeToString(groupKey[:])
+	case req.AssetRef.IsAssetIDRef():
+		assetID, _ := req.AssetRef.AssetID()
+		specifier["asset_id_str"] = hex.EncodeToString(assetID[:])
 	}
 	body["asset_specifier"] = specifier
 
@@ -728,7 +721,7 @@ func (w *walletClient) BurnAsset(ctx context.Context,
 	}
 
 	var resp jsonBurnAssetResponse
-	err = w.transport.doPost(
+	err := w.transport.doPost(
 		ctx, "/v1/taproot-assets/burn",
 		macaroon.AdminServiceMac, body, &resp,
 	)
@@ -751,21 +744,20 @@ func (w *walletClient) ListBurns(ctx context.Context,
 	params := url.Values{}
 	if req != nil {
 		if req.AssetRef != nil {
-			assetID, groupKey, err := req.AssetRef.Specifier()
-			if err != nil {
+			if err := req.AssetRef.Validate(); err != nil {
 				return nil, err
 			}
 
-			if assetID != nil {
+			if assetID, ok := req.AssetRef.AssetID(); ok {
 				params.Set("asset_id",
 					base64.URLEncoding.EncodeToString(
-						(*assetID)[:]))
+						assetID[:]))
 			}
 
-			if groupKey != nil {
+			if groupKey, ok := req.AssetRef.GroupKey(); ok {
 				params.Set("group_key",
 					base64.URLEncoding.EncodeToString(
-						(*groupKey)[:]))
+						groupKey[:]))
 			}
 		}
 		if req.AnchorTxid != nil {
@@ -809,12 +801,12 @@ func (w *walletClient) FetchAssetMeta(ctx context.Context,
 	var path string
 	switch {
 	case req.AssetRef != nil:
-		assetID, _, err := req.AssetRef.Specifier()
-		if err != nil {
+		if err := req.AssetRef.Validate(); err != nil {
 			return nil, err
 		}
 
-		if assetID == nil {
+		assetID, ok := req.AssetRef.AssetID()
+		if !ok {
 			return nil, fmt.Errorf("metadata lookup " +
 				"requires an asset-ID ref; tapd does " +
 				"not support group-key metadata lookup")
@@ -822,7 +814,7 @@ func (w *walletClient) FetchAssetMeta(ctx context.Context,
 
 		path = fmt.Sprintf(
 			"/v1/taproot-assets/assets/meta/asset-id/%s",
-			hex.EncodeToString((*assetID)[:]),
+			hex.EncodeToString(assetID[:]),
 		)
 
 	case req.MetaHash != nil:

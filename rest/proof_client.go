@@ -175,8 +175,7 @@ func (p *proofClient) RegisterTransfer(ctx context.Context,
 	assetRef entities.AssetRef, scriptKey entities.PubKey,
 	outpoint entities.Outpoint) (*entities.RegisteredAsset, error) {
 
-	assetID, groupKey, err := assetRef.Specifier()
-	if err != nil {
+	if err := assetRef.Validate(); err != nil {
 		return nil, err
 	}
 
@@ -192,20 +191,16 @@ func (p *proofClient) RegisterTransfer(ctx context.Context,
 		},
 	}
 
-	if assetID != nil {
-		body.AssetID = hex.EncodeToString(
-			(*assetID)[:],
-		)
+	if assetID, ok := assetRef.AssetID(); ok {
+		body.AssetID = hex.EncodeToString(assetID[:])
 	}
 
-	if groupKey != nil {
-		body.GroupKey = hex.EncodeToString(
-			(*groupKey)[:],
-		)
+	if groupKey, ok := assetRef.GroupKey(); ok {
+		body.GroupKey = hex.EncodeToString(groupKey[:])
 	}
 
 	var resp jsonRegisterTransferResponse
-	err = p.transport.doPost(
+	err := p.transport.doPost(
 		ctx, "/v1/taproot-assets/assets/transfers/register",
 		macaroon.ProofServiceMac, body, &resp,
 	)

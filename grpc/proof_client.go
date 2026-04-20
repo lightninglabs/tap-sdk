@@ -228,32 +228,27 @@ func (p *proofClient) RegisterTransfer(ctx context.Context,
 	defer cancel()
 
 	rpcCtx = p.proofMac.WithMacaroonAuth(rpcCtx)
-	assetID, groupKey, err := assetRef.Specifier()
-	if err != nil {
+	if err := assetRef.Validate(); err != nil {
 		return nil, err
 	}
 
-	resp, err := p.client.RegisterTransfer(rpcCtx, &taprpc.RegisterTransferRequest{
-		AssetId: func() []byte {
-			if assetID == nil {
-				return nil
-			}
-
-			return (*assetID)[:]
-		}(),
-		GroupKey: func() []byte {
-			if groupKey == nil {
-				return nil
-			}
-
-			return (*groupKey)[:]
-		}(),
+	rpcReq := &taprpc.RegisterTransferRequest{
 		ScriptKey: scriptKey[:],
 		Outpoint: &taprpc.OutPoint{
 			Txid:        outpoint.Txid[:],
 			OutputIndex: outpoint.Index,
 		},
-	})
+	}
+
+	if assetID, ok := assetRef.AssetID(); ok {
+		rpcReq.AssetId = assetID[:]
+	}
+
+	if groupKey, ok := assetRef.GroupKey(); ok {
+		rpcReq.GroupKey = groupKey[:]
+	}
+
+	resp, err := p.client.RegisterTransfer(rpcCtx, rpcReq)
 	if err != nil {
 		return nil, err
 	}

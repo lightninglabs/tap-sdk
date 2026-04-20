@@ -27,6 +27,11 @@ const (
 // store, compare, log, and pass back into SDK methods. Internally it encodes
 // either a protocol asset ID or a group key, but callers should not need to
 // care which one was used.
+//
+// GroupKey and AssetID are exposed as escape hatches for the rare consumer
+// that genuinely needs to peek at the underlying protocol identifier (for
+// example, cross-referencing a non-SDK data source). They are primarily
+// intended for SDK-internal marshaling at the RPC boundary.
 type AssetRef string
 
 // AssetRefFromGroupKey creates an AssetRef for an asset identified by a group
@@ -139,36 +144,6 @@ func (r AssetRef) AssetID() (AssetID, bool) {
 	}
 
 	return id, true
-}
-
-// Specifier exposes the underlying protocol identifier used by this AssetRef.
-// Exactly one of the returned pointers is non-nil.
-func (r AssetRef) Specifier() (*AssetID, *PubKey, error) {
-	kind, payload, _, err := decodeAssetRefString(string(r))
-	if err != nil {
-		return nil, nil, err
-	}
-
-	switch kind {
-	case assetRefKindAssetID:
-		assetID, err := ParseAssetID(payload)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		return &assetID, nil, nil
-
-	case assetRefKindGroupKey:
-		groupKey, err := ParsePubKey(payload)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		return nil, &groupKey, nil
-
-	default:
-		return nil, nil, fmt.Errorf("unknown asset ref kind: %d", kind)
-	}
 }
 
 func encodeAssetRef(kind assetRefKind, payload []byte) AssetRef {

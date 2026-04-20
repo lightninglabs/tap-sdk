@@ -50,12 +50,6 @@ func TestAssetRefFromGroupKey(t *testing.T) {
 
 	_, ok = ref.AssetID()
 	require.False(t, ok)
-
-	assetID, groupKey, err := ref.Specifier()
-	require.NoError(t, err)
-	require.Nil(t, assetID)
-	require.NotNil(t, groupKey)
-	require.Equal(t, key, *groupKey)
 }
 
 func TestAssetRefFromAssetID(t *testing.T) {
@@ -73,12 +67,6 @@ func TestAssetRefFromAssetID(t *testing.T) {
 
 	_, ok = ref.GroupKey()
 	require.False(t, ok)
-
-	assetID, groupKey, err := ref.Specifier()
-	require.NoError(t, err)
-	require.NotNil(t, assetID)
-	require.Nil(t, groupKey)
-	require.Equal(t, id, *assetID)
 }
 
 func TestAssetRefEncodingUsesBech32M(t *testing.T) {

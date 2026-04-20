@@ -673,20 +673,21 @@ func marshalUniverseID(
 		ProofType: marshalProofType(id.ProofType),
 	}
 
-	assetID, groupKey, err := id.AssetRef.Specifier()
-	if err != nil {
+	if err := id.AssetRef.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid universe asset "+
 			"ref: %w", err)
 	}
 
 	switch {
-	case groupKey != nil:
+	case id.AssetRef.IsGroupRef():
+		groupKey, _ := id.AssetRef.GroupKey()
 		rpcID.Id = &universerpc.ID_GroupKey{
-			GroupKey: (*groupKey)[:],
+			GroupKey: groupKey[:],
 		}
-	case assetID != nil:
+	case id.AssetRef.IsAssetIDRef():
+		assetID, _ := id.AssetRef.AssetID()
 		rpcID.Id = &universerpc.ID_AssetId{
-			AssetId: (*assetID)[:],
+			AssetId: assetID[:],
 		}
 	}
 
@@ -1051,13 +1052,12 @@ func marshalAssetStatsQuery(
 	}
 
 	if req.AssetRefFilter != nil {
-		assetID, _, err := req.AssetRefFilter.Specifier()
-		if err != nil {
+		if err := req.AssetRefFilter.Validate(); err != nil {
 			return nil
 		}
 
-		if assetID != nil {
-			rpcReq.AssetIdFilter = (*assetID)[:]
+		if assetID, ok := req.AssetRefFilter.AssetID(); ok {
+			rpcReq.AssetIdFilter = assetID[:]
 		}
 
 		// NOTE: tapd's QueryAssetStats does not support
