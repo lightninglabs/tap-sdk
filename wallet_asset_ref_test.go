@@ -29,7 +29,12 @@ func (m *refMockClient) GetInfo(ctx context.Context) (*entities.Info,
 func (m *refMockClient) ListAssets(ctx context.Context,
 	req *entities.ListAssetsRequest) ([]*entities.Asset, error) {
 
-	panic("ListAssets: unexpected call")
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).([]*entities.Asset), args.Error(1)
 }
 
 func (m *refMockClient) ListBalances(ctx context.Context,
@@ -325,10 +330,15 @@ func (m *refMockClient) AssetRoots(_ context.Context,
 	return nil, nil
 }
 
-func (m *refMockClient) QueryAssetRoots(_ context.Context,
-	_ *entities.UniverseID) (*entities.QueryRootResponse, error) {
+func (m *refMockClient) QueryAssetRoots(ctx context.Context,
+	id *entities.UniverseID) (*entities.QueryRootResponse, error) {
 
-	return nil, nil
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*entities.QueryRootResponse), args.Error(1)
 }
 
 func (m *refMockClient) DeleteAssetRoot(_ context.Context,
@@ -600,28 +610,105 @@ func TestGetBalance_Collectible(t *testing.T) {
 	mc.AssertExpectations(t)
 }
 
-func TestGetBalance_ZeroWhenEmpty(t *testing.T) {
+// expectEmptyBalances stubs a ListBalances call that returns no entries
+// for the given ref — the cold path all subsequent probes are keyed off.
+func expectEmptyBalances(mc *refMockClient, ctx context.Context,
+	ref entities.AssetRef) {
+
+	mc.On("ListBalances", ctx, &entities.ListBalancesRequest{
+		AssetRef: &ref,
+	}).Return(&entities.ListBalancesResponse{
+		Balances: map[string]*entities.AssetBalance{},
+	}, nil)
+}
+
+// issuanceRootID is the UniverseID the cold-path probe consults.
+func issuanceRootID(ref entities.AssetRef) *entities.UniverseID {
+	return &entities.UniverseID{
+		AssetRef:  ref,
+		ProofType: entities.ProofTypeIssuance,
+	}
+}
+
+// TestGetBalance_ZeroWhenUniverseKnown covers the motivating scenario
+// from issue #69: a group ref bootstrapped via SyncUniverse but with no
+// received units yet. The issuance root resolves the ref as "known".
+func TestGetBalance_ZeroWhenUniverseKnown(t *testing.T) {
 	mc := new(refMockClient)
 	w := NewWallet(mc, entities.NetworkRegtest)
 	ctx := context.Background()
 
-	groupKey := testRefGroupKey(t)
-	ref := entities.AssetRefFromGroupKey(groupKey)
+	ref := entities.AssetRefFromGroupKey(testRefGroupKey(t))
 
-	mc.On("ListBalances", ctx, mock.Anything).Return(
-		&entities.ListBalancesResponse{
-			Balances: map[string]*entities.AssetBalance{},
+	expectEmptyBalances(mc, ctx, ref)
+	mc.On("QueryAssetRoots", ctx, issuanceRootID(ref)).Return(
+		&entities.QueryRootResponse{
+			IssuanceRoot: &entities.UniverseRoot{
+				ID:        *issuanceRootID(ref),
+				AssetName: "bootstrapped",
+			},
 		}, nil,
 	)
 
 	balance, err := w.GetBalance(ctx, ref)
 	require.NoError(t, err)
-	require.Equal(t, uint64(0), balance)
+	require.Zero(t, balance)
 
 	mc.AssertExpectations(t)
 }
 
-func TestGetBalance_Error(t *testing.T) {
+// TestGetBalance_ZeroWhenUniverseKnowsViaTransfer covers the case
+// where the wallet has seen transfer proofs for the ref but no
+// issuance root is locally available.
+func TestGetBalance_ZeroWhenUniverseKnowsViaTransfer(t *testing.T) {
+	mc := new(refMockClient)
+	w := NewWallet(mc, entities.NetworkRegtest)
+	ctx := context.Background()
+
+	ref := entities.AssetRefFromAssetID(testRefAssetID())
+
+	expectEmptyBalances(mc, ctx, ref)
+	mc.On("QueryAssetRoots", ctx, issuanceRootID(ref)).Return(
+		&entities.QueryRootResponse{
+			TransferRoot: &entities.UniverseRoot{
+				ID:        *issuanceRootID(ref),
+				AssetName: "transfer-only",
+			},
+		}, nil,
+	)
+
+	balance, err := w.GetBalance(ctx, ref)
+	require.NoError(t, err)
+	require.Zero(t, balance)
+
+	mc.AssertExpectations(t)
+}
+
+// TestGetBalance_UnknownAsset covers a ref the wallet has truly never
+// seen: no balance entry and no universe root. The error chain carries
+// the ref for debugging.
+func TestGetBalance_UnknownAsset(t *testing.T) {
+	mc := new(refMockClient)
+	w := NewWallet(mc, entities.NetworkRegtest)
+	ctx := context.Background()
+
+	ref := entities.AssetRefFromGroupKey(testRefGroupKey(t))
+
+	expectEmptyBalances(mc, ctx, ref)
+	mc.On("QueryAssetRoots", ctx, issuanceRootID(ref)).Return(
+		&entities.QueryRootResponse{}, nil,
+	)
+
+	balance, err := w.GetBalance(ctx, ref)
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrAssetUnknown)
+	require.Contains(t, err.Error(), ref.String())
+	require.Zero(t, balance)
+
+	mc.AssertExpectations(t)
+}
+
+func TestGetBalance_ListBalancesError(t *testing.T) {
 	mc := new(refMockClient)
 	w := NewWallet(mc, entities.NetworkRegtest)
 	ctx := context.Background()
@@ -629,6 +716,25 @@ func TestGetBalance_Error(t *testing.T) {
 	ref := entities.AssetRefFromAssetID(testRefAssetID())
 
 	mc.On("ListBalances", ctx, mock.Anything).Return(
+		nil, context.DeadlineExceeded,
+	)
+
+	_, err := w.GetBalance(ctx, ref)
+	require.Error(t, err)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+
+	mc.AssertExpectations(t)
+}
+
+func TestGetBalance_QueryAssetRootsError(t *testing.T) {
+	mc := new(refMockClient)
+	w := NewWallet(mc, entities.NetworkRegtest)
+	ctx := context.Background()
+
+	ref := entities.AssetRefFromAssetID(testRefAssetID())
+
+	expectEmptyBalances(mc, ctx, ref)
+	mc.On("QueryAssetRoots", ctx, issuanceRootID(ref)).Return(
 		nil, context.DeadlineExceeded,
 	)
 

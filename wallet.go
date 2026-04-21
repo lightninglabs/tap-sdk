@@ -99,6 +99,17 @@ func (s *Wallet) NewReceiveAddress(ctx context.Context,
 // GetBalance returns the confirmed balance for the given asset. If the
 // wallet holds units across multiple issuances, the total is aggregated
 // into a single sum.
+//
+// If the wallet has no record of the asset ref, GetBalance returns an
+// error wrapping ErrAssetUnknown; detect it with errors.Is. "Known"
+// means the local universe has an issuance or transfer root for the
+// ref, which tapd populates for assets the wallet minted, received,
+// or bootstrapped via SyncUniverse. A known asset with zero confirmed
+// units returns (0, nil).
+//
+// The universe probe fires only on the cold path where ListBalances
+// returns an empty map, so the common "have I been paid?" poll still
+// costs a single RPC.
 func (s *Wallet) GetBalance(ctx context.Context,
 	ref entities.AssetRef) (uint64, error) {
 
@@ -113,7 +124,22 @@ func (s *Wallet) GetBalance(ctx context.Context,
 		return balance.Balance, nil
 	}
 
-	return 0, nil
+	roots, err := s.QueryAssetRoots(ctx, &entities.UniverseID{
+		AssetRef:  ref,
+		ProofType: entities.ProofTypeIssuance,
+	})
+	if err != nil {
+		return 0, wrapErr("GetBalance", err)
+	}
+	if roots != nil &&
+		(roots.IssuanceRoot != nil || roots.TransferRoot != nil) {
+
+		return 0, nil
+	}
+
+	return 0, wrapErr("GetBalance", fmt.Errorf(
+		"%w: %s", ErrAssetUnknown, ref,
+	))
 }
 
 // DeriveKeys derives a new script key and internal key for receiving assets.

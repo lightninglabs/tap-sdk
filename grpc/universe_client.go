@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -725,7 +726,12 @@ func unmarshalUniverseID(
 		assetID = &parsedAssetID
 
 	case *universerpc.ID_GroupKey:
-		parsedGroupKey, err := entities.ParsePubKey(v.GroupKey)
+		// Universe responses carry group keys as 32-byte
+		// x-only (schnorr) while SDK callers submit 33-byte
+		// compressed keys, so accept both encodings here.
+		parsedGroupKey, err := entities.ParseTaprootPubKey(
+			v.GroupKey,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("invalid group "+
 				"key: %w", err)
@@ -733,8 +739,13 @@ func unmarshalUniverseID(
 		groupKey = &parsedGroupKey
 
 	case *universerpc.ID_GroupKeyStr:
-		parsedGroupKey, err := entities.ParsePubKeyHex(
-			v.GroupKeyStr,
+		groupKeyBytes, err := hex.DecodeString(v.GroupKeyStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid group key "+
+				"string: %w", err)
+		}
+		parsedGroupKey, err := entities.ParseTaprootPubKey(
+			groupKeyBytes,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("invalid group key "+
@@ -818,6 +829,16 @@ func unmarshalUniverseRoot(
 
 	if rpcRoot == nil {
 		return nil, fmt.Errorf("nil universe root")
+	}
+
+	// tapd returns a zero-valued UniverseRoot (nil Id, nil
+	// MssmtRoot) as a tombstone when the queried asset has no
+	// matching root — e.g. QueryAssetRoots on a ref the universe
+	// has never heard of. Treat it as "no root present" rather
+	// than an error so callers can distinguish absent-from-universe
+	// from malformed responses.
+	if rpcRoot.Id == nil {
+		return nil, nil
 	}
 
 	uniID, err := unmarshalUniverseID(rpcRoot.Id)
