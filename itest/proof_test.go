@@ -26,7 +26,9 @@ func TestProofOperations(t *testing.T) {
 		require.True(t, minted.Asset.AssetRef.IsAssetIDRef())
 
 		proof, err := h.AliceClient.ExportProof(ctx,
-			minted.Asset.Genesis.IssuanceID,
+			entities.AssetRefFromAssetID(
+				minted.Asset.Genesis.IssuanceID,
+			),
 			minted.Asset.ScriptKey.PubKey, nil)
 		require.NoError(t, err)
 		require.NotEmpty(t, proof.RawProofFile,

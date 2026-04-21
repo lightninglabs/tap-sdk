@@ -28,10 +28,12 @@ func TestErrorHandling(t *testing.T) {
 		{
 			name: "non-existent proof",
 			run: func(c tapsdk.Client, ctx context.Context) error {
-				fakeID := entities.AssetID{}
+				fakeRef := entities.AssetRefFromAssetID(
+					entities.AssetID{},
+				)
 				fakePubKey := entities.PubKey{}
 				_, err := c.ExportProof(
-					ctx, fakeID, fakePubKey, nil,
+					ctx, fakeRef, fakePubKey, nil,
 				)
 				return err
 			},

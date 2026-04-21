@@ -363,10 +363,21 @@ func (m *walletKitClient) ProveAssetOwnership(ctx context.Context,
 	req *entities.ProveOwnershipRequest) (*entities.OwnershipProof,
 	error) {
 
+	if err := req.AssetRef.Validate(); err != nil {
+		return nil, err
+	}
+
+	assetID, ok := req.AssetRef.AssetID()
+	if !ok {
+		return nil, fmt.Errorf("prove ownership requires an " +
+			"asset-ID ref; group-key refs span multiple " +
+			"tranches (see issue #85)")
+	}
+
 	authCtx, client := m.rawClientWithMacAuth(ctx)
 
 	rpcReq := &assetwalletrpc.ProveAssetOwnershipRequest{
-		AssetId:   req.IssuanceID[:],
+		AssetId:   assetID[:],
 		ScriptKey: req.ScriptKey[:],
 		Outpoint: &taprpc.OutPoint{
 			Txid:        req.Outpoint.Txid[:],

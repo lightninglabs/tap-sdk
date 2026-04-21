@@ -121,10 +121,10 @@ func (m *mockClient) AddrReceives(ctx context.Context,
 // --- ProofClient ---
 
 func (m *mockClient) ExportProof(ctx context.Context,
-	assetID entities.AssetID, scriptKey entities.PubKey,
+	ref entities.AssetRef, scriptKey entities.PubKey,
 	outpoint *entities.Outpoint) (*entities.ProofFile, error) {
 
-	args := m.Called(ctx, assetID, scriptKey, outpoint)
+	args := m.Called(ctx, ref, scriptKey, outpoint)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
