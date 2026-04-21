@@ -156,4 +156,11 @@ var (
 	ErrAmountMismatch = errors.New(
 		"amount does not match the address-embedded amount",
 	)
+
+	// ErrAssetUnknown is returned by Wallet.GetBalance (and related
+	// high-level helpers) when the wallet has no record of the asset
+	// ref: no balance entry and no issuance or transfer root in the
+	// local universe. Callers should detect it with errors.Is. A known
+	// asset with zero confirmed units produces (0, nil) instead.
+	ErrAssetUnknown = errors.New("asset ref is unknown to the wallet")
 )

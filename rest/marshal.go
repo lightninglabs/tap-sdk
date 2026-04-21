@@ -1233,9 +1233,20 @@ func unmarshalUniverseID(
 				err)
 		}
 
-		if len(groupKeyBytes) == 33 {
-			var parsedGroupKey entities.PubKey
-			copy(parsedGroupKey[:], groupKeyBytes)
+		// Universe responses carry group keys as 32-byte
+		// x-only (schnorr) while callers submit 33-byte
+		// compressed keys, so accept either form.
+		if len(groupKeyBytes) == 32 ||
+			len(groupKeyBytes) == 33 {
+
+			parsedGroupKey, err := entities.ParseTaprootPubKey(
+				groupKeyBytes,
+			)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"invalid group_key: %w", err,
+				)
+			}
 			groupKey = &parsedGroupKey
 		}
 	}
@@ -1258,6 +1269,15 @@ func unmarshalUniverseRoot(
 	r *jsonUniverseRoot) (*entities.UniverseRoot, error) {
 
 	if r == nil {
+		return nil, nil
+	}
+
+	// tapd returns a zero-valued UniverseRoot (nil ID) as a
+	// tombstone when the queried asset has no matching root — e.g.
+	// QueryAssetRoots on a ref the universe has never heard of.
+	// Treat it as "no root present" so callers can distinguish
+	// absent-from-universe from malformed responses.
+	if r.ID == nil {
 		return nil, nil
 	}
 
