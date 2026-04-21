@@ -51,7 +51,7 @@ use this override.
 |---|---|
 | `case` | Restrict to tests matching a regex (`make itest-run case=TestMintAsset`). |
 | `ITEST_TIMEOUT` | `go test -timeout=` value. Default `20m`. |
-| `ITEST_ARGS` | Extra flags forwarded to `go test` (e.g. `ITEST_ARGS='-count=2'`). |
+| `ITEST_ARGS` | Extra flags forwarded to `go test` (e.g. `ITEST_ARGS='-v -count=2'`). |
 
 ## Architecture
 
@@ -68,7 +68,7 @@ the containers.
 ## Transport Matrix
 
 Tests that exercise the SDK surface use `runForTransports(t, fn)` and
-appear in `go test` output as:
+appear in verbose `go test -v` output as:
 
 ```
 --- PASS: TestGetInfo
@@ -79,8 +79,12 @@ appear in `go test` output as:
 To narrow a run to a single transport, set `TAP_SDK_TRANSPORTS`:
 
 ```bash
-TAP_SDK_TRANSPORTS=grpc go test -v -tags=itest ./itest/...
+TAP_SDK_TRANSPORTS=grpc go test -tags=itest ./itest/...
 ```
+
+The Makefile defaults to non-verbose `go test` output so CI failures stay
+focused on the final assertion. When you need the full helper trace locally,
+pass `ITEST_ARGS='-v'`.
 
 Streaming event subscriptions (`TestEventListener...`) are gRPC-only —
 the REST transport does not implement WebSocket streams yet.

@@ -8,7 +8,7 @@
 #     -f itest/docker-compose.local.yml \
 #     up -d --build
 #
-#   TAP_SDK_TAPD_MAIN=1 go test -v -tags=itest -timeout=20m ./itest/...
+#   TAP_SDK_TAPD_MAIN=1 go test -tags=itest -timeout=20m ./itest/...
 #
 # CI does not use this file — it keeps the pinned image so the workflow
 # stays reproducible until the next tapd release.

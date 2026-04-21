@@ -3,7 +3,7 @@
 #
 # Usage:
 #   docker compose -f itest/docker-compose.yml up -d
-#   go test -v -tags=itest ./itest/...
+#   go test -tags=itest ./itest/...
 #   docker compose -f itest/docker-compose.yml down -v
 
 services:
