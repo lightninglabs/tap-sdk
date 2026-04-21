@@ -25,6 +25,25 @@ type OwnershipProof struct {
 	ProofWithWitness []byte
 }
 
+// GroupOwnershipProof is one ownership proof in a grouped-asset bundle.
+// Each entry proves one concrete issuance, script key, and outpoint tuple.
+type GroupOwnershipProof struct {
+	// IssuanceID is the concrete tranche proven by this entry.
+	IssuanceID AssetID
+
+	// ScriptKey is the script key used to spend the asset.
+	ScriptKey PubKey
+
+	// Outpoint is the anchor output proven by this entry.
+	Outpoint Outpoint
+
+	// Amount is the number of asset units covered by the proof.
+	Amount uint64
+
+	// ProofWithWitness is the serialized ownership proof for this tuple.
+	ProofWithWitness []byte
+}
+
 // VerifyOwnershipRequest specifies parameters for verifying an
 // ownership proof.
 type VerifyOwnershipRequest struct {

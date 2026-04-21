@@ -3,6 +3,7 @@ package tapsdk
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/lightninglabs/tap-sdk/vpsbt"
@@ -102,6 +103,55 @@ func (s *Wallet) GetBalance(ctx context.Context,
 	}
 
 	return 0, nil
+}
+
+// ProveGroupOwnership generates one ownership proof per owned UTXO tuple for
+// the requested grouped asset. Each proof covers one concrete issuance,
+// script key, and outpoint.
+func (s *Wallet) ProveGroupOwnership(ctx context.Context,
+	ref entities.AssetRef, challenge []byte) ([]entities.GroupOwnershipProof,
+	error) {
+
+	if !ref.IsGroupRef() {
+		return nil, wrapErr("ProveGroupOwnership",
+			fmt.Errorf("group-key AssetRef required"))
+	}
+
+	utxos, err := s.ListUtxos(ctx, &entities.ListUtxosRequest{})
+	if err != nil {
+		return nil, wrapErr("ProveGroupOwnership", err)
+	}
+
+	candidates := collectGroupOwnershipCandidates(utxos, ref)
+	if len(candidates) == 0 {
+		return nil, wrapErr("ProveGroupOwnership",
+			fmt.Errorf("no owned UTXOs found for %s", ref))
+	}
+
+	proofs := make([]entities.GroupOwnershipProof, 0, len(candidates))
+	for _, candidate := range candidates {
+		proof, err := s.ProveAssetOwnership(ctx,
+			&entities.ProveOwnershipRequest{
+				AssetRef:   ref,
+				IssuanceID: candidate.issuanceID,
+				ScriptKey:  candidate.scriptKey,
+				Outpoint:   candidate.outpoint,
+				Challenge:  challenge,
+			})
+		if err != nil {
+			return nil, wrapErr("ProveGroupOwnership", err)
+		}
+
+		proofs = append(proofs, entities.GroupOwnershipProof{
+			IssuanceID:       candidate.issuanceID,
+			ScriptKey:        candidate.scriptKey,
+			Outpoint:         candidate.outpoint,
+			Amount:           candidate.amount,
+			ProofWithWitness: append([]byte(nil), proof.ProofWithWitness...),
+		})
+	}
+
+	return proofs, nil
 }
 
 // DeriveKeys derives a new script key and internal key for receiving assets.
@@ -365,4 +415,77 @@ func getNetworkParams(network entities.Network) (string, uint32) {
 	default:
 		return vpsbt.RegTestHRP, 1 // Default to regtest
 	}
+}
+
+type groupOwnershipCandidate struct {
+	issuanceID entities.AssetID
+	scriptKey  entities.PubKey
+	outpoint   entities.Outpoint
+	amount     uint64
+}
+
+func collectGroupOwnershipCandidates(
+	utxos map[string]*entities.ManagedUtxo,
+	ref entities.AssetRef) []groupOwnershipCandidate {
+
+	groupKey, _ := ref.GroupKey()
+	seen := make(map[string]struct{})
+	result := make([]groupOwnershipCandidate, 0)
+
+	for _, utxo := range utxos {
+		if utxo == nil {
+			continue
+		}
+
+		for _, asset := range utxo.Assets {
+			if !matchesGroupOwnershipRef(asset, ref, groupKey) {
+				continue
+			}
+
+			candidate := groupOwnershipCandidate{
+				issuanceID: asset.Genesis.IssuanceID,
+				scriptKey:  asset.ScriptKey.PubKey,
+				outpoint:   utxo.OutPoint,
+				amount:     asset.Amount,
+			}
+
+			key := fmt.Sprintf("%s|%s|%s", candidate.outpoint,
+				candidate.issuanceID, candidate.scriptKey)
+			if _, ok := seen[key]; ok {
+				continue
+			}
+
+			seen[key] = struct{}{}
+			result = append(result, candidate)
+		}
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		left := fmt.Sprintf("%s|%s|%s", result[i].outpoint,
+			result[i].issuanceID, result[i].scriptKey)
+		right := fmt.Sprintf("%s|%s|%s", result[j].outpoint,
+			result[j].issuanceID, result[j].scriptKey)
+
+		return left < right
+	})
+
+	return result
+}
+
+func matchesGroupOwnershipRef(asset *entities.Asset, ref entities.AssetRef,
+	groupKey entities.PubKey) bool {
+
+	if asset == nil {
+		return false
+	}
+
+	if asset.AssetRef == ref {
+		return true
+	}
+
+	if asset.GroupKey == nil {
+		return false
+	}
+
+	return asset.GroupKey.TweakedKey == groupKey
 }
