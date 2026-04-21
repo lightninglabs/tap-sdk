@@ -90,7 +90,7 @@ func (m *refMockClient) AddrReceives(ctx context.Context,
 // --- ProofClient ---
 
 func (m *refMockClient) ExportProof(ctx context.Context,
-	issuanceID entities.AssetID, scriptKey entities.PubKey,
+	ref entities.AssetRef, scriptKey entities.PubKey,
 	outpoint *entities.Outpoint) (*entities.ProofFile, error) {
 
 	panic("ExportProof: unexpected call")

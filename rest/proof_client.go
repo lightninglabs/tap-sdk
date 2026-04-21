@@ -33,12 +33,23 @@ type jsonOutpointReq struct {
 
 // ExportProof exports a proof file for a specific asset output.
 func (p *proofClient) ExportProof(ctx context.Context,
-	issuanceID entities.AssetID, scriptKey entities.PubKey,
+	ref entities.AssetRef, scriptKey entities.PubKey,
 	outpoint *entities.Outpoint) (*entities.ProofFile, error) {
+
+	if err := ref.Validate(); err != nil {
+		return nil, err
+	}
+
+	assetID, ok := ref.AssetID()
+	if !ok {
+		return nil, fmt.Errorf("export proof requires an " +
+			"asset-ID ref; group-key refs commit to " +
+			"multiple tranches")
+	}
 
 	body := &jsonExportProofRequest{
 		AssetID: hex.EncodeToString(
-			issuanceID[:],
+			assetID[:],
 		),
 		ScriptKey: hex.EncodeToString(
 			scriptKey[:],

@@ -110,8 +110,9 @@ type WalletClient interface {
 type ProofClient interface {
 	// ExportProof exports a proof file for a specific asset output.
 	// If outpoint is nil, then the latest proof for the given asset/script key
-	// is exported.
-	ExportProof(ctx context.Context, issuanceID entities.AssetID,
+	// is exported. AssetRef must resolve to an asset ID; group-key refs are
+	// rejected because a single proof commits to exactly one tranche.
+	ExportProof(ctx context.Context, ref entities.AssetRef,
 		scriptKey entities.PubKey,
 		outpoint *entities.Outpoint) (*entities.ProofFile, error)
 
