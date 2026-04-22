@@ -17,7 +17,11 @@ GOTEST := go test -v
 GOFILES_NOVENDOR = $(shell find . -type f -name '*.go' -not -path "./vendor/*")
 GOLIST := go list -deps $(PKG)/... | grep '$(PKG)'| grep -v '/vendor/'
 
-COMMIT := $(shell git describe --abbrev=40 --dirty)
+COMMIT := $(shell \
+	git describe --abbrev=40 --dirty 2>/dev/null || \
+	git rev-parse --verify HEAD 2>/dev/null || \
+	echo unknown \
+)
 LDFLAGS := -X $(PKG).Commit=$(COMMIT)
 
 RM := rm -f
@@ -129,6 +133,7 @@ ITEST_COMPOSE := itest/docker-compose.yml
 ITEST_COMPOSE_MAIN := $(ITEST_COMPOSE) -f itest/docker-compose.local.yml
 ITEST_TIMEOUT ?= 20m
 ITEST_ARGS ?=
+ITEST_GOTEST ?= go test
 
 # Optional: narrow to a subset of Go tests via -run.
 #   make itest-run case=TestMintAsset
@@ -159,11 +164,11 @@ itest-down-main:
 
 itest-run:
 	@$(call print, "Running itest Go suite against the pinned image.")
-	$(GOTEST) -tags=itest -timeout=$(ITEST_TIMEOUT) $(ITEST_RUN_FLAG) $(ITEST_ARGS) ./itest/...
+	$(ITEST_GOTEST) -tags=itest -timeout=$(ITEST_TIMEOUT) $(ITEST_RUN_FLAG) $(ITEST_ARGS) ./itest/...
 
 itest-run-main:
 	@$(call print, "Running itest Go suite including tapd-main gated tests.")
-	TAP_SDK_TAPD_MAIN=1 $(GOTEST) -tags=itest -timeout=$(ITEST_TIMEOUT) $(ITEST_RUN_FLAG) $(ITEST_ARGS) ./itest/...
+	TAP_SDK_TAPD_MAIN=1 $(ITEST_GOTEST) -tags=itest -timeout=$(ITEST_TIMEOUT) $(ITEST_RUN_FLAG) $(ITEST_ARGS) ./itest/...
 
 itest: itest-up
 	@set -e; \

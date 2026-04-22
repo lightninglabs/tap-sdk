@@ -28,7 +28,8 @@ func TestGetInfo(t *testing.T) {
 			require.Equal(t, "regtest", info.Network)
 			require.NotEmpty(t, info.LndVersion)
 
-			t.Logf("%s tapd (%s): version=%s, lnd=%s, block=%d",
+			verboseLogf(t, "%s tapd (%s): version=%s, lnd=%s, "+
+				"block=%d",
 				name, transport, info.Version,
 				info.LndVersion, info.BlockHeight)
 

@@ -309,33 +309,46 @@ func (h *TestHarness) WaitForBalance(t testing.TB, ctx context.Context,
 	t.Helper()
 
 	var balance uint64
-	require.Eventually(t, func() bool {
+	var lastStatus string
+	require.Eventuallyf(t, func() bool {
 		resp, err := wallet.ListBalances(ctx, &entities.ListBalancesRequest{
 			AssetRef: &ref,
 		})
 		if err != nil {
-			t.Logf("balance lookup not ready for %s: %v", ref, err)
+			lastStatus = fmt.Sprintf(
+				"balance lookup not ready for %s: %v",
+				ref, err,
+			)
+			verboseLogf(t, "%s", lastStatus)
 			return false
 		}
 
 		assetBalance, ok := resp.Balances[ref.String()]
 		if !ok {
-			t.Logf("balance for %s not visible yet (want %d, "+
-				"unconfirmed=%d)", ref, amount,
-				resp.UnconfirmedTransfers)
+			lastStatus = fmt.Sprintf(
+				"balance for %s not visible yet (want %d, "+
+					"unconfirmed=%d)",
+				ref, amount, resp.UnconfirmedTransfers,
+			)
+			verboseLogf(t, "%s", lastStatus)
 			balance = 0
 			return false
 		}
 
 		balance = assetBalance.Balance
 		if balance != amount {
-			t.Logf("balance for %s = %d, want %d (unconfirmed=%d)",
-				ref, balance, amount,
-				resp.UnconfirmedTransfers)
+			lastStatus = fmt.Sprintf(
+				"balance for %s = %d, want %d (unconfirmed=%d)",
+				ref, balance, amount, resp.UnconfirmedTransfers,
+			)
+			verboseLogf(t, "%s", lastStatus)
 		}
 
 		return balance == amount
-	}, timeout, time.Second)
+	}, timeout, time.Second,
+		"balance for %s never reached %d; last observation: %s",
+		ref, amount, lastObservation(lastStatus),
+	)
 
 	return balance
 }
@@ -350,17 +363,25 @@ func (h *TestHarness) WaitForReceiveAddress(
 	t.Helper()
 
 	var addr *entities.Address
-	require.Eventually(t, func() bool {
+	var lastStatus string
+	require.Eventuallyf(t, func() bool {
 		candidate, err := wallet.NewReceiveAddress(ctx, ref)
 		if err != nil {
-			t.Logf("receive address bootstrap not ready for %s: %v",
-				ref, err)
+			lastStatus = fmt.Sprintf(
+				"receive address bootstrap not ready for %s: %v",
+				ref, err,
+			)
+			verboseLogf(t, "%s", lastStatus)
 			return false
 		}
 
 		addr = candidate
 		return true
-	}, timeout, time.Second)
+	}, timeout, time.Second,
+		"receive address for %s never became available; "+
+			"last observation: %s",
+		ref, lastObservation(lastStatus),
+	)
 
 	return addr
 }
@@ -443,24 +464,35 @@ func (h *TestHarness) CreateGroupedReceiveAddress(t testing.TB,
 	)
 
 	var addr *entities.Address
-	require.Eventually(t, func() bool {
+	var lastStatus string
+	require.Eventuallyf(t, func() bool {
 		err := h.syncUniverseTarget(ctx, issuanceID)
 		if err != nil {
-			t.Logf("group bootstrap sync not ready for %s: %v",
-				ref, err)
+			lastStatus = fmt.Sprintf(
+				"group bootstrap sync not ready for %s: %v",
+				ref, err,
+			)
+			verboseLogf(t, "%s", lastStatus)
 			return false
 		}
 
 		candidate, err := h.BobWallet.NewReceiveAddress(ctx, ref)
 		if err != nil {
-			t.Logf("group receive address not ready for %s: %v",
-				ref, err)
+			lastStatus = fmt.Sprintf(
+				"group receive address not ready for %s: %v",
+				ref, err,
+			)
+			verboseLogf(t, "%s", lastStatus)
 			return false
 		}
 
 		addr = candidate
 		return true
-	}, defaultWaitTimeout, time.Second)
+	}, defaultWaitTimeout, time.Second,
+		"group receive address for %s never became available; "+
+			"last observation: %s",
+		ref, lastObservation(lastStatus),
+	)
 
 	return addr
 }
@@ -503,7 +535,7 @@ func extractDockerFile(t testing.TB, container,
 	var lastErr error
 	for attempt := 0; attempt < 5; attempt++ {
 		if attempt > 0 {
-			t.Logf("Retry %d: docker cp %s:%s",
+			verboseLogf(t, "Retry %d: docker cp %s:%s",
 				attempt, container, containerPath)
 			time.Sleep(3 * time.Second)
 		}

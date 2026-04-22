@@ -91,11 +91,15 @@ func (h *TestHarness) WaitForSemanticAssetRef(t testing.TB,
 	}
 
 	var ref entities.AssetRef
-	require.Eventually(t, func() bool {
+	var lastStatus string
+	require.Eventuallyf(t, func() bool {
 		groups, err := h.AliceClient.ListGroups(ctx)
 		if err != nil {
-			t.Logf("group lookup not ready for %s: %v",
-				asset.Genesis.Tag, err)
+			lastStatus = fmt.Sprintf(
+				"group lookup not ready for %s: %v",
+				asset.Genesis.Tag, err,
+			)
+			verboseLogf(t, "%s", lastStatus)
 			return false
 		}
 
@@ -109,8 +113,11 @@ func (h *TestHarness) WaitForSemanticAssetRef(t testing.TB,
 
 				groupKey, err := parseGroupRefKey(key)
 				if err != nil {
-					t.Logf("group key %q for %s is invalid: %v",
-						key, asset.Genesis.Tag, err)
+					lastStatus = fmt.Sprintf(
+						"group key %q for %s is invalid: %v",
+						key, asset.Genesis.Tag, err,
+					)
+					verboseLogf(t, "%s", lastStatus)
 					return false
 				}
 
@@ -119,8 +126,16 @@ func (h *TestHarness) WaitForSemanticAssetRef(t testing.TB,
 			}
 		}
 
+		lastStatus = fmt.Sprintf(
+			"group key for %s not visible yet",
+			asset.Genesis.Tag,
+		)
 		return false
-	}, timeout, time.Second)
+	}, timeout, time.Second,
+		"semantic asset ref for %s never became available; "+
+			"last observation: %s",
+		asset.Genesis.Tag, lastObservation(lastStatus),
+	)
 
 	return ref
 }
