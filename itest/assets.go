@@ -4,7 +4,6 @@ package itest
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 	"testing"
 	"time"
@@ -103,7 +102,7 @@ func (h *TestHarness) WaitForSemanticAssetRef(t testing.TB,
 			return false
 		}
 
-		for key, group := range groups {
+		for _, group := range groups {
 			for _, candidate := range group.Assets {
 				if candidate == nil ||
 					candidate.IssuanceID != asset.Genesis.IssuanceID {
@@ -111,17 +110,7 @@ func (h *TestHarness) WaitForSemanticAssetRef(t testing.TB,
 					continue
 				}
 
-				groupKey, err := parseGroupRefKey(key)
-				if err != nil {
-					lastStatus = fmt.Sprintf(
-						"group key %q for %s is invalid: %v",
-						key, asset.Genesis.Tag, err,
-					)
-					verboseLogf(t, "%s", lastStatus)
-					return false
-				}
-
-				ref = entities.AssetRefFromGroupKey(groupKey)
+				ref = group.AssetRef
 				return true
 			}
 		}
@@ -138,38 +127,6 @@ func (h *TestHarness) WaitForSemanticAssetRef(t testing.TB,
 	)
 
 	return ref
-}
-
-func parseGroupRefKey(s string) (entities.PubKey, error) {
-	if ref, err := entities.ParseAssetRef(s); err == nil {
-		groupKey, ok := ref.GroupKey()
-		if ok {
-			return groupKey, nil
-		}
-
-		return entities.PubKey{}, fmt.Errorf("asset ref %q is not a group ref",
-			s)
-	}
-
-	groupKeyBytes, err := hex.DecodeString(s)
-	if err != nil {
-		return entities.PubKey{}, fmt.Errorf("invalid group key %q: %w",
-			s, err)
-	}
-
-	switch len(groupKeyBytes) {
-	case 33:
-		return entities.ParsePubKey(groupKeyBytes)
-
-	case 32:
-		return entities.ParseTaprootPubKey(groupKeyBytes)
-
-	default:
-		return entities.PubKey{}, fmt.Errorf(
-			"invalid group key %q: expected 32 or 33 bytes, got %d",
-			s, len(groupKeyBytes),
-		)
-	}
 }
 
 // MintGroupedAsset mints a fungible asset that uses the canonical group key as

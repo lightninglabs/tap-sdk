@@ -168,6 +168,34 @@ func ParsePubKeyHex(s string) (PubKey, error) {
 	return ParsePubKey(b)
 }
 
+// ParseGroupRefKey decodes a hex-encoded group key in either 33-byte
+// compressed or 32-byte x-only form. tapd surfaces both encodings for the
+// same group depending on which internal code path produced the key; the
+// 33-byte form preserves the y-parity byte, the 32-byte form drops it.
+// Using schnorr.ParsePubKey on a 33-byte input would silently discard the
+// parity and flip odd-y keys, so callers must branch on length. This
+// helper absorbs that ambiguity and returns a normalized compressed key.
+func ParseGroupRefKey(s string) (PubKey, error) {
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		return PubKey{}, fmt.Errorf("invalid group key hex %q: %w",
+			s, err)
+	}
+
+	switch len(b) {
+	case btcec.PubKeyBytesLenCompressed:
+		return ParsePubKey(b)
+
+	case schnorr.PubKeyBytesLen:
+		return ParseTaprootPubKey(b)
+
+	default:
+		return PubKey{}, fmt.Errorf("group key hex %q: expected %d "+
+			"or %d bytes, got %d", s, schnorr.PubKeyBytesLen,
+			btcec.PubKeyBytesLenCompressed, len(b))
+	}
+}
+
 // ParseXOnlyPubKey parses a 32-byte x-only (Schnorr/Taproot) public key.
 func ParseXOnlyPubKey(b []byte) (XOnlyPubKey, error) {
 	var k XOnlyPubKey

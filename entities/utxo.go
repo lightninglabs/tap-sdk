@@ -68,8 +68,15 @@ type AssetHumanReadable struct {
 	Version uint8
 }
 
-// GroupedAssets is a list of assets sharing the same group key.
+// GroupedAssets represents a Taproot Asset group — the set of issuances
+// that share the same group key. In the SDK's model the group itself is
+// the asset: AssetRef identifies the group, and Assets are the individual
+// issuances (tranches) that make up the group.
 type GroupedAssets struct {
-	// Assets are the assets in this group.
+	// AssetRef is the SDK identifier for this group. Callers that need
+	// the raw group public key can extract it via AssetRef.GroupKey().
+	AssetRef AssetRef
+
+	// Assets are the issuances (tranches) in this group.
 	Assets []*AssetHumanReadable
 }

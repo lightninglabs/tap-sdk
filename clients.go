@@ -79,9 +79,10 @@ type WalletClient interface {
 		req *entities.ListUtxosRequest) (
 		map[string]*entities.ManagedUtxo, error)
 
-	// ListGroups lists all known protocol-level asset groups.
-	ListGroups(ctx context.Context) (
-		map[string]*entities.GroupedAssets, error)
+	// ListGroups lists all known protocol-level asset groups. Each
+	// entry's AssetRef identifies the group; callers who need the raw
+	// group public key can extract it via AssetRef.GroupKey().
+	ListGroups(ctx context.Context) ([]entities.GroupedAssets, error)
 
 	// BurnAsset burns asset units. The confirmation text must be set
 	// to "assets will be destroyed" for the burn to succeed.

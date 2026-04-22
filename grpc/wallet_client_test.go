@@ -1,6 +1,7 @@
 package grpc
 
 import (
+	"encoding/hex"
 	"testing"
 
 	"github.com/lightninglabs/tap-sdk/entities"
@@ -439,18 +440,30 @@ func TestUnmarshalManagedUtxo(t *testing.T) {
 }
 
 func TestUnmarshalGroupedAssets(t *testing.T) {
+	compressedHex := hex.EncodeToString(testPubKey)
+	xOnlyHex := hex.EncodeToString(testPubKey[1:])
+
 	tests := []struct {
-		name     string
-		rpcGroup *taprpc.GroupedAssets
-		wantErr  string
+		name        string
+		groupKeyHex string
+		rpcGroup    *taprpc.GroupedAssets
+		wantErr     string
 	}{
 		{
-			name:     "nil group",
-			rpcGroup: nil,
-			wantErr:  "nil grouped assets",
+			name:        "nil group",
+			groupKeyHex: compressedHex,
+			rpcGroup:    nil,
+			wantErr:     "nil grouped assets",
 		},
 		{
-			name: "valid group with one asset",
+			name:        "invalid group key hex",
+			groupKeyHex: "nothex",
+			rpcGroup:    &taprpc.GroupedAssets{},
+			wantErr:     "invalid group key",
+		},
+		{
+			name:        "compressed group key",
+			groupKeyHex: compressedHex,
 			rpcGroup: &taprpc.GroupedAssets{
 				Assets: []*taprpc.AssetHumanReadable{
 					{
@@ -464,7 +477,23 @@ func TestUnmarshalGroupedAssets(t *testing.T) {
 			},
 		},
 		{
-			name: "nil asset in group",
+			name:        "x-only group key",
+			groupKeyHex: xOnlyHex,
+			rpcGroup: &taprpc.GroupedAssets{
+				Assets: []*taprpc.AssetHumanReadable{
+					{
+						Id:       testAssetID,
+						Amount:   1000,
+						Tag:      "test-asset",
+						MetaHash: testAssetID,
+						Type:     taprpc.AssetType_NORMAL,
+					},
+				},
+			},
+		},
+		{
+			name:        "nil asset in group",
+			groupKeyHex: compressedHex,
 			rpcGroup: &taprpc.GroupedAssets{
 				Assets: []*taprpc.AssetHumanReadable{nil},
 			},
@@ -474,7 +503,9 @@ func TestUnmarshalGroupedAssets(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := unmarshalGroupedAssets(tc.rpcGroup)
+			result, err := unmarshalGroupedAssets(
+				tc.groupKeyHex, tc.rpcGroup,
+			)
 			if tc.wantErr != "" {
 				require.Error(t, err)
 				require.Contains(
@@ -485,6 +516,7 @@ func TestUnmarshalGroupedAssets(t *testing.T) {
 
 			require.NoError(t, err)
 			require.NotNil(t, result)
+			require.True(t, result.AssetRef.IsGroupRef())
 			require.Len(
 				t, result.Assets,
 				len(tc.rpcGroup.Assets),

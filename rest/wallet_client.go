@@ -660,8 +660,7 @@ func (w *walletClient) ListUtxos(ctx context.Context,
 
 // ListGroups lists all known asset groups.
 func (w *walletClient) ListGroups(
-	ctx context.Context) (map[string]*entities.GroupedAssets,
-	error) {
+	ctx context.Context) ([]entities.GroupedAssets, error) {
 
 	var resp jsonListGroupsResponse
 	err := w.transport.doGet(
@@ -672,16 +671,14 @@ func (w *walletClient) ListGroups(
 		return nil, err
 	}
 
-	result := make(
-		map[string]*entities.GroupedAssets, len(resp.Groups),
-	)
+	result := make([]entities.GroupedAssets, 0, len(resp.Groups))
 	for k, v := range resp.Groups {
-		group, err := unmarshalGroupedAssets(v)
+		group, err := unmarshalGroupedAssets(k, v)
 		if err != nil {
 			return nil, fmt.Errorf("unmarshal group %s: %w",
 				k, err)
 		}
-		result[k] = group
+		result = append(result, *group)
 	}
 
 	return result, nil
