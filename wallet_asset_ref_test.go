@@ -237,7 +237,7 @@ func (m *refMockClient) ListUtxos(_ context.Context,
 }
 
 func (m *refMockClient) ListGroups(
-	_ context.Context) (map[string]*entities.GroupedAssets, error) {
+	_ context.Context) ([]entities.GroupedAssets, error) {
 
 	return nil, nil
 }

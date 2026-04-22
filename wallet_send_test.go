@@ -356,15 +356,14 @@ func (m *mockClient) ListUtxos(ctx context.Context,
 }
 
 func (m *mockClient) ListGroups(
-	ctx context.Context) (map[string]*entities.GroupedAssets, error) {
+	ctx context.Context) ([]entities.GroupedAssets, error) {
 
 	args := m.Called(ctx)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(map[string]*entities.GroupedAssets),
-		args.Error(1)
+	return args.Get(0).([]entities.GroupedAssets), args.Error(1)
 }
 
 func (m *mockClient) BurnAsset(ctx context.Context,

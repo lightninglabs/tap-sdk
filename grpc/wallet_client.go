@@ -1019,7 +1019,7 @@ func (s *walletClient) ListUtxos(ctx context.Context,
 
 // ListGroups lists all known asset groups.
 func (s *walletClient) ListGroups(
-	ctx context.Context) (map[string]*entities.GroupedAssets, error) {
+	ctx context.Context) ([]entities.GroupedAssets, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
@@ -1033,18 +1033,16 @@ func (s *walletClient) ListGroups(
 		return nil, err
 	}
 
-	result := make(
-		map[string]*entities.GroupedAssets, len(resp.Groups),
-	)
+	result := make([]entities.GroupedAssets, 0, len(resp.Groups))
 
 	for key, rpcGroup := range resp.Groups {
-		group, err := unmarshalGroupedAssets(rpcGroup)
+		group, err := unmarshalGroupedAssets(key, rpcGroup)
 		if err != nil {
 			return nil, fmt.Errorf("failed to unmarshal "+
 				"group %s: %w", key, err)
 		}
 
-		result[key] = group
+		result = append(result, *group)
 	}
 
 	return result, nil
@@ -1255,12 +1253,18 @@ func unmarshalManagedUtxo(
 }
 
 // unmarshalGroupedAssets converts an RPC GroupedAssets to an
-// entities.GroupedAssets.
-func unmarshalGroupedAssets(
+// entities.GroupedAssets. The groupKeyHex is the map key tapd returns,
+// which may be either 33-byte compressed or 32-byte x-only hex.
+func unmarshalGroupedAssets(groupKeyHex string,
 	rpcGroup *taprpc.GroupedAssets) (*entities.GroupedAssets, error) {
 
 	if rpcGroup == nil {
 		return nil, fmt.Errorf("nil grouped assets")
+	}
+
+	groupKey, err := entities.ParseGroupRefKey(groupKeyHex)
+	if err != nil {
+		return nil, fmt.Errorf("invalid group key: %w", err)
 	}
 
 	assets := make(
@@ -1298,7 +1302,8 @@ func unmarshalGroupedAssets(
 	}
 
 	return &entities.GroupedAssets{
-		Assets: assets,
+		AssetRef: entities.AssetRefFromGroupKey(groupKey),
+		Assets:   assets,
 	}, nil
 }
 

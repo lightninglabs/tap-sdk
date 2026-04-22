@@ -984,12 +984,19 @@ func unmarshalManagedUtxo(
 	}, nil
 }
 
-// unmarshalGroupedAssets converts a JSON grouped assets to an entity.
-func unmarshalGroupedAssets(
+// unmarshalGroupedAssets converts a JSON grouped assets to an entity. The
+// groupKeyHex is the map key from the ListGroups response, which tapd
+// returns as either 33-byte compressed or 32-byte x-only hex.
+func unmarshalGroupedAssets(groupKeyHex string,
 	g *jsonGroupedAssets) (*entities.GroupedAssets, error) {
 
 	if g == nil {
 		return nil, fmt.Errorf("nil grouped assets")
+	}
+
+	groupKey, err := entities.ParseGroupRefKey(groupKeyHex)
+	if err != nil {
+		return nil, fmt.Errorf("invalid group key: %w", err)
 	}
 
 	assets := make(
@@ -1005,7 +1012,8 @@ func unmarshalGroupedAssets(
 	}
 
 	return &entities.GroupedAssets{
-		Assets: assets,
+		AssetRef: entities.AssetRefFromGroupKey(groupKey),
+		Assets:   assets,
 	}, nil
 }
 
