@@ -14,6 +14,7 @@ import (
 	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/entities"
 	tapgrpc "github.com/lightninglabs/tap-sdk/grpc"
+	"github.com/lightninglabs/tap-sdk/macaroon"
 	taprest "github.com/lightninglabs/tap-sdk/rest"
 	"github.com/stretchr/testify/require"
 )
@@ -192,10 +193,10 @@ func newTapdClient(t testing.TB, transport Transport,
 	switch transport {
 	case TransportGRPC:
 		cfg := &tapgrpc.Config{
-			Host:         envOr(spec.grpcHostEnv, spec.defaultGRPCHost),
-			Network:      entities.NetworkRegtest,
-			TLSPath:      tlsPath,
-			MacaroonPath: macaroonPath,
+			Host:     envOr(spec.grpcHostEnv, spec.defaultGRPCHost),
+			Network:  entities.NetworkRegtest,
+			TLS:      tapgrpc.TLSFromPath(tlsPath),
+			Macaroon: macaroon.FromPath(macaroonPath),
 		}
 
 		client, err := tapgrpc.NewClient(cfg)
@@ -206,10 +207,10 @@ func newTapdClient(t testing.TB, transport Transport,
 
 	case TransportREST:
 		cfg := &taprest.Config{
-			BaseURL:      envOr(spec.restHostEnv, spec.defaultRESTHost),
-			Network:      entities.NetworkRegtest,
-			TLSPath:      tlsPath,
-			MacaroonPath: macaroonPath,
+			BaseURL:  envOr(spec.restHostEnv, spec.defaultRESTHost),
+			Network:  entities.NetworkRegtest,
+			TLS:      taprest.TLSFromPath(tlsPath),
+			Macaroon: macaroon.FromPath(macaroonPath),
 		}
 
 		client, err := taprest.NewClient(cfg)

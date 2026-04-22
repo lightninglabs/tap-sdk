@@ -6,6 +6,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/tap-sdk/entities"
+	"github.com/lightninglabs/tap-sdk/macaroon"
 )
 
 const (
@@ -28,52 +29,37 @@ var (
 type Config struct {
 	// BaseURL is the base URL of the tapd REST API, e.g.
 	// "https://localhost:8089". The scheme must be https unless
-	// Insecure is true.
+	// the TLS source is TLSInsecure().
 	BaseURL string
 
 	// Network is the bitcoin network we expect the tapd instance to
 	// operate on. Used for resolving default macaroon paths.
 	Network entities.Network
 
-	// MacaroonDir is the directory where all tapd macaroons can be
-	// found. Either this, MacaroonPath, or MacaroonHex should be set,
-	// but only one of them.
-	MacaroonDir string
+	// Macaroon chooses where the SDK reads authentication
+	// macaroons from. Obtain values from macaroon.FromPath,
+	// macaroon.FromDir, or macaroon.FromHex. When nil, the SDK
+	// falls back to tapd's default per-network directory under
+	// ~/.tapd.
+	Macaroon macaroon.Source
 
-	// MacaroonPath is the full path to a custom macaroon file.
-	MacaroonPath string
-
-	// MacaroonHex is a hexadecimal encoded macaroon string.
-	MacaroonHex string
-
-	// TLSPath is the path to tapd's TLS certificate file.
-	TLSPath string
-
-	// TLSData holds the TLS certificate data as a PEM string. Only
-	// this or TLSPath can be set, not both.
-	TLSData string
-
-	// Insecure disables TLS verification. Use only for local
-	// development with bufconn or similar.
-	Insecure bool
-
-	// SystemCert uses the system certificate pool for TLS instead of
-	// tapd's self-signed certificate.
-	SystemCert bool
+	// TLS chooses how the SDK builds its TLS trust configuration.
+	// Obtain values from TLSFromPath, TLSFromData, TLSSystemCert,
+	// or TLSInsecure. When nil, the SDK falls back to tapd's
+	// default tls.cert path under ~/.tapd.
+	TLS TLSSource
 
 	// Timeout is an optional custom timeout for HTTP requests. If
 	// zero, defaults to 30 seconds.
 	Timeout time.Duration
 }
 
-// macaroonDir resolves the macaroon directory based on the network.
-func (c *Config) macaroonDir() (string, error) {
-	if c.MacaroonDir != "" {
-		return c.MacaroonDir, nil
-	}
-
+// defaultMacaroonDir returns the path under ~/.tapd where tapd stores
+// its per-network macaroons. Used as a fallback when Config.Macaroon
+// is nil.
+func defaultMacaroonDir(network entities.Network) (string, error) {
 	var subDir string
-	switch c.Network {
+	switch network {
 	case entities.NetworkTestnet:
 		subDir = "testnet"
 	case entities.NetworkTestnet4:

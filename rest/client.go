@@ -23,29 +23,16 @@ type Client struct {
 // sub-client interfaces. The Config mirrors grpc.Config but points at
 // the REST endpoint (https://host:8089 by default).
 func NewClient(cfg *Config) (*Client, error) {
-	// Validate mutual-exclusivity constraints.
-	macOptions := []string{
-		cfg.MacaroonDir, cfg.MacaroonPath, cfg.MacaroonHex,
-	}
-	macCount := 0
-	for _, opt := range macOptions {
-		if opt != "" {
-			macCount++
+	macSource := cfg.Macaroon
+	if macSource == nil {
+		defaultDir, err := defaultMacaroonDir(cfg.Network)
+		if err != nil {
+			return nil, err
 		}
+		macSource = macaroon.FromDir(defaultDir)
 	}
 
-	if macCount > 1 {
-		return nil, ErrMacaroonConflict
-	}
-
-	macDir, err := cfg.macaroonDir()
-	if err != nil && cfg.MacaroonPath == "" && cfg.MacaroonHex == "" {
-		return nil, err
-	}
-
-	macaroons, err := macaroon.NewPouch(
-		macDir, cfg.MacaroonPath, cfg.MacaroonHex,
-	)
+	macaroons, err := macSource.LoadPouch()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read macaroons: %w", err)
 	}

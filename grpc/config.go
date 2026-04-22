@@ -6,6 +6,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/tap-sdk/entities"
+	"github.com/lightninglabs/tap-sdk/macaroon"
 	"google.golang.org/grpc"
 )
 
@@ -38,33 +39,18 @@ type Config struct {
 	// Network is the bitcoin network we expect the tapd instance to operate on.
 	Network entities.Network
 
-	// MacaroonDir is the directory where all tapd macaroons can be found.
-	// Either this, MacaroonPath, or MacaroonHex should be set,
-	// but only one of them, depending on macaroon preferences.
-	MacaroonDir string
+	// Macaroon chooses where the SDK reads authentication
+	// macaroons from. Obtain values from macaroon.FromPath,
+	// macaroon.FromDir, or macaroon.FromHex. When nil, the SDK
+	// falls back to tapd's default per-network directory under
+	// ~/.tapd.
+	Macaroon macaroon.Source
 
-	// MacaroonPath is the full path to a custom macaroon file.
-	MacaroonPath string
-
-	// MacaroonHex is a hexadecimal encoded macaroon string. Either
-	// this, MacaroonDir, or MacaroonPath should be set, but only
-	// one of them.
-	MacaroonHex string
-
-	// TLSPath is the path to tapd's TLS certificate file.
-	TLSPath string
-
-	// TLSData holds the TLS certificate data. Only this or TLSPath can be
-	// set, not both.
-	TLSData string
-
-	// Insecure can be checked if we don't need to use tls, such as if
-	// we're connecting to tapd via a bufconn, then we'll skip verification.
-	Insecure bool
-
-	// SystemCert specifies whether we'll fallback to a system cert pool
-	// for tls.
-	SystemCert bool
+	// TLS chooses how the SDK builds its TLS trust configuration.
+	// Obtain values from TLSFromPath, TLSFromData, TLSSystemCert,
+	// or TLSInsecure. When nil, the SDK falls back to tapd's
+	// default tls.cert path under ~/.tapd.
+	TLS TLSSource
 
 	// TLSMinVersion sets the minimum TLS version the client will accept.
 	// Defaults to TLS 1.2 when zero. Use crypto/tls constants

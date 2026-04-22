@@ -121,29 +121,33 @@ Cryptographic utilities:
 
 Macaroon authentication helpers:
 
-- Load macaroons from files, directories, or hex strings
+- Load macaroons from files, directories, or hex strings via a
+  typed `Source` (`macaroon.FromPath` / `FromDir` / `FromHex`)
 - Attach macaroon metadata to gRPC contexts
 - Support per-service macaroon granularity
 
 ## TLS and Authentication
 
 The SDK communicates with `tapd` over gRPC with TLS encryption and
-macaroon-based authentication.
+macaroon-based authentication. Both inputs are supplied as typed
+sources on `Config` — exactly one choice per field, enforced at
+compile time.
 
 ### TLS Configuration
 
-The `grpc.Config` struct supports multiple TLS modes:
+`grpc.Config.TLS` (and `rest.Config.TLS`) takes a `TLSSource`:
 
-| Config Fields | Behavior |
-|--------------|----------|
-| (none) | Load cert from tapd default path (`~/.tapd/tls.cert`) |
-| `TLSPath` | Load cert from a custom file path |
-| `TLSData` | Use PEM-encoded certificate data directly |
-| `SystemCert` | Trust the system certificate pool |
-| `Insecure` | Skip TLS verification (testing only) |
+| Constructor | Behavior |
+|-------------|----------|
+| (nil) | Load cert from tapd default path (`~/.tapd/tls.cert`) |
+| `TLSFromPath(path)` | Load cert from a custom file path |
+| `TLSFromData(pem)` | Use PEM-encoded certificate data directly |
+| `TLSSystemCert()` | Trust the system certificate pool |
+| `TLSInsecure()` | Skip TLS verification (testing only) |
 
-Only one of `TLSPath`, `TLSData`, `SystemCert`, or `Insecure` should
-be set. The SDK rejects conflicting combinations at construction time.
+Since `TLS` is a single field, conflicting combinations cannot be
+expressed — previously-runtime errors like `ErrTLSConflict` are
+replaced by a type-checked choice.
 
 ### TLS Hardening
 

@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"io"
 	"net/http"
@@ -196,72 +194,19 @@ func newHTTPClient(cfg *Config) (*http.Client, error) {
 	}, nil
 }
 
-// buildTLSConfig creates a *tls.Config from the rest.Config fields.
+// buildTLSConfig creates a *tls.Config from the rest.Config's TLS
+// source, falling back to tapd's default tls.cert path when unset.
 func buildTLSConfig(cfg *Config) (*tls.Config, error) {
-	switch {
-	case cfg.TLSPath != "" && cfg.TLSData != "":
-		return nil, ErrTLSConflict
-
-	case cfg.Insecure && cfg.SystemCert:
-		return nil, ErrInsecureSystemCert
-
-	case cfg.Insecure:
-		return &tls.Config{
-			InsecureSkipVerify: true, //nolint:gosec
-		}, nil
-
-	case cfg.SystemCert:
-		return &tls.Config{}, nil
-
-	case cfg.TLSData != "":
-		block, _ := pem.Decode([]byte(cfg.TLSData))
-		if block == nil || block.Type != "CERTIFICATE" {
-			return nil, fmt.Errorf(
-				"failed to decode PEM block " +
-					"containing tls certificate",
-			)
-		}
-
-		cert, err := x509.ParseCertificate(block.Bytes)
-		if err != nil {
-			return nil, err
-		}
-
-		pool := x509.NewCertPool()
-		pool.AddCert(cert)
-
-		return &tls.Config{RootCAs: pool}, nil
-
-	case cfg.TLSPath != "":
-		return tlsConfigFromFile(cfg.TLSPath)
-
-	default:
+	source := cfg.TLS
+	if source == nil {
 		if _, err := os.Stat(defaultTLSCertPath); err != nil {
 			return nil, fmt.Errorf(
 				"couldn't find default TLS cert at %s: %v",
 				defaultTLSCertPath, err,
 			)
 		}
-
-		return tlsConfigFromFile(defaultTLSCertPath)
-	}
-}
-
-// tlsConfigFromFile reads a PEM certificate file and returns a TLS
-// config that trusts it.
-func tlsConfigFromFile(path string) (*tls.Config, error) {
-	certData, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("couldn't read TLS cert at %s: %v",
-			path, err)
+		source = TLSFromPath(defaultTLSCertPath)
 	}
 
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(certData) {
-		return nil, fmt.Errorf(
-			"failed to add TLS certificate from %s", path,
-		)
-	}
-
-	return &tls.Config{RootCAs: pool}, nil
+	return source.tlsConfig()
 }
