@@ -207,6 +207,102 @@ func TestEventListener_Reconnect(t *testing.T) {
 	require.GreaterOrEqual(t, callCount.Load(), int32(2))
 }
 
+// TestEventListener_OnDisconnect verifies that transient stream
+// breaks fire OnDisconnect with the terminal error and planned
+// retry delay, without involving OnError.
+func TestEventListener_OnDisconnect(t *testing.T) {
+	var callCount atomic.Int32
+
+	mc := &mockEventClient{
+		receiveSetup: func() (
+			<-chan *entities.ReceiveEvent, <-chan error) {
+
+			call := callCount.Add(1)
+
+			evCh := make(chan *entities.ReceiveEvent, 1)
+			errCh := make(chan error, 1)
+
+			if call == 1 {
+				// First call: break with a retriable error.
+				close(evCh)
+				errCh <- io.EOF
+			} else {
+				// Second call: deliver event and close
+				// cleanly so the test terminates.
+				evCh <- &entities.ReceiveEvent{Timestamp: 1}
+				close(evCh)
+				close(errCh)
+			}
+
+			return evCh, errCh
+		},
+	}
+
+	type disconnect struct {
+		stream    string
+		err       error
+		nextRetry time.Duration
+	}
+
+	var (
+		disconnects   []disconnect
+		disconnectsMu sync.Mutex
+		gotFatal      atomic.Bool
+	)
+
+	listener := NewEventListener(mc, EventHandler{
+		OnReceive: func(_ context.Context,
+			_ *entities.ReceiveEvent) {
+		},
+		OnDisconnect: func(stream string, err error,
+			nextRetry time.Duration) {
+
+			disconnectsMu.Lock()
+			disconnects = append(disconnects, disconnect{
+				stream:    stream,
+				err:       err,
+				nextRetry: nextRetry,
+			})
+			disconnectsMu.Unlock()
+		},
+		OnError: func(_ string, _ error) {
+			gotFatal.Store(true)
+		},
+	},
+		WithMaxRetries(3),
+		WithInitialBackoff(10*time.Millisecond),
+		WithMaxBackoff(50*time.Millisecond),
+	)
+
+	ctx, cancel := context.WithTimeout(
+		context.Background(), 2*time.Second,
+	)
+	defer cancel()
+
+	require.NoError(t, listener.Start(ctx))
+
+	// Wait until we've observed at least one disconnect callback.
+	require.Eventually(t, func() bool {
+		disconnectsMu.Lock()
+		defer disconnectsMu.Unlock()
+		return len(disconnects) >= 1
+	}, 2*time.Second, 10*time.Millisecond,
+		"expected OnDisconnect to fire on retriable break",
+	)
+
+	require.NoError(t, listener.Stop())
+
+	disconnectsMu.Lock()
+	defer disconnectsMu.Unlock()
+
+	require.Equal(t, "receive", disconnects[0].stream)
+	require.ErrorIs(t, disconnects[0].err, io.EOF)
+	require.Greater(t, disconnects[0].nextRetry, time.Duration(0))
+
+	// Retriable break must not trigger the terminal OnError hook.
+	require.False(t, gotFatal.Load())
+}
+
 // TestEventListener_FatalError verifies that fatal errors stop the
 // stream without retrying.
 func TestEventListener_FatalError(t *testing.T) {

@@ -49,6 +49,16 @@ type EventHandler struct {
 	// (non-retriable) error occurs. If nil, errors are silently
 	// dropped and the stream is abandoned.
 	OnError func(streamName string, err error)
+
+	// OnDisconnect is called on every retriable stream break,
+	// before the next reconnection attempt. err is the terminal
+	// error returned by the stream (may be nil on a clean server
+	// close) and nextRetry is the delay (with jitter) the listener
+	// will wait before retrying. Intended for observability — to
+	// surface transient hiccups as logs or metrics — while OnError
+	// reports the terminal case.
+	OnDisconnect func(streamName string, err error,
+		nextRetry time.Duration)
 }
 
 // EventListenerConfig configures reconnection and subscription
@@ -140,9 +150,10 @@ func WithMintFilter(
 	}
 }
 
-// eventListener implements the EventListener with automatic
-// reconnection.
-type eventListener struct {
+// EventListener subscribes to tapd event streams and dispatches events
+// to the registered handlers, reconnecting with exponential backoff on
+// retriable failures.
+type EventListener struct {
 	client  EventClient
 	handler EventHandler
 	config  EventListenerConfig
@@ -160,7 +171,7 @@ func NewEventListener(
 	client EventClient,
 	handler EventHandler,
 	opts ...EventListenerOption,
-) *eventListener {
+) *EventListener {
 
 	cfg := EventListenerConfig{
 		InitialBackoff:    defaultInitialBackoff,
@@ -172,7 +183,7 @@ func NewEventListener(
 		opt(&cfg)
 	}
 
-	return &eventListener{
+	return &EventListener{
 		client:  client,
 		handler: handler,
 		config:  cfg,
@@ -182,7 +193,7 @@ func NewEventListener(
 // Start begins listening for events. It launches background goroutines
 // for each registered handler. Start is non-blocking and returns
 // immediately. Returns an error if the listener is already running.
-func (l *eventListener) Start(ctx context.Context) error {
+func (l *EventListener) Start(ctx context.Context) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -213,7 +224,7 @@ func (l *eventListener) Start(ctx context.Context) error {
 
 // Stop gracefully shuts down all subscriptions and waits for goroutines
 // to exit. Safe to call multiple times.
-func (l *eventListener) Stop() error {
+func (l *EventListener) Stop() error {
 	l.mu.Lock()
 	if !l.running {
 		l.mu.Unlock()
@@ -232,7 +243,7 @@ func (l *eventListener) Stop() error {
 }
 
 // Running reports whether the listener is currently active.
-func (l *eventListener) Running() bool {
+func (l *EventListener) Running() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.running
@@ -253,7 +264,7 @@ type streamResult struct {
 type streamFunc func(ctx context.Context) streamResult
 
 // runStream manages reconnection for a single event stream.
-func (l *eventListener) runStream(ctx context.Context, name string,
+func (l *EventListener) runStream(ctx context.Context, name string,
 	subscribe streamFunc) {
 
 	defer l.wg.Done()
@@ -299,6 +310,13 @@ func (l *eventListener) runStream(ctx context.Context, name string,
 
 		// Sleep with jitter.
 		jittered := addJitter(backoff)
+
+		// Notify observers of the transient break before
+		// waiting. Callers use this for retry metrics or logs.
+		if l.handler.OnDisconnect != nil {
+			l.handler.OnDisconnect(name, result.err, jittered)
+		}
+
 		select {
 		case <-time.After(jittered):
 		case <-ctx.Done():
@@ -318,7 +336,7 @@ func (l *eventListener) runStream(ctx context.Context, name string,
 
 // subscribeReceive opens a receive event stream and delivers events
 // to the handler until the stream breaks.
-func (l *eventListener) subscribeReceive(
+func (l *EventListener) subscribeReceive(
 	ctx context.Context) streamResult {
 
 	filter := l.config.ReceiveFilter
@@ -341,7 +359,7 @@ func (l *eventListener) subscribeReceive(
 }
 
 // subscribeSend opens a send event stream and delivers events.
-func (l *eventListener) subscribeSend(
+func (l *EventListener) subscribeSend(
 	ctx context.Context) streamResult {
 
 	filter := l.config.SendFilter
@@ -364,7 +382,7 @@ func (l *eventListener) subscribeSend(
 }
 
 // subscribeMint opens a mint event stream and delivers events.
-func (l *eventListener) subscribeMint(
+func (l *EventListener) subscribeMint(
 	ctx context.Context) streamResult {
 
 	filter := l.config.MintFilter
