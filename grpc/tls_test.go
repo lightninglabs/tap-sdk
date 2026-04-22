@@ -68,12 +68,12 @@ func writeTempFile(t *testing.T, name string, data []byte) string {
 	return path
 }
 
-// TestGetTLSCredentials_Insecure verifies that the insecure mode
+// TestGetTLSCredentials_Insecure verifies that the insecure source
 // returns valid credentials.
 func TestGetTLSCredentials_Insecure(t *testing.T) {
 	t.Parallel()
 
-	cfg := &Config{Insecure: true}
+	cfg := &Config{TLS: TLSInsecure()}
 	creds, err := getTLSCredentials(cfg)
 	require.NoError(t, err)
 	require.NotNil(t, creds)
@@ -86,7 +86,7 @@ func TestGetTLSCredentials_Insecure(t *testing.T) {
 func TestGetTLSCredentials_SystemCert(t *testing.T) {
 	t.Parallel()
 
-	cfg := &Config{SystemCert: true}
+	cfg := &Config{TLS: TLSSystemCert()}
 	creds, err := getTLSCredentials(cfg)
 	require.NoError(t, err)
 	require.NotNil(t, creds)
@@ -102,7 +102,7 @@ func TestGetTLSCredentials_TLSData(t *testing.T) {
 
 	certPEM, _ := generateSelfSignedCert(t)
 
-	cfg := &Config{TLSData: string(certPEM)}
+	cfg := &Config{TLS: TLSFromData(string(certPEM))}
 	creds, err := getTLSCredentials(cfg)
 	require.NoError(t, err)
 	require.NotNil(t, creds)
@@ -116,38 +116,10 @@ func TestGetTLSCredentials_TLSPath(t *testing.T) {
 	certPEM, _ := generateSelfSignedCert(t)
 	certPath := writeTempFile(t, "tls.cert", certPEM)
 
-	cfg := &Config{TLSPath: certPath}
+	cfg := &Config{TLS: TLSFromPath(certPath)}
 	creds, err := getTLSCredentials(cfg)
 	require.NoError(t, err)
 	require.NotNil(t, creds)
-}
-
-// TestGetTLSCredentials_ConflictTLSPathAndData verifies that setting
-// both TLSPath and TLSData returns an error.
-func TestGetTLSCredentials_ConflictTLSPathAndData(t *testing.T) {
-	t.Parallel()
-
-	cfg := &Config{
-		TLSPath: "/some/path",
-		TLSData: "some-data",
-	}
-	_, err := getTLSCredentials(cfg)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "must set only one")
-}
-
-// TestGetTLSCredentials_ConflictInsecureAndSystemCert verifies that
-// setting both Insecure and SystemCert returns an error.
-func TestGetTLSCredentials_ConflictInsecureAndSystemCert(t *testing.T) {
-	t.Parallel()
-
-	cfg := &Config{
-		Insecure:   true,
-		SystemCert: true,
-	}
-	_, err := getTLSCredentials(cfg)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "cannot set insecure")
 }
 
 // TestGetTLSCredentials_InvalidTLSData verifies that invalid PEM data
@@ -155,7 +127,7 @@ func TestGetTLSCredentials_ConflictInsecureAndSystemCert(t *testing.T) {
 func TestGetTLSCredentials_InvalidTLSData(t *testing.T) {
 	t.Parallel()
 
-	cfg := &Config{TLSData: "not-a-valid-pem"}
+	cfg := &Config{TLS: TLSFromData("not-a-valid-pem")}
 	_, err := getTLSCredentials(cfg)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to decode PEM block")
@@ -166,22 +138,19 @@ func TestGetTLSCredentials_InvalidTLSData(t *testing.T) {
 func TestGetTLSCredentials_MissingTLSFile(t *testing.T) {
 	t.Parallel()
 
-	cfg := &Config{TLSPath: "/nonexistent/path/tls.cert"}
+	cfg := &Config{TLS: TLSFromPath("/nonexistent/path/tls.cert")}
 	_, err := getTLSCredentials(cfg)
 	require.Error(t, err)
 }
 
 // TestGetTLSCredentials_MinVersionDefault verifies the default TLS
-// minimum version is 1.2.
+// minimum version path builds valid credentials.
 func TestGetTLSCredentials_MinVersionDefault(t *testing.T) {
 	t.Parallel()
 
-	cfg := &Config{SystemCert: true}
+	cfg := &Config{TLS: TLSSystemCert()}
 	creds, err := getTLSCredentials(cfg)
 	require.NoError(t, err)
-
-	// The credentials wrap a tls.Config. We can't directly inspect
-	// it via the public API, but we can verify the creds are valid.
 	require.NotNil(t, creds)
 }
 
@@ -191,7 +160,7 @@ func TestGetTLSCredentials_MinVersionCustom(t *testing.T) {
 	t.Parallel()
 
 	cfg := &Config{
-		SystemCert:    true,
+		TLS:           TLSSystemCert(),
 		TLSMinVersion: tls.VersionTLS13,
 	}
 	creds, err := getTLSCredentials(cfg)
@@ -209,7 +178,7 @@ func TestGetTLSCredentials_PinnedFingerprint(t *testing.T) {
 	fingerprint := hex.EncodeToString(digest[:])
 
 	cfg := &Config{
-		TLSData:                  string(certPEM),
+		TLS:                      TLSFromData(string(certPEM)),
 		TLSPinnedCertFingerprint: fingerprint,
 	}
 	creds, err := getTLSCredentials(cfg)
@@ -237,7 +206,7 @@ func TestGetTLSCredentials_PinnedFingerprintColons(t *testing.T) {
 	withColons := b.String()
 
 	cfg := &Config{
-		TLSData:                  string(certPEM),
+		TLS:                      TLSFromData(string(certPEM)),
 		TLSPinnedCertFingerprint: withColons,
 	}
 	creds, err := getTLSCredentials(cfg)
@@ -278,7 +247,7 @@ func TestGetTLSCredentials_InvalidPinnedFingerprint(t *testing.T) {
 				// Empty fingerprint means no pinning,
 				// which is valid (no-op).
 				cfg := &Config{
-					SystemCert:               true,
+					TLS:                      TLSSystemCert(),
 					TLSPinnedCertFingerprint: tc.fingerprint,
 				}
 				creds, err := getTLSCredentials(cfg)
@@ -288,7 +257,7 @@ func TestGetTLSCredentials_InvalidPinnedFingerprint(t *testing.T) {
 			}
 
 			cfg := &Config{
-				SystemCert:               true,
+				TLS:                      TLSSystemCert(),
 				TLSPinnedCertFingerprint: tc.fingerprint,
 			}
 			_, err := getTLSCredentials(cfg)

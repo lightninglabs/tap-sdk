@@ -8,27 +8,9 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-var (
-	// ErrUnsupportedNetwork is returned when an unknown network is
-	// specified in the configuration.
-	ErrUnsupportedNetwork = errors.New("unsupported network")
-
-	// ErrMacaroonConflict is returned when more than one macaroon
-	// source is specified (directory, path, or hex).
-	ErrMacaroonConflict = errors.New(
-		"must set only one: MacaroonDir, MacaroonPath, or MacaroonHex",
-	)
-
-	// ErrTLSConflict is returned when both TLSPath and TLSData are
-	// set.
-	ErrTLSConflict = errors.New("must set only one: TLSPath or TLSData")
-
-	// ErrInsecureSystemCert is returned when both Insecure and
-	// SystemCert are set.
-	ErrInsecureSystemCert = errors.New(
-		"cannot set insecure and system cert at the same time",
-	)
-)
+// ErrUnsupportedNetwork is returned when an unknown network is
+// specified in the configuration.
+var ErrUnsupportedNetwork = errors.New("unsupported network")
 
 // ErrNotImplemented is the base error for methods that haven't
 // been implemented yet in the REST transport.

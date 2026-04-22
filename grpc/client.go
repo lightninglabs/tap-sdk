@@ -18,6 +18,34 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
+// defaultMacaroonDir returns the path under ~/.tapd where tapd stores
+// its per-network macaroons. Used as a fallback when Config.Macaroon
+// is nil.
+func defaultMacaroonDir(network entities.Network) (string, error) {
+	var subDir string
+	switch network {
+	case entities.NetworkTestnet:
+		subDir = "testnet"
+	case entities.NetworkTestnet4:
+		subDir = "testnet4"
+	case entities.NetworkMainnet:
+		subDir = "mainnet"
+	case entities.NetworkSimnet:
+		subDir = "simnet"
+	case entities.NetworkSignet:
+		subDir = "signet"
+	case entities.NetworkRegtest:
+		subDir = "regtest"
+	default:
+		return "", fmt.Errorf("unsupported network: %v", network)
+	}
+
+	return filepath.Join(
+		defaultTapdDir, defaultDataDir, defaultChainSubDir,
+		"bitcoin", subDir,
+	), nil
+}
+
 // Client holds the connection to the tapd daemon and the sub-clients.
 type Client struct {
 	*walletClient
@@ -33,71 +61,13 @@ type Client struct {
 
 // NewClient creates a new Client instance.
 func NewClient(cfg *Config) (*Client, error) {
-	// Of the macaroon directory, the custom macaroon path, and the custom
-	// macaroon hex, we only allow one to be set at once. If all are empty,
-	// that's fine, the default behavior is to use tapd's default directory
-	// to try to locate the macaroons.
-	macaroonOptions := []string{
-		cfg.MacaroonDir,
-		cfg.MacaroonPath,
-		cfg.MacaroonHex,
-	}
-	macOptionCount := 0
-	for _, option := range macaroonOptions {
-		if option != "" {
-			macOptionCount++
+	macSource := cfg.Macaroon
+	if macSource == nil {
+		defaultDir, err := defaultMacaroonDir(cfg.Network)
+		if err != nil {
+			return nil, err
 		}
-	}
-	if macOptionCount > 1 {
-		return nil, fmt.Errorf("must set only one: MacaroonDir, " +
-			"MacaroonPath, or MacaroonHex")
-	}
-
-	// Based on the network, if the macaroon directory isn't set, then
-	// we'll use the expected default locations.
-	macaroonDir := cfg.MacaroonDir
-	if macaroonDir == "" {
-		switch cfg.Network {
-		case entities.NetworkTestnet:
-			macaroonDir = filepath.Join(
-				defaultTapdDir, defaultDataDir,
-				defaultChainSubDir, "bitcoin", "testnet",
-			)
-
-		case entities.NetworkTestnet4:
-			macaroonDir = filepath.Join(
-				defaultTapdDir, defaultDataDir,
-				defaultChainSubDir, "bitcoin", "testnet4",
-			)
-
-		case entities.NetworkMainnet:
-			macaroonDir = filepath.Join(
-				defaultTapdDir, defaultDataDir,
-				defaultChainSubDir, "bitcoin", "mainnet",
-			)
-
-		case entities.NetworkSimnet:
-			macaroonDir = filepath.Join(
-				defaultTapdDir, defaultDataDir,
-				defaultChainSubDir, "bitcoin", "simnet",
-			)
-
-		case entities.NetworkSignet:
-			macaroonDir = filepath.Join(
-				defaultTapdDir, defaultDataDir,
-				defaultChainSubDir, "bitcoin", "signet",
-			)
-
-		case entities.NetworkRegtest:
-			macaroonDir = filepath.Join(
-				defaultTapdDir, defaultDataDir,
-				defaultChainSubDir, "bitcoin", "regtest",
-			)
-
-		default:
-			return nil, fmt.Errorf("unsupported network: %v",
-				cfg.Network)
-		}
+		macSource = macaroon.FromDir(defaultDir)
 	}
 
 	conn, err := getClientConn(cfg)
@@ -109,9 +79,7 @@ func NewClient(cfg *Config) (*Client, error) {
 		cfg.RPCTimeout = defaultRPCTimeout
 	}
 
-	macaroons, err := macaroon.NewPouch(
-		macaroonDir, cfg.MacaroonPath, cfg.MacaroonHex,
-	)
+	macaroons, err := macSource.LoadPouch()
 	if err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("failed to read macaroons: %v", err)
@@ -189,81 +157,21 @@ const defaultTLSMinVersion = tls.VersionTLS12
 func getTLSCredentials(
 	cfg *Config) (credentials.TransportCredentials, error) {
 
-	tlsData := cfg.TLSData
-	tlsPath := cfg.TLSPath
-	insecure := cfg.Insecure
-	systemCert := cfg.SystemCert
-
 	minVersion := cfg.TLSMinVersion
 	if minVersion == 0 {
 		minVersion = defaultTLSMinVersion
 	}
 
-	// We'll determine if the tls certificate is passed in directly as
-	// data, by a path, or try the system's certificate chain, and then
-	// load it.
-	var tlsCfg *tls.Config
-	switch {
-	case tlsPath != "" && tlsData != "":
-		return nil, fmt.Errorf("must set only one: TLSPath or " +
-			"TLSData")
+	source := cfg.TLS
+	if source == nil {
+		// No explicit source — fall back to tapd's default
+		// tls.cert under ~/.tapd.
+		source = TLSFromPath(defaultTLSCertPath)
+	}
 
-	case insecure && systemCert:
-		return nil, fmt.Errorf("cannot set insecure and system " +
-			"cert at the same time")
-
-	case insecure:
-		// If we don't need to use tls, such as if we're connecting
-		// to tapd via a bufconn, then we'll skip verification.
-		tlsCfg = &tls.Config{
-			InsecureSkipVerify: true, // nolint:gosec
-			MinVersion:         minVersion,
-		}
-
-	case systemCert:
-		// Fallback to the system pool. Using an empty tls config
-		// is an alternative to x509.SystemCertPool(), which is
-		// not supported on Windows.
-		tlsCfg = &tls.Config{
-			MinVersion: minVersion,
-		}
-
-	case tlsData != "":
-		pool, err := certPoolFromPEM([]byte(tlsData))
-		if err != nil {
-			return nil, err
-		}
-
-		tlsCfg = &tls.Config{
-			RootCAs:    pool,
-			MinVersion: minVersion,
-		}
-
-	case tlsPath != "":
-		pool, err := certPoolFromFile(tlsPath)
-		if err != nil {
-			return nil, err
-		}
-
-		tlsCfg = &tls.Config{
-			RootCAs:    pool,
-			MinVersion: minVersion,
-		}
-
-	default:
-		// If neither tlsData nor tlsPath were set, we'll try the
-		// default tls cert path.
-		pool, err := certPoolFromFile(defaultTLSCertPath)
-		if err != nil {
-			return nil, fmt.Errorf("couldn't load default "+
-				"TLS cert at %s: %v",
-				defaultTLSCertPath, err)
-		}
-
-		tlsCfg = &tls.Config{
-			RootCAs:    pool,
-			MinVersion: minVersion,
-		}
+	tlsCfg, err := source.tlsConfig(minVersion)
+	if err != nil {
+		return nil, err
 	}
 
 	// When a pinned certificate fingerprint is provided, install a
