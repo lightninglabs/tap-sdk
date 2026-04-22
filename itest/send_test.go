@@ -5,6 +5,7 @@ package itest
 import (
 	"testing"
 
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/require"
 )
@@ -39,7 +40,9 @@ func TestAddressSend(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, queried)
 
-		transfer, err := h.AliceWallet.Send(ctx, bobAddr.Encoded, 200)
+		transfer, err := h.AliceWallet.Send(
+			ctx, bobAddr.Encoded, tapsdk.WithAmount(200),
+		)
 		require.NoError(t, err)
 		require.NotEmpty(t, transfer.AnchorTxid)
 

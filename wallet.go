@@ -225,17 +225,17 @@ func (s *Wallet) ImportProof(ctx context.Context,
 // SDK decodes it up-front to decide how to frame the request:
 //
 //   - If the address embeds an amount (all V0/V1 addresses and V2
-//     addresses that bake one in), the caller may pass 0 or the exact
-//     matching amount. Any other value returns ErrAmountMismatch.
+//     addresses that bake one in), omit WithAmount or pass the exact
+//     matching value. Any other value returns ErrAmountMismatch.
 //   - If the address embeds no amount (only possible for V2
-//     addresses), the caller MUST pass amount > 0. Otherwise Send
-//     returns ErrAmountRequired.
+//     addresses), the caller MUST pass WithAmount with a non-zero
+//     value. Otherwise Send returns ErrAmountRequired.
 //
 // For multi-recipient sends in a single anchor transaction, use
 // SendMulti. For fine-grained control over the Fund → Sign → Commit →
 // Publish pipeline, use NewTxBuilder.
 func (s *Wallet) Send(ctx context.Context, addr string,
-	amount uint64, opts ...SendOption) (*entities.AssetTransfer, error) {
+	opts ...SendOption) (*entities.AssetTransfer, error) {
 
 	// Decode locally: the SDK can read a bech32m Tap address from the
 	// string alone, so Send does not spend an RPC round-trip just to
@@ -245,11 +245,12 @@ func (s *Wallet) Send(ctx context.Context, addr string,
 		return nil, wrapErr("Send", err)
 	}
 
-	if err := validateSendAmount(decoded, amount); err != nil {
+	o := applySendOptions(opts)
+
+	if err := validateSendAmount(decoded, o.amount); err != nil {
 		return nil, wrapErr("Send", err)
 	}
 
-	o := applySendOptions(opts)
 	req := &entities.SendAssetRequest{
 		FeeRate:                   o.feeRate,
 		Label:                     o.label,
@@ -260,10 +261,11 @@ func (s *Wallet) Send(ctx context.Context, addr string,
 		// Address embeds the authoritative amount; tapd uses it.
 		req.TapAddresses = []string{addr}
 	} else {
-		// V2 address without an embedded amount; caller provided one.
+		// V2 address without an embedded amount; caller provided one
+		// via WithAmount.
 		req.Recipients = []entities.Recipient{{
 			Address: addr,
-			Amount:  amount,
+			Amount:  o.amount,
 		}}
 	}
 

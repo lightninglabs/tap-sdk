@@ -2,6 +2,12 @@ package tapsdk
 
 // SendOptions configures optional parameters for high-level send operations.
 type SendOptions struct {
+	// amount is the explicit send amount for V2 addresses that do not
+	// embed one. Zero means "use the amount embedded in the address";
+	// the validation in Wallet.Send still rejects an embedded-less V2
+	// address with no caller-supplied amount.
+	amount uint64
+
 	// feeRate is the target fee rate in sat/kw for the anchor transaction.
 	// Zero uses the daemon default.
 	feeRate uint32
@@ -17,6 +23,16 @@ type SendOptions struct {
 
 // SendOption is a functional option for configuring Send and SendMulti.
 type SendOption func(*SendOptions)
+
+// WithAmount sets the explicit send amount for a V2 address that does not
+// embed one. It is only meaningful for Wallet.Send: V0/V1 addresses and V2
+// addresses with an embedded amount reject any value that does not match
+// the embedded amount.
+func WithAmount(amount uint64) SendOption {
+	return func(o *SendOptions) {
+		o.amount = amount
+	}
+}
 
 // WithFeeRate sets the target fee rate in sat/kw for the anchor transaction.
 func WithFeeRate(feeRate uint32) SendOption {

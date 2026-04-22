@@ -75,7 +75,9 @@ func TestEventListenerMintAndSend(t *testing.T) {
 	require.True(t, minted.Ref.IsGroupRef())
 
 	bobAddr := h.CreateGroupedReceiveAddress(t, ctx, minted.Ref)
-	_, err = h.AliceWallet.Send(ctx, bobAddr.Encoded, 10)
+	_, err = h.AliceWallet.Send(
+		ctx, bobAddr.Encoded, tapsdk.WithAmount(10),
+	)
 	require.NoError(t, err)
 
 	h.MineBlocks(t, defaultMineBlocks)

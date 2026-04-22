@@ -809,7 +809,8 @@ func TestSend_WithAmount(t *testing.T) {
 	).Return(expectedTransfer, nil)
 
 	transfer, err := w.Send(
-		ctx, addr, amount,
+		ctx, addr,
+		WithAmount(amount),
 		WithFeeRate(feeRate), WithLabel(label),
 	)
 	require.NoError(t, err)
@@ -818,7 +819,10 @@ func TestSend_WithAmount(t *testing.T) {
 	mc.AssertExpectations(t)
 }
 
-func TestSend_ZeroAmount_UsesAddressEmbedded(t *testing.T) {
+// TestSend_NoAmountOption_UsesAddressEmbedded verifies that an
+// embedded-amount address (V0/V1, or V2 with a baked-in amount) sends
+// correctly when the caller does not pass WithAmount.
+func TestSend_NoAmountOption_UsesAddressEmbedded(t *testing.T) {
 	mc := new(mockClient)
 	w := NewWallet(mc, entities.NetworkRegtest)
 	ctx := context.Background()
@@ -835,7 +839,7 @@ func TestSend_ZeroAmount_UsesAddressEmbedded(t *testing.T) {
 		}),
 	).Return(expectedTransfer, nil)
 
-	transfer, err := w.Send(ctx, addr, 0)
+	transfer, err := w.Send(ctx, addr)
 	require.NoError(t, err)
 	require.Equal(t, expectedTransfer, transfer)
 
@@ -843,7 +847,7 @@ func TestSend_ZeroAmount_UsesAddressEmbedded(t *testing.T) {
 }
 
 // TestSend_V2_AmountRequired rejects a V2 address with no embedded
-// amount when the caller does not specify one.
+// amount when the caller does not specify WithAmount.
 func TestSend_V2_AmountRequired(t *testing.T) {
 	mc := new(mockClient)
 	w := NewWallet(mc, entities.NetworkRegtest)
@@ -851,7 +855,7 @@ func TestSend_V2_AmountRequired(t *testing.T) {
 
 	addr := encodeV2NoAmount(t)
 
-	_, err := w.Send(ctx, addr, 0)
+	_, err := w.Send(ctx, addr)
 	require.ErrorIs(t, err, ErrAmountRequired)
 
 	mc.AssertExpectations(t)
@@ -866,7 +870,7 @@ func TestSend_AmountMismatch(t *testing.T) {
 
 	addr := encodeEmbedded(t, 100, entities.AddressVersionV1)
 
-	_, err := w.Send(ctx, addr, 250)
+	_, err := w.Send(ctx, addr, WithAmount(250))
 	require.ErrorIs(t, err, ErrAmountMismatch)
 
 	mc.AssertExpectations(t)
@@ -889,7 +893,7 @@ func TestSend_AmountMatchesEmbedded(t *testing.T) {
 		}),
 	).Return(&entities.AssetTransfer{AnchorTxid: "match"}, nil)
 
-	transfer, err := w.Send(ctx, addr, 100)
+	transfer, err := w.Send(ctx, addr, WithAmount(100))
 	require.NoError(t, err)
 	require.NotNil(t, transfer)
 
@@ -903,7 +907,7 @@ func TestSend_DecodeError(t *testing.T) {
 	w := NewWallet(mc, entities.NetworkRegtest)
 	ctx := context.Background()
 
-	_, err := w.Send(ctx, "not-a-tap-address", 10)
+	_, err := w.Send(ctx, "not-a-tap-address", WithAmount(10))
 	require.Error(t, err)
 
 	mc.AssertExpectations(t)
@@ -919,7 +923,7 @@ func TestSend_Error(t *testing.T) {
 		nil, context.DeadlineExceeded,
 	)
 
-	_, err := w.Send(ctx, addr, 100)
+	_, err := w.Send(ctx, addr, WithAmount(100))
 	require.Error(t, err)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 
@@ -941,7 +945,8 @@ func TestSend_WithSkipProofCourierPingCheck(t *testing.T) {
 	).Return(expectedTransfer, nil)
 
 	transfer, err := w.Send(
-		ctx, addr, 42,
+		ctx, addr,
+		WithAmount(42),
 		WithSkipProofCourierPingCheck(),
 	)
 	require.NoError(t, err)
