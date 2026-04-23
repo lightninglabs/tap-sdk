@@ -216,7 +216,8 @@ func TestTxBuilder_Execute(t *testing.T) {
 		func(recipients []entities.Recipient) bool {
 			return len(recipients) == 1 &&
 				recipients[0].Address == addr &&
-				recipients[0].Amount == amount
+				recipients[0].Amount != nil &&
+				*recipients[0].Amount == amount
 		}), mock.Anything).Return(&entities.FundedTransfer{
 		FundedPsbt: fundedPsbt,
 	}, nil)

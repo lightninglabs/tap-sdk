@@ -106,10 +106,15 @@ Follow Lightning Labs conventions (see `.gemini/styleguide.md`):
 
 Format: `subsystem: short description`
 
-Keep commit messages concise. The subject line should be under ~70
-characters; the body (when needed) should be a couple of short
-paragraphs at most. Do not restate the diff — explain the *why*, not
-the *what*. Avoid bullet lists of every field changed.
+Keep commit messages concise. **Commits are not PR descriptions.** The
+subject line should be under ~70 characters; if a body is needed, aim
+for 2–4 short sentences — not paragraphs, not bulleted lists, not
+design discussions. Explain the *why* when it isn't obvious from the
+diff; skip the body entirely when the subject already says it.
+
+PR descriptions belong in the PR body (with context, test plan, etc.),
+not in every commit. A reader running `git log --oneline` should be
+able to skim the change set without drowning.
 
 Examples:
 - `entities: add FetchAsset request and response types`

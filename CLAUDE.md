@@ -117,8 +117,11 @@ func (e *Error) IsInvalidArgument() bool
 
 **Git commits:** Format as `subsystem: description`
 (e.g., `entities: add new key type`). Keep messages concise — subject
-under ~70 characters; a short body (one or two paragraphs at most)
-when it helps, explaining *why*, not the diff.
+under ~70 characters; if a body is needed, 2–4 short sentences, not
+paragraphs. **Commits are not PR descriptions** — design context,
+test plans, rationale walk-throughs go in the PR body, not in every
+commit. Explain the *why* only when it isn't obvious from the diff;
+otherwise skip the body entirely.
 
 **Function wrapping:**
 ```go

@@ -701,6 +701,10 @@ func (m *mockClient) Close() error {
 
 // --- Tests ---
 
+// amountp returns a pointer to its uint64 argument, making
+// entities.Recipient literals compact in tests.
+func amountp(n uint64) *uint64 { return &n }
+
 // testKey derives a valid compressed secp256k1 public key from a small
 // scalar, so fixture addresses the SDK decodes locally actually parse.
 func testKey(t *testing.T, scalar byte) entities.PubKey {
@@ -750,7 +754,7 @@ func encodeV2NoAmount(t *testing.T, seed ...byte) string {
 }
 
 // encodeEmbedded builds an address carrying an embedded amount so the
-// TapAddresses path is exercised. seed distinguishes otherwise-
+// legacy RecipientsV1 path is exercised. seed distinguishes otherwise-
 // identical addresses across recipients in a single test.
 func encodeEmbedded(t *testing.T, amount uint64,
 	version entities.AddressVersion, seed ...byte) string {
@@ -801,10 +805,10 @@ func TestSend_WithAmount(t *testing.T) {
 		func(req *entities.SendAssetRequest) bool {
 			return len(req.Recipients) == 1 &&
 				req.Recipients[0].Address == addr &&
-				req.Recipients[0].Amount == amount &&
+				req.Recipients[0].Amount != nil &&
+				*req.Recipients[0].Amount == amount &&
 				req.FeeRate == feeRate &&
-				req.Label == label &&
-				len(req.TapAddresses) == 0
+				req.Label == label
 		}),
 	).Return(expectedTransfer, nil)
 
@@ -833,9 +837,9 @@ func TestSend_NoAmountOption_UsesAddressEmbedded(t *testing.T) {
 
 	mc.On("SendAsset", ctx, mock.MatchedBy(
 		func(req *entities.SendAssetRequest) bool {
-			return len(req.TapAddresses) == 1 &&
-				req.TapAddresses[0] == addr &&
-				len(req.Recipients) == 0
+			return len(req.Recipients) == 1 &&
+				req.Recipients[0].Address == addr &&
+				req.Recipients[0].Amount == nil
 		}),
 	).Return(expectedTransfer, nil)
 
@@ -877,8 +881,9 @@ func TestSend_AmountMismatch(t *testing.T) {
 }
 
 // TestSend_AmountMatchesEmbedded accepts an explicit amount that
-// matches the embedded value and still routes through the embedded
-// (TapAddresses) path to avoid surprising tapd.
+// matches the embedded value and routes through the explicit
+// Recipients path — the caller's intent is to supply the amount, so
+// the SDK preserves that on the wire.
 func TestSend_AmountMatchesEmbedded(t *testing.T) {
 	mc := new(mockClient)
 	w := NewWallet(mc, entities.NetworkRegtest)
@@ -887,9 +892,10 @@ func TestSend_AmountMatchesEmbedded(t *testing.T) {
 	addr := encodeEmbedded(t, 100, entities.AddressVersionV1)
 	mc.On("SendAsset", ctx, mock.MatchedBy(
 		func(req *entities.SendAssetRequest) bool {
-			return len(req.TapAddresses) == 1 &&
-				req.TapAddresses[0] == addr &&
-				len(req.Recipients) == 0
+			return len(req.Recipients) == 1 &&
+				req.Recipients[0].Address == addr &&
+				req.Recipients[0].Amount != nil &&
+				*req.Recipients[0].Amount == 100
 		}),
 	).Return(&entities.AssetTransfer{AnchorTxid: "match"}, nil)
 
@@ -964,8 +970,8 @@ func TestSendMulti_MultipleRecipients(t *testing.T) {
 	bobAddr := encodeV2NoAmount(t, 22)
 
 	recipients := []entities.Recipient{
-		{Address: aliceAddr, Amount: 100},
-		{Address: bobAddr, Amount: 200},
+		{Address: aliceAddr, Amount: amountp(100)},
+		{Address: bobAddr, Amount: amountp(200)},
 	}
 
 	expectedTransfer := &entities.AssetTransfer{AnchorTxid: "multi123"}
@@ -974,40 +980,11 @@ func TestSendMulti_MultipleRecipients(t *testing.T) {
 		func(req *entities.SendAssetRequest) bool {
 			return len(req.Recipients) == 2 &&
 				req.Recipients[0].Address == aliceAddr &&
-				req.Recipients[0].Amount == 100 &&
+				req.Recipients[0].Amount != nil &&
+				*req.Recipients[0].Amount == 100 &&
 				req.Recipients[1].Address == bobAddr &&
-				req.Recipients[1].Amount == 200
-		}),
-	).Return(expectedTransfer, nil)
-
-	transfer, err := w.SendMulti(ctx, recipients)
-	require.NoError(t, err)
-	require.Equal(t, expectedTransfer, transfer)
-
-	mc.AssertExpectations(t)
-}
-
-func TestSendMulti_EmbeddedAmounts(t *testing.T) {
-	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
-	ctx := context.Background()
-
-	aliceAddr := encodeEmbedded(t, 50, entities.AddressVersionV0, 31)
-	bobAddr := encodeEmbedded(t, 75, entities.AddressVersionV0, 32)
-
-	recipients := []entities.Recipient{
-		{Address: aliceAddr},
-		{Address: bobAddr},
-	}
-
-	expectedTransfer := &entities.AssetTransfer{AnchorTxid: "multi_v0"}
-
-	mc.On("SendAsset", ctx, mock.MatchedBy(
-		func(req *entities.SendAssetRequest) bool {
-			return len(req.TapAddresses) == 2 &&
-				req.TapAddresses[0] == aliceAddr &&
-				req.TapAddresses[1] == bobAddr &&
-				len(req.Recipients) == 0
+				req.Recipients[1].Amount != nil &&
+				*req.Recipients[1].Amount == 200
 		}),
 	).Return(expectedTransfer, nil)
 
@@ -1038,7 +1015,9 @@ func TestSendMulti_WithOptions(t *testing.T) {
 	ctx := context.Background()
 
 	addr := encodeV2NoAmount(t)
-	recipients := []entities.Recipient{{Address: addr, Amount: 50}}
+	recipients := []entities.Recipient{
+		{Address: addr, Amount: amountp(50)},
+	}
 
 	expectedTransfer := &entities.AssetTransfer{
 		AnchorTxid: "opts123",
@@ -1065,11 +1044,11 @@ func TestSendMulti_WithOptions(t *testing.T) {
 	mc.AssertExpectations(t)
 }
 
-// TestSendMulti_MixedRoutes covers the case where one recipient uses
-// an embedded amount and another does not: the request must route
-// through Recipients and carry the embedded amount explicitly for the
-// embedded-only recipient.
-func TestSendMulti_MixedRoutes(t *testing.T) {
+// TestSendMulti_MixedAmountsNormalised feeds SendMulti a batch where
+// one recipient has an explicit amount and another leaves Amount nil.
+// The low-level SendAsset must still see a uniform shape, so the SDK
+// echoes the embedded value into the nil-Amount slot.
+func TestSendMulti_MixedAmountsNormalised(t *testing.T) {
 	mc := new(mockClient)
 	w := NewWallet(mc, entities.NetworkRegtest)
 	ctx := context.Background()
@@ -1078,23 +1057,40 @@ func TestSendMulti_MixedRoutes(t *testing.T) {
 	embeddedAddr := encodeEmbedded(t, 75, entities.AddressVersionV1, 42)
 
 	recipients := []entities.Recipient{
-		{Address: explicitAddr, Amount: 200},
-		{Address: embeddedAddr}, // amount 0; embedded is 75
+		{Address: explicitAddr, Amount: amountp(200)},
+		{Address: embeddedAddr}, // Amount nil; embedded is 75
 	}
 
 	mc.On("SendAsset", ctx, mock.MatchedBy(
 		func(req *entities.SendAssetRequest) bool {
 			return len(req.Recipients) == 2 &&
 				req.Recipients[0].Address == explicitAddr &&
-				req.Recipients[0].Amount == 200 &&
+				req.Recipients[0].Amount != nil &&
+				*req.Recipients[0].Amount == 200 &&
 				req.Recipients[1].Address == embeddedAddr &&
-				req.Recipients[1].Amount == 75 &&
-				len(req.TapAddresses) == 0
+				req.Recipients[1].Amount != nil &&
+				*req.Recipients[1].Amount == 75
 		}),
 	).Return(&entities.AssetTransfer{AnchorTxid: "mix"}, nil)
 
 	_, err := w.SendMulti(ctx, recipients)
 	require.NoError(t, err)
+
+	mc.AssertExpectations(t)
+}
+
+// TestSendMulti_AmountMismatch rejects a Recipient whose explicit
+// amount disagrees with the address-embedded amount.
+func TestSendMulti_AmountMismatch(t *testing.T) {
+	mc := new(mockClient)
+	w := NewWallet(mc, entities.NetworkRegtest)
+	ctx := context.Background()
+
+	addr := encodeEmbedded(t, 75, entities.AddressVersionV1)
+	_, err := w.SendMulti(ctx, []entities.Recipient{
+		{Address: addr, Amount: amountp(200)},
+	})
+	require.ErrorIs(t, err, ErrAmountMismatch)
 
 	mc.AssertExpectations(t)
 }
