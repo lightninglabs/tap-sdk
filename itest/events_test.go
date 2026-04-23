@@ -4,6 +4,7 @@ package itest
 
 import (
 	"context"
+	"fmt"
 	"os/exec"
 	"sync"
 	"testing"
@@ -15,10 +16,15 @@ import (
 )
 
 // TestEventListenerMintAndSend exercises the real-time event streams via
-// tapsdk.NewEventListener. REST does not support streaming yet, so this
-// test is gRPC-only.
+// tapsdk.NewEventListener against every supported transport. The REST
+// client bridges these subscriptions over the grpc-gateway WebSocket
+// proxy, so this also exercises that path end-to-end.
 func TestEventListenerMintAndSend(t *testing.T) {
-	h, ctx := newFundedHarnessFor(t, TransportGRPC)
+	runForTransports(t, testEventListenerMintAndSend)
+}
+
+func testEventListenerMintAndSend(t *testing.T, transport Transport) {
+	h, ctx := newFundedHarnessFor(t, transport)
 
 	var (
 		mu          sync.Mutex
@@ -71,7 +77,10 @@ func TestEventListenerMintAndSend(t *testing.T) {
 	require.NoError(t, bobListener.Start(ctx))
 	t.Cleanup(func() { _ = bobListener.Stop() })
 
-	minted, err := h.MintGroupedAsset(t, ctx, "event-token", 1000)
+	// tapd state persists across subtests, so each transport mints its
+	// own group to keep balance assertions isolated.
+	assetName := fmt.Sprintf("event-token-%s", transport)
+	minted, err := h.MintGroupedAsset(t, ctx, assetName, 1000)
 	require.NoError(t, err)
 	require.True(t, minted.Ref.IsGroupRef())
 
@@ -104,9 +113,15 @@ func TestEventListenerMintAndSend(t *testing.T) {
 // TestEventListenerOnDisconnect verifies that the retriable-disconnect
 // hook fires when tapd goes away mid-stream, and that the listener
 // reconnects once tapd is back — without `OnError` being triggered,
-// since the break is transient rather than terminal.
+// since the break is transient rather than terminal. Runs against every
+// transport so both the gRPC stream and the REST WebSocket bridge are
+// exercised through a real daemon restart.
 func TestEventListenerOnDisconnect(t *testing.T) {
-	h, ctx := newFundedHarnessFor(t, TransportGRPC)
+	runForTransports(t, testEventListenerOnDisconnect)
+}
+
+func testEventListenerOnDisconnect(t *testing.T, transport Transport) {
+	h, ctx := newFundedHarnessFor(t, transport)
 
 	type disconnect struct {
 		stream    string
