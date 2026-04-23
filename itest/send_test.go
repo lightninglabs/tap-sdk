@@ -3,12 +3,305 @@
 package itest
 
 import (
+	"context"
+	"fmt"
 	"testing"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/require"
 )
+
+// sendCase captures one Wallet.Send scenario end-to-end.
+type sendCase struct {
+	name string
+
+	// setup produces the destination address Alice will pay. amount
+	// is the number of units Bob should eventually receive.
+	setup func(h *TestHarness, ctx context.Context, ref entities.AssetRef,
+		amount uint64) *entities.Address
+
+	// opts are passed to Wallet.Send. If this includes WithAmount,
+	// the test routes through the explicit-amount wire path.
+	opts func(amount uint64) []tapsdk.SendOption
+}
+
+// TestSend exercises Wallet.Send end-to-end across transports and
+// every combination of address shape x caller intent that the SDK
+// actually supports:
+//
+//   - v2-explicit-amount: V2 address without an embedded amount, caller
+//     passes WithAmount. Routes via Recipients (AddressesWithAmounts).
+//   - v2-embedded-amount: V2 address that bakes in the amount, no
+//     WithAmount. Routes via TapAddrs.
+//   - v2-embedded-amount-echoed: V2 address with embedded amount, caller
+//     passes a matching WithAmount. Routes via Recipients (caller
+//     preserves intent on the wire).
+func TestSend(t *testing.T) {
+	cases := []sendCase{
+		{
+			name: "v2-explicit-amount",
+			setup: func(h *TestHarness, ctx context.Context,
+				ref entities.AssetRef,
+				_ uint64) *entities.Address {
+
+				return h.CreateGroupedReceiveAddress(t, ctx, ref)
+			},
+			opts: func(amount uint64) []tapsdk.SendOption {
+				return []tapsdk.SendOption{
+					tapsdk.WithAmount(amount),
+				}
+			},
+		},
+		{
+			name: "v2-embedded-amount",
+			setup: func(h *TestHarness, ctx context.Context,
+				ref entities.AssetRef,
+				amount uint64) *entities.Address {
+
+				return h.CreateV2EmbeddedReceiveAddress(
+					t, ctx, ref, amount,
+				)
+			},
+			opts: func(_ uint64) []tapsdk.SendOption { return nil },
+		},
+		{
+			name: "v2-embedded-amount-echoed",
+			setup: func(h *TestHarness, ctx context.Context,
+				ref entities.AssetRef,
+				amount uint64) *entities.Address {
+
+				return h.CreateV2EmbeddedReceiveAddress(
+					t, ctx, ref, amount,
+				)
+			},
+			opts: func(amount uint64) []tapsdk.SendOption {
+				return []tapsdk.SendOption{
+					tapsdk.WithAmount(amount),
+				}
+			},
+		},
+	}
+
+	runForTransports(t, func(t *testing.T, transport Transport) {
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				runSendCase(t, transport, tc)
+			})
+		}
+	})
+}
+
+func runSendCase(t *testing.T, transport Transport, tc sendCase) {
+	h, ctx := newFundedHarnessFor(t, transport)
+
+	const amount = 175
+
+	// Each subtest mints its own asset so group keys don't collide
+	// across cases or transports.
+	assetName := fmt.Sprintf("send-%s-%s", tc.name, transport)
+	minted, err := h.MintGroupedAsset(t, ctx, assetName, 5000)
+	require.NoError(t, err)
+
+	addr := tc.setup(h, ctx, minted.Ref, amount)
+
+	transfer, err := h.AliceWallet.Send(
+		ctx, addr.Encoded, tc.opts(amount)...,
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, transfer.AnchorTxid)
+
+	h.MineBlocks(t, defaultMineBlocks)
+	h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
+	h.WaitForSync(t, ctx, h.BobClient, defaultSyncTimeout)
+
+	bobBalance := h.WaitForBalance(t, ctx, h.BobWallet,
+		minted.Ref, amount, balanceTimeoutFor(minted.Ref))
+	require.Equal(t, uint64(amount), bobBalance)
+}
+
+// sendMultiCase captures one Wallet.SendMulti scenario end-to-end.
+type sendMultiCase struct {
+	name string
+
+	// recipients builds the []entities.Recipient for the send. addrs
+	// is the ordered list of addresses already decoded on Bob's side.
+	recipients func(addrs []*entities.Address) []entities.Recipient
+}
+
+// TestSendMulti exercises Wallet.SendMulti end-to-end:
+//
+//   - all-explicit: every Recipient.Amount is non-nil (V2 + WithAmount
+//     equivalent for multi).
+//   - all-embedded: every Recipient.Amount is nil; addresses all embed
+//     their amount. Routes via TapAddrs.
+//   - mixed-normalised: one explicit, one embedded — the SDK echoes
+//     the embedded value into the request so tapd sees a uniform
+//     AddressesWithAmounts shape.
+func TestSendMulti(t *testing.T) {
+	cases := []sendMultiCase{
+		{
+			name: "all-explicit",
+			recipients: func(addrs []*entities.Address,
+			) []entities.Recipient {
+
+				amt1 := uint64(100)
+				amt2 := uint64(150)
+				return []entities.Recipient{
+					{
+						Address: addrs[0].Encoded,
+						Amount:  &amt1,
+					},
+					{
+						Address: addrs[1].Encoded,
+						Amount:  &amt2,
+					},
+				}
+			},
+		},
+		{
+			name: "all-embedded",
+			recipients: func(addrs []*entities.Address,
+			) []entities.Recipient {
+
+				return []entities.Recipient{
+					{Address: addrs[0].Encoded},
+					{Address: addrs[1].Encoded},
+				}
+			},
+		},
+		{
+			name: "mixed-normalised",
+			recipients: func(addrs []*entities.Address,
+			) []entities.Recipient {
+
+				amt := uint64(100)
+				return []entities.Recipient{
+					{
+						Address: addrs[0].Encoded,
+						Amount:  &amt,
+					},
+					// second recipient nil -> SDK echoes
+					// the embedded value into the wire.
+					{Address: addrs[1].Encoded},
+				}
+			},
+		},
+	}
+
+	runForTransports(t, func(t *testing.T, transport Transport) {
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				runSendMultiCase(t, transport, tc)
+			})
+		}
+	})
+}
+
+func runSendMultiCase(t *testing.T, transport Transport,
+	tc sendMultiCase) {
+
+	h, ctx := newFundedHarnessFor(t, transport)
+
+	assetName := fmt.Sprintf("multi-%s-%s", tc.name, transport)
+	minted, err := h.MintGroupedAsset(t, ctx, assetName, 5000)
+	require.NoError(t, err)
+
+	// All cases send 100 + 150 = 250 units total. "all-embedded" and
+	// "mixed-normalised" need addresses with embedded amounts, while
+	// "all-explicit" uses amount-less V2 addresses.
+	var addrs []*entities.Address
+	switch tc.name {
+	case "all-explicit":
+		addrs = []*entities.Address{
+			h.CreateGroupedReceiveAddress(t, ctx, minted.Ref),
+			h.CreateGroupedReceiveAddress(t, ctx, minted.Ref),
+		}
+
+	case "all-embedded":
+		addrs = []*entities.Address{
+			h.CreateV2EmbeddedReceiveAddress(
+				t, ctx, minted.Ref, 100,
+			),
+			h.CreateV2EmbeddedReceiveAddress(
+				t, ctx, minted.Ref, 150,
+			),
+		}
+
+	case "mixed-normalised":
+		addrs = []*entities.Address{
+			h.CreateGroupedReceiveAddress(t, ctx, minted.Ref),
+			h.CreateV2EmbeddedReceiveAddress(
+				t, ctx, minted.Ref, 150,
+			),
+		}
+	}
+
+	transfer, err := h.AliceWallet.SendMulti(
+		ctx, tc.recipients(addrs),
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, transfer.AnchorTxid)
+
+	h.MineBlocks(t, defaultMineBlocks)
+	h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
+	h.WaitForSync(t, ctx, h.BobClient, defaultSyncTimeout)
+
+	bobBalance := h.WaitForBalance(t, ctx, h.BobWallet,
+		minted.Ref, 250, balanceTimeoutFor(minted.Ref))
+	require.Equal(t, uint64(250), bobBalance)
+}
+
+// TestSendRejections covers the SDK-side validation errors across both
+// Send and SendMulti, against real addresses produced by tapd.
+func TestSendRejections(t *testing.T) {
+	runForTransports(t, func(t *testing.T, transport Transport) {
+		h, ctx := newFundedHarnessFor(t, transport)
+
+		assetName := fmt.Sprintf("reject-%s", transport)
+		minted, err := h.MintGroupedAsset(t, ctx, assetName, 5000)
+		require.NoError(t, err)
+
+		noAmount := h.CreateGroupedReceiveAddress(
+			t, ctx, minted.Ref,
+		)
+		embedded := h.CreateV2EmbeddedReceiveAddress(
+			t, ctx, minted.Ref, 50,
+		)
+
+		t.Run("Send/amount-required", func(t *testing.T) {
+			_, err := h.AliceWallet.Send(ctx, noAmount.Encoded)
+			require.ErrorIs(t, err, tapsdk.ErrAmountRequired)
+		})
+
+		t.Run("Send/amount-mismatch", func(t *testing.T) {
+			_, err := h.AliceWallet.Send(
+				ctx, embedded.Encoded, tapsdk.WithAmount(999),
+			)
+			require.ErrorIs(t, err, tapsdk.ErrAmountMismatch)
+		})
+
+		t.Run("SendMulti/amount-required", func(t *testing.T) {
+			_, err := h.AliceWallet.SendMulti(ctx,
+				[]entities.Recipient{
+					{Address: noAmount.Encoded},
+				},
+			)
+			require.ErrorIs(t, err, tapsdk.ErrAmountRequired)
+		})
+
+		t.Run("SendMulti/amount-mismatch", func(t *testing.T) {
+			amt := uint64(999)
+			_, err := h.AliceWallet.SendMulti(ctx,
+				[]entities.Recipient{{
+					Address: embedded.Encoded,
+					Amount:  &amt,
+				}},
+			)
+			require.ErrorIs(t, err, tapsdk.ErrAmountMismatch)
+		})
+	})
+}
 
 // TestAddressSend verifies the full V2 address send flow using the
 // opinionated Wallet helpers across every transport.

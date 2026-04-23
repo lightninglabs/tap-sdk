@@ -498,6 +498,76 @@ func (h *TestHarness) CreateGroupedReceiveAddress(t testing.TB,
 	return addr
 }
 
+// CreateV2EmbeddedReceiveAddress builds a V2 Taproot Asset address on
+// Bob that bakes in the given amount. This is the modern replacement
+// for the legacy V1 embedded-amount flow and is used in tests that
+// need to exercise the SDK's embedded-amount code path.
+func (h *TestHarness) CreateV2EmbeddedReceiveAddress(t testing.TB,
+	ctx context.Context, ref entities.AssetRef,
+	amount uint64) *entities.Address {
+
+	t.Helper()
+	require.True(t, ref.IsGroupRef(),
+		"V2 embedded receive uses a fungible group ref")
+	require.NotZero(t, amount,
+		"embedded receive requires a non-zero amount")
+
+	h.EnableUniverseBootstrap(t, ctx)
+	issuanceID := entities.UniverseIDFromRef(
+		ref, entities.ProofTypeIssuance,
+	)
+
+	// Mirror the courier the harness configures on Bob's Wallet via
+	// WithAuthMailboxCourier so the address is usable end-to-end.
+	courier := envOr(
+		"TAPD_BOB_PROOF_COURIER_ADDR",
+		"authmailbox+universerpc://"+defaultBobProofCourierHost,
+	)
+
+	v2 := entities.AddressVersionV2
+	req := &entities.NewAddressRequest{
+		AssetRef:         ref,
+		Amount:           amount,
+		AddressVersion:   &v2,
+		ProofCourierAddr: courier,
+	}
+
+	var addr *entities.Address
+	var lastStatus string
+	require.Eventuallyf(t, func() bool {
+		if err := h.syncUniverseTarget(ctx, issuanceID); err != nil {
+			lastStatus = fmt.Sprintf(
+				"V2 embedded bootstrap not ready for %s: %v",
+				ref, err,
+			)
+			verboseLogf(t, "%s", lastStatus)
+			return false
+		}
+
+		candidate, err := h.BobClient.NewAddr(ctx, req)
+		if err != nil {
+			lastStatus = fmt.Sprintf(
+				"V2 embedded receive address not ready "+
+					"for %s: %v", ref, err,
+			)
+			verboseLogf(t, "%s", lastStatus)
+			return false
+		}
+
+		addr = candidate
+		return true
+	}, defaultWaitTimeout, time.Second,
+		"V2 embedded receive address for %s never became "+
+			"available; last observation: %s",
+		ref, lastObservation(lastStatus),
+	)
+
+	require.Equal(t, entities.AddressVersionV2, addr.AddressVersion)
+	require.Equal(t, amount, addr.Amount)
+
+	return addr
+}
+
 // envOr returns the environment variable value or the fallback.
 func envOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
