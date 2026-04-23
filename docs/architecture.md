@@ -96,6 +96,27 @@ Each sub-client wraps a specific gRPC service:
 | `walletKitClient` | `AssetWallet` | walletkit |
 | `proofClient` | `TaprootAssets` | proof |
 | `universeClient` | `Universe` | universe |
+| `mintClient` | `Mint` | mint |
+| `eventClient` | `TaprootAssets`, `Mint` | admin, mint |
+
+### Event Subscriptions
+
+`EventClient` exposes the three server-streaming RPCs (`SubscribeReceive`,
+`SubscribeSend`, `SubscribeMint`) as typed channels that deliver SDK
+entities until the caller's context is cancelled.
+
+- The **gRPC** client consumes the native server-streaming RPCs directly.
+- The **REST** client dials the grpc-gateway WebSocket bridge
+  (`wss://.../v1/taproot-assets/events/*?method=POST`), writes the JSON
+  request as the first frame, and decodes each incoming
+  `{"result": ...}` envelope into an SDK event. Errors arrive inside
+  `{"error": ...}` envelopes and surface as `*APIError` on the error
+  channel so callers can use the same `status`/`codes` helpers they use
+  for unary calls.
+
+The high-level `tapsdk.EventListener` sits on top of `EventClient` and
+adds reconnect/backoff, so the two transports share reconnection
+behavior.
 
 ### `vpsbt/`
 
@@ -283,8 +304,7 @@ The SDK enforces a strict dependency boundary between consumers and the
 1. **Complete RPC coverage** — Wrap remaining `tapd` RPCs where low-level
    access is still useful, without turning the public SDK surface into a thin
    `taprpc` mirror
-2. **Streaming support** — Subscribe to receive/send events
-3. **Asset minting** — High-level mint workflows via the Mint service,
+2. **Asset minting** — High-level mint workflows via the Mint service,
    redesigned around fungible/non-fungible concepts instead of raw RPC shape
-4. **Multi-language bindings** — WASM, Python, mobile via FFI
-5. **Integration test suite** — Regtest-based tests against a real `tapd`
+3. **Multi-language bindings** — WASM, Python, mobile via FFI
+4. **Integration test suite** — Regtest-based tests against a real `tapd`

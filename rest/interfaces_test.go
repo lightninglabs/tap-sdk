@@ -15,4 +15,5 @@ func TestClientSatisfiesInterfaces(t *testing.T) {
 	var _ tapsdk.WalletKitClient = (*walletKitClient)(nil)
 	var _ tapsdk.UniverseClient = (*universeClient)(nil)
 	var _ tapsdk.MintClient = (*mintClient)(nil)
+	var _ tapsdk.EventClient = (*eventClient)(nil)
 }

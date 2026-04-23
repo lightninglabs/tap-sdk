@@ -774,3 +774,67 @@ type jsonSyncedUniverse struct {
 	NewAssetRoot   *jsonUniverseRoot    `json:"new_asset_root"`
 	NewAssetLeaves []*jsonAssetLeafResp `json:"new_asset_leaves"`
 }
+
+// jsonSubscribeReceiveEventsRequest is the JSON body for
+// TaprootAssets.SubscribeReceiveEvents.
+type jsonSubscribeReceiveEventsRequest struct {
+	FilterAddr     string `json:"filter_addr,omitempty"`
+	StartTimestamp string `json:"start_timestamp,omitempty"`
+}
+
+// jsonSubscribeSendEventsRequest is the JSON body for
+// TaprootAssets.SubscribeSendEvents.
+type jsonSubscribeSendEventsRequest struct {
+	FilterScriptKey string `json:"filter_script_key,omitempty"`
+	FilterLabel     string `json:"filter_label,omitempty"`
+	StartTimestamp  string `json:"start_timestamp,omitempty"`
+}
+
+// jsonSubscribeMintEventsRequest is the JSON body for
+// Mint.SubscribeMintEvents.
+type jsonSubscribeMintEventsRequest struct {
+	ShortResponse bool `json:"short_response,omitempty"`
+}
+
+// jsonReceiveEvent is the JSON shape of taprpc.ReceiveEvent.
+type jsonReceiveEvent struct {
+	Timestamp          string    `json:"timestamp"`
+	Address            *jsonAddr `json:"address"`
+	Outpoint           string    `json:"outpoint"`
+	Status             string    `json:"status"`
+	ConfirmationHeight uint32    `json:"confirmation_height"`
+	Error              string    `json:"error"`
+}
+
+// jsonSendEvent is the JSON shape of taprpc.SendEvent.
+type jsonSendEvent struct {
+	Timestamp             string                 `json:"timestamp"`
+	SendState             string                 `json:"send_state"`
+	ParcelType            string                 `json:"parcel_type"`
+	Addresses             []*jsonAddr            `json:"addresses"`
+	VirtualPackets        []string               `json:"virtual_packets"`
+	PassiveVirtualPackets []string               `json:"passive_virtual_packets"` //nolint:lll
+	AnchorTransaction     *jsonAnchorTransaction `json:"anchor_transaction"`
+	Transfer              *jsonAssetTransfer     `json:"transfer"`
+	Error                 string                 `json:"error"`
+	TransferLabel         string                 `json:"transfer_label"`
+	NextSendState         string                 `json:"next_send_state"`
+}
+
+// jsonAnchorTransaction is the JSON shape of taprpc.AnchorTransaction.
+type jsonAnchorTransaction struct {
+	AnchorPsbt         string          `json:"anchor_psbt"`
+	ChangeOutputIndex  int32           `json:"change_output_index"`
+	ChainFeesSats      string          `json:"chain_fees_sats"`
+	TargetFeeRateSatKw int32           `json:"target_fee_rate_sat_kw"`
+	LndLockedUtxos     []*jsonOutpoint `json:"lnd_locked_utxos"`
+	FinalTx            string          `json:"final_tx"`
+}
+
+// jsonMintEvent is the JSON shape of mintrpc.MintEvent.
+type jsonMintEvent struct {
+	Timestamp  string            `json:"timestamp"`
+	BatchState string            `json:"batch_state"`
+	Batch      *jsonMintingBatch `json:"batch"`
+	Error      string            `json:"error"`
+}
