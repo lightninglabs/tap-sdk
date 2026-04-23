@@ -382,28 +382,18 @@ func (w *walletClient) SendAsset(ctx context.Context,
 
 	body := &jsonSendAssetRequest{}
 	if req != nil {
-		body.TapAddrs = req.TapAddresses
 		body.FeeRate = req.FeeRate
 		body.Label = req.Label
 		body.SkipProofCourierPing = req.SkipProofCourierPingCheck
 
-		if len(req.Recipients) > 0 {
-			body.TapAddrs = nil
-			body.Recipients = make(
-				[]*jsonAddressWithAmount, 0,
-				len(req.Recipients),
-			)
-			for _, r := range req.Recipients {
-				body.Recipients = append(
-					body.Recipients,
-					&jsonAddressWithAmount{
-						TapAddr: r.Address,
-						Amount: fmt.Sprintf(
-							"%d", r.Amount,
-						),
-					},
-				)
-			}
+		// tapd's REST surface mirrors the gRPC one: TapAddrs for
+		// addresses that encode their own amount (nil
+		// Recipient.Amount), AddressesWithAmounts for the
+		// explicit-amount path (non-nil). The two fields are
+		// mutually exclusive; mixed inputs are a caller contract
+		// violation that Wallet.SendMulti normalises.
+		if err := marshalSendRecipients(req.Recipients, body); err != nil {
+			return nil, err
 		}
 	}
 
@@ -417,6 +407,53 @@ func (w *walletClient) SendAsset(ctx context.Context,
 	}
 
 	return unmarshalAssetTransfer(resp.Transfer)
+}
+
+// marshalSendRecipients writes Recipients onto the JSON body, picking
+// the embedded-amount path (TapAddrs) when every Amount is nil and the
+// explicit-amount path (AddressesWithAmounts) when every Amount is
+// set. Mixed inputs violate the low-level contract and produce
+// entities.ErrMixedRecipientAmounts.
+func marshalSendRecipients(recipients []entities.Recipient,
+	body *jsonSendAssetRequest) error {
+
+	if len(recipients) == 0 {
+		return nil
+	}
+
+	allEmbedded, anyEmbedded := true, false
+	for _, r := range recipients {
+		if r.Amount == nil {
+			anyEmbedded = true
+		} else {
+			allEmbedded = false
+		}
+	}
+	if !allEmbedded && anyEmbedded {
+		return entities.ErrMixedRecipientAmounts
+	}
+
+	if allEmbedded {
+		body.TapAddrs = make([]string, len(recipients))
+		for i, r := range recipients {
+			body.TapAddrs[i] = r.Address
+		}
+		return nil
+	}
+
+	body.Recipients = make(
+		[]*jsonAddressWithAmount, 0, len(recipients),
+	)
+	for _, r := range recipients {
+		body.Recipients = append(body.Recipients,
+			&jsonAddressWithAmount{
+				TapAddr: r.Address,
+				Amount:  fmt.Sprintf("%d", *r.Amount),
+			},
+		)
+	}
+
+	return nil
 }
 
 // jsonNewAddrRequest is the JSON body for the NewAddr RPC.

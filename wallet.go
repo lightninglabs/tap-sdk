@@ -251,22 +251,20 @@ func (s *Wallet) Send(ctx context.Context, addr string,
 		return nil, wrapErr("Send", err)
 	}
 
+	// WithAmount set: route through the explicit-amount path to
+	// preserve caller intent on the wire. Otherwise rely on the
+	// amount embedded in the address.
+	recipient := entities.Recipient{Address: addr}
+	if o.amount > 0 {
+		amt := o.amount
+		recipient.Amount = &amt
+	}
+
 	req := &entities.SendAssetRequest{
+		Recipients:                []entities.Recipient{recipient},
 		FeeRate:                   o.feeRate,
 		Label:                     o.label,
 		SkipProofCourierPingCheck: o.skipProofCourierPingCheck,
-	}
-
-	if decoded.Amount > 0 {
-		// Address embeds the authoritative amount; tapd uses it.
-		req.TapAddresses = []string{addr}
-	} else {
-		// V2 address without an embedded amount; caller provided one
-		// via WithAmount.
-		req.Recipients = []entities.Recipient{{
-			Address: addr,
-			Amount:  o.amount,
-		}}
 	}
 
 	transfer, err := s.SendAsset(ctx, req)
@@ -278,8 +276,8 @@ func (s *Wallet) Send(ctx context.Context, addr string,
 }
 
 // validateSendAmount enforces the amount vs. address-embedded-amount
-// invariant used by Send and SendMulti. The caller passes the decoded
-// destination address and the amount argument they intend to send.
+// invariant used by Send. The caller passes the decoded destination
+// address and the amount argument they intend to send.
 func validateSendAmount(addr *entities.Address, amount uint64) error {
 	switch {
 	case addr.Amount == 0 && amount == 0:
@@ -296,11 +294,14 @@ func validateSendAmount(addr *entities.Address, amount uint64) error {
 }
 
 // SendMulti sends to multiple recipients in a single anchor
-// transaction. Each recipient's amount is validated against the
-// embedded amount on the decoded address, following the same rules as
-// Send: embedded-amount addresses accept amount 0 or a matching value,
-// while V2 addresses without an embedded amount require an explicit
-// non-zero amount.
+// transaction. Each Recipient.Amount is optional: nil means "use the
+// amount embedded in the address" (works for any address that embeds
+// an amount). A non-nil Amount must be positive; if the address also
+// embeds an amount, the two must match.
+//
+// Mixing explicit and embedded amounts in a single call is supported
+// at this level: SendMulti decodes each address and echoes embedded
+// values into the wire request so tapd sees a uniform shape.
 //
 // For single-recipient sends, prefer Send for simplicity.
 func (s *Wallet) SendMulti(ctx context.Context,
@@ -311,55 +312,67 @@ func (s *Wallet) SendMulti(ctx context.Context,
 		return nil, wrapErr("SendMulti", ErrNoRecipients)
 	}
 
-	// Decode each address locally so we can validate amounts and pick
-	// the right request mode without spending one RPC per recipient.
+	// Validate, collecting whether any Recipient carries an explicit
+	// amount. If any does, every Recipient needs an explicit amount
+	// on the wire; echo the embedded value for the nil ones.
 	decoded := make([]*entities.Address, len(recipients))
+	anyExplicit := false
 	for i, r := range recipients {
 		addr, err := entities.DecodeAddress(r.Address)
 		if err != nil {
 			return nil, wrapErr("SendMulti", err)
 		}
+		decoded[i] = addr
 
-		if err := validateSendAmount(addr, r.Amount); err != nil {
-			return nil, wrapErr("SendMulti", err)
+		if r.Amount == nil {
+			if addr.Amount == 0 {
+				return nil, wrapErr(
+					"SendMulti", ErrAmountRequired,
+				)
+			}
+			continue
 		}
 
-		decoded[i] = addr
+		anyExplicit = true
+		if *r.Amount == 0 {
+			return nil, wrapErr("SendMulti", fmt.Errorf(
+				"%w: recipient %q has explicit Amount == 0",
+				ErrAmountRequired, r.Address,
+			))
+		}
+		if addr.Amount > 0 && addr.Amount != *r.Amount {
+			return nil, wrapErr("SendMulti", fmt.Errorf(
+				"%w: address embeds %d, caller passed %d",
+				ErrAmountMismatch, addr.Amount, *r.Amount,
+			))
+		}
+	}
+
+	// If any recipient is explicit, the low-level SendAsset demands
+	// every recipient be explicit too — so fill in the embedded
+	// amount for the nil ones.
+	if anyExplicit {
+		normalised := make([]entities.Recipient, len(recipients))
+		for i, r := range recipients {
+			if r.Amount != nil {
+				normalised[i] = r
+				continue
+			}
+			amt := decoded[i].Amount
+			normalised[i] = entities.Recipient{
+				Address: r.Address,
+				Amount:  &amt,
+			}
+		}
+		recipients = normalised
 	}
 
 	o := applySendOptions(opts)
 	req := &entities.SendAssetRequest{
+		Recipients:                recipients,
 		FeeRate:                   o.feeRate,
 		Label:                     o.label,
 		SkipProofCourierPingCheck: o.skipProofCourierPingCheck,
-	}
-
-	// tapd does not accept a mix of TapAddresses and Recipients in a
-	// single call. If every recipient has an embedded amount we can use
-	// the simpler TapAddresses path; otherwise every recipient must go
-	// through Recipients (and the ones with embedded amounts echo the
-	// embedded value into the explicit amount field).
-	allEmbedded := true
-	for _, addr := range decoded {
-		if addr.Amount == 0 {
-			allEmbedded = false
-			break
-		}
-	}
-
-	if allEmbedded {
-		req.TapAddresses = make([]string, len(recipients))
-		for i, r := range recipients {
-			req.TapAddresses[i] = r.Address
-		}
-	} else {
-		req.Recipients = make([]entities.Recipient, len(recipients))
-		for i, r := range recipients {
-			req.Recipients[i] = entities.Recipient{
-				Address: r.Address,
-				Amount:  recipientAmount(decoded[i], r),
-			}
-		}
 	}
 
 	transfer, err := s.SendAsset(ctx, req)
@@ -368,18 +381,6 @@ func (s *Wallet) SendMulti(ctx context.Context,
 	}
 
 	return transfer, nil
-}
-
-// recipientAmount returns the amount tapd needs in the
-// AddressesWithAmounts path: the caller's explicit amount if set,
-// otherwise the amount embedded in the address (which
-// validateSendAmount already confirmed is consistent).
-func recipientAmount(addr *entities.Address, r entities.Recipient) uint64 {
-	if r.Amount > 0 {
-		return r.Amount
-	}
-
-	return addr.Amount
 }
 
 // Close tears down the underlying client connection if it exists.

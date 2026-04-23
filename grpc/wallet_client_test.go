@@ -133,9 +133,12 @@ func TestMarshalListBalancesRequest(t *testing.T) {
 }
 
 func TestMarshalSendAssetRequest(t *testing.T) {
+	amt := func(n uint64) *uint64 { return &n }
+
 	tests := []struct {
 		name     string
 		req      *entities.SendAssetRequest
+		wantErr  error
 		validate func(*testing.T, *taprpc.SendAssetRequest)
 	}{
 		{
@@ -148,11 +151,14 @@ func TestMarshalSendAssetRequest(t *testing.T) {
 			},
 		},
 		{
-			name: "address encoded amounts",
+			name: "all-nil Amount routes via TapAddrs",
 			req: &entities.SendAssetRequest{
-				TapAddresses: []string{"tap1first", "tap1second"},
-				FeeRate:      250,
-				Label:        "batch-send",
+				Recipients: []entities.Recipient{
+					{Address: "tap1first"},
+					{Address: "tap1second"},
+				},
+				FeeRate: 250,
+				Label:   "batch-send",
 			},
 			validate: func(t *testing.T, rpcReq *taprpc.SendAssetRequest) {
 				require.Equal(
@@ -166,17 +172,16 @@ func TestMarshalSendAssetRequest(t *testing.T) {
 			},
 		},
 		{
-			name: "explicit recipient amounts override tap addresses",
+			name: "explicit Amount routes via AddressesWithAmounts",
 			req: &entities.SendAssetRequest{
-				TapAddresses: []string{"tap1legacy"},
 				Recipients: []entities.Recipient{
 					{
 						Address: "tap1amountless",
-						Amount:  150,
+						Amount:  amt(150),
 					},
 					{
 						Address: "tap1fixed",
-						Amount:  0,
+						Amount:  amt(42),
 					},
 				},
 				SkipProofCourierPingCheck: true,
@@ -200,14 +205,34 @@ func TestMarshalSendAssetRequest(t *testing.T) {
 					"tap1fixed",
 					rpcReq.AddressesWithAmounts[1].TapAddr,
 				)
-				require.Zero(t, rpcReq.AddressesWithAmounts[1].Amount)
+				require.Equal(
+					t,
+					uint64(42),
+					rpcReq.AddressesWithAmounts[1].Amount,
+				)
 			},
+		},
+		{
+			name: "mixed Amount rejected",
+			req: &entities.SendAssetRequest{
+				Recipients: []entities.Recipient{
+					{Address: "tap1explicit", Amount: amt(50)},
+					{Address: "tap1embedded"},
+				},
+			},
+			wantErr: entities.ErrMixedRecipientAmounts,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			rpcReq := marshalSendAssetRequest(tc.req)
+			rpcReq, err := marshalSendAssetRequest(tc.req)
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
 			require.NotNil(t, rpcReq)
 			tc.validate(t, rpcReq)
 		})

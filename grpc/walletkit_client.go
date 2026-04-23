@@ -55,12 +55,18 @@ func (m *walletKitClient) FundTransfer(ctx context.Context,
 		}
 	}
 
-	// Map recipients to RPC recipients
+	// FundVirtualPsbt only exposes AddressesWithAmounts, so every
+	// Recipient must carry an explicit amount; there is no
+	// embedded-amount wire path at this level.
 	rpcRecipients := make([]*taprpc.AddressWithAmount, len(recipients))
-	for i, recipient := range recipients {
+	for i, r := range recipients {
+		if r.Amount == nil {
+			return nil, fmt.Errorf("FundTransfer recipient "+
+				"%q requires an explicit Amount", r.Address)
+		}
 		rpcRecipients[i] = &taprpc.AddressWithAmount{
-			TapAddr: recipient.Address,
-			Amount:  recipient.Amount,
+			TapAddr: r.Address,
+			Amount:  *r.Amount,
 		}
 	}
 

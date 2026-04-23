@@ -323,7 +323,11 @@ func (s *walletClient) SendAsset(ctx context.Context,
 
 	rpcCtx = s.adminMac.WithMacaroonAuth(rpcCtx)
 
-	rpcReq := marshalSendAssetRequest(req)
+	rpcReq, err := marshalSendAssetRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
 	resp, err := s.client.SendAsset(rpcCtx, rpcReq)
 	if err != nil {
 		return nil, err
@@ -762,37 +766,61 @@ func unmarshalAssetGroupBalance(
 }
 
 func marshalSendAssetRequest(
-	req *entities.SendAssetRequest) *taprpc.SendAssetRequest {
+	req *entities.SendAssetRequest) (*taprpc.SendAssetRequest, error) {
 
 	if req == nil {
-		return &taprpc.SendAssetRequest{}
+		return &taprpc.SendAssetRequest{}, nil
 	}
 
 	rpcReq := &taprpc.SendAssetRequest{
-		TapAddrs:                  req.TapAddresses,
 		FeeRate:                   req.FeeRate,
 		Label:                     req.Label,
 		SkipProofCourierPingCheck: req.SkipProofCourierPingCheck,
 	}
 
 	if len(req.Recipients) == 0 {
-		return rpcReq
+		return rpcReq, nil
 	}
 
-	rpcReq.TapAddrs = nil
+	// tapd exposes two mutually exclusive wire paths: TapAddrs for
+	// addresses that already encode their amount (nil Recipient.Amount),
+	// and AddressesWithAmounts for the explicit-amount path (non-nil).
+	// Mixed inputs are a caller contract violation — Wallet.SendMulti
+	// is responsible for normalising them before reaching this layer.
+	allEmbedded, anyEmbedded := true, false
+	for _, r := range req.Recipients {
+		if r.Amount == nil {
+			anyEmbedded = true
+		} else {
+			allEmbedded = false
+		}
+	}
+	if !allEmbedded && anyEmbedded {
+		return nil, entities.ErrMixedRecipientAmounts
+	}
+
+	if allEmbedded {
+		rpcReq.TapAddrs = make([]string, len(req.Recipients))
+		for i, r := range req.Recipients {
+			rpcReq.TapAddrs[i] = r.Address
+		}
+		return rpcReq, nil
+	}
+
 	rpcReq.AddressesWithAmounts = make(
 		[]*taprpc.AddressWithAmount, 0, len(req.Recipients),
 	)
-	for _, recipient := range req.Recipients {
+	for _, r := range req.Recipients {
 		rpcReq.AddressesWithAmounts = append(
-			rpcReq.AddressesWithAmounts, &taprpc.AddressWithAmount{
-				TapAddr: recipient.Address,
-				Amount:  recipient.Amount,
+			rpcReq.AddressesWithAmounts,
+			&taprpc.AddressWithAmount{
+				TapAddr: r.Address,
+				Amount:  *r.Amount,
 			},
 		)
 	}
 
-	return rpcReq
+	return rpcReq, nil
 }
 
 func marshalNewAddrRequest(

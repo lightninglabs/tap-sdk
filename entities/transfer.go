@@ -30,12 +30,21 @@ type CommittedTransfer struct {
 }
 
 // Recipient represents a recipient of an asset transfer.
+//
+// Amount is optional: a nil value means "use the amount embedded in
+// the address" (required for V0/V1 addresses and for V2 addresses that
+// bake in an amount). A non-nil Amount is the explicit sender-chosen
+// amount and is required for V2 addresses that omit the amount from
+// the payload.
 type Recipient struct {
 	// Address is the Taproot Asset address of the recipient.
 	Address string
 
-	// Amount is the amount of asset units to send.
-	Amount uint64
+	// Amount is the number of asset units to send. Leave nil to use
+	// the amount embedded in the address. When non-nil, the value
+	// must be positive; if the address also embeds an amount, the
+	// two must match.
+	Amount *uint64
 }
 
 // InteractiveSendRequest represents a request to send assets interactively.

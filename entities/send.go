@@ -1,27 +1,38 @@
 package entities
 
+import "errors"
+
+// ErrMixedRecipientAmounts is returned by the low-level SendAsset when
+// a single request mixes recipients with explicit amounts (non-nil
+// Recipient.Amount) and recipients relying on the address-embedded
+// amount (nil Recipient.Amount). tapd's wire format does not support
+// mixing the two paths; Wallet.SendMulti normalises such inputs before
+// reaching the low-level RPC.
+var ErrMixedRecipientAmounts = errors.New(
+	"recipients mix explicit and embedded amounts",
+)
+
 // SendAssetRequest specifies a low-level one-shot address-based send.
 //
-// This request type exists for advanced callers that need direct access to
-// the daemon's send RPC shape. Higher-level send flows should stay
-// opinionated around semantic asset identity and default V2 addresses.
+// Recipients carries every destination. Each Recipient.Amount is
+// either explicit (non-nil) or left to the address's embedded amount
+// (nil). tapd exposes two mutually exclusive wire paths for these, so
+// callers must not mix explicit and embedded amounts in a single
+// call; Client.SendAsset returns ErrMixedRecipientAmounts if they do.
+// The higher-level Wallet.SendMulti normalises mixed inputs before
+// reaching this layer.
 type SendAssetRequest struct {
-	// TapAddresses sends to one or more Taproot Asset addresses that already
-	// encode their amounts. This is mutually exclusive with Recipients.
-	TapAddresses []string
+	// Recipients is the list of send destinations.
+	Recipients []Recipient
 
-	// FeeRate is the optional target fee rate in sat/kw for the anchor
-	// transaction.
+	// FeeRate is the optional target fee rate in sat/kw for the
+	// anchor transaction.
 	FeeRate uint32
 
 	// Label is an optional short label for tracking the send.
 	Label string
 
-	// SkipProofCourierPingCheck skips the proof courier connectivity check.
+	// SkipProofCourierPingCheck skips the proof courier connectivity
+	// check.
 	SkipProofCourierPingCheck bool
-
-	// Recipients sends to one or more addresses while specifying the amount
-	// for each recipient explicitly. This is required for reusable V2
-	// addresses that omit the amount in the address itself.
-	Recipients []Recipient
 }

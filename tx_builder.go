@@ -38,11 +38,14 @@ func newTxBuilder(wallet WalletKitClient) *TxBuilder {
 	}
 }
 
-// AddRecipient adds a recipient to the transaction.
+// AddRecipient adds a recipient to the transaction. amount must be
+// positive; TxBuilder wraps FundVirtualPsbt, which only accepts
+// explicit amounts.
 func (b *TxBuilder) AddRecipient(address string, amount uint64) *TxBuilder {
+	amt := amount
 	b.recipients = append(b.recipients, entities.Recipient{
 		Address: address,
-		Amount:  amount,
+		Amount:  &amt,
 	})
 	return b
 }
