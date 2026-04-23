@@ -28,13 +28,12 @@ func (h *TestHarness) MineBlocks(t testing.TB, n int) {
 	)
 	addr = strings.TrimSpace(strings.Trim(addr, `"`))
 
-	result := h.bitcoindRPCWallet(
+	h.bitcoindRPCWallet(
 		t,
 		"miner", "generatetoaddress",
 		fmt.Sprintf("%d", n),
 		fmt.Sprintf(`"%s"`, addr),
 	)
-	verboseLogf(t, "Mined %d blocks: %s", n, truncate(result, 120))
 }
 
 // ensureMinerWallet creates the regtest miner wallet once if needed.
@@ -57,15 +56,11 @@ func (h *TestHarness) FundLndWallet(t testing.TB, ctx context.Context) {
 	h.MineBlocks(t, 110)
 
 	aliceAddr := h.lndNewAddress(t, "tap-sdk-lnd-alice")
-	verboseLogf(t, "Alice LND address: %s", aliceAddr)
 
 	h.bitcoindRPCWallet(t, "miner", "sendtoaddress",
 		fmt.Sprintf(`"%s"`, aliceAddr), `1.0`)
 
 	h.MineBlocks(t, defaultMineBlocks)
-
-	verboseLogf(t, "Funded Alice LND wallet and mined %d confirms",
-		defaultMineBlocks)
 
 	h.WaitForSync(t, ctx, h.AliceClient, 60*time.Second)
 	h.WaitForSync(t, ctx, h.BobClient, 60*time.Second)

@@ -133,7 +133,14 @@ ITEST_COMPOSE := itest/docker-compose.yml
 ITEST_COMPOSE_MAIN := $(ITEST_COMPOSE) -f itest/docker-compose.local.yml
 ITEST_TIMEOUT ?= 20m
 ITEST_ARGS ?=
+
+# Default to verbose locally so daemon/test logs stream to the terminal;
+# CI sets CI=1 and stays quiet to keep job output manageable.
+ifdef CI
 ITEST_GOTEST ?= go test
+else
+ITEST_GOTEST ?= go test -v
+endif
 
 # Optional: narrow to a subset of Go tests via -run.
 #   make itest-run case=TestMintAsset
