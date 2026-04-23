@@ -79,6 +79,17 @@ The SDK should expose an opinionated default address flow:
 | `make unit` | Run all unit tests |
 | `make unit pkg=<pkg>` | Run tests for specific package |
 | `make unit pkg=<pkg> case=<test>` | Run a specific test case |
+| `make itest-main` | Integration tests against tapd built from `taproot-assets` main (local-dev default) |
+| `make itest` | Integration tests against the pinned released tapd image (what CI uses) |
+| `make itest-run-main case=<test>` | Run a single itest against tapd-main without re-spinning the stack |
+
+### Integration tests
+
+Prefer `make itest-main` locally. It builds tapd from the latest
+`taproot-assets` main so proto/RPC changes in tapd are exercised before
+CI catches them. CI runs `make itest` (pinned released image) because
+bleeding-edge tapd may not have a pre-built image yet — only reach for
+plain `itest` when reproducing CI.
 
 ### Code Style
 

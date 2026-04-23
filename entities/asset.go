@@ -73,27 +73,6 @@ type AssetGenesis struct {
 	Type AssetType
 }
 
-// GroupKey represents a group key.
-//
-// tapd distinguishes the raw group key from the tweaked form that is
-// actually committed on chain. The tweaked key is derived from the raw
-// key plus the genesis point and asset type; it is the identifier tapd
-// uses in every queryable map (ListBalances, ListGroups, filters on
-// ListAssets). Callers that need to round-trip a group through the SDK
-// must therefore use the tweaked key — which is what AssetRef encodes.
-type GroupKey struct {
-	// RawKey is the raw group key bytes (33-byte compressed secp256k1),
-	// before Taproot tweaking.
-	RawKey PubKey
-
-	// TweakedKey is the on-chain, Taproot-tweaked group key. Lookups
-	// against the daemon must use this key.
-	TweakedKey PubKey
-
-	// TapscriptRoot is the tapscript root of the group key.
-	TapscriptRoot []byte
-}
-
 // AltLeaf represents an auxiliary leaf in the Taproot tree.
 type AltLeaf struct {
 	// Value is the raw bytes of the leaf.
@@ -127,10 +106,6 @@ type Asset struct {
 
 	// ScriptKey is the script key.
 	ScriptKey ScriptKey
-
-	// GroupKey is the optional protocol group key for this issuance.
-	// AssetRef should be used for user-facing asset identity.
-	GroupKey *GroupKey
 
 	// AltLeaves are the auxiliary leaves.
 	AltLeaves []AltLeaf

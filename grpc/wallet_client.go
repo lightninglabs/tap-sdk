@@ -364,40 +364,20 @@ func unmarshalAsset(rpcAsset *taprpc.Asset) (*entities.Asset, error) {
 		},
 	}
 
-	if rpcAsset.AssetGroup != nil {
-		g := rpcAsset.AssetGroup
-		gk := &entities.GroupKey{
-			TapscriptRoot: g.TapscriptRoot,
-		}
+	// tapd keys every queryable map (ListBalances, ListGroups,
+	// ListAssets filters) by the tweaked group key, so that's what
+	// AssetRef must encode.
+	var tweakedGroupKey *entities.PubKey
+	if rpcAsset.AssetGroup != nil &&
+		len(rpcAsset.AssetGroup.TweakedGroupKey) == 33 {
 
-		if len(g.RawGroupKey) == 33 {
-			copy(gk.RawKey[:], g.RawGroupKey)
-		}
-
-		if len(g.TweakedGroupKey) == 33 {
-			copy(gk.TweakedKey[:], g.TweakedGroupKey)
-		}
-
-		// tapd keys all group lookups by the tweaked key. Only
-		// publish the GroupKey entity when we actually have it, so
-		// the SDK's AssetRef stays round-trippable through every
-		// subsequent ListBalances / ListAssets call.
-		var zero entities.PubKey
-		if gk.TweakedKey != zero {
-			asset.GroupKey = gk
-		}
+		var gk entities.PubKey
+		copy(gk[:], rpcAsset.AssetGroup.TweakedGroupKey)
+		tweakedGroupKey = &gk
 	}
 
 	asset.AssetRef = entities.AssetRefFromAsset(
-		asset.Genesis.IssuanceID,
-		func() *entities.PubKey {
-			if asset.GroupKey == nil {
-				return nil
-			}
-
-			tweaked := asset.GroupKey.TweakedKey
-			return &tweaked
-		}(),
+		asset.Genesis.IssuanceID, tweakedGroupKey,
 	)
 
 	return asset, nil

@@ -279,75 +279,28 @@ func unmarshalAsset(a *jsonAsset) (*entities.Asset, error) {
 		},
 	}
 
-	if a.AssetGroup != nil {
-		gk, err := unmarshalAssetGroup(a.AssetGroup)
-		if err != nil {
-			return nil, err
-		}
-
-		// tapd keys all group lookups by the tweaked key. Only
-		// publish the GroupKey entity when we actually have it,
-		// so the SDK's AssetRef stays round-trippable through every
-		// subsequent ListBalances / ListAssets call.
-		var zero entities.PubKey
-		if gk != nil && gk.TweakedKey != zero {
-			asset.GroupKey = gk
-		}
-	}
-
-	asset.AssetRef = entities.AssetRefFromAsset(
-		asset.Genesis.IssuanceID,
-		func() *entities.PubKey {
-			if asset.GroupKey == nil {
-				return nil
-			}
-
-			tweaked := asset.GroupKey.TweakedKey
-			return &tweaked
-		}(),
-	)
-
-	return asset, nil
-}
-
-// unmarshalAssetGroup extracts both the raw and tweaked group keys from
-// the JSON shape. Returns nil when the group has no usable key material.
-func unmarshalAssetGroup(g *jsonAssetGroup) (*entities.GroupKey, error) {
-	if g == nil {
-		return nil, nil
-	}
-
-	tapscriptRoot, err := parseHexBytes(g.TapscriptRoot)
-	if err != nil {
-		return nil, fmt.Errorf("invalid tapscript root: %w", err)
-	}
-
-	gk := &entities.GroupKey{TapscriptRoot: tapscriptRoot}
-
-	if g.RawGroupKey != "" {
-		raw, err := parseHexBytes(g.RawGroupKey)
-		if err != nil {
-			return nil, fmt.Errorf("invalid raw group key: %w",
-				err)
-		}
-		if len(raw) == 33 {
-			copy(gk.RawKey[:], raw)
-		}
-	}
-
-	if g.TweakedGroupKey != "" {
-		tweaked, err := parseHexBytes(g.TweakedGroupKey)
+	// tapd keys every queryable map by the tweaked group key, so
+	// that's what AssetRef must encode.
+	var tweakedGroupKey *entities.PubKey
+	if a.AssetGroup != nil && a.AssetGroup.TweakedGroupKey != "" {
+		tweaked, err := parseHexBytes(a.AssetGroup.TweakedGroupKey)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"invalid tweaked group key: %w", err,
 			)
 		}
 		if len(tweaked) == 33 {
-			copy(gk.TweakedKey[:], tweaked)
+			var gk entities.PubKey
+			copy(gk[:], tweaked)
+			tweakedGroupKey = &gk
 		}
 	}
 
-	return gk, nil
+	asset.AssetRef = entities.AssetRefFromAsset(
+		asset.Genesis.IssuanceID, tweakedGroupKey,
+	)
+
+	return asset, nil
 }
 
 // unmarshalAddr converts a JSON addr to entities.Address.
