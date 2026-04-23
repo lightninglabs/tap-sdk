@@ -12,8 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const sendStateComplete = "SendStateComplete"
-
 type eventSubscription[T any] struct {
 	events <-chan *T
 	errs   <-chan error
@@ -259,10 +257,64 @@ func waitForSendCompleted(t testing.TB,
 				event.NextSendState,
 			)
 
-			return event.SendState == sendStateComplete,
+			return event.SendState == entities.SendStateComplete,
 				observation
 		},
 	)
+}
+
+// The listener API delivers every matching event via callbacks and does
+// not expose terminal-state filters, so the callback-based itest keeps
+// the observed events in memory and checks for the specific terminal
+// status it cares about.
+func hasFinalizedMint(events []*entities.MintEvent,
+	batchKey entities.PubKey) bool {
+
+	for _, event := range events {
+		if event == nil || event.Batch == nil {
+			continue
+		}
+
+		if event.Batch.BatchKey == batchKey &&
+			event.BatchState == entities.BatchStateFinalized {
+
+			return true
+		}
+	}
+
+	return false
+}
+
+func hasCompletedSend(events []*entities.SendEvent, label string) bool {
+	for _, event := range events {
+		if event == nil {
+			continue
+		}
+
+		if event.TransferLabel == label &&
+			event.SendState == entities.SendStateComplete {
+
+			return true
+		}
+	}
+
+	return false
+}
+
+func hasCompletedReceive(events []*entities.ReceiveEvent, addr string) bool {
+	for _, event := range events {
+		if event == nil || event.Address == nil {
+			continue
+		}
+
+		if event.Address.Encoded == addr &&
+			event.Status == entities.AddressEventStatusCompleted {
+
+			return true
+		}
+	}
+
+	return false
 }
 
 func uniqueEventLabel(prefix string) string {

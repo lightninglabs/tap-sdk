@@ -147,7 +147,9 @@ func TestUnmarshalSendEvent(t *testing.T) {
 					e.Timestamp,
 				)
 				require.Equal(t,
-					"SEND_STATE_ANCHOR_SIGN",
+					entities.SendState(
+						"SEND_STATE_ANCHOR_SIGN",
+					),
 					e.SendState,
 				)
 				require.Equal(t,
@@ -248,7 +250,7 @@ func TestUnmarshalSendEvent(t *testing.T) {
 					"payment-42", e.TransferLabel,
 				)
 				require.Equal(t,
-					"SEND_STATE_COMPLETE",
+					entities.SendState("SEND_STATE_COMPLETE"),
 					e.NextSendState,
 				)
 				require.Equal(t, "timeout", e.Error)

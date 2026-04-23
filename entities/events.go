@@ -68,6 +68,47 @@ type AnchorTransaction struct {
 	FinalTx []byte
 }
 
+// SendState is the current state of an outbound send event. tapd
+// exposes these as stable string names over the API, so the SDK keeps a
+// string-backed type here as well.
+type SendState string
+
+const (
+	// SendStateStartHandleAddrParcel is the initial send state.
+	SendStateStartHandleAddrParcel SendState = "SendStateStartHandleAddrParcel"
+
+	// SendStateVirtualCommitmentSelect performs input coin selection.
+	SendStateVirtualCommitmentSelect SendState = "SendStateVirtualCommitmentSelect"
+
+	// SendStateVirtualSign creates the asset-level witness data.
+	SendStateVirtualSign SendState = "SendStateVirtualSign"
+
+	// SendStateAnchorSign signs and finalizes the anchor PSBT.
+	SendStateAnchorSign SendState = "SendStateAnchorSign"
+
+	// SendStateVerifyPreBroadcast runs final pre-broadcast checks.
+	SendStateVerifyPreBroadcast SendState = "SendStateVerifyPreBroadcast"
+
+	// SendStateStorePreBroadcast persists the signed transaction
+	// before broadcast.
+	SendStateStorePreBroadcast SendState = "SendStateStorePreBroadcast"
+
+	// SendStateBroadcast broadcasts the anchor transaction.
+	SendStateBroadcast SendState = "SendStateBroadcast"
+
+	// SendStateWaitTxConf waits for the anchor transaction to confirm.
+	SendStateWaitTxConf SendState = "SendStateWaitTxConf"
+
+	// SendStateStorePostAnchorTxConf stores post-confirmation state.
+	SendStateStorePostAnchorTxConf SendState = "SendStateStorePostAnchorTxConf"
+
+	// SendStateTransferProofs transfers proofs to the receivers.
+	SendStateTransferProofs SendState = "SendStateTransferProofs"
+
+	// SendStateComplete means the transfer has completed fully.
+	SendStateComplete SendState = "SendStateComplete"
+)
+
 // SendEvent represents an outgoing asset transfer event.
 type SendEvent struct {
 	// Timestamp is the event execution time as a Unix timestamp in
@@ -77,7 +118,7 @@ type SendEvent struct {
 	// SendState is the last send state that was executed
 	// successfully. If Error is set, this is the state that caused
 	// the failure.
-	SendState string
+	SendState SendState
 
 	// ParcelType is the type of the outbound parcel.
 	ParcelType ParcelType
@@ -109,7 +150,7 @@ type SendEvent struct {
 	TransferLabel string
 
 	// NextSendState is the next state that will be executed.
-	NextSendState string
+	NextSendState SendState
 }
 
 // MintEvent represents a minting batch event.

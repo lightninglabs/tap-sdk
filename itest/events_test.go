@@ -115,56 +115,6 @@ func testEventListenerMintAndSend(t *testing.T, transport Transport) {
 	mu.Unlock()
 }
 
-func hasFinalizedMint(events []*entities.MintEvent,
-	batchKey entities.PubKey) bool {
-
-	for _, event := range events {
-		if event == nil || event.Batch == nil {
-			continue
-		}
-
-		if event.Batch.BatchKey == batchKey &&
-			event.BatchState == entities.BatchStateFinalized {
-
-			return true
-		}
-	}
-
-	return false
-}
-
-func hasCompletedSend(events []*entities.SendEvent, label string) bool {
-	for _, event := range events {
-		if event == nil {
-			continue
-		}
-
-		if event.TransferLabel == label &&
-			event.SendState == sendStateComplete {
-
-			return true
-		}
-	}
-
-	return false
-}
-
-func hasCompletedReceive(events []*entities.ReceiveEvent, addr string) bool {
-	for _, event := range events {
-		if event == nil || event.Address == nil {
-			continue
-		}
-
-		if event.Address.Encoded == addr &&
-			event.Status == entities.AddressEventStatusCompleted {
-
-			return true
-		}
-	}
-
-	return false
-}
-
 // TestEventListenerOnDisconnect verifies that the retriable-disconnect
 // hook fires when tapd goes away mid-stream, and that the listener
 // reconnects once tapd is back — without `OnError` being triggered,
