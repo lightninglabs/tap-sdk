@@ -35,6 +35,10 @@ func (h *TestHarness) MintAssetAndConfirm(t testing.TB,
 		return nil, fmt.Errorf("mint asset name is required")
 	}
 
+	// Subscribe before finalization: mint events do not replay the
+	// latest batch state for subscribers that arrive late.
+	mintEvents := h.subscribeMintEvents(t, ctx, h.AliceClient)
+
 	batch, err := h.AliceClient.CreateAsset(ctx, &entities.CreateAssetRequest{
 		Asset:         asset,
 		ShortResponse: true,
@@ -51,10 +55,18 @@ func (h *TestHarness) MintAssetAndConfirm(t testing.TB,
 	}
 
 	h.MineBlocks(t, defaultMineBlocks)
-	h.WaitForSync(t, ctx, h.AliceClient, defaultWaitTimeout)
 
-	finalized := h.WaitForMint(t, ctx, h.AliceClient, batch.BatchKey,
+	waitForMintFinalized(t, mintEvents, batch.BatchKey,
 		defaultWaitTimeout)
+
+	// The event is the readiness signal. We still query once for the
+	// verbose batch shape returned by the harness helper.
+	finalized, err := h.fetchMintBatch(ctx, batch.BatchKey)
+	if err != nil {
+		return nil, err
+	}
+
+	// tapd has no asset-visibility or group-discovery event yet.
 	resultAsset := h.WaitForAssetByTag(t, ctx, h.AliceClient,
 		asset.Name, defaultWaitTimeout)
 	if resultAsset == nil {
@@ -70,6 +82,25 @@ func (h *TestHarness) MintAssetAndConfirm(t testing.TB,
 		Batch: finalized,
 		Ref:   semanticRef,
 	}, nil
+}
+
+func (h *TestHarness) fetchMintBatch(ctx context.Context,
+	batchKey entities.PubKey) (*entities.VerboseMintingBatch, error) {
+
+	batches, err := h.AliceClient.ListBatches(ctx,
+		&entities.ListBatchesRequest{
+			BatchKey: &batchKey,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(batches) != 1 || batches[0] == nil {
+		return nil, fmt.Errorf("mint batch %x not found", batchKey)
+	}
+
+	return batches[0], nil
 }
 
 // WaitForSemanticAssetRef resolves the user-facing AssetRef to use for a

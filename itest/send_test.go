@@ -105,18 +105,34 @@ func runSendCase(t *testing.T, transport Transport, tc sendCase) {
 
 	addr := tc.setup(h, ctx, minted.Ref, amount)
 
+	// Receive events do not replay reliably yet, so Bob must listen
+	// before Alice sends to this address.
+	recvEvents := h.subscribeReceiveEvents(t, ctx, addr.Encoded)
+
+	// Send completion can be replayed by timestamp. The label keeps the
+	// replay isolated from other transfers in a reused regtest stack.
+	label := uniqueEventLabel("send")
+	startTimestamp := eventStartTimestamp()
+
+	opts := append(tc.opts(amount), tapsdk.WithLabel(label))
 	transfer, err := h.AliceWallet.Send(
-		ctx, addr.Encoded, tc.opts(amount)...,
+		ctx, addr.Encoded, opts...,
 	)
 	require.NoError(t, err)
 	require.NotEmpty(t, transfer.AnchorTxid)
 
+	sendEvents := h.subscribeSendEvents(t, ctx, label, startTimestamp)
 	h.MineBlocks(t, defaultMineBlocks)
-	h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
-	h.WaitForSync(t, ctx, h.BobClient, defaultSyncTimeout)
 
-	bobBalance := h.WaitForBalance(t, ctx, h.BobWallet,
-		minted.Ref, amount, balanceTimeoutFor(minted.Ref))
+	waitForSendCompleted(t, sendEvents, label,
+		balanceTimeoutFor(minted.Ref))
+	waitForReceiveCompleted(t, recvEvents, addr.Encoded,
+		balanceTimeoutFor(minted.Ref))
+
+	// Terminal receive events should make the balance visible; assert
+	// that with one read instead of polling.
+	bobBalance, err := h.BobWallet.GetBalance(ctx, minted.Ref)
+	require.NoError(t, err)
 	require.Equal(t, uint64(amount), bobBalance)
 }
 
@@ -237,18 +253,41 @@ func runSendMultiCase(t *testing.T, transport Transport,
 		}
 	}
 
+	recvEvents := make(
+		[]*eventSubscription[entities.ReceiveEvent], 0, len(addrs),
+	)
+	for _, addr := range addrs {
+		// Receive streams are per address and need to exist before the
+		// transfer because tapd does not replay them yet.
+		recvEvents = append(recvEvents,
+			h.subscribeReceiveEvents(t, ctx, addr.Encoded))
+	}
+
+	// The send stream can replay completed transfers by label from this
+	// cursor, which avoids racing the initial stream setup.
+	label := uniqueEventLabel("multi")
+	startTimestamp := eventStartTimestamp()
+
 	transfer, err := h.AliceWallet.SendMulti(
-		ctx, tc.recipients(addrs),
+		ctx, tc.recipients(addrs), tapsdk.WithLabel(label),
 	)
 	require.NoError(t, err)
 	require.NotEmpty(t, transfer.AnchorTxid)
 
+	sendEvents := h.subscribeSendEvents(t, ctx, label, startTimestamp)
 	h.MineBlocks(t, defaultMineBlocks)
-	h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
-	h.WaitForSync(t, ctx, h.BobClient, defaultSyncTimeout)
 
-	bobBalance := h.WaitForBalance(t, ctx, h.BobWallet,
-		minted.Ref, 250, balanceTimeoutFor(minted.Ref))
+	waitForSendCompleted(t, sendEvents, label,
+		balanceTimeoutFor(minted.Ref))
+	for idx, recvSub := range recvEvents {
+		waitForReceiveCompleted(t, recvSub, addrs[idx].Encoded,
+			balanceTimeoutFor(minted.Ref))
+	}
+
+	// The completed receive events are the readiness signal for this
+	// direct balance assertion.
+	bobBalance, err := h.BobWallet.GetBalance(ctx, minted.Ref)
+	require.NoError(t, err)
 	require.Equal(t, uint64(250), bobBalance)
 }
 
@@ -319,6 +358,12 @@ func TestAddressSend(t *testing.T) {
 		require.Equal(t, entities.AddressVersionV2,
 			bobAddr.AddressVersion)
 
+		// Subscribe before the payment; receive-event replay currently
+		// does not cover late subscribers.
+		recvEvents := h.subscribeReceiveEvents(
+			t, ctx, bobAddr.Encoded,
+		)
+
 		// Bob's wallet should round-trip the address string through
 		// DecodeAddr unchanged.
 		decoded, err := h.BobClient.DecodeAddr(ctx, bobAddr.Encoded)
@@ -333,24 +378,36 @@ func TestAddressSend(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, queried)
 
+		// Label + timestamp lets the send stream replay the terminal
+		// event even if subscription setup overlaps the send RPC.
+		label := uniqueEventLabel("address-send")
+		startTimestamp := eventStartTimestamp()
+
 		transfer, err := h.AliceWallet.Send(
 			ctx, bobAddr.Encoded, tapsdk.WithAmount(200),
+			tapsdk.WithLabel(label),
 		)
 		require.NoError(t, err)
 		require.NotEmpty(t, transfer.AnchorTxid)
 
+		sendEvents := h.subscribeSendEvents(
+			t, ctx, label, startTimestamp,
+		)
 		h.MineBlocks(t, defaultMineBlocks)
-		h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
-		h.WaitForSync(t, ctx, h.BobClient, defaultSyncTimeout)
 
-		bobBalance := h.WaitForBalance(t, ctx, h.BobWallet,
-			minted.Ref, 200,
+		waitForSendCompleted(t, sendEvents, label,
 			balanceTimeoutFor(minted.Ref))
+		waitForReceiveCompleted(t, recvEvents, bobAddr.Encoded,
+			balanceTimeoutFor(minted.Ref))
+
+		// Once both terminal events arrive, balances should be visible
+		// without a polling loop.
+		bobBalance, err := h.BobWallet.GetBalance(ctx, minted.Ref)
+		require.NoError(t, err)
 		require.Equal(t, uint64(200), bobBalance)
 
-		aliceBalance := h.WaitForBalance(t, ctx, h.AliceWallet,
-			minted.Ref, 4800,
-			balanceTimeoutFor(minted.Ref))
+		aliceBalance, err := h.AliceWallet.GetBalance(ctx, minted.Ref)
+		require.NoError(t, err)
 		require.Equal(t, uint64(4800), aliceBalance)
 
 		// ListTransfers must surface the anchor transaction on Alice's

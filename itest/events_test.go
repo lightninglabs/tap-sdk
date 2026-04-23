@@ -85,29 +85,84 @@ func testEventListenerMintAndSend(t *testing.T, transport Transport) {
 	require.True(t, minted.Ref.IsGroupRef())
 
 	bobAddr := h.CreateGroupedReceiveAddress(t, ctx, minted.Ref)
+	label := uniqueEventLabel("listener")
 	_, err = h.AliceWallet.Send(
 		ctx, bobAddr.Encoded, tapsdk.WithAmount(10),
+		tapsdk.WithLabel(label),
 	)
 	require.NoError(t, err)
 
 	h.MineBlocks(t, defaultMineBlocks)
-	h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
-	h.WaitForSync(t, ctx, h.BobClient, defaultSyncTimeout)
 
-	h.WaitForBalance(t, ctx, h.BobWallet, minted.Ref, 10,
-		balanceTimeoutFor(minted.Ref))
-
+	// This test validates the listener callbacks themselves, so wait
+	// for the specific terminal events instead of polling wallet state.
 	require.Eventually(t, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 
-		return len(mintEvents) > 0 && len(sendEvents) > 0 &&
-			len(recvEvents) > 0
+		return hasFinalizedMint(mintEvents,
+			minted.Batch.Batch.BatchKey) &&
+			hasCompletedSend(sendEvents, label) &&
+			hasCompletedReceive(recvEvents, bobAddr.Encoded)
 	}, 2*time.Minute, time.Second, "expected events not delivered")
+
+	bobBalance, err := h.BobWallet.GetBalance(ctx, minted.Ref)
+	require.NoError(t, err)
+	require.Equal(t, uint64(10), bobBalance)
 
 	mu.Lock()
 	require.NoError(t, streamError)
 	mu.Unlock()
+}
+
+func hasFinalizedMint(events []*entities.MintEvent,
+	batchKey entities.PubKey) bool {
+
+	for _, event := range events {
+		if event == nil || event.Batch == nil {
+			continue
+		}
+
+		if event.Batch.BatchKey == batchKey &&
+			event.BatchState == entities.BatchStateFinalized {
+
+			return true
+		}
+	}
+
+	return false
+}
+
+func hasCompletedSend(events []*entities.SendEvent, label string) bool {
+	for _, event := range events {
+		if event == nil {
+			continue
+		}
+
+		if event.TransferLabel == label &&
+			event.SendState == sendStateComplete {
+
+			return true
+		}
+	}
+
+	return false
+}
+
+func hasCompletedReceive(events []*entities.ReceiveEvent, addr string) bool {
+	for _, event := range events {
+		if event == nil || event.Address == nil {
+			continue
+		}
+
+		if event.Address.Encoded == addr &&
+			event.Status == entities.AddressEventStatusCompleted {
+
+			return true
+		}
+	}
+
+	return false
 }
 
 // TestEventListenerOnDisconnect verifies that the retriable-disconnect

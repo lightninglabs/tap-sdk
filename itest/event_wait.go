@@ -1,0 +1,276 @@
+//go:build itest
+
+package itest
+
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/lightninglabs/tap-sdk/entities"
+	"github.com/stretchr/testify/require"
+)
+
+const sendStateComplete = "SendStateComplete"
+
+type eventSubscription[T any] struct {
+	events <-chan *T
+	errs   <-chan error
+	cancel context.CancelFunc
+}
+
+func (s *eventSubscription[T]) Stop() {
+	s.cancel()
+}
+
+func (h *TestHarness) subscribeMintEvents(t testing.TB,
+	ctx context.Context,
+	client interface {
+		SubscribeMintEvents(context.Context,
+			*entities.SubscribeMintEventsRequest) (
+			<-chan *entities.MintEvent, <-chan error, error)
+	},
+) *eventSubscription[entities.MintEvent] {
+
+	t.Helper()
+
+	subCtx, cancel := context.WithCancel(ctx)
+	events, errs, err := client.SubscribeMintEvents(
+		subCtx, &entities.SubscribeMintEventsRequest{},
+	)
+	require.NoError(t, err)
+
+	sub := &eventSubscription[entities.MintEvent]{
+		events: events,
+		errs:   errs,
+		cancel: cancel,
+	}
+	t.Cleanup(sub.Stop)
+
+	return sub
+}
+
+func (h *TestHarness) subscribeReceiveEvents(t testing.TB,
+	ctx context.Context, addr string) *eventSubscription[entities.ReceiveEvent] {
+
+	t.Helper()
+
+	subCtx, cancel := context.WithCancel(ctx)
+	events, errs, err := h.BobClient.SubscribeReceiveEvents(
+		subCtx, &entities.SubscribeReceiveEventsRequest{
+			FilterAddr: addr,
+		},
+	)
+	require.NoError(t, err)
+
+	sub := &eventSubscription[entities.ReceiveEvent]{
+		events: events,
+		errs:   errs,
+		cancel: cancel,
+	}
+	t.Cleanup(sub.Stop)
+
+	return sub
+}
+
+func (h *TestHarness) subscribeSendEvents(t testing.TB,
+	ctx context.Context, label string,
+	startTimestamp int64) *eventSubscription[entities.SendEvent] {
+
+	t.Helper()
+
+	subCtx, cancel := context.WithCancel(ctx)
+	events, errs, err := h.AliceClient.SubscribeSendEvents(
+		subCtx, &entities.SubscribeSendEventsRequest{
+			FilterLabel:    label,
+			StartTimestamp: startTimestamp,
+		},
+	)
+	require.NoError(t, err)
+
+	sub := &eventSubscription[entities.SendEvent]{
+		events: events,
+		errs:   errs,
+		cancel: cancel,
+	}
+	t.Cleanup(sub.Stop)
+
+	return sub
+}
+
+func waitForEvent[T any](t testing.TB, sub *eventSubscription[T],
+	timeout time.Duration, desc string,
+	matches func(*T) (bool, string)) *T {
+
+	t.Helper()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	var lastObservation string
+	for {
+		select {
+		case event, ok := <-sub.events:
+			if !ok {
+				failClosedEventStream(t, sub, desc, lastObservation)
+			}
+
+			matched, observation := matches(event)
+			if observation != "" {
+				lastObservation = observation
+			}
+			if matched {
+				return event
+			}
+
+		case err, ok := <-sub.errs:
+			if ok && err != nil {
+				require.NoErrorf(t, err, "%s stream error", desc)
+			}
+
+			require.FailNowf(
+				t, "event stream closed",
+				"%s before match; last observation: %s",
+				desc, lastObservation,
+			)
+
+		case <-timer.C:
+			require.FailNowf(
+				t, "timed out waiting for event",
+				"%s; last observation: %s",
+				desc, lastObservation,
+			)
+		}
+	}
+}
+
+func failClosedEventStream[T any](t testing.TB, sub *eventSubscription[T],
+	desc, lastObservation string) {
+
+	t.Helper()
+
+	select {
+	case err, ok := <-sub.errs:
+		if ok && err != nil {
+			require.NoErrorf(t, err, "%s stream error", desc)
+		}
+	default:
+	}
+
+	require.FailNowf(
+		t, "event stream closed",
+		"%s before match; last observation: %s",
+		desc, lastObservation,
+	)
+}
+
+func waitForMintFinalized(t testing.TB,
+	sub *eventSubscription[entities.MintEvent], batchKey entities.PubKey,
+	timeout time.Duration) *entities.MintEvent {
+
+	t.Helper()
+
+	return waitForEvent(t, sub, timeout, "mint batch finalized",
+		func(event *entities.MintEvent) (bool, string) {
+			if event == nil || event.Batch == nil {
+				return false, "nil mint event or batch"
+			}
+
+			if event.Batch.BatchKey != batchKey {
+				return false, fmt.Sprintf(
+					"unrelated mint batch %x at state %d",
+					event.Batch.BatchKey, event.BatchState,
+				)
+			}
+
+			require.Emptyf(t, event.Error,
+				"mint event for batch %x failed", batchKey)
+
+			observation := fmt.Sprintf(
+				"batch %x at state %d", batchKey,
+				event.BatchState,
+			)
+
+			return event.BatchState == entities.BatchStateFinalized,
+				observation
+		},
+	)
+}
+
+func waitForReceiveCompleted(t testing.TB,
+	sub *eventSubscription[entities.ReceiveEvent], addr string,
+	timeout time.Duration) *entities.ReceiveEvent {
+
+	t.Helper()
+
+	return waitForEvent(t, sub, timeout, "receive completed",
+		func(event *entities.ReceiveEvent) (bool, string) {
+			if event == nil {
+				return false, "nil receive event"
+			}
+
+			require.Emptyf(t, event.Error,
+				"receive event for %s failed", addr)
+
+			eventAddr := ""
+			if event.Address != nil {
+				eventAddr = event.Address.Encoded
+			}
+
+			observation := fmt.Sprintf(
+				"receive addr=%s status=%d", eventAddr,
+				event.Status,
+			)
+
+			return eventAddr == addr &&
+					event.Status ==
+						entities.AddressEventStatusCompleted,
+				observation
+		},
+	)
+}
+
+func waitForSendCompleted(t testing.TB,
+	sub *eventSubscription[entities.SendEvent], label string,
+	timeout time.Duration) *entities.SendEvent {
+
+	t.Helper()
+
+	return waitForEvent(t, sub, timeout, "send completed",
+		func(event *entities.SendEvent) (bool, string) {
+			if event == nil {
+				return false, "nil send event"
+			}
+
+			if event.TransferLabel != label {
+				return false, fmt.Sprintf(
+					"unrelated send label=%s state=%s",
+					event.TransferLabel, event.SendState,
+				)
+			}
+
+			require.Emptyf(t, event.Error,
+				"send event for label %s failed", label)
+
+			observation := fmt.Sprintf(
+				"send label=%s state=%s next=%s",
+				event.TransferLabel, event.SendState,
+				event.NextSendState,
+			)
+
+			return event.SendState == sendStateComplete,
+				observation
+		},
+	)
+}
+
+func uniqueEventLabel(prefix string) string {
+	return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+}
+
+func eventStartTimestamp() int64 {
+	// Give tapd's timestamp filter a small cushion so a send that
+	// starts in the same wall-clock instant is still replayable.
+	return time.Now().Add(-time.Second).UnixMicro()
+}

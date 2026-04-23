@@ -238,39 +238,6 @@ func (h *TestHarness) WaitForSync(t testing.TB, ctx context.Context,
 	}, timeout, 500*time.Millisecond)
 }
 
-// WaitForMint polls ListBatches until the given batch key reaches FINALIZED.
-func (h *TestHarness) WaitForMint(
-	t testing.TB, ctx context.Context, client tapsdk.Client,
-	batchKey entities.PubKey, timeout time.Duration,
-) *entities.VerboseMintingBatch {
-
-	t.Helper()
-
-	var finalized *entities.VerboseMintingBatch
-	require.Eventually(t, func() bool {
-		batches, err := client.ListBatches(ctx,
-			&entities.ListBatchesRequest{
-				BatchKey: &batchKey,
-			},
-		)
-		if err != nil || len(batches) != 1 {
-			return false
-		}
-
-		batch := batches[0]
-		if batch == nil || batch.Batch.State !=
-			entities.BatchStateFinalized {
-
-			return false
-		}
-
-		finalized = batch
-		return true
-	}, timeout, time.Second)
-
-	return finalized
-}
-
 // WaitForAssetByTag polls ListAssets until the asset with the given tag is
 // visible in the wallet.
 func (h *TestHarness) WaitForAssetByTag(t testing.TB, ctx context.Context,
@@ -627,14 +594,6 @@ func extractDockerFile(t testing.TB, container,
 		container, containerPath)
 
 	return localPath
-}
-
-// truncate shortens a string to at most n characters.
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "..."
 }
 
 // balanceTimeoutFor returns the timeout we use when waiting for a confirmed
