@@ -16,9 +16,9 @@ import (
 )
 
 const (
-	// macaroonHeader is the HTTP header name used to pass the macaroon
-	// to the gRPC-gateway REST proxy.
-	macaroonHeader = "Grpc-Metadata-macaroon"
+	// macaroonHeader is the canonical HTTP header name used to pass
+	// the macaroon to the gRPC-gateway REST proxy.
+	macaroonHeader = "Grpc-Metadata-Macaroon"
 )
 
 // transport handles HTTP request execution with TLS and macaroon auth.
@@ -27,21 +27,33 @@ type transport struct {
 	client  *http.Client
 	timeout time.Duration
 
+	// tlsCfg is also used to build a WebSocket dialer for event
+	// subscription streams, so we keep a shared reference instead of
+	// rebuilding it from cfg.
+	tlsCfg *tls.Config
+
 	macaroons macaroon.Pouch
 }
 
 // newTransport creates a configured HTTP transport from the given config
 // and macaroon pouch.
 func newTransport(cfg *Config, macaroons macaroon.Pouch) (*transport, error) {
-	httpClient, err := newHTTPClient(cfg)
+	tlsCfg, err := buildTLSConfig(cfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to build TLS config: %w", err)
+	}
+
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: tlsCfg,
+		},
 	}
 
 	return &transport{
 		baseURL:   cfg.BaseURL,
 		client:    httpClient,
 		timeout:   cfg.timeout(),
+		tlsCfg:    tlsCfg,
 		macaroons: macaroons,
 	}, nil
 }
@@ -177,21 +189,6 @@ func grpcCodeFromGateway(code int) codes.Code {
 	}
 
 	return codes.Code(code)
-}
-
-// newHTTPClient creates an *http.Client with TLS configured per the
-// given Config.
-func newHTTPClient(cfg *Config) (*http.Client, error) {
-	tlsCfg, err := buildTLSConfig(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build TLS config: %w", err)
-	}
-
-	return &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: tlsCfg,
-		},
-	}, nil
 }
 
 // buildTLSConfig creates a *tls.Config from the rest.Config's TLS

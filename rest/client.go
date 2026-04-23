@@ -15,6 +15,7 @@ type Client struct {
 	*proofClient
 	*universeClient
 	*mintClient
+	*eventClient
 
 	transport *transport
 }
@@ -48,6 +49,7 @@ func NewClient(cfg *Config) (*Client, error) {
 		proofClient:     newProofClient(tp),
 		universeClient:  newUniverseClient(tp),
 		mintClient:      newMintClient(tp),
+		eventClient:     newEventClient(tp),
 		transport:       tp,
 	}, nil
 }
