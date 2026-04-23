@@ -354,6 +354,77 @@ func (h *TestHarness) WaitForBalance(t testing.TB, ctx context.Context,
 	return balance
 }
 
+// WaitForReceiveComplete waits for tapd to emit the completed receive event
+// for the given address. The start time should be captured before the sender
+// begins the transfer so the subscription can replay the full receive flow.
+func (h *TestHarness) WaitForReceiveComplete(t testing.TB,
+	ctx context.Context, client tapsdk.Client, addr *entities.Address,
+	start time.Time, timeout time.Duration) *entities.ReceiveEvent {
+
+	t.Helper()
+
+	waitCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	eventCh, errCh, err := client.SubscribeReceiveEvents(waitCtx,
+		&entities.SubscribeReceiveEventsRequest{
+			FilterAddr:     addr.Encoded,
+			StartTimestamp: start.UnixMicro(),
+		},
+	)
+	require.NoError(t, err)
+
+	var lastStatus string
+	for {
+		select {
+		case event, ok := <-eventCh:
+			if !ok {
+				eventCh = nil
+				continue
+			}
+			if event == nil {
+				continue
+			}
+
+			lastStatus = fmt.Sprintf(
+				"receive status for %s = %v (outpoint=%s err=%q)",
+				addr.AssetRef, event.Status, event.Outpoint,
+				event.Error,
+			)
+			verboseLogf(t, "%s", lastStatus)
+
+			if event.Status == entities.AddressEventStatusCompleted {
+				return event
+			}
+
+		case err, ok := <-errCh:
+			if !ok {
+				errCh = nil
+				continue
+			}
+
+			require.NoErrorf(t, err,
+				"receive stream for %s failed; last event: %s",
+				addr.Encoded, lastObservation(lastStatus),
+			)
+
+		case <-waitCtx.Done():
+			require.FailNowf(t, "receive timeout",
+				"receive for %s never completed; last event: %s",
+				addr.Encoded, lastObservation(lastStatus),
+			)
+		}
+
+		if eventCh == nil && errCh == nil {
+			require.FailNowf(t, "receive stream closed",
+				"receive stream for %s closed before completion; "+
+					"last event: %s",
+				addr.Encoded, lastObservation(lastStatus),
+			)
+		}
+	}
+}
+
 // WaitForReceiveAddress retries Wallet.NewReceiveAddress until the receiver is
 // ready to bootstrap the requested asset.
 func (h *TestHarness) WaitForReceiveAddress(

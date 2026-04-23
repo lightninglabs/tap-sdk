@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/entities"
@@ -104,6 +105,7 @@ func runSendCase(t *testing.T, transport Transport, tc sendCase) {
 	require.NoError(t, err)
 
 	addr := tc.setup(h, ctx, minted.Ref, amount)
+	receiveStart := time.Now()
 
 	transfer, err := h.AliceWallet.Send(
 		ctx, addr.Encoded, tc.opts(amount)...,
@@ -114,9 +116,11 @@ func runSendCase(t *testing.T, transport Transport, tc sendCase) {
 	h.MineBlocks(t, defaultMineBlocks)
 	h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
 	h.WaitForSync(t, ctx, h.BobClient, defaultSyncTimeout)
+	h.WaitForReceiveComplete(t, ctx, h.BobClient, addr,
+		receiveStart, balanceTimeoutFor(minted.Ref))
 
-	bobBalance := h.WaitForBalance(t, ctx, h.BobWallet,
-		minted.Ref, amount, balanceTimeoutFor(minted.Ref))
+	bobBalance, err := h.BobWallet.GetBalance(ctx, minted.Ref)
+	require.NoError(t, err)
 	require.Equal(t, uint64(amount), bobBalance)
 }
 
@@ -236,6 +240,7 @@ func runSendMultiCase(t *testing.T, transport Transport,
 			),
 		}
 	}
+	receiveStart := time.Now()
 
 	transfer, err := h.AliceWallet.SendMulti(
 		ctx, tc.recipients(addrs),
@@ -246,9 +251,13 @@ func runSendMultiCase(t *testing.T, transport Transport,
 	h.MineBlocks(t, defaultMineBlocks)
 	h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
 	h.WaitForSync(t, ctx, h.BobClient, defaultSyncTimeout)
+	for _, addr := range addrs {
+		h.WaitForReceiveComplete(t, ctx, h.BobClient, addr,
+			receiveStart, balanceTimeoutFor(minted.Ref))
+	}
 
-	bobBalance := h.WaitForBalance(t, ctx, h.BobWallet,
-		minted.Ref, 250, balanceTimeoutFor(minted.Ref))
+	bobBalance, err := h.BobWallet.GetBalance(ctx, minted.Ref)
+	require.NoError(t, err)
 	require.Equal(t, uint64(250), bobBalance)
 }
 
@@ -333,6 +342,8 @@ func TestAddressSend(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, queried)
 
+		receiveStart := time.Now()
+
 		transfer, err := h.AliceWallet.Send(
 			ctx, bobAddr.Encoded, tapsdk.WithAmount(200),
 		)
@@ -342,10 +353,11 @@ func TestAddressSend(t *testing.T) {
 		h.MineBlocks(t, defaultMineBlocks)
 		h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
 		h.WaitForSync(t, ctx, h.BobClient, defaultSyncTimeout)
+		h.WaitForReceiveComplete(t, ctx, h.BobClient, bobAddr,
+			receiveStart, balanceTimeoutFor(minted.Ref))
 
-		bobBalance := h.WaitForBalance(t, ctx, h.BobWallet,
-			minted.Ref, 200,
-			balanceTimeoutFor(minted.Ref))
+		bobBalance, err := h.BobWallet.GetBalance(ctx, minted.Ref)
+		require.NoError(t, err)
 		require.Equal(t, uint64(200), bobBalance)
 
 		aliceBalance := h.WaitForBalance(t, ctx, h.AliceWallet,
