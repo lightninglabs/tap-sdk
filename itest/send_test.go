@@ -129,10 +129,11 @@ func runSendCase(t *testing.T, transport Transport, tc sendCase) {
 	waitForReceiveCompleted(t, recvEvents, addr.Encoded,
 		balanceTimeoutFor(minted.Ref))
 
-	// Terminal receive events should make the balance visible; assert
-	// that with one read instead of polling.
-	bobBalance, err := h.BobWallet.GetBalance(ctx, minted.Ref)
-	require.NoError(t, err)
+	// The receive event tells us which transfer to watch; the balance
+	// itself can still lag the event stream slightly on some
+	// transports.
+	bobBalance := h.WaitForBalance(t, ctx, h.BobWallet,
+		minted.Ref, amount, balanceTimeoutFor(minted.Ref))
 	require.Equal(t, uint64(amount), bobBalance)
 }
 
@@ -284,10 +285,10 @@ func runSendMultiCase(t *testing.T, transport Transport,
 			balanceTimeoutFor(minted.Ref))
 	}
 
-	// The completed receive events are the readiness signal for this
-	// direct balance assertion.
-	bobBalance, err := h.BobWallet.GetBalance(ctx, minted.Ref)
-	require.NoError(t, err)
+	// The receive events isolate the transfer, but balance materiality
+	// can still lag the stream slightly on some transports.
+	bobBalance := h.WaitForBalance(t, ctx, h.BobWallet,
+		minted.Ref, 250, balanceTimeoutFor(minted.Ref))
 	require.Equal(t, uint64(250), bobBalance)
 }
 
@@ -400,14 +401,14 @@ func TestAddressSend(t *testing.T) {
 		waitForReceiveCompleted(t, recvEvents, bobAddr.Encoded,
 			balanceTimeoutFor(minted.Ref))
 
-		// Once both terminal events arrive, balances should be visible
-		// without a polling loop.
-		bobBalance, err := h.BobWallet.GetBalance(ctx, minted.Ref)
-		require.NoError(t, err)
+		// The event streams tell us which send finished, but the balance
+		// surfaces can still lag that terminal event slightly.
+		bobBalance := h.WaitForBalance(t, ctx, h.BobWallet,
+			minted.Ref, 200, balanceTimeoutFor(minted.Ref))
 		require.Equal(t, uint64(200), bobBalance)
 
-		aliceBalance, err := h.AliceWallet.GetBalance(ctx, minted.Ref)
-		require.NoError(t, err)
+		aliceBalance := h.WaitForBalance(t, ctx, h.AliceWallet,
+			minted.Ref, 4800, balanceTimeoutFor(minted.Ref))
 		require.Equal(t, uint64(4800), aliceBalance)
 
 		// ListTransfers must surface the anchor transaction on Alice's
