@@ -349,7 +349,8 @@ func TestAddressSend(t *testing.T) {
 	runForTransports(t, func(t *testing.T, transport Transport) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
-		minted, err := h.MintGroupedAsset(t, ctx, "send-token", 5000)
+		assetName := fmt.Sprintf("send-token-%s", transport)
+		minted, err := h.MintGroupedAsset(t, ctx, assetName, 5000)
 		require.NoError(t, err)
 		require.True(t, minted.Ref.IsGroupRef())
 
