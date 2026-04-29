@@ -75,10 +75,10 @@ type SendState string
 
 const (
 	// SendStateStartHandleAddrParcel is the initial send state.
-	SendStateStartHandleAddrParcel SendState = "SendStateStartHandleAddrParcel"
+	SendStateStartHandleAddrParcel SendState = "SendStateStartHandleAddrParcel" //nolint:lll
 
 	// SendStateVirtualCommitmentSelect performs input coin selection.
-	SendStateVirtualCommitmentSelect SendState = "SendStateVirtualCommitmentSelect"
+	SendStateVirtualCommitmentSelect SendState = "SendStateVirtualCommitmentSelect" //nolint:lll
 
 	// SendStateVirtualSign creates the asset-level witness data.
 	SendStateVirtualSign SendState = "SendStateVirtualSign"
@@ -100,7 +100,7 @@ const (
 	SendStateWaitTxConf SendState = "SendStateWaitTxConf"
 
 	// SendStateStorePostAnchorTxConf stores post-confirmation state.
-	SendStateStorePostAnchorTxConf SendState = "SendStateStorePostAnchorTxConf"
+	SendStateStorePostAnchorTxConf SendState = "SendStateStorePostAnchorTxConf" //nolint:lll
 
 	// SendStateTransferProofs transfers proofs to the receivers.
 	SendStateTransferProofs SendState = "SendStateTransferProofs"
