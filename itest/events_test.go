@@ -106,8 +106,11 @@ func testEventListenerMintAndSend(t *testing.T, transport Transport) {
 			hasCompletedReceive(recvEvents, bobAddr.Encoded)
 	}, 2*time.Minute, time.Second, "expected events not delivered")
 
-	bobBalance, err := h.BobWallet.GetBalance(ctx, minted.Ref)
-	require.NoError(t, err)
+	// The receive event has fired, but tapd's balance projection can
+	// still lag the event stream slightly — especially over the REST
+	// WebSocket bridge — so poll until the balance materialises.
+	bobBalance := h.WaitForBalance(t, ctx, h.BobWallet,
+		minted.Ref, 10, balanceTimeoutFor(minted.Ref))
 	require.Equal(t, uint64(10), bobBalance)
 
 	mu.Lock()
