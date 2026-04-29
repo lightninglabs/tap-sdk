@@ -69,11 +69,11 @@ func unmarshalSendEvent(
 
 	event := &entities.SendEvent{
 		Timestamp:     ts,
-		SendState:     e.SendState,
+		SendState:     entities.SendState(e.SendState),
 		ParcelType:    parseParcelType(e.ParcelType),
 		Error:         e.Error,
 		TransferLabel: e.TransferLabel,
-		NextSendState: e.NextSendState,
+		NextSendState: entities.SendState(e.NextSendState),
 	}
 
 	for _, a := range e.Addresses {

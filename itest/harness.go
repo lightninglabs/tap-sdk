@@ -227,6 +227,8 @@ func newTapdClient(t testing.TB, transport Transport,
 }
 
 // WaitForSync polls GetInfo until the node reports synced_to_chain.
+// tapd has no chain-sync event yet (#81 item 5), so polling is the only
+// option until upstream ships an edge-triggered notification.
 func (h *TestHarness) WaitForSync(t testing.TB, ctx context.Context,
 	client tapsdk.Client, timeout time.Duration) {
 
@@ -238,41 +240,9 @@ func (h *TestHarness) WaitForSync(t testing.TB, ctx context.Context,
 	}, timeout, 500*time.Millisecond)
 }
 
-// WaitForMint polls ListBatches until the given batch key reaches FINALIZED.
-func (h *TestHarness) WaitForMint(
-	t testing.TB, ctx context.Context, client tapsdk.Client,
-	batchKey entities.PubKey, timeout time.Duration,
-) *entities.VerboseMintingBatch {
-
-	t.Helper()
-
-	var finalized *entities.VerboseMintingBatch
-	require.Eventually(t, func() bool {
-		batches, err := client.ListBatches(ctx,
-			&entities.ListBatchesRequest{
-				BatchKey: &batchKey,
-			},
-		)
-		if err != nil || len(batches) != 1 {
-			return false
-		}
-
-		batch := batches[0]
-		if batch == nil || batch.Batch.State !=
-			entities.BatchStateFinalized {
-
-			return false
-		}
-
-		finalized = batch
-		return true
-	}, timeout, time.Second)
-
-	return finalized
-}
-
 // WaitForAssetByTag polls ListAssets until the asset with the given tag is
-// visible in the wallet.
+// visible in the wallet. Polling because tapd has no asset-visibility
+// event yet (#81 item 1).
 func (h *TestHarness) WaitForAssetByTag(t testing.TB, ctx context.Context,
 	client tapsdk.Client, tag string,
 	timeout time.Duration) *entities.Asset {
@@ -451,6 +421,10 @@ func (h *TestHarness) syncUniverseTarget(ctx context.Context,
 
 // CreateGroupedReceiveAddress bootstraps Bob for a grouped fungible receive
 // flow and only returns once the actual V2 receive address can be created.
+// The retry loop polls because tapd has no universe-sync-completion or
+// federation-membership event yet (#81 items 3 and 4) — there is no
+// edge-triggered signal that tells Bob "you can now build addresses for
+// this group".
 func (h *TestHarness) CreateGroupedReceiveAddress(t testing.TB,
 	ctx context.Context, ref entities.AssetRef) *entities.Address {
 
@@ -501,7 +475,9 @@ func (h *TestHarness) CreateGroupedReceiveAddress(t testing.TB,
 // CreateV2EmbeddedReceiveAddress builds a V2 Taproot Asset address on
 // Bob that bakes in the given amount. This is the modern replacement
 // for the legacy V1 embedded-amount flow and is used in tests that
-// need to exercise the SDK's embedded-amount code path.
+// need to exercise the SDK's embedded-amount code path. Like
+// CreateGroupedReceiveAddress, this polls because tapd lacks a
+// universe-sync-completion event (#81 item 3).
 func (h *TestHarness) CreateV2EmbeddedReceiveAddress(t testing.TB,
 	ctx context.Context, ref entities.AssetRef,
 	amount uint64) *entities.Address {
@@ -627,14 +603,6 @@ func extractDockerFile(t testing.TB, container,
 		container, containerPath)
 
 	return localPath
-}
-
-// truncate shortens a string to at most n characters.
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "..."
 }
 
 // balanceTimeoutFor returns the timeout we use when waiting for a confirmed

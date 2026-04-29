@@ -86,8 +86,8 @@ The Makefile defaults to non-verbose `go test` output so CI failures stay
 focused on the final assertion. When you need the full helper trace locally,
 pass `ITEST_ARGS='-v'`.
 
-Streaming event subscriptions (`TestEventListener...`) are gRPC-only —
-the REST transport does not implement WebSocket streams yet.
+Streaming event subscriptions run across both transports. The REST client uses
+tapd's grpc-gateway WebSocket bridge for server-streaming RPCs.
 
 ## Helper Structure
 

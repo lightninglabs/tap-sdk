@@ -46,11 +46,11 @@ func unmarshalSendEvent(
 
 	event := &entities.SendEvent{
 		Timestamp:     rpcEvent.Timestamp,
-		SendState:     rpcEvent.SendState,
+		SendState:     entities.SendState(rpcEvent.SendState),
 		ParcelType:    entities.ParcelType(rpcEvent.ParcelType),
 		Error:         rpcEvent.Error,
 		TransferLabel: rpcEvent.TransferLabel,
-		NextSendState: rpcEvent.NextSendState,
+		NextSendState: entities.SendState(rpcEvent.NextSendState),
 	}
 
 	// Unmarshal recipient addresses.

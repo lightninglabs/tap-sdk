@@ -137,8 +137,13 @@ func TestUnmarshalSendEvent(t *testing.T) {
 		{
 			name: "minimal event",
 			rpcEvent: &taprpc.SendEvent{
+				// tapd populates send_state on the wire via
+				// the String() method of its internal
+				// tapfreighter.SendState enum, not the proto
+				// enum. The fixtures must match those exact
+				// strings — see tapfreighter/parcel.go.
 				Timestamp:  1711627200000000,
-				SendState:  "SEND_STATE_ANCHOR_SIGN",
+				SendState:  string(entities.SendStateAnchorSign),
 				ParcelType: taprpc.ParcelType_PARCEL_TYPE_ADDRESS,
 			},
 			validate: func(t *testing.T, e *entities.SendEvent) {
@@ -147,7 +152,7 @@ func TestUnmarshalSendEvent(t *testing.T) {
 					e.Timestamp,
 				)
 				require.Equal(t,
-					"SEND_STATE_ANCHOR_SIGN",
+					entities.SendStateAnchorSign,
 					e.SendState,
 				)
 				require.Equal(t,
@@ -163,7 +168,7 @@ func TestUnmarshalSendEvent(t *testing.T) {
 			name: "event with virtual packets",
 			rpcEvent: &taprpc.SendEvent{
 				Timestamp:  1711627200000000,
-				SendState:  "SEND_STATE_VIRTUAL_SIGN",
+				SendState:  string(entities.SendStateVirtualSign),
 				ParcelType: taprpc.ParcelType_PARCEL_TYPE_PRE_SIGNED,
 				VirtualPackets: [][]byte{
 					{0x01, 0x02},
@@ -186,7 +191,7 @@ func TestUnmarshalSendEvent(t *testing.T) {
 			name: "event with anchor transaction",
 			rpcEvent: &taprpc.SendEvent{
 				Timestamp: 1711627200000000,
-				SendState: "SEND_STATE_ANCHOR_SIGN",
+				SendState: string(entities.SendStateAnchorSign),
 				AnchorTransaction: &taprpc.AnchorTransaction{
 					AnchorPsbt:         []byte{0xaa, 0xbb},
 					ChangeOutputIndex:  1,
@@ -237,10 +242,12 @@ func TestUnmarshalSendEvent(t *testing.T) {
 		{
 			name: "event with labels",
 			rpcEvent: &taprpc.SendEvent{
-				Timestamp:     1711627200000000,
-				SendState:     "SEND_STATE_LOG_COMMITMENT",
+				Timestamp: 1711627200000000,
+				SendState: string(
+					entities.SendStateStorePreBroadcast,
+				),
 				TransferLabel: "payment-42",
-				NextSendState: "SEND_STATE_COMPLETE",
+				NextSendState: string(entities.SendStateComplete),
 				Error:         "timeout",
 			},
 			validate: func(t *testing.T, e *entities.SendEvent) {
@@ -248,7 +255,7 @@ func TestUnmarshalSendEvent(t *testing.T) {
 					"payment-42", e.TransferLabel,
 				)
 				require.Equal(t,
-					"SEND_STATE_COMPLETE",
+					entities.SendStateComplete,
 					e.NextSendState,
 				)
 				require.Equal(t, "timeout", e.Error)
