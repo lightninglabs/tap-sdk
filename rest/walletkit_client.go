@@ -5,8 +5,8 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	"github.com/lightninglabs/tap-sdk/anchor"
 	"github.com/lightninglabs/tap-sdk/entities"
-	"github.com/lightninglabs/tap-sdk/internal/anchor"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 )
 

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lightninglabs/tap-sdk/anchor"
 	"github.com/lightninglabs/tap-sdk/entities"
-	"github.com/lightninglabs/tap-sdk/internal/anchor"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/assetwalletrpc"
