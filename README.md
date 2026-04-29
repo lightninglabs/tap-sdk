@@ -74,7 +74,7 @@ fmt.Printf("Anchor tx: %x\n", packet.AnchorTransaction)
 ### Interactive receive
 
 ```go
-registered, err := wallet.ImportProof(ctx, proofFile)
+registered, err := wallet.ImportProofFile(ctx, proofFile)
 if err != nil {
 	log.Fatal(err)
 }

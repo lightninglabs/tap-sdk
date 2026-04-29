@@ -244,7 +244,7 @@ Receiver                Sender                      tapd
   │  (sender delivers     │                           │
   │   proof out-of-band)  │                           │
   │                       │                           │
-  ├─ ImportProof() ──────►│                           │
+  ├─ ImportProofFile() ──►│                           │
   │   UnpackProofFile ────┼──────────────────────────►│
   │   InsertProof (×N) ──┼──────────────────────────►│
   │   RegisterTransfer ──┼──────────────────────────►│
