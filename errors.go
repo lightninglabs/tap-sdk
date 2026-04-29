@@ -165,4 +165,12 @@ var (
 	// local universe. Callers should detect it with errors.Is. A known
 	// asset with zero confirmed units produces (0, nil) instead.
 	ErrAssetUnknown = errors.New("asset ref is unknown to the wallet")
+
+	// ErrNoProofs is returned when a proof bundle export/import path cannot
+	// find any proof entries for a known asset ref.
+	ErrNoProofs = errors.New("no proofs found for asset ref")
+
+	// ErrIncompleteProofBundle is returned when a proof bundle is missing
+	// entries or entry proof bytes.
+	ErrIncompleteProofBundle = errors.New("proof bundle is incomplete")
 )

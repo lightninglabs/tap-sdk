@@ -240,24 +240,166 @@ func (s *Wallet) DeriveKeys(ctx context.Context) (*entities.DerivedKeys,
 	}, nil
 }
 
-// ImportProof imports a proof file received from a sender during an
+// ExportProof exports all wallet-known proof files for the given user-facing
+// AssetRef.
+//
+// For a grouped fungible asset this enumerates each wallet-known
+// issuance/tranche and exports one proof entry per asset output. For a single
+// NFT/collectible or ungrouped asset-ID ref this normally returns one entry.
+func (s *Wallet) ExportProof(ctx context.Context,
+	ref entities.AssetRef) (*entities.ProofBundle, error) {
+
+	if err := ref.Validate(); err != nil {
+		return nil, wrapErr("ExportProof", err)
+	}
+
+	assets, err := s.ListAssets(ctx, &entities.ListAssetsRequest{
+		AssetRef: &ref,
+	})
+	if err != nil {
+		return nil, wrapErr("ExportProof", err)
+	}
+
+	if len(assets) == 0 {
+		return nil, wrapErr("ExportProof", fmt.Errorf(
+			"%w: %s", ErrAssetUnknown, ref,
+		))
+	}
+
+	bundle := &entities.ProofBundle{
+		AssetRef: ref,
+		Entries:  make([]entities.ProofEntry, 0, len(assets)),
+	}
+
+	for _, asset := range assets {
+		if asset == nil {
+			continue
+		}
+
+		issuanceID := asset.Genesis.IssuanceID
+		proofRef := entities.AssetRefFromAssetID(issuanceID)
+		proof, err := s.exportProofFile(
+			ctx, proofRef, asset.ScriptKey.PubKey, nil,
+			"ExportProof",
+		)
+		if err != nil {
+			return nil, err
+		}
+		if proof == nil || len(proof.RawProofFile) == 0 {
+			return nil, wrapErr("ExportProof", fmt.Errorf(
+				"%w: empty proof for issuance %s",
+				ErrNoProofs, issuanceID,
+			))
+		}
+
+		bundle.Entries = append(bundle.Entries, entities.ProofEntry{
+			AssetRef:   proofBundleEntryRef(ref, asset),
+			IssuanceID: issuanceID,
+			ScriptKey:  asset.ScriptKey.PubKey,
+			Amount:     asset.Amount,
+			ProofFile:  proof.RawProofFile,
+		})
+	}
+
+	if len(bundle.Entries) == 0 {
+		return nil, wrapErr("ExportProof", fmt.Errorf(
+			"%w: %s", ErrNoProofs, ref,
+		))
+	}
+
+	return bundle, nil
+}
+
+// ExportProofFile exports a raw proof file for a specific asset output.
+//
+// This is the advanced/legacy escape hatch that maps closely to tapd's proof
+// RPC. Most application code should use ExportProof with an AssetRef instead.
+func (s *Wallet) ExportProofFile(ctx context.Context,
+	ref entities.AssetRef, scriptKey entities.PubKey,
+	outpoint *entities.Outpoint) (*entities.ProofFile, error) {
+
+	return s.exportProofFile(
+		ctx, ref, scriptKey, outpoint, "ExportProofFile",
+	)
+}
+
+func (s *Wallet) exportProofFile(ctx context.Context,
+	ref entities.AssetRef, scriptKey entities.PubKey,
+	outpoint *entities.Outpoint, op string) (*entities.ProofFile, error) {
+
+	proof, err := s.Client.ExportProof(ctx, ref, scriptKey, outpoint)
+	if err != nil {
+		return nil, wrapErr(op, err)
+	}
+
+	return proof, nil
+}
+
+// ImportProof imports every proof file in a ProofBundle and registers the
+// resulting wallet transfers. The caller only supplies the bundle; concrete
+// issuance IDs needed by tapd are decoded and registered internally.
+func (s *Wallet) ImportProof(ctx context.Context,
+	bundle *entities.ProofBundle) ([]*entities.RegisteredAsset, error) {
+
+	if bundle == nil || len(bundle.Entries) == 0 {
+		return nil, wrapErr("ImportProof", ErrIncompleteProofBundle)
+	}
+
+	for idx := range bundle.Entries {
+		entry := bundle.Entries[idx]
+		if len(entry.ProofFile) == 0 {
+			return nil, wrapErr("ImportProof", fmt.Errorf(
+				"%w: entry %d has empty proof file",
+				ErrIncompleteProofBundle, idx,
+			))
+		}
+	}
+
+	registered := make([]*entities.RegisteredAsset, 0, len(bundle.Entries))
+	for idx := range bundle.Entries {
+		entry := bundle.Entries[idx]
+		reg, err := s.importProofFile(ctx, &entities.ProofFile{
+			RawProofFile: entry.ProofFile,
+		}, "ImportProof")
+		if err != nil {
+			return nil, err
+		}
+
+		registered = append(registered, reg)
+	}
+
+	return registered, nil
+}
+
+// ImportProofFile imports a raw proof file received from a sender during an
 // interactive transfer. This method handles the full import flow:
 // 1. Unpacks the proof file into individual proofs
 // 2. Inserts each proof into the local universe
 // 3. Registers the transfer so the wallet recognizes the new asset
 //
 // Returns the registered asset details.
-func (s *Wallet) ImportProof(ctx context.Context,
+func (s *Wallet) ImportProofFile(ctx context.Context,
 	proofFile *entities.ProofFile) (*entities.RegisteredAsset, error) {
+
+	return s.importProofFile(ctx, proofFile, "ImportProofFile")
+}
+
+func (s *Wallet) importProofFile(ctx context.Context,
+	proofFile *entities.ProofFile, op string) (*entities.RegisteredAsset,
+	error) {
+
+	if proofFile == nil || len(proofFile.RawProofFile) == 0 {
+		return nil, wrapErr(op, ErrNoProofs)
+	}
 
 	// Step 1: Unpack the proof file into individual proofs.
 	rawProofs, err := s.UnpackProofFile(ctx, proofFile.RawProofFile)
 	if err != nil {
-		return nil, wrapErr("ImportProof", err)
+		return nil, wrapErr(op, err)
 	}
 
 	if len(rawProofs) == 0 {
-		return nil, wrapErr("ImportProof",
+		return nil, wrapErr(op,
 			fmt.Errorf("proof file contains no proofs"))
 	}
 
@@ -267,12 +409,12 @@ func (s *Wallet) ImportProof(ctx context.Context,
 		// TODO: Decode the proof locally without using the RPC client.
 		decoded, err := s.DecodeProof(ctx, rawProof)
 		if err != nil {
-			return nil, wrapErr("ImportProof", err)
+			return nil, wrapErr(op, err)
 		}
 
 		err = s.InsertProof(ctx, rawProof, decoded)
 		if err != nil {
-			return nil, wrapErr("ImportProof", err)
+			return nil, wrapErr(op, err)
 		}
 
 		lastDecoded = decoded
@@ -286,7 +428,7 @@ func (s *Wallet) ImportProof(ctx context.Context,
 			lastDecoded.ScriptKey, lastDecoded.Outpoint,
 		)
 		if err != nil {
-			return nil, wrapErr("ImportProof", err)
+			return nil, wrapErr(op, err)
 		}
 
 		return registered, nil
@@ -297,10 +439,24 @@ func (s *Wallet) ImportProof(ctx context.Context,
 		lastDecoded.Outpoint,
 	)
 	if err != nil {
-		return nil, wrapErr("ImportProof", err)
+		return nil, wrapErr(op, err)
 	}
 
 	return registered, nil
+}
+
+func proofBundleEntryRef(ref entities.AssetRef,
+	asset *entities.Asset) entities.AssetRef {
+
+	if asset == nil {
+		return ref
+	}
+
+	if ref.IsGroupRef() && asset.Genesis.Type == entities.AssetTypeCollectible {
+		return entities.AssetRefFromAssetID(asset.Genesis.IssuanceID)
+	}
+
+	return ref
 }
 
 // Send performs a simple one-shot address-based asset transfer.
