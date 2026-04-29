@@ -234,6 +234,27 @@ func (p *proofClient) RegisterTransfer(ctx context.Context,
 	outpoint entities.Outpoint) (
 	*entities.RegisteredAsset, error) {
 
+	return p.registerTransfer(
+		ctx, assetRef, entities.AssetID{}, scriptKey, outpoint,
+	)
+}
+
+// RegisterTransferWithIssuance registers an inbound transfer when the user
+// facing asset ref is a group key and tapd still needs the concrete issuance
+// ID from the imported proof.
+func (p *proofClient) RegisterTransferWithIssuance(ctx context.Context,
+	assetRef entities.AssetRef, issuanceID entities.AssetID,
+	scriptKey entities.PubKey, outpoint entities.Outpoint) (
+	*entities.RegisteredAsset, error) {
+
+	return p.registerTransfer(ctx, assetRef, issuanceID, scriptKey, outpoint)
+}
+
+func (p *proofClient) registerTransfer(ctx context.Context,
+	assetRef entities.AssetRef, issuanceID entities.AssetID,
+	scriptKey entities.PubKey, outpoint entities.Outpoint) (
+	*entities.RegisteredAsset, error) {
+
 	rpcCtx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
 
@@ -252,6 +273,10 @@ func (p *proofClient) RegisterTransfer(ctx context.Context,
 
 	if assetID, ok := assetRef.AssetID(); ok {
 		rpcReq.AssetId = assetID[:]
+	}
+
+	if assetRef.IsGroupRef() && issuanceID != (entities.AssetID{}) {
+		rpcReq.AssetId = issuanceID[:]
 	}
 
 	if groupKey, ok := assetRef.GroupKey(); ok {

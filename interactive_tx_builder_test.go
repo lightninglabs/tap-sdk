@@ -96,6 +96,109 @@ func TestInteractiveTxBuilder_Execute(t *testing.T) {
 	mockWalletKit.AssertExpectations(t)
 }
 
+type interactiveResolverMock struct {
+	*MockWalletKitClient
+
+	assets []*entities.Asset
+	err    error
+	gotReq *entities.ListAssetsRequest
+}
+
+func (m *interactiveResolverMock) ListAssets(_ context.Context,
+	req *entities.ListAssetsRequest) ([]*entities.Asset, error) {
+
+	m.gotReq = req
+
+	return m.assets, m.err
+}
+
+func TestInteractiveTxBuilder_GroupRefResolvesSpendableIssuance(
+	t *testing.T) {
+
+	mockWalletKit := new(MockWalletKitClient)
+
+	ctx := context.Background()
+
+	var smallID entities.AssetID
+	copy(smallID[:], []byte("small_asset_id_32_bytes_long!!!!"))
+
+	var selectedID entities.AssetID
+	copy(selectedID[:], []byte("selected_asset_id_32_bytes_long!"))
+
+	groupRef := entities.AssetRefFromGroupKey(testRefGroupKey(t))
+	resolver := &interactiveResolverMock{
+		MockWalletKitClient: mockWalletKit,
+		assets: []*entities.Asset{
+			{
+				AssetRef: groupRef,
+				Genesis: entities.AssetGenesis{
+					IssuanceID: smallID,
+				},
+				Amount: 250,
+			},
+			{
+				AssetRef: groupRef,
+				Genesis: entities.AssetGenesis{
+					IssuanceID: selectedID,
+				},
+				Amount: 1000,
+			},
+		},
+	}
+
+	var scriptKeyPubKey entities.PubKey
+	copy(scriptKeyPubKey[:], []byte("script_key_pubkey_33_bytes_long"))
+
+	var internalKeyPubKey entities.PubKey
+	copy(internalKeyPubKey[:], []byte("internal_key_pubkey_33_bytes_lo"))
+
+	receiverKeys := entities.DerivedKeys{
+		ScriptKey: entities.ScriptKey{
+			PubKey: scriptKeyPubKey,
+		},
+		InternalKey: entities.InternalKey{
+			PubKey: internalKeyPubKey,
+			KeyLocator: entities.KeyLocator{
+				Family: 212,
+				Index:  5,
+			},
+		},
+	}
+
+	fundedPsbt := []byte("funded_psbt")
+	signedPsbt := []byte("signed_psbt")
+	expectedResult := &entities.AssetTransfer{
+		AnchorTx: []byte("anchor_tx_bytes"),
+	}
+
+	var capturedPsbt []byte
+	mockWalletKit.On("FundInteractivePsbt", ctx, mock.Anything).Run(
+		func(args mock.Arguments) {
+			psbtBytes := args.Get(1).([]byte)
+			capturedPsbt = append([]byte(nil), psbtBytes...)
+		},
+	).Return(&entities.FundedTransfer{
+		FundedPsbt: fundedPsbt,
+	}, nil)
+	mockWalletKit.On("SignVirtualPsbt", ctx, fundedPsbt).Return(
+		signedPsbt, nil)
+	mockWalletKit.On("AnchorVirtualPsbts", ctx, [][]byte{signedPsbt}).Return(
+		expectedResult, nil)
+
+	builder := newInteractiveTxBuilder(resolver, "tapassetr", 1)
+	builder.SetAsset(groupRef, 500).SetReceiverKeys(receiverKeys)
+
+	result, err := builder.Execute(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedResult, result)
+	require.NotNil(t, resolver.gotReq)
+	require.Equal(t, groupRef, *resolver.gotReq.AssetRef)
+
+	requireInteractiveInputAssetID(t, capturedPsbt, selectedID)
+
+	mockWalletKit.AssertExpectations(t)
+}
+
 func TestInteractiveTxBuilder_WithAltLeaves(t *testing.T) {
 	mockWalletKit := new(MockWalletKitClient)
 
@@ -213,6 +316,31 @@ func TestInteractiveTxBuilder_WithAltLeaves(t *testing.T) {
 	mockWalletKit.AssertExpectations(t)
 }
 
+func requireInteractiveInputAssetID(t *testing.T, rawPSBT []byte,
+	want entities.AssetID) {
+
+	t.Helper()
+
+	packet, err := btcpsbt.NewFromRawBytes(bytes.NewReader(rawPSBT), false)
+	require.NoError(t, err)
+	require.Len(t, packet.Inputs, 1)
+
+	var prevID []byte
+	for _, u := range packet.Inputs[0].Unknowns {
+		if bytes.Equal(u.Key, []byte{0x70}) {
+			prevID = u.Value
+			break
+		}
+	}
+
+	require.NotNil(t, prevID)
+	require.GreaterOrEqual(t, len(prevID), 68)
+
+	assetID, err := entities.ParseAssetID(prevID[36:68])
+	require.NoError(t, err)
+	require.Equal(t, want, assetID)
+}
+
 func TestInteractiveTxBuilder_Validation(t *testing.T) {
 	services := &Wallet{
 		networkHRP: "tapassetr",
@@ -252,6 +380,23 @@ func TestInteractiveTxBuilder_Validation(t *testing.T) {
 
 	_, err = builder3.Execute(ctx)
 	require.ErrorIs(t, err, ErrZeroAmount)
+
+	builder4 := newInteractiveTxBuilder(
+		new(MockWalletKitClient), "tapassetr", 1,
+	)
+	builder4.SetAsset(
+		entities.AssetRefFromGroupKey(testRefGroupKey(t)), 1000,
+	).SetReceiverKeys(entities.DerivedKeys{
+		ScriptKey: entities.ScriptKey{
+			PubKey: entities.PubKey{1},
+		},
+		InternalKey: entities.InternalKey{
+			PubKey: entities.PubKey{1},
+		},
+	})
+
+	_, err = builder4.Execute(ctx)
+	require.ErrorIs(t, err, ErrGroupKeyNotSupported)
 }
 
 func TestInteractiveTxBuilder_AlreadyFinished(t *testing.T) {

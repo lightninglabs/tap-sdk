@@ -315,6 +315,74 @@ func TestTxBuilder_StateInjection(t *testing.T) {
 	mockWalletKit.AssertExpectations(t)
 }
 
+func TestTxBuilder_AnchorSigning(t *testing.T) {
+	mockWalletKit := new(MockWalletKitClient)
+
+	ctx := context.Background()
+	signedPsbt := []byte("signed_psbt")
+	anchorPsbt := []byte("anchor_psbt")
+	signedAnchorPsbt := []byte("signed_anchor_psbt")
+	finalAnchorTx := []byte("final_anchor_tx")
+
+	builder := newTxBuilder(mockWalletKit)
+	builder.SetSignedPsbt(signedPsbt).SetAnchorSigner(
+		func(_ context.Context, psbt []byte) ([]byte, error) {
+			require.Equal(t, anchorPsbt, psbt)
+			return signedAnchorPsbt, nil
+		},
+	)
+
+	mockWalletKit.On("CommitVirtualPsbts", ctx, [][]byte{signedPsbt},
+		mock.Anything, uint64(1)).Return(
+		&entities.CommittedTransfer{
+			AnchorPsbt:   anchorPsbt,
+			VirtualPsbts: [][]byte{signedPsbt},
+		}, nil)
+
+	expectedPacket := &entities.AssetPacket{
+		AnchorTransaction:   finalAnchorTx,
+		VirtualTransactions: [][]byte{signedPsbt},
+	}
+	mockWalletKit.On("PublishAndLogTransfer", ctx, signedAnchorPsbt,
+		[][]byte{signedPsbt}, mock.Anything, false).Return(
+		expectedPacket, nil)
+
+	_, err := builder.Commit(ctx)
+	require.NoError(t, err)
+
+	packet, err := builder.Finish(ctx, false)
+	require.NoError(t, err)
+	require.Equal(t, expectedPacket, packet)
+
+	mockWalletKit.AssertExpectations(t)
+}
+
+func TestTxBuilder_AnchorPsbtInjection(t *testing.T) {
+	mockWalletKit := new(MockWalletKitClient)
+
+	ctx := context.Background()
+	signedPsbt := []byte("signed_psbt")
+	anchorPsbt := []byte("signed_anchor_psbt")
+	finalAnchorTx := []byte("final_anchor_tx")
+
+	builder := newTxBuilder(mockWalletKit)
+	builder.SetSignedPsbt(signedPsbt).SetAnchorPsbt(anchorPsbt)
+
+	expectedPacket := &entities.AssetPacket{
+		AnchorTransaction:   finalAnchorTx,
+		VirtualTransactions: [][]byte{signedPsbt},
+	}
+	mockWalletKit.On("PublishAndLogTransfer", ctx, anchorPsbt,
+		[][]byte{signedPsbt}, mock.Anything, true).Return(
+		expectedPacket, nil)
+
+	packet, err := builder.Finish(ctx, true)
+	require.NoError(t, err)
+	require.Equal(t, expectedPacket, packet)
+
+	mockWalletKit.AssertExpectations(t)
+}
+
 func TestTxBuilder_NoRecipients(t *testing.T) {
 	mockWalletKit := new(MockWalletKitClient)
 

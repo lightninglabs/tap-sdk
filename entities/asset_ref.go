@@ -114,6 +114,32 @@ func (r AssetRef) IsAssetIDRef() bool {
 	return err == nil && kind == assetRefKindAssetID
 }
 
+// Equivalent reports whether two asset refs identify the same asset. Asset ID
+// refs must match exactly. Group-key refs compare the x-only public key so a
+// 33-byte compressed group key from wallet RPCs matches a 32-byte x-only key
+// surfaced by universe RPCs.
+func (r AssetRef) Equivalent(other AssetRef) bool {
+	if r == other {
+		return true
+	}
+
+	if r.IsAssetIDRef() && other.IsAssetIDRef() {
+		left, leftOK := r.AssetID()
+		right, rightOK := other.AssetID()
+
+		return leftOK && rightOK && left == right
+	}
+
+	if r.IsGroupRef() && other.IsGroupRef() {
+		left, leftOK := r.GroupKey()
+		right, rightOK := other.GroupKey()
+
+		return leftOK && rightOK && left.XOnly() == right.XOnly()
+	}
+
+	return false
+}
+
 // GroupKey returns the group key and true when the asset reference resolves to
 // a group key.
 func (r AssetRef) GroupKey() (PubKey, bool) {

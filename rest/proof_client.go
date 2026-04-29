@@ -174,7 +174,7 @@ func (p *proofClient) DecodeProof(ctx context.Context,
 // jsonRegisterTransferRequest is the JSON body for
 // RegisterTransfer.
 type jsonRegisterTransferRequest struct {
-	AssetID   string           `json:"asset_id"`
+	AssetID   string           `json:"asset_id,omitempty"`
 	GroupKey  string           `json:"group_key,omitempty"`
 	ScriptKey string           `json:"script_key"`
 	Outpoint  *jsonOutpointReq `json:"outpoint"`
@@ -184,6 +184,27 @@ type jsonRegisterTransferRequest struct {
 // interactive send.
 func (p *proofClient) RegisterTransfer(ctx context.Context,
 	assetRef entities.AssetRef, scriptKey entities.PubKey,
+	outpoint entities.Outpoint) (*entities.RegisteredAsset, error) {
+
+	return p.registerTransfer(
+		ctx, assetRef, entities.AssetID{}, scriptKey, outpoint,
+	)
+}
+
+// RegisterTransferWithIssuance registers an inbound transfer when the user
+// facing asset ref is a group key and tapd still needs the concrete issuance
+// ID from the imported proof.
+func (p *proofClient) RegisterTransferWithIssuance(ctx context.Context,
+	assetRef entities.AssetRef, issuanceID entities.AssetID,
+	scriptKey entities.PubKey,
+	outpoint entities.Outpoint) (*entities.RegisteredAsset, error) {
+
+	return p.registerTransfer(ctx, assetRef, issuanceID, scriptKey, outpoint)
+}
+
+func (p *proofClient) registerTransfer(ctx context.Context,
+	assetRef entities.AssetRef, issuanceID entities.AssetID,
+	scriptKey entities.PubKey,
 	outpoint entities.Outpoint) (*entities.RegisteredAsset, error) {
 
 	if err := assetRef.Validate(); err != nil {
@@ -204,6 +225,10 @@ func (p *proofClient) RegisterTransfer(ctx context.Context,
 
 	if assetID, ok := assetRef.AssetID(); ok {
 		body.AssetID = hex.EncodeToString(assetID[:])
+	}
+
+	if assetRef.IsGroupRef() && issuanceID != (entities.AssetID{}) {
+		body.AssetID = hex.EncodeToString(issuanceID[:])
 	}
 
 	if groupKey, ok := assetRef.GroupKey(); ok {

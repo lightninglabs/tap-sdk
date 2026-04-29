@@ -3,6 +3,7 @@ package tapsdk
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/lightninglabs/tap-sdk/vpsbt"
@@ -22,6 +23,13 @@ type Wallet struct {
 type WalletOption func(*Wallet)
 
 const authMailboxUniverseCourierScheme = "authmailbox+universerpc://"
+
+type transferRegistrarWithIssuance interface {
+	RegisterTransferWithIssuance(ctx context.Context,
+		assetRef entities.AssetRef, issuanceID entities.AssetID,
+		scriptKey entities.PubKey, outpoint entities.Outpoint) (
+		*entities.RegisteredAsset, error)
+}
 
 // WithDefaultProofCourierAddr sets the default proof courier address used by
 // high-level V2 receive address helpers.
@@ -90,10 +98,53 @@ func (s *Wallet) NewReceiveAddress(ctx context.Context,
 
 	addr, err := s.NewAddr(ctx, req)
 	if err != nil {
+		if shouldRetryExactGroupRef(ref, err) {
+			exactRef := s.resolveExactGroupRef(ctx, ref)
+			if exactRef != ref {
+				req.AssetRef = exactRef
+
+				addr, retryErr := s.NewAddr(ctx, req)
+				if retryErr == nil {
+					return addr, nil
+				}
+			}
+		}
+
 		return nil, wrapErr("NewReceiveAddress", err)
 	}
 
 	return addr, nil
+}
+
+func shouldRetryExactGroupRef(ref entities.AssetRef, err error) bool {
+	if !ref.IsGroupRef() || err == nil {
+		return false
+	}
+
+	errMsg := err.Error()
+	return strings.Contains(errMsg, "unable to find asset or group") ||
+		strings.Contains(errMsg, "asset lookup failed")
+}
+
+func (s *Wallet) resolveExactGroupRef(ctx context.Context,
+	ref entities.AssetRef) entities.AssetRef {
+
+	if !ref.IsGroupRef() {
+		return ref
+	}
+
+	groups, err := s.ListGroups(ctx)
+	if err != nil {
+		return ref
+	}
+
+	for _, group := range groups {
+		if group.AssetRef.Equivalent(ref) {
+			return group.AssetRef
+		}
+	}
+
+	return ref
 }
 
 // GetBalance returns the confirmed balance for the given asset. If the
@@ -206,10 +257,21 @@ func (s *Wallet) ImportProof(ctx context.Context,
 	}
 
 	// Step 3: Register the transfer using the last proof's details.
+	registrar, ok := s.Client.(transferRegistrarWithIssuance)
+	if ok {
+		registered, err := registrar.RegisterTransferWithIssuance(
+			ctx, lastDecoded.AssetRef, lastDecoded.IssuanceID,
+			lastDecoded.ScriptKey, lastDecoded.Outpoint,
+		)
+		if err != nil {
+			return nil, wrapErr("ImportProof", err)
+		}
+
+		return registered, nil
+	}
+
 	registered, err := s.RegisterTransfer(
-		ctx,
-		lastDecoded.AssetRef,
-		lastDecoded.ScriptKey,
+		ctx, lastDecoded.AssetRef, lastDecoded.ScriptKey,
 		lastDecoded.Outpoint,
 	)
 	if err != nil {
