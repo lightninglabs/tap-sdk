@@ -105,9 +105,12 @@ func runSendCase(t *testing.T, transport Transport, tc sendCase) {
 
 	addr := tc.setup(h, ctx, minted.Ref, amount)
 
-	// Receive events do not replay reliably yet, so Bob must listen
-	// before Alice sends to this address.
-	recvEvents := h.subscribeReceiveEvents(t, ctx, addr.Encoded)
+	// tapd's SubscribeReceiveEvents currently ignores StartTimestamp
+	// (handleEvents hardcodes deliverExisting=false), so Bob must
+	// subscribe before Alice broadcasts the send.
+	recvEvents := h.subscribeReceiveEvents(
+		t, ctx, h.BobClient, addr.Encoded,
+	)
 
 	// Send completion can be replayed by timestamp. The label keeps the
 	// replay isolated from other transfers in a reused regtest stack.
@@ -121,7 +124,9 @@ func runSendCase(t *testing.T, transport Transport, tc sendCase) {
 	require.NoError(t, err)
 	require.NotEmpty(t, transfer.AnchorTxid)
 
-	sendEvents := h.subscribeSendEvents(t, ctx, label, startTimestamp)
+	sendEvents := h.subscribeSendEvents(
+		t, ctx, h.AliceClient, label, startTimestamp,
+	)
 	h.MineBlocks(t, defaultMineBlocks)
 
 	waitForSendCompleted(t, sendEvents, label,
@@ -258,10 +263,13 @@ func runSendMultiCase(t *testing.T, transport Transport,
 		[]*eventSubscription[entities.ReceiveEvent], 0, len(addrs),
 	)
 	for _, addr := range addrs {
-		// Receive streams are per address and need to exist before the
-		// transfer because tapd does not replay them yet.
+		// Receive streams are per address and must exist before the
+		// transfer because tapd ignores StartTimestamp on
+		// SubscribeReceiveEvents (no historical replay).
 		recvEvents = append(recvEvents,
-			h.subscribeReceiveEvents(t, ctx, addr.Encoded))
+			h.subscribeReceiveEvents(
+				t, ctx, h.BobClient, addr.Encoded,
+			))
 	}
 
 	// The send stream can replay completed transfers by label from this
@@ -275,7 +283,9 @@ func runSendMultiCase(t *testing.T, transport Transport,
 	require.NoError(t, err)
 	require.NotEmpty(t, transfer.AnchorTxid)
 
-	sendEvents := h.subscribeSendEvents(t, ctx, label, startTimestamp)
+	sendEvents := h.subscribeSendEvents(
+		t, ctx, h.AliceClient, label, startTimestamp,
+	)
 	h.MineBlocks(t, defaultMineBlocks)
 
 	waitForSendCompleted(t, sendEvents, label,
@@ -360,10 +370,11 @@ func TestAddressSend(t *testing.T) {
 		require.Equal(t, entities.AddressVersionV2,
 			bobAddr.AddressVersion)
 
-		// Subscribe before the payment; receive-event replay currently
-		// does not cover late subscribers.
+		// Subscribe before the payment: tapd ignores StartTimestamp
+		// on SubscribeReceiveEvents (handleEvents hardcodes
+		// deliverExisting=false) so late subscribers see nothing.
 		recvEvents := h.subscribeReceiveEvents(
-			t, ctx, bobAddr.Encoded,
+			t, ctx, h.BobClient, bobAddr.Encoded,
 		)
 
 		// Bob's wallet should round-trip the address string through
@@ -393,7 +404,7 @@ func TestAddressSend(t *testing.T) {
 		require.NotEmpty(t, transfer.AnchorTxid)
 
 		sendEvents := h.subscribeSendEvents(
-			t, ctx, label, startTimestamp,
+			t, ctx, h.AliceClient, label, startTimestamp,
 		)
 		h.MineBlocks(t, defaultMineBlocks)
 

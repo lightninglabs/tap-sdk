@@ -12,6 +12,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// eventSubscription is the test-side handle to a tapd event stream.
+// events is intentionally unbuffered: the gRPC and REST client drainers
+// block on send, which forces the matched terminal event to be consumed
+// by waitForEvent BEFORE the close-and-error sequence can race in. Do
+// not add a buffer here without revisiting failClosedEventStream.
 type eventSubscription[T any] struct {
 	events <-chan *T
 	errs   <-chan error
@@ -22,14 +27,34 @@ func (s *eventSubscription[T]) Stop() {
 	s.cancel()
 }
 
+// mintSubscriber is the minimal client surface needed to open a mint
+// stream. Both grpc.Client and rest.Client satisfy it, so harness tests
+// can subscribe on either Alice or Bob.
+type mintSubscriber interface {
+	SubscribeMintEvents(context.Context,
+		*entities.SubscribeMintEventsRequest) (
+		<-chan *entities.MintEvent, <-chan error, error)
+}
+
+// receiveSubscriber is the minimal client surface needed to open a
+// receive stream.
+type receiveSubscriber interface {
+	SubscribeReceiveEvents(context.Context,
+		*entities.SubscribeReceiveEventsRequest) (
+		<-chan *entities.ReceiveEvent, <-chan error, error)
+}
+
+// sendSubscriber is the minimal client surface needed to open a send
+// stream.
+type sendSubscriber interface {
+	SubscribeSendEvents(context.Context,
+		*entities.SubscribeSendEventsRequest) (
+		<-chan *entities.SendEvent, <-chan error, error)
+}
+
 func (h *TestHarness) subscribeMintEvents(t testing.TB,
 	ctx context.Context,
-	client interface {
-		SubscribeMintEvents(context.Context,
-			*entities.SubscribeMintEventsRequest) (
-			<-chan *entities.MintEvent, <-chan error, error)
-	},
-) *eventSubscription[entities.MintEvent] {
+	client mintSubscriber) *eventSubscription[entities.MintEvent] {
 
 	t.Helper()
 
@@ -49,13 +74,21 @@ func (h *TestHarness) subscribeMintEvents(t testing.TB,
 	return sub
 }
 
+// subscribeReceiveEvents opens a receive event stream on the given
+// client. Pass the wallet that will receive the asset.
+//
+// StartTimestamp is left at 0 deliberately: tapd's handleEvents
+// hardcodes deliverExisting=false, so SubscribeReceiveEvents currently
+// ignores StartTimestamp and never replays historical events. Callers
+// must subscribe before the sender broadcasts.
 func (h *TestHarness) subscribeReceiveEvents(t testing.TB,
-	ctx context.Context, addr string) *eventSubscription[entities.ReceiveEvent] {
+	ctx context.Context, client receiveSubscriber,
+	addr string) *eventSubscription[entities.ReceiveEvent] {
 
 	t.Helper()
 
 	subCtx, cancel := context.WithCancel(ctx)
-	events, errs, err := h.BobClient.SubscribeReceiveEvents(
+	events, errs, err := client.SubscribeReceiveEvents(
 		subCtx, &entities.SubscribeReceiveEventsRequest{
 			FilterAddr: addr,
 		},
@@ -72,14 +105,21 @@ func (h *TestHarness) subscribeReceiveEvents(t testing.TB,
 	return sub
 }
 
+// subscribeSendEvents opens a send event stream on the given client.
+// Pass the wallet that issued the send.
+//
+// startTimestamp is honored by tapd: SubscribeSendEvents replays
+// completed parcels (anchor-confirmed, filtered by label) from the DB
+// before joining the live stream, so the test can subscribe AFTER
+// calling Send and still observe the terminal SendStateComplete event.
 func (h *TestHarness) subscribeSendEvents(t testing.TB,
-	ctx context.Context, label string,
+	ctx context.Context, client sendSubscriber, label string,
 	startTimestamp int64) *eventSubscription[entities.SendEvent] {
 
 	t.Helper()
 
 	subCtx, cancel := context.WithCancel(ctx)
-	events, errs, err := h.AliceClient.SubscribeSendEvents(
+	events, errs, err := client.SubscribeSendEvents(
 		subCtx, &entities.SubscribeSendEventsRequest{
 			FilterLabel:    label,
 			StartTimestamp: startTimestamp,
@@ -266,12 +306,14 @@ func waitForSendCompleted(t testing.TB,
 // The listener API delivers every matching event via callbacks and does
 // not expose terminal-state filters, so the callback-based itest keeps
 // the observed events in memory and checks for the specific terminal
-// status it cares about.
+// status it cares about. Events that reached the terminal state but
+// also carry an Error are skipped — they represent a failed final
+// transition, not a successful completion.
 func hasFinalizedMint(events []*entities.MintEvent,
 	batchKey entities.PubKey) bool {
 
 	for _, event := range events {
-		if event == nil || event.Batch == nil {
+		if event == nil || event.Batch == nil || event.Error != "" {
 			continue
 		}
 
@@ -287,7 +329,7 @@ func hasFinalizedMint(events []*entities.MintEvent,
 
 func hasCompletedSend(events []*entities.SendEvent, label string) bool {
 	for _, event := range events {
-		if event == nil {
+		if event == nil || event.Error != "" {
 			continue
 		}
 
@@ -303,7 +345,7 @@ func hasCompletedSend(events []*entities.SendEvent, label string) bool {
 
 func hasCompletedReceive(events []*entities.ReceiveEvent, addr string) bool {
 	for _, event := range events {
-		if event == nil || event.Address == nil {
+		if event == nil || event.Address == nil || event.Error != "" {
 			continue
 		}
 

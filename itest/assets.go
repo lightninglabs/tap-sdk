@@ -35,8 +35,10 @@ func (h *TestHarness) MintAssetAndConfirm(t testing.TB,
 		return nil, fmt.Errorf("mint asset name is required")
 	}
 
-	// Subscribe before finalization: mint events do not replay the
-	// latest batch state for subscribers that arrive late.
+	// Subscribe before finalization: SubscribeMintEvents has no
+	// StartTimestamp option (#81 item 6) and tapd's planter does not
+	// replay historical batch transitions for late subscribers, so a
+	// terminal-state-during-handshake race could lose the event.
 	mintEvents := h.subscribeMintEvents(t, ctx, h.AliceClient)
 
 	batch, err := h.AliceClient.CreateAsset(ctx, &entities.CreateAssetRequest{
