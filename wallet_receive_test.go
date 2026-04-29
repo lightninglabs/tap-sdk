@@ -2,6 +2,7 @@ package tapsdk
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/lightninglabs/tap-sdk/entities"
@@ -33,6 +34,51 @@ func TestNewReceiveAddress_DefaultsToV2GroupKey(t *testing.T) {
 				entities.AddressVersionV2 &&
 			req.ProofCourierAddr == ""
 	})).Return(expectedAddr, nil)
+
+	wallet := NewWallet(mc, entities.NetworkRegtest)
+
+	addr, err := wallet.NewReceiveAddress(ctx, ref)
+	require.NoError(t, err)
+	require.Equal(t, expectedAddr, addr)
+
+	mc.AssertExpectations(t)
+}
+
+func TestNewReceiveAddress_CollectibleRetriesWithAmountOne(t *testing.T) {
+	ctx := context.Background()
+	mc := new(mockClient)
+
+	var assetID entities.AssetID
+	copy(assetID[:], []byte("collectible_asset_id_32_bytes_now"))
+	ref := entities.AssetRefFromAssetID(assetID)
+
+	mc.On("NewAddr", ctx, mock.MatchedBy(func(
+		req *entities.NewAddressRequest) bool {
+
+		if req == nil || req.AddressVersion == nil {
+			return false
+		}
+
+		return req.AssetRef == ref && req.Amount == 0 &&
+			*req.AddressVersion == entities.AddressVersionV2
+	})).Return((*entities.Address)(nil), errors.New(
+		"unable to make new addr: address: collectible asset amount not one",
+	)).Once()
+
+	expectedAddr := &entities.Address{
+		Encoded: "tap1collectible",
+		Amount:  1,
+	}
+	mc.On("NewAddr", ctx, mock.MatchedBy(func(
+		req *entities.NewAddressRequest) bool {
+
+		if req == nil || req.AddressVersion == nil {
+			return false
+		}
+
+		return req.AssetRef == ref && req.Amount == 1 &&
+			*req.AddressVersion == entities.AddressVersionV2
+	})).Return(expectedAddr, nil).Once()
 
 	wallet := NewWallet(mc, entities.NetworkRegtest)
 

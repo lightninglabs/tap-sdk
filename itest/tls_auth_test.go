@@ -79,6 +79,21 @@ func TestTLSAndMacaroonGuards(t *testing.T) {
 			"expected NewClient to fail without macaroon material")
 	})
 
+	t.Run("grpc invalid macaroon rejected", func(t *testing.T) {
+		client, err := tapgrpc.NewClient(&tapgrpc.Config{
+			Host:     defaultAliceHost,
+			Network:  entities.NetworkRegtest,
+			TLS:      tapgrpc.TLSFromPath(tlsPath),
+			Macaroon: macaroon.FromHex("00"),
+		})
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = client.Close() })
+
+		_, err = client.GetInfo(t.Context())
+		require.Error(t, err,
+			"expected tapd rejection on invalid macaroon")
+	})
+
 	t.Run("rest good credentials connect", func(t *testing.T) {
 		client, err := taprest.NewClient(&taprest.Config{
 			BaseURL:  defaultAliceRestHost,
@@ -111,6 +126,31 @@ func TestTLSAndMacaroonGuards(t *testing.T) {
 		_, err = client.GetInfo(t.Context())
 		require.Error(t, err,
 			"expected rest transport to reject wrong trust root")
+	})
+
+	t.Run("rest missing macaroon rejected", func(t *testing.T) {
+		_, err := taprest.NewClient(&taprest.Config{
+			BaseURL: defaultAliceRestHost,
+			Network: entities.NetworkRegtest,
+			TLS:     taprest.TLSFromPath(tlsPath),
+		})
+		require.Error(t, err,
+			"expected NewClient to fail without macaroon material")
+	})
+
+	t.Run("rest invalid macaroon rejected", func(t *testing.T) {
+		client, err := taprest.NewClient(&taprest.Config{
+			BaseURL:  defaultAliceRestHost,
+			Network:  entities.NetworkRegtest,
+			TLS:      taprest.TLSFromPath(tlsPath),
+			Macaroon: macaroon.FromHex("00"),
+		})
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = client.Close() })
+
+		_, err = client.GetInfo(t.Context())
+		require.Error(t, err,
+			"expected rest rejection on invalid macaroon")
 	})
 }
 

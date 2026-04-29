@@ -21,16 +21,32 @@ func TestBackupRestore(t *testing.T) {
 	runForTransports(t, func(t *testing.T, transport Transport) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
-		name := uniqueEventLabel(fmt.Sprintf("backup-token-%s", transport))
+		tokenName := uniqueEventLabel(
+			fmt.Sprintf("backup-token-%s", transport),
+		)
 		minted, err := h.MintAssetAndConfirm(t, ctx,
 			&entities.CreateAsset{
 				AssetType:     entities.AssetTypeNormal,
-				Name:          name,
+				Name:          tokenName,
 				InitialSupply: 321,
 			},
 		)
 		require.NoError(t, err)
 		require.True(t, minted.Ref.IsAssetIDRef())
+
+		groupName := uniqueEventLabel(
+			fmt.Sprintf("backup-group-%s", transport),
+		)
+		grouped, err := h.MintGroupedAsset(t, ctx, groupName, 654)
+		require.NoError(t, err)
+		require.True(t, grouped.Ref.IsGroupRef())
+
+		nftName := uniqueEventLabel(
+			fmt.Sprintf("backup-nft-%s", transport),
+		)
+		collectible, err := h.MintCollectibleAsset(t, ctx, nftName)
+		require.NoError(t, err)
+		require.True(t, collectible.Ref.IsAssetIDRef())
 
 		h.SyncAliceGroupsForBackupImport(t, ctx)
 
@@ -45,11 +61,26 @@ func TestBackupRestore(t *testing.T) {
 		require.Greater(t, imported, uint32(0))
 
 		restored := h.WaitForAssetByTag(
-			t, ctx, h.BobClient, name, defaultWaitTimeout,
+			t, ctx, h.BobClient, tokenName, defaultWaitTimeout,
 		)
 		require.Equal(t, minted.Asset.Genesis.IssuanceID,
 			restored.Genesis.IssuanceID)
 		require.Equal(t, minted.Asset.Amount, restored.Amount)
+
+		restoredGroup := h.WaitForAssetByTag(
+			t, ctx, h.BobClient, groupName, defaultWaitTimeout,
+		)
+		require.Equal(t, grouped.Asset.Genesis.IssuanceID,
+			restoredGroup.Genesis.IssuanceID)
+		require.Equal(t, grouped.Asset.Amount, restoredGroup.Amount)
+
+		restoredCollectible := h.WaitForAssetByTag(
+			t, ctx, h.BobClient, nftName, defaultWaitTimeout,
+		)
+		require.Equal(t, collectible.Asset.Genesis.IssuanceID,
+			restoredCollectible.Genesis.IssuanceID)
+		require.Equal(t, collectible.Asset.Amount,
+			restoredCollectible.Amount)
 
 		importedAgain, err := h.BobClient.ImportBackup(ctx, backup)
 		require.NoError(t, err)

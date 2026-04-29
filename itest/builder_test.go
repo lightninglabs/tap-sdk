@@ -119,6 +119,41 @@ func TestInteractiveTxBuilderEndToEnd(t *testing.T) {
 	})
 }
 
+// TestInteractiveTxBuilderRejections verifies that obvious application errors
+// are rejected by the SDK before callers are left interpreting lower-level tapd
+// transaction-building failures.
+func TestInteractiveTxBuilderRejections(t *testing.T) {
+	runForTransports(t, func(t *testing.T, transport Transport) {
+		h, ctx := newFundedHarnessFor(t, transport)
+
+		name := uniqueEventLabel(
+			fmt.Sprintf("interactive-reject-%s", transport),
+		)
+		minted, err := h.MintGroupedAsset(t, ctx, name, 100)
+		require.NoError(t, err)
+
+		receiverKeys, err := h.BobWallet.DeriveKeys(ctx)
+		require.NoError(t, err)
+
+		_, err = h.AliceWallet.NewInteractiveTxBuilder().
+			SetAsset(minted.Ref, 101).
+			SetReceiverKeys(*receiverKeys).
+			Execute(ctx)
+		require.ErrorIs(t, err, tapsdk.ErrInsufficientBalance)
+
+		_, err = h.AliceWallet.NewInteractiveTxBuilder().
+			SetAsset(minted.Ref, 0).
+			SetReceiverKeys(*receiverKeys).
+			Execute(ctx)
+		require.ErrorIs(t, err, tapsdk.ErrZeroAmount)
+
+		_, err = h.AliceWallet.NewInteractiveTxBuilder().
+			SetAsset(minted.Ref, 1).
+			Execute(ctx)
+		require.ErrorIs(t, err, tapsdk.ErrNoReceiverKeys)
+	})
+}
+
 func transferOutputForScriptKey(t testing.TB,
 	transfer *entities.AssetTransfer,
 	scriptKey entities.PubKey) entities.TransferOutput {

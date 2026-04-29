@@ -80,6 +80,9 @@ func (s *Wallet) NewInteractiveTxBuilder() *InteractiveTxBuilder {
 
 // NewReceiveAddress creates a V2 address for receiving the given
 // asset. The sender chooses the specific units and amount to send.
+// Collectible/NFT addresses always receive exactly one unit; the SDK
+// automatically supplies that amount when tapd rejects the default
+// sender-chosen amount shape.
 //
 // For more control (custom keys, V0/V1 addresses, explicit amounts),
 // use the lower-level NewAddr method on the client directly. If your
@@ -98,6 +101,17 @@ func (s *Wallet) NewReceiveAddress(ctx context.Context,
 
 	addr, err := s.NewAddr(ctx, req)
 	if err != nil {
+		if shouldRetryCollectibleAmount(ref, err) {
+			req.Amount = 1
+
+			addr, retryErr := s.NewAddr(ctx, req)
+			if retryErr == nil {
+				return addr, nil
+			}
+
+			err = retryErr
+		}
+
 		if shouldRetryExactGroupRef(ref, err) {
 			exactRef := s.resolveExactGroupRef(ctx, ref)
 			if exactRef != ref {
@@ -114,6 +128,14 @@ func (s *Wallet) NewReceiveAddress(ctx context.Context,
 	}
 
 	return addr, nil
+}
+
+func shouldRetryCollectibleAmount(ref entities.AssetRef, err error) bool {
+	if !ref.IsAssetIDRef() || err == nil {
+		return false
+	}
+
+	return strings.Contains(err.Error(), "collectible asset amount not one")
 }
 
 func shouldRetryExactGroupRef(ref entities.AssetRef, err error) bool {

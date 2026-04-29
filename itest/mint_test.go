@@ -3,6 +3,7 @@
 package itest
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/lightninglabs/tap-sdk/entities"
@@ -69,6 +70,86 @@ func TestMintCollectible(t *testing.T) {
 			balanceTimeoutFor(minted.Ref),
 		)
 		require.Equal(t, uint64(1), balance)
+	})
+}
+
+// TestMultiAssetBatchLifecycle stages multiple asset types into the same
+// pending mint batch, finalizes it, and verifies both logical assets are
+// visible through the wallet surface.
+func TestMultiAssetBatchLifecycle(t *testing.T) {
+	runForTransports(t, func(t *testing.T, transport Transport) {
+		h, ctx := newFundedHarnessFor(t, transport)
+
+		mintEvents := h.subscribeMintEvents(t, ctx, h.AliceClient)
+
+		tokenName := uniqueEventLabel(
+			fmt.Sprintf("batch-token-%s", transport),
+		)
+		nftName := uniqueEventLabel(
+			fmt.Sprintf("batch-nft-%s", transport),
+		)
+
+		firstBatch, err := h.AliceClient.CreateAsset(ctx,
+			&entities.CreateAssetRequest{
+				Asset: &entities.CreateAsset{
+					AssetType:     entities.AssetTypeNormal,
+					Name:          tokenName,
+					InitialSupply: 700,
+				},
+				ShortResponse: true,
+			},
+		)
+		require.NoError(t, err)
+		require.NotNil(t, firstBatch)
+
+		secondBatch, err := h.AliceClient.CreateAsset(ctx,
+			&entities.CreateAssetRequest{
+				Asset: &entities.CreateAsset{
+					AssetType:     entities.AssetTypeCollectible,
+					Name:          nftName,
+					InitialSupply: 1,
+				},
+				ShortResponse: true,
+			},
+		)
+		require.NoError(t, err)
+		require.Equal(t, firstBatch.BatchKey, secondBatch.BatchKey)
+
+		pending, err := h.AliceClient.ListBatches(
+			ctx, &entities.ListBatchesRequest{
+				BatchKey: &firstBatch.BatchKey,
+			},
+		)
+		require.NoError(t, err)
+		require.Len(t, pending, 1)
+
+		_, err = h.AliceClient.FinalizeBatch(ctx,
+			&entities.FinalizeBatchRequest{ShortResponse: true},
+		)
+		require.NoError(t, err)
+
+		h.MineBlocks(t, defaultMineBlocks)
+		waitForMintFinalized(t, mintEvents, firstBatch.BatchKey,
+			defaultWaitTimeout)
+
+		finalized, err := h.fetchMintBatch(ctx, firstBatch.BatchKey)
+		require.NoError(t, err)
+		require.Equal(t, entities.BatchStateFinalized,
+			finalized.Batch.State)
+
+		token := h.WaitForAssetByTag(
+			t, ctx, h.AliceClient, tokenName, defaultWaitTimeout,
+		)
+		require.Equal(t, uint64(700), token.Amount)
+		require.True(t, token.AssetRef.IsAssetIDRef())
+
+		nft := h.WaitForAssetByTag(
+			t, ctx, h.AliceClient, nftName, defaultWaitTimeout,
+		)
+		require.Equal(t, uint64(1), nft.Amount)
+		require.True(t, nft.AssetRef.IsAssetIDRef())
+		require.Equal(t, entities.AssetTypeCollectible,
+			nft.Genesis.Type)
 	})
 }
 

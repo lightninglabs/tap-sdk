@@ -60,6 +60,10 @@ const (
 	// visibility checks.
 	defaultWaitTimeout = 60 * time.Second
 
+	// defaultRESTTimeout gives long-running REST calls such as full-wallet
+	// compact backup import enough time on reused itest stacks.
+	defaultRESTTimeout = 2 * time.Minute
+
 	// defaultGroupBalanceTimeout gives grouped balances more slack because
 	// group-key accounting settles slower than collectible balances.
 	defaultGroupBalanceTimeout = 3 * time.Minute
@@ -211,6 +215,7 @@ func newTapdClient(t testing.TB, transport Transport,
 			Network:  entities.NetworkRegtest,
 			TLS:      taprest.TLSFromPath(tlsPath),
 			Macaroon: macaroon.FromPath(macaroonPath),
+			Timeout:  defaultRESTTimeout,
 		}
 
 		client, err := taprest.NewClient(cfg)
@@ -432,6 +437,17 @@ func (h *TestHarness) CreateGroupedReceiveAddress(t testing.TB,
 	require.True(t, ref.IsGroupRef(),
 		"grouped receive requires a fungible group ref")
 
+	return h.CreateReceiveAddress(t, ctx, ref)
+}
+
+// CreateReceiveAddress bootstraps Bob for any V2 receive flow and only returns
+// once the actual receive address can be created. Fungible assets use a group
+// ref, while collectibles use an asset-ID ref.
+func (h *TestHarness) CreateReceiveAddress(t testing.TB,
+	ctx context.Context, ref entities.AssetRef) *entities.Address {
+
+	t.Helper()
+
 	h.EnableUniverseBootstrap(t, ctx)
 
 	issuanceID := entities.UniverseIDFromRef(
@@ -444,7 +460,7 @@ func (h *TestHarness) CreateGroupedReceiveAddress(t testing.TB,
 		err := h.syncUniverseTarget(ctx, issuanceID)
 		if err != nil {
 			lastStatus = fmt.Sprintf(
-				"group bootstrap sync not ready for %s: %v",
+				"asset bootstrap sync not ready for %s: %v",
 				ref, err,
 			)
 			verboseLogf(t, "%s", lastStatus)
@@ -454,7 +470,7 @@ func (h *TestHarness) CreateGroupedReceiveAddress(t testing.TB,
 		candidate, err := h.BobWallet.NewReceiveAddress(ctx, ref)
 		if err != nil {
 			lastStatus = fmt.Sprintf(
-				"group receive address not ready for %s: %v",
+				"receive address not ready for %s: %v",
 				ref, err,
 			)
 			verboseLogf(t, "%s", lastStatus)
@@ -464,7 +480,7 @@ func (h *TestHarness) CreateGroupedReceiveAddress(t testing.TB,
 		addr = candidate
 		return true
 	}, defaultWaitTimeout, time.Second,
-		"group receive address for %s never became available; "+
+		"receive address for %s never became available; "+
 			"last observation: %s",
 		ref, lastObservation(lastStatus),
 	)

@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/entities"
@@ -302,6 +303,53 @@ func runSendMultiCase(t *testing.T, transport Transport,
 	require.Equal(t, uint64(250), bobBalance)
 }
 
+// TestSendMultiRejectsMixedAssets locks in the current tapd limitation:
+// one SendAsset request cannot mix addresses for different asset IDs or group
+// keys. A future SDK helper can hide this by splitting mixed logical-asset
+// batches into multiple sends.
+func TestSendMultiRejectsMixedAssets(t *testing.T) {
+	runForTransports(t, func(t *testing.T, transport Transport) {
+		h, ctx := newFundedHarnessFor(t, transport)
+
+		first, err := h.MintGroupedAsset(
+			t, ctx,
+			uniqueEventLabel(fmt.Sprintf("multi-a-%s", transport)),
+			1000,
+		)
+		require.NoError(t, err)
+
+		second, err := h.MintGroupedAsset(
+			t, ctx,
+			uniqueEventLabel(fmt.Sprintf("multi-b-%s", transport)),
+			2000,
+		)
+		require.NoError(t, err)
+
+		firstAddr := h.CreateReceiveAddress(t, ctx, first.Ref)
+		secondAddr := h.CreateReceiveAddress(t, ctx, second.Ref)
+
+		firstAmount := uint64(111)
+		secondAmount := uint64(222)
+
+		_, err = h.AliceWallet.SendMulti(
+			ctx,
+			[]entities.Recipient{
+				{
+					Address: firstAddr.Encoded,
+					Amount:  &firstAmount,
+				},
+				{
+					Address: secondAddr.Encoded,
+					Amount:  &secondAmount,
+				},
+			},
+		)
+		require.Error(t, err)
+		require.Contains(t, err.Error(),
+			"all addrs must be of the same asset ID or group key")
+	})
+}
+
 // TestSendRejections covers the SDK-side validation errors across both
 // Send and SendMulti, against real addresses produced by tapd.
 func TestSendRejections(t *testing.T) {
@@ -440,5 +488,125 @@ func TestAddressSend(t *testing.T) {
 		)
 		require.NoError(t, err)
 		require.NotEmpty(t, events)
+	})
+}
+
+// TestCollectibleAddressSend verifies that the same high-level address send
+// path works for asset-ID refs, which are the natural handle for a single
+// collectible/NFT.
+func TestCollectibleAddressSend(t *testing.T) {
+	runForTransports(t, func(t *testing.T, transport Transport) {
+		h, ctx := newFundedHarnessFor(t, transport)
+
+		assetName := uniqueEventLabel(
+			fmt.Sprintf("send-nft-%s", transport),
+		)
+		minted, err := h.MintCollectibleAsset(t, ctx, assetName)
+		require.NoError(t, err)
+		require.True(t, minted.Ref.IsAssetIDRef())
+
+		bobAddr := h.CreateReceiveAddress(t, ctx, minted.Ref)
+		require.NotEmpty(t, bobAddr.Encoded)
+		require.Equal(t, entities.AssetTypeCollectible, bobAddr.AssetType)
+		require.Equal(t, entities.AddressVersionV2,
+			bobAddr.AddressVersion)
+		require.True(t, bobAddr.AssetRef.Equivalent(minted.Ref))
+
+		recvEvents := h.subscribeReceiveEvents(
+			t, ctx, h.BobClient, bobAddr.Encoded,
+		)
+
+		label := uniqueEventLabel("collectible-send")
+		startTimestamp := eventStartTimestamp()
+
+		transfer, err := h.AliceWallet.Send(
+			ctx, bobAddr.Encoded, tapsdk.WithAmount(1),
+			tapsdk.WithLabel(label),
+		)
+		require.NoError(t, err)
+		require.NotEmpty(t, transfer.AnchorTxid)
+
+		sendEvents := h.subscribeSendEvents(
+			t, ctx, h.AliceClient, label, startTimestamp,
+		)
+		h.MineBlocks(t, defaultMineBlocks)
+
+		waitForSendCompleted(t, sendEvents, label,
+			balanceTimeoutFor(minted.Ref))
+		waitForReceiveCompleted(t, recvEvents, bobAddr.Encoded,
+			balanceTimeoutFor(minted.Ref))
+
+		bobBalance := h.WaitForBalance(t, ctx, h.BobWallet,
+			minted.Ref, 1, balanceTimeoutFor(minted.Ref))
+		require.Equal(t, uint64(1), bobBalance)
+
+		require.Eventually(t, func() bool {
+			aliceBalance, err := h.AliceWallet.GetBalance(
+				ctx, minted.Ref,
+			)
+			return err == nil && aliceBalance == 0
+		}, balanceTimeoutFor(minted.Ref), time.Second)
+	})
+}
+
+// TestAddressRoundTrip locks in the modern V2 address shape for both logical
+// asset refs the SDK wants users to handle directly: group refs for fungibles
+// and asset-ID refs for single collectibles.
+func TestAddressRoundTrip(t *testing.T) {
+	runForTransports(t, func(t *testing.T, transport Transport) {
+		h, ctx := newFundedHarnessFor(t, transport)
+
+		grouped, err := h.MintGroupedAsset(
+			t, ctx,
+			uniqueEventLabel(fmt.Sprintf("addr-group-%s", transport)),
+			1000,
+		)
+		require.NoError(t, err)
+
+		collectible, err := h.MintCollectibleAsset(
+			t, ctx,
+			uniqueEventLabel(fmt.Sprintf("addr-nft-%s", transport)),
+		)
+		require.NoError(t, err)
+
+		cases := []struct {
+			name      string
+			ref       entities.AssetRef
+			assetType entities.AssetType
+		}{
+			{
+				name:      "fungible-group-ref",
+				ref:       grouped.Ref,
+				assetType: entities.AssetTypeNormal,
+			},
+			{
+				name:      "collectible-asset-id-ref",
+				ref:       collectible.Ref,
+				assetType: entities.AssetTypeCollectible,
+			},
+		}
+
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				addr := h.CreateReceiveAddress(t, ctx, tc.ref)
+				require.Equal(t, entities.AddressVersionV2,
+					addr.AddressVersion)
+				require.Equal(t, tc.assetType, addr.AssetType)
+				require.True(t, addr.AssetRef.Equivalent(tc.ref))
+				require.NotEmpty(t, addr.ProofCourierAddr)
+
+				decoded, err := h.BobClient.DecodeAddr(
+					ctx, addr.Encoded,
+				)
+				require.NoError(t, err)
+				require.Equal(t, addr.Encoded, decoded.Encoded)
+				require.Equal(t, addr.AddressVersion,
+					decoded.AddressVersion)
+				require.Equal(t, addr.AssetType,
+					decoded.AssetType)
+				require.True(t,
+					decoded.AssetRef.Equivalent(tc.ref))
+			})
+		}
 	})
 }
