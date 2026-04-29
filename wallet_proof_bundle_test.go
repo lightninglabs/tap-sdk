@@ -20,7 +20,7 @@ func TestExportProof_GroupRefEnumeratesIssuances(t *testing.T) {
 	firstKey := testKey(t, 32)
 	secondKey := testKey(t, 33)
 
-	assets := []*entities.Asset{
+	assets := []*entities.AssetRecord{
 		bundleAsset(groupRef, firstID, firstKey, 100,
 			entities.AssetTypeNormal),
 		bundleAsset(groupRef, secondID, secondKey, 250,
@@ -80,7 +80,7 @@ func TestExportProof_CollectibleEntryUsesAssetIDRef(t *testing.T) {
 			return req != nil && req.AssetRef != nil &&
 				req.AssetRef.Equivalent(assetRef)
 		}),
-	).Return([]*entities.Asset{
+	).Return([]*entities.AssetRecord{
 		bundleAsset(assetRef, assetID, scriptKey, 1,
 			entities.AssetTypeCollectible),
 	}, nil).Once()
@@ -117,7 +117,7 @@ func TestExportProof_CollectionGroupEntriesUseAssetIDRefs(t *testing.T) {
 			return req != nil && req.AssetRef != nil &&
 				req.AssetRef.Equivalent(groupRef)
 		}),
-	).Return([]*entities.Asset{
+	).Return([]*entities.AssetRecord{
 		bundleAsset(groupRef, firstID, firstKey, 1,
 			entities.AssetTypeCollectible),
 		bundleAsset(groupRef, secondID, secondKey, 1,
@@ -160,7 +160,7 @@ func TestExportProof_UnknownAsset(t *testing.T) {
 
 	ref := entities.AssetRefFromAssetID(bundleAssetID(4))
 	mc.On("ListAssets", ctx, mock.Anything).Return(
-		[]*entities.Asset{}, nil,
+		[]*entities.AssetRecord{}, nil,
 	).Once()
 
 	_, err := wallet.ExportProof(ctx, ref)
@@ -281,9 +281,9 @@ func TestImportProof_RejectsIncompleteBundle(t *testing.T) {
 
 func bundleAsset(ref entities.AssetRef, issuanceID entities.AssetID,
 	scriptKey entities.PubKey, amount uint64,
-	assetType entities.AssetType) *entities.Asset {
+	assetType entities.AssetType) *entities.AssetRecord {
 
-	return &entities.Asset{
+	return &entities.AssetRecord{
 		AssetRef: ref,
 		Genesis: entities.AssetGenesis{
 			IssuanceID: issuanceID,

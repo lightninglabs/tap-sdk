@@ -47,8 +47,9 @@ build Taproot Assets applications without direct dependency on the
 The root package contains the high-level API surface:
 
 - **`Wallet`** — The primary entrypoint. Wraps a `Client` and provides
-  convenience methods for common operations (receive addresses, key
-  derivation, proof import).
+  focused high-level methods for common operations (receive addresses, key
+  derivation, proof import, asset listing). Raw RPC-shaped operations remain
+  available through `Wallet.Client()`.
 
 - **`TxBuilder`** — Builder pattern for address-based asset transfers.
   Guides users through the Fund → Sign → Commit → Finish pipeline.

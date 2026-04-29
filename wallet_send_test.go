@@ -29,14 +29,14 @@ func (m *mockClient) GetInfo(ctx context.Context) (*entities.Info, error) {
 }
 
 func (m *mockClient) ListAssets(ctx context.Context,
-	req *entities.ListAssetsRequest) ([]*entities.Asset, error) {
+	req *entities.ListAssetsRequest) ([]*entities.AssetRecord, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).([]*entities.Asset), args.Error(1)
+	return args.Get(0).([]*entities.AssetRecord), args.Error(1)
 }
 
 func (m *mockClient) ListBalances(ctx context.Context,

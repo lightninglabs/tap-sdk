@@ -99,13 +99,13 @@ func TestInteractiveTxBuilder_Execute(t *testing.T) {
 type interactiveResolverMock struct {
 	*MockWalletKitClient
 
-	assets []*entities.Asset
+	assets []*entities.AssetRecord
 	err    error
 	gotReq *entities.ListAssetsRequest
 }
 
 func (m *interactiveResolverMock) ListAssets(_ context.Context,
-	req *entities.ListAssetsRequest) ([]*entities.Asset, error) {
+	req *entities.ListAssetsRequest) ([]*entities.AssetRecord, error) {
 
 	m.gotReq = req
 
@@ -128,7 +128,7 @@ func TestInteractiveTxBuilder_GroupRefResolvesSpendableIssuance(
 	groupRef := entities.AssetRefFromGroupKey(testRefGroupKey(t))
 	resolver := &interactiveResolverMock{
 		MockWalletKitClient: mockWalletKit,
-		assets: []*entities.Asset{
+		assets: []*entities.AssetRecord{
 			{
 				AssetRef: groupRef,
 				Genesis: entities.AssetGenesis{
@@ -356,12 +356,12 @@ func TestInteractiveTxBuilder_Validation(t *testing.T) {
 	_, err := builder.Execute(ctx)
 	require.ErrorIs(t, err, ErrNoReceiverKeys)
 
-	// Test missing asset ID
+	// Test missing asset ref.
 	builder2 := services.NewInteractiveTxBuilder()
 	builder2.SetReceiverKeys(entities.DerivedKeys{})
 
 	_, err = builder2.Execute(ctx)
-	require.ErrorIs(t, err, ErrNoAssetID)
+	require.ErrorIs(t, err, ErrNoAssetRef)
 
 	// Test zero amount
 	var assetID entities.AssetID

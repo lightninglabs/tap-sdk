@@ -17,6 +17,7 @@ import (
 func TestUniverseReadSurface(t *testing.T) {
 	runForTransports(t, func(t *testing.T, transport Transport) {
 		h, ctx := newFundedHarnessFor(t, transport)
+		h.EnableUniverseBootstrap(t, ctx)
 
 		name := uniqueEventLabel(fmt.Sprintf("universe-token-%s", transport))
 		minted, err := h.MintGroupedAsset(t, ctx, name, 1000)
@@ -29,7 +30,14 @@ func TestUniverseReadSurface(t *testing.T) {
 		root := h.WaitForUniverseRoot(t, ctx, id, defaultWaitTimeout)
 		require.Equal(t, name, root.AssetName)
 		require.NotNil(t, root.MSSMTRoot)
-		require.NotEmpty(t, root.AmountsByIssuanceID)
+
+		listedRoots, err := h.AliceClient.AssetRoots(ctx,
+			&entities.AssetRootRequest{
+				WithAmountsByID: true,
+			},
+		)
+		require.NoError(t, err)
+		require.NotNil(t, listedRoots)
 
 		queriedRoots, err := h.AliceClient.QueryAssetRoots(ctx, &id)
 		require.NoError(t, err)
@@ -88,23 +96,21 @@ func (h *TestHarness) WaitForUniverseRoot(t testing.TB,
 
 	var root *entities.UniverseRoot
 	require.Eventually(t, func() bool {
-		roots, err := h.AliceClient.AssetRoots(ctx,
-			&entities.AssetRootRequest{
-				WithAmountsByID: true,
-			},
-		)
+		roots, err := h.AliceClient.QueryAssetRoots(ctx, &id)
 		if err != nil {
 			return false
 		}
+		if roots == nil {
+			return false
+		}
 
-		for _, candidate := range roots {
-			if candidate != nil &&
-				candidate.ID.ProofType == id.ProofType &&
-				candidate.ID.AssetRef.Equivalent(id.AssetRef) {
+		candidate := roots.IssuanceRoot
+		if candidate != nil &&
+			candidate.ID.ProofType == id.ProofType &&
+			candidate.ID.AssetRef.Equivalent(id.AssetRef) {
 
-				root = candidate
-				return true
-			}
+			root = candidate
+			return true
 		}
 
 		return false

@@ -47,7 +47,7 @@ func main() {
 	wallet := tapsdk.NewWallet(client, entities.NetworkRegtest)
 
 	ctx := context.Background()
-	info, err := wallet.GetInfo(ctx)
+	info, err := wallet.Client().GetInfo(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}

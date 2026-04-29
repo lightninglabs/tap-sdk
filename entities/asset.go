@@ -44,11 +44,17 @@ type AssetPacket struct {
 type AssetType uint8
 
 const (
-	// AssetTypeNormal is a normal asset.
+	// AssetTypeNormal is tapd's name for a fungible asset.
 	AssetTypeNormal AssetType = 0
 
-	// AssetTypeCollectible is a collectible asset.
+	// AssetTypeCollectible is tapd's name for a non-fungible asset.
 	AssetTypeCollectible AssetType = 1
+
+	// AssetTypeFungible is the SDK business name for a fungible token.
+	AssetTypeFungible = AssetTypeNormal
+
+	// AssetTypeNFT is the SDK business name for a non-fungible token.
+	AssetTypeNFT = AssetTypeCollectible
 )
 
 // AssetGenesis represents the genesis of an asset.
@@ -79,11 +85,13 @@ type AltLeaf struct {
 	Value []byte
 }
 
-// Asset represents a Taproot Asset.
-type Asset struct {
-	// AssetRef is the SDK's user-facing identifier for the asset as a whole.
-	// For grouped/fungible assets this encodes the group key. For unique assets
-	// it encodes the issuance asset ID.
+// AssetRecord is the low-level tapd wallet/output row for a concrete asset
+// commitment. Most application code should use Asset, Collection, and Issuance
+// returned by the high-level Wallet methods instead.
+type AssetRecord struct {
+	// AssetRef is the SDK's user-facing identifier inferred for this concrete
+	// row. Grouped records use the group AssetRef; ungrouped records use the
+	// issuance asset-ID AssetRef.
 	AssetRef AssetRef
 
 	// Version is the asset version.
@@ -109,6 +117,76 @@ type Asset struct {
 
 	// AltLeaves are the auxiliary leaves.
 	AltLeaves []AltLeaf
+}
+
+// Asset is the SDK's user-facing business entity for a wallet asset.
+//
+// A grouped fungible token is one Asset keyed by its group AssetRef, with any
+// underlying issuance/tranche records hidden by default. An ungrouped fungible
+// has no group-level identifier, so it is surfaced as its own Asset keyed by
+// asset-ID AssetRef. A non-fungible token is one Asset keyed by its unique
+// asset-ID AssetRef. Collections are not Assets; use Collection and
+// ListCollections for collection-level views.
+type Asset struct {
+	// AssetRef is the stable SDK identifier for this asset.
+	AssetRef AssetRef
+
+	// Type is the asset type.
+	Type AssetType
+
+	// Name is representative human-readable asset metadata. For grouped
+	// fungibles with multiple issuances, use ListIssuances for per-tranche
+	// metadata.
+	Name string
+
+	// MetaHash is representative asset metadata. For grouped fungibles with
+	// multiple issuances, use ListIssuances for per-tranche metadata.
+	MetaHash Hash
+
+	// Amount is the sum of wallet rows returned by the ListAssets request. With
+	// the default request this is the wallet-known confirmed, unspent, unleased
+	// amount. For grouped fungibles, this may be larger than the amount a
+	// single-tranche builder path can spend in one transfer.
+	Amount uint64
+
+	// CollectionRef identifies the collection this NFT belongs to. It is nil
+	// for fungible assets and standalone NFTs.
+	CollectionRef *AssetRef
+}
+
+// Collection is a group of NFT assets. A collection is not itself an Asset.
+type Collection struct {
+	// AssetRef is the stable SDK identifier for this collection.
+	AssetRef AssetRef
+
+	// ItemCount is the number of wallet-known NFT items in this collection.
+	ItemCount uint64
+}
+
+// Issuance is one concrete fungible asset issuance/tranche.
+type Issuance struct {
+	// AssetRef is the stable SDK identifier of the fungible asset this
+	// issuance belongs to.
+	AssetRef AssetRef
+
+	// IssuanceID is the protocol-level asset ID for this tranche.
+	IssuanceID AssetID
+
+	// Name is the human-readable asset tag.
+	Name string
+
+	// MetaHash is the issuance metadata hash.
+	MetaHash Hash
+
+	// Amount is the sum of wallet rows returned by the ListIssuances request
+	// for this tranche. With the default request this is wallet-known,
+	// confirmed, unspent, and unleased amount, not total issued supply.
+	Amount uint64
+}
+
+// Ref returns the AssetRef for this concrete issuance/tranche.
+func (i Issuance) Ref() AssetRef {
+	return AssetRefFromAssetID(i.IssuanceID)
 }
 
 // ParseAssetID parses a 32-byte asset ID from raw bytes.

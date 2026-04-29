@@ -15,7 +15,7 @@ import (
 // MintResult captures a confirmed mint together with the semantic AssetRef to
 // use for high-level wallet operations.
 type MintResult struct {
-	Asset *entities.Asset
+	Asset *entities.AssetRecord
 	Batch *entities.VerboseMintingBatch
 	Ref   entities.AssetRef
 }
@@ -109,7 +109,7 @@ func (h *TestHarness) fetchMintBatch(ctx context.Context,
 // minted asset. Fungible assets use the canonical group key exposed by
 // ListGroups, while collectibles keep their issuance asset ID.
 func (h *TestHarness) WaitForSemanticAssetRef(t testing.TB,
-	ctx context.Context, asset *entities.Asset,
+	ctx context.Context, asset *entities.AssetRecord,
 	timeout time.Duration) entities.AssetRef {
 
 	t.Helper()
@@ -185,4 +185,76 @@ func (h *TestHarness) MintCollectibleAsset(t testing.TB, ctx context.Context,
 		Name:          name,
 		InitialSupply: 1,
 	})
+}
+
+// MintCollectibleCollection mints the first NFT item in a new collection. The
+// returned Ref is the collection AssetRef; the concrete item AssetRef is derived
+// from result.Asset.Genesis.IssuanceID.
+func (h *TestHarness) MintCollectibleCollection(t testing.TB,
+	ctx context.Context, name string) (*MintResult, error) {
+
+	return h.MintAssetAndConfirm(t, ctx, &entities.CreateAsset{
+		AssetType:     entities.AssetTypeCollectible,
+		Name:          name,
+		InitialSupply: 1,
+		AllowIssuance: true,
+	})
+}
+
+// IssueCollectionItemAndConfirm mints another NFT item into an existing
+// collection and returns the concrete item AssetRef.
+func (h *TestHarness) IssueCollectionItemAndConfirm(t testing.TB,
+	ctx context.Context, collectionRef entities.AssetRef,
+	name string) (*MintResult, error) {
+
+	t.Helper()
+
+	mintEvents := h.subscribeMintEvents(t, ctx, h.AliceClient)
+
+	batch, err := h.AliceClient.CreateIssuance(ctx,
+		&entities.CreateIssuanceRequest{
+			Issuance: &entities.CreateIssuance{
+				AssetRef:  collectionRef,
+				Name:      name,
+				AssetType: entities.AssetTypeCollectible,
+				Amount:    1,
+			},
+			ShortResponse: true,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = h.AliceClient.FinalizeBatch(ctx,
+		&entities.FinalizeBatchRequest{ShortResponse: true},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	h.MineBlocks(t, defaultMineBlocks)
+	h.WaitForSync(t, ctx, h.AliceClient, defaultWaitTimeout)
+
+	waitForMintFinalized(t, mintEvents, batch.BatchKey,
+		defaultWaitTimeout)
+
+	finalized, err := h.fetchMintBatch(ctx, batch.BatchKey)
+	if err != nil {
+		return nil, err
+	}
+
+	resultAsset := h.WaitForAssetByTag(t, ctx, h.AliceClient,
+		name, defaultWaitTimeout)
+	if resultAsset == nil {
+		return nil, fmt.Errorf("collection item %q not found", name)
+	}
+
+	return &MintResult{
+		Asset: resultAsset,
+		Batch: finalized,
+		Ref: entities.AssetRefFromAssetID(
+			resultAsset.Genesis.IssuanceID,
+		),
+	}, nil
 }

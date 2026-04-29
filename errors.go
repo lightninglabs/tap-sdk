@@ -127,9 +127,9 @@ var (
 	// interactive transfer without setting receiver keys.
 	ErrNoReceiverKeys = errors.New("receiver keys not set")
 
-	// ErrNoAssetID is returned when attempting to execute a transfer
+	// ErrNoAssetRef is returned when attempting to execute a transfer
 	// without specifying a usable asset reference.
-	ErrNoAssetID = errors.New("asset ID not set")
+	ErrNoAssetRef = errors.New("asset ref not set")
 
 	// ErrZeroAmount is returned when attempting to execute a transfer
 	// with zero amount.
