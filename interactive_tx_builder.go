@@ -2,6 +2,7 @@ package tapsdk
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/lightninglabs/tap-sdk/entities"
@@ -16,6 +17,7 @@ import (
 // the receiver.
 type InteractiveTxBuilder struct {
 	walletKit  WalletKitClient
+	resolver   interactiveAssetResolver
 	networkHRP string
 	coinType   uint32
 
@@ -36,22 +38,32 @@ type InteractiveTxBuilder struct {
 	mu sync.Mutex
 }
 
+type interactiveAssetResolver interface {
+	ListAssets(ctx context.Context,
+		req *entities.ListAssetsRequest) ([]*entities.Asset, error)
+}
+
 // newInteractiveTxBuilder creates a new InteractiveTxBuilder.
 func newInteractiveTxBuilder(wallet WalletKitClient,
 	networkHRP string, coinType uint32) *InteractiveTxBuilder {
 
-	return &InteractiveTxBuilder{
+	builder := &InteractiveTxBuilder{
 		walletKit:  wallet,
 		networkHRP: networkHRP,
 		coinType:   coinType,
 	}
+
+	if resolver, ok := wallet.(interactiveAssetResolver); ok {
+		builder.resolver = resolver
+	}
+
+	return builder
 }
 
-// SetAsset specifies which asset and how much to send. The ref
-// must be a collectible (asset-ID) reference because interactive
-// transfers build a vPacket for a single, concrete asset. Fungible
-// group-key references are rejected because the protocol needs a
-// specific asset ID for coin selection.
+// SetAsset specifies which asset and how much to send. Asset-ID refs are used
+// directly. Group-key refs are resolved against the wallet's spendable assets
+// during Execute, so callers can keep using the SDK's semantic fungible asset
+// identifier unless no single issuance/tranche can cover the requested amount.
 func (b *InteractiveTxBuilder) SetAsset(ref entities.AssetRef,
 	amount uint64) *InteractiveTxBuilder {
 
@@ -136,8 +148,13 @@ func (b *InteractiveTxBuilder) Execute(
 		return nil, err
 	}
 
+	assetID, err := b.resolveAssetID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	// Build the vPacket.
-	if err := b.buildVPacket(); err != nil {
+	if err := b.buildVPacket(assetID); err != nil {
 		return nil, wrapErr("Execute", err)
 	}
 
@@ -167,23 +184,12 @@ func (b *InteractiveTxBuilder) validate() error {
 		return &Error{Op: "Execute", Err: ErrNoReceiverKeys}
 	}
 
-	// AssetRef must be a collectible (asset-ID) reference.
-	assetID, ok := b.assetRef.AssetID()
-	if !ok {
-		// Check if ref is zero (unset) or fungible (group key).
-		if _, gk := b.assetRef.GroupKey(); gk {
-			return &Error{
-				Op:  "Execute",
-				Err: ErrGroupKeyNotSupported,
-			}
-		}
-
+	if b.assetRef.IsZero() {
 		return &Error{Op: "Execute", Err: ErrNoAssetID}
 	}
 
-	var zeroID entities.AssetID
-	if assetID == zeroID {
-		return &Error{Op: "Execute", Err: ErrNoAssetID}
+	if err := b.assetRef.Validate(); err != nil {
+		return &Error{Op: "Execute", Err: err}
 	}
 
 	if b.amount == 0 {
@@ -193,15 +199,72 @@ func (b *InteractiveTxBuilder) validate() error {
 	return nil
 }
 
+func (b *InteractiveTxBuilder) resolveAssetID(
+	ctx context.Context) (entities.AssetID, error) {
+
+	if assetID, ok := b.assetRef.AssetID(); ok {
+		var zeroID entities.AssetID
+		if assetID == zeroID {
+			return entities.AssetID{}, &Error{
+				Op:  "Execute",
+				Err: ErrNoAssetID,
+			}
+		}
+
+		return assetID, nil
+	}
+
+	if !b.assetRef.IsGroupRef() {
+		return entities.AssetID{}, &Error{
+			Op:  "Execute",
+			Err: ErrNoAssetID,
+		}
+	}
+
+	if b.resolver == nil {
+		return entities.AssetID{}, &Error{
+			Op:  "Execute",
+			Err: ErrGroupKeyNotSupported,
+		}
+	}
+
+	assets, err := b.resolver.ListAssets(ctx, &entities.ListAssetsRequest{
+		AssetRef: &b.assetRef,
+	})
+	if err != nil {
+		return entities.AssetID{}, wrapErr("ResolveAssetRef", err)
+	}
+
+	var total uint64
+	for _, asset := range assets {
+		if asset == nil {
+			continue
+		}
+
+		total += asset.Amount
+		if asset.Amount >= b.amount {
+			return asset.Genesis.IssuanceID, nil
+		}
+	}
+
+	if total == 0 {
+		return entities.AssetID{}, wrapErr("ResolveAssetRef", fmt.Errorf(
+			"%w: %s", ErrAssetUnknown, b.assetRef,
+		))
+	}
+
+	return entities.AssetID{}, wrapErr("ResolveAssetRef", fmt.Errorf(
+		"%w: requested %d, largest spendable tranche is less than "+
+			"that amount", ErrInsufficientBalance, b.amount,
+	))
+}
+
 // buildVPacket creates the virtual PSBT for the interactive send.
-func (b *InteractiveTxBuilder) buildVPacket() error {
+func (b *InteractiveTxBuilder) buildVPacket(assetID entities.AssetID) error {
 	var leaves [][]byte
 	if b.altLeaves != nil && b.receiverKeys != nil {
 		leaves = b.altLeaves[b.receiverKeys.ScriptKey.PubKey]
 	}
-
-	// Safe to unwrap: validate() already checked this is an asset-ID ref.
-	assetID, _ := b.assetRef.AssetID()
 
 	vPkt := &vpsbt.InteractiveVPacket{
 		AssetID:           assetID,

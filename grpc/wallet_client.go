@@ -455,6 +455,16 @@ func unmarshalAssetTransfer(rpcTransfer *taprpc.AssetTransfer) (
 			ProofBlob: out.NewProofBlob,
 		}
 
+		if len(out.AssetId) > 0 {
+			if len(out.AssetId) != 32 {
+				return nil, fmt.Errorf(
+					"invalid output asset ID length: %d",
+					len(out.AssetId),
+				)
+			}
+			copy(output.IssuanceID[:], out.AssetId)
+		}
+
 		// Copy the script key.
 		if len(out.ScriptKey) == 33 {
 			copy(output.ScriptKey[:], out.ScriptKey)
@@ -1248,6 +1258,8 @@ func unmarshalManagedUtxo(
 		assets = append(assets, asset)
 	}
 
+	leaseExpiry := max(rpcUtxo.LeaseExpiryUnix, int64(0))
+
 	return &entities.ManagedUtxo{
 		OutPoint:         outPoint,
 		AmtSat:           rpcUtxo.AmtSat,
@@ -1256,7 +1268,7 @@ func unmarshalManagedUtxo(
 		MerkleRoot:       merkleRoot,
 		Assets:           assets,
 		LeaseOwner:       rpcUtxo.LeaseOwner,
-		LeaseExpiryUnix:  rpcUtxo.LeaseExpiryUnix,
+		LeaseExpiryUnix:  leaseExpiry,
 	}, nil
 }
 
@@ -1274,6 +1286,7 @@ func unmarshalGroupedAssets(groupKeyHex string,
 	if err != nil {
 		return nil, fmt.Errorf("invalid group key: %w", err)
 	}
+	groupRef := entities.AssetRefFromGroupKey(groupKey)
 
 	assets := make(
 		[]*entities.AssetHumanReadable, 0, len(rpcGroup.Assets),
@@ -1297,7 +1310,7 @@ func unmarshalGroupedAssets(groupKeyHex string,
 		}
 
 		assets = append(assets, &entities.AssetHumanReadable{
-			AssetRef:         entities.AssetRefFromAssetID(assetID),
+			AssetRef:         groupRef,
 			IssuanceID:       assetID,
 			Amount:           rpcAsset.Amount,
 			LockTime:         rpcAsset.LockTime,
@@ -1310,7 +1323,7 @@ func unmarshalGroupedAssets(groupKeyHex string,
 	}
 
 	return &entities.GroupedAssets{
-		AssetRef: entities.AssetRefFromGroupKey(groupKey),
+		AssetRef: groupRef,
 		Assets:   assets,
 	}, nil
 }

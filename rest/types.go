@@ -91,6 +91,7 @@ type jsonAnchorInfo struct {
 // jsonTransferOutput is the JSON shape of taprpc.TransferOutput.
 type jsonTransferOutput struct {
 	Amount       string          `json:"amount"`
+	AssetID      string          `json:"asset_id"`
 	ScriptKey    string          `json:"script_key"`
 	NewProofBlob string          `json:"new_proof_blob"`
 	Anchor       *jsonAnchorInfo `json:"anchor"`
@@ -427,6 +428,8 @@ type jsonManagedUtxo struct {
 	TaprootAssetRoot string       `json:"taproot_asset_root"`
 	MerkleRoot       string       `json:"merkle_root"`
 	Assets           []*jsonAsset `json:"assets"`
+	LeaseOwner       string       `json:"lease_owner"`
+	LeaseExpiryUnix  string       `json:"lease_expiry_unix"`
 }
 
 // jsonListUtxosResponse is the JSON shape of
@@ -584,14 +587,20 @@ type jsonAssetLeafKeysResponse struct {
 
 // jsonAssetKey is the JSON shape of universerpc.AssetKey.
 type jsonAssetKey struct {
-	Outpoint  *jsonOutpoint `json:"outpoint"`
-	ScriptKey string        `json:"script_key"`
+	Outpoint       *jsonOutpoint `json:"outpoint"`
+	Op             *jsonOutpoint `json:"op"`
+	OpStr          string        `json:"op_str"`
+	ScriptKey      string        `json:"script_key"`
+	ScriptKeyBytes string        `json:"script_key_bytes"`
+	ScriptKeyStr   string        `json:"script_key_str"`
 }
 
 // jsonOutpoint is the JSON shape of taprpc.Outpoint.
 type jsonOutpoint struct {
 	Txid        string `json:"txid"`
+	HashStr     string `json:"hash_str"`
 	OutputIndex uint32 `json:"output_index"`
+	Index       uint32 `json:"index"`
 }
 
 // jsonAssetLeavesResponse is the JSON shape of

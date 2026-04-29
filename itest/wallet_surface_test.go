@@ -4,6 +4,7 @@ package itest
 
 import (
 	"testing"
+	"time"
 
 	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/require"
@@ -97,18 +98,24 @@ func TestBurnAsset(t *testing.T) {
 		h.MineBlocks(t, defaultMineBlocks)
 		h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
 
-		burns, err := h.AliceClient.ListBurns(ctx,
-			&entities.ListBurnsRequest{
-				AssetRef: &minted.Asset.AssetRef,
-			},
-		)
-		require.NoError(t, err)
-		require.NotEmpty(t, burns)
-
 		var burned uint64
-		for _, b := range burns {
-			burned += b.Amount
-		}
+		require.Eventually(t, func() bool {
+			burns, err := h.AliceClient.ListBurns(ctx,
+				&entities.ListBurnsRequest{
+					AssetRef: &minted.Asset.AssetRef,
+				},
+			)
+			if err != nil || len(burns) == 0 {
+				return false
+			}
+
+			burned = 0
+			for _, b := range burns {
+				burned += b.Amount
+			}
+
+			return burned == 100
+		}, defaultWaitTimeout, time.Second)
 		require.Equal(t, uint64(100), burned)
 	})
 }

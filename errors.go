@@ -128,21 +128,23 @@ var (
 	ErrNoReceiverKeys = errors.New("receiver keys not set")
 
 	// ErrNoAssetID is returned when attempting to execute a transfer
-	// without specifying the asset ID.
+	// without specifying a usable asset reference.
 	ErrNoAssetID = errors.New("asset ID not set")
 
 	// ErrZeroAmount is returned when attempting to execute a transfer
 	// with zero amount.
 	ErrZeroAmount = errors.New("amount must be greater than zero")
 
-	// ErrGroupKeyNotSupported is returned when a fungible
-	// (group-key) AssetRef is used in a context that requires a
-	// specific asset ID, such as interactive transfers.
+	// ErrGroupKeyNotSupported is returned when a group-key AssetRef is
+	// used in a context that cannot resolve it to a concrete issuance.
 	ErrGroupKeyNotSupported = errors.New(
-		"group-key AssetRef not supported; use " +
-			"AssetRefFromAssetID for interactive " +
-			"transfers",
+		"group-key AssetRef requires a wallet-backed asset resolver",
 	)
+
+	// ErrInsufficientBalance is returned when the wallet knows the asset
+	// ref but cannot select enough spendable units for the requested
+	// operation.
+	ErrInsufficientBalance = errors.New("insufficient asset balance")
 
 	// ErrAmountRequired is returned when attempting to send to a V2
 	// address that does not embed an amount without specifying one.

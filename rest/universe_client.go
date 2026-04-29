@@ -21,14 +21,14 @@ func newUniverseClient(tp *transport) *universeClient {
 
 // jsonUniverseProof is the JSON body for InsertProof.
 type jsonUniverseProof struct {
-	Key       *jsonUniverseKey  `json:"key"`
+	Key       *jsonUniverseKey  `json:"key,omitempty"`
 	AssetLeaf *jsonAssetLeafReq `json:"asset_leaf"`
 }
 
 // jsonUniverseKey is the JSON shape of universerpc.UniverseKey.
 type jsonUniverseKey struct {
-	ID      *jsonUniverseID  `json:"id"`
-	LeafKey *jsonAssetKeyReq `json:"leaf_key"`
+	ID      *jsonUniverseID `json:"id"`
+	LeafKey *jsonAssetKey   `json:"leaf_key"`
 }
 
 // jsonUniverseID is the JSON shape of universerpc.ID.
@@ -36,12 +36,6 @@ type jsonUniverseID struct {
 	AssetID   string `json:"asset_id,omitempty"`
 	GroupKey  string `json:"group_key,omitempty"`
 	ProofType string `json:"proof_type"`
-}
-
-// jsonAssetKeyReq is the JSON shape of universerpc.AssetKey.
-type jsonAssetKeyReq struct {
-	OpStr          string `json:"op_str,omitempty"`
-	ScriptKeyBytes string `json:"script_key_bytes,omitempty"`
 }
 
 // jsonAssetLeafReq is the JSON shape of universerpc.AssetLeaf.
@@ -144,17 +138,11 @@ func (u *universeClient) InsertProof(ctx context.Context,
 		proofType = proofTypeIssuance
 	}
 
-	uniID := &jsonUniverseID{ProofType: proofType}
 	assetPathKind, assetPathValue, err := universeAssetPath(
 		decoded.AssetRef,
 	)
 	if err != nil {
 		return err
-	}
-	if assetPathKind == "asset-id" {
-		uniID.AssetID = assetPathValue
-	} else {
-		uniID.GroupKey = assetPathValue
 	}
 
 	// Build the REST URL path. InsertProof uses a POST with
@@ -175,12 +163,8 @@ func (u *universeClient) InsertProof(ctx context.Context,
 
 	body := &jsonUniverseProof{
 		Key: &jsonUniverseKey{
-			ID: uniID,
-			LeafKey: &jsonAssetKeyReq{
-				OpStr: decoded.Outpoint.String(),
-				ScriptKeyBytes: hex.EncodeToString(
-					decoded.ScriptKey[:],
-				),
+			ID: &jsonUniverseID{
+				ProofType: proofType,
 			},
 		},
 		AssetLeaf: &jsonAssetLeafReq{
@@ -515,7 +499,8 @@ func (u *universeClient) QueryProof(ctx context.Context,
 		pathKind, pathValue,
 	)
 
-	hashStr := hex.EncodeToString(key.LeafKey.Outpoint.Txid[:])
+	outpointParts := splitOutpoint(key.LeafKey.Outpoint.String())
+	hashStr := outpointParts[0]
 	index := key.LeafKey.Outpoint.Index
 	scriptKeyStr := hex.EncodeToString(key.LeafKey.ScriptKey[:])
 

@@ -64,6 +64,10 @@ type TransferOutput struct {
 	// AnchorOutpoint is the on-chain outpoint.
 	AnchorOutpoint Outpoint
 
+	// IssuanceID is the 32-byte protocol-level identifier of the
+	// asset issuance/tranche created at this output.
+	IssuanceID AssetID
+
 	// AnchorValue is the BTC value of the anchor output in sats.
 	AnchorValue int64
 
@@ -73,9 +77,10 @@ type TransferOutput struct {
 	// Amount is the number of asset units in this output.
 	Amount uint64
 
-	// ProofBlob is the transition proof for this output.
-	// For interactive sends, this must be delivered to the receiver.
-	// This is the standard way to retrieve proofs for the transfer.
+	// ProofBlob is the proof suffix returned by tapd for this output.
+	// A receiver needs a complete proof file, which can be exported after
+	// the anchor transaction confirms by using IssuanceID, ScriptKey, and
+	// AnchorOutpoint.
 	ProofBlob []byte
 
 	// AltLeaves are auxiliary Taproot leaves (if present) decoded from proofs.

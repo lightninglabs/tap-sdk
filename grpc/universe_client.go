@@ -896,7 +896,7 @@ func unmarshalAssetLeafKey(
 	// Parse the script key.
 	switch v := rpcKey.ScriptKey.(type) {
 	case *universerpc.AssetKey_ScriptKeyBytes:
-		scriptKey, err := entities.ParsePubKey(
+		scriptKey, err := entities.ParseScriptKey(
 			v.ScriptKeyBytes,
 		)
 		if err != nil {
@@ -906,9 +906,15 @@ func unmarshalAssetLeafKey(
 		key.ScriptKey = scriptKey
 
 	case *universerpc.AssetKey_ScriptKeyStr:
-		scriptKey, err := entities.ParsePubKeyHex(
+		scriptKeyBytes, err := hex.DecodeString(
 			v.ScriptKeyStr,
 		)
+		if err != nil {
+			return nil, fmt.Errorf("invalid script key "+
+				"string: %w", err)
+		}
+
+		scriptKey, err := entities.ParseScriptKey(scriptKeyBytes)
 		if err != nil {
 			return nil, fmt.Errorf("invalid script key "+
 				"string: %w", err)

@@ -52,6 +52,23 @@ func TestAssetRefFromGroupKey(t *testing.T) {
 	require.False(t, ok)
 }
 
+func TestAssetRefEquivalentMatchesTaprootXOnlyGroupKeys(t *testing.T) {
+	evenKey := testGroupKey(t)
+	oddKey := evenKey
+	oddKey[0] = 0x03
+
+	evenRef := AssetRefFromGroupKey(evenKey)
+	oddRef := AssetRefFromGroupKey(oddKey)
+	require.NotEqual(t, evenRef, oddRef)
+	require.True(t, evenRef.Equivalent(oddRef))
+	require.True(t, oddRef.Equivalent(evenRef))
+
+	gotKey, ok := oddRef.GroupKey()
+	require.True(t, ok)
+	require.Equal(t, byte(0x03), gotKey[0])
+	require.Equal(t, evenKey[1:], gotKey[1:])
+}
+
 func TestAssetRefFromAssetID(t *testing.T) {
 	id := testAssetID()
 	ref := AssetRefFromAssetID(id)

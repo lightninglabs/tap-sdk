@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/lightninglabs/tap-sdk/entities"
+	"github.com/lightninglabs/tap-sdk/internal/anchor"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 )
 
@@ -286,6 +287,7 @@ func (w *walletKitClient) SignVirtualPsbt(ctx context.Context,
 type jsonCommitVirtualPsbtsRequest struct {
 	VirtualPsbts      []string `json:"virtual_psbts"`
 	PassiveAssetPsbts []string `json:"passive_asset_psbts,omitempty"`
+	AnchorPsbt        string   `json:"anchor_psbt"`
 	SatPerVByte       string   `json:"sat_per_vbyte,omitempty"`
 	Add               bool     `json:"add,omitempty"`
 }
@@ -294,6 +296,11 @@ type jsonCommitVirtualPsbtsRequest struct {
 func (w *walletKitClient) CommitVirtualPsbts(ctx context.Context,
 	virtualPsbts [][]byte, passivePsbts [][]byte,
 	feeRate uint64) (*entities.CommittedTransfer, error) {
+
+	anchorPsbt, err := anchor.PreparePsbt(virtualPsbts, passivePsbts)
+	if err != nil {
+		return nil, fmt.Errorf("prepare anchor PSBT: %w", err)
+	}
 
 	vPsbts := make([]string, 0, len(virtualPsbts))
 	for _, p := range virtualPsbts {
@@ -314,12 +321,13 @@ func (w *walletKitClient) CommitVirtualPsbts(ctx context.Context,
 	body := &jsonCommitVirtualPsbtsRequest{
 		VirtualPsbts:      vPsbts,
 		PassiveAssetPsbts: pPsbts,
+		AnchorPsbt:        hex.EncodeToString(anchorPsbt),
 		SatPerVByte:       fmt.Sprintf("%d", feeRate),
 		Add:               true,
 	}
 
 	var resp jsonCommitVirtualPsbtsResponse
-	err := w.transport.doPost(
+	err = w.transport.doPost(
 		ctx,
 		"/v1/taproot-assets/wallet/virtual-psbt/commit",
 		macaroon.WalletKitServiceMac, body, &resp,
@@ -328,7 +336,7 @@ func (w *walletKitClient) CommitVirtualPsbts(ctx context.Context,
 		return nil, err
 	}
 
-	anchorPsbt, err := parseHexBytes(resp.AnchorPsbt)
+	respAnchorPsbt, err := parseHexBytes(resp.AnchorPsbt)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"invalid anchor_psbt: %w", err,
@@ -362,7 +370,7 @@ func (w *walletKitClient) CommitVirtualPsbts(ctx context.Context,
 	}
 
 	return &entities.CommittedTransfer{
-		AnchorPsbt:        anchorPsbt,
+		AnchorPsbt:        respAnchorPsbt,
 		VirtualPsbts:      vPsbtBytes,
 		PassiveAssetPsbts: pPsbtBytes,
 	}, nil

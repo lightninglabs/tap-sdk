@@ -7,6 +7,11 @@ import (
 	"github.com/lightninglabs/tap-sdk/entities"
 )
 
+// AnchorSigner signs and finalizes the BTC anchor PSBT returned by tapd after
+// Commit. The callback should return the PSBT that PublishAndLogTransfer can
+// extract and broadcast.
+type AnchorSigner func(ctx context.Context, anchorPsbt []byte) ([]byte, error)
+
 // TxBuilder builds address-based Taproot Asset transfers.
 //
 // Address-based transfers use Taproot Asset addresses, which include
@@ -26,8 +31,9 @@ type TxBuilder struct {
 	signedPsbt   []byte
 	anchorPsbt   []byte
 
-	finished bool
-	mu       sync.Mutex
+	anchorSigner AnchorSigner
+	finished     bool
+	mu           sync.Mutex
 }
 
 // newTxBuilder creates a new TxBuilder instance.
@@ -86,12 +92,31 @@ func (b *TxBuilder) SetSignedPsbt(signedPsbt []byte) *TxBuilder {
 	return b
 }
 
+// SetAnchorPsbt injects an externally finalized anchor PSBT into the builder.
+func (b *TxBuilder) SetAnchorPsbt(anchorPsbt []byte) *TxBuilder {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.anchorPsbt = append([]byte(nil), anchorPsbt...)
+	return b
+}
+
 // SetPassivePsbts injects externally produced passive asset PSBTs.
 func (b *TxBuilder) SetPassivePsbts(passivePsbts [][]byte) *TxBuilder {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	b.passivePsbts = clone2Dimensional(passivePsbts)
+	return b
+}
+
+// SetAnchorSigner sets the callback used to finalize the BTC anchor PSBT
+// between Commit and Finish.
+func (b *TxBuilder) SetAnchorSigner(signer AnchorSigner) *TxBuilder {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.anchorSigner = signer
 	return b
 }
 
@@ -191,6 +216,10 @@ func (b *TxBuilder) Finish(ctx context.Context, skipBroadcast bool) (
 		return nil, ErrNotCommitted
 	}
 
+	if err := b.signAnchor(ctx); err != nil {
+		return nil, wrapErr("Finish", err)
+	}
+
 	resp, err := b.walletKit.PublishAndLogTransfer(
 		ctx, b.anchorPsbt, [][]byte{b.signedPsbt}, b.passivePsbts,
 		skipBroadcast,
@@ -256,6 +285,10 @@ func (b *TxBuilder) Execute(ctx context.Context, skipBroadcast bool) (
 		b.passivePsbts = clone2Dimensional(commitResp.PassiveAssetPsbts)
 	}
 
+	if err := b.signAnchor(ctx); err != nil {
+		return nil, wrapErr("Finish", err)
+	}
+
 	// Finish.
 	resp, err := b.walletKit.PublishAndLogTransfer(
 		ctx, b.anchorPsbt, [][]byte{b.signedPsbt}, b.passivePsbts,
@@ -268,6 +301,20 @@ func (b *TxBuilder) Execute(ctx context.Context, skipBroadcast bool) (
 	b.finished = true
 
 	return resp, nil
+}
+
+func (b *TxBuilder) signAnchor(ctx context.Context) error {
+	if b.anchorSigner == nil {
+		return nil
+	}
+
+	signedAnchorPsbt, err := b.anchorSigner(ctx, b.anchorPsbt)
+	if err != nil {
+		return err
+	}
+
+	b.anchorPsbt = append([]byte(nil), signedAnchorPsbt...)
+	return nil
 }
 
 // clone2Dimensional performs a deep copy of a slice of byte slices.

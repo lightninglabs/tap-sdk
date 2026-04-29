@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/lightninglabs/tap-sdk/entities"
@@ -47,6 +48,16 @@ func parseBase64Bytes(s string) ([]byte, error) {
 	}
 
 	return nil, lastErr
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+
+	return ""
 }
 
 // parseUint64 parses a JSON string-encoded uint64. The gRPC-gateway
@@ -444,6 +455,23 @@ func unmarshalAssetTransfer(
 		output := entities.TransferOutput{
 			Amount:    amount,
 			ProofBlob: proofBlob,
+		}
+
+		if out.AssetID != "" {
+			assetIDBytes, err := parseHexBytes(out.AssetID)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"invalid output asset ID: %w", err,
+				)
+			}
+
+			if len(assetIDBytes) != 32 {
+				return nil, fmt.Errorf(
+					"invalid output asset ID length: %d",
+					len(assetIDBytes),
+				)
+			}
+			copy(output.IssuanceID[:], assetIDBytes)
 		}
 
 		scriptKeyBytes, err := parseHexBytes(out.ScriptKey)
@@ -927,6 +955,26 @@ func unmarshalManagedUtxo(
 	var pubKey entities.PubKey
 	copy(pubKey[:], internalKey)
 
+	var leaseOwner []byte
+	if u.LeaseOwner != "" {
+		leaseOwner, err = parseHexBytes(u.LeaseOwner)
+		if err != nil {
+			return nil, fmt.Errorf("invalid lease_owner: %w", err)
+		}
+	}
+
+	var leaseExpiry int64
+	if u.LeaseExpiryUnix != "" {
+		leaseExpiry, err = parseInt64(u.LeaseExpiryUnix)
+		if err != nil {
+			return nil, fmt.Errorf("invalid lease_expiry_unix: %w",
+				err)
+		}
+		if leaseExpiry < 0 {
+			leaseExpiry = 0
+		}
+	}
+
 	return &entities.ManagedUtxo{
 		OutPoint:         outpoint,
 		AmtSat:           int64(amtSat),
@@ -934,6 +982,8 @@ func unmarshalManagedUtxo(
 		TaprootAssetRoot: taprootRootHash,
 		MerkleRoot:       merkleRootHash,
 		Assets:           assets,
+		LeaseOwner:       leaseOwner,
+		LeaseExpiryUnix:  leaseExpiry,
 	}, nil
 }
 
@@ -951,6 +1001,7 @@ func unmarshalGroupedAssets(groupKeyHex string,
 	if err != nil {
 		return nil, fmt.Errorf("invalid group key: %w", err)
 	}
+	groupRef := entities.AssetRefFromGroupKey(groupKey)
 
 	assets := make(
 		[]*entities.AssetHumanReadable, 0, len(g.Assets),
@@ -961,11 +1012,12 @@ func unmarshalGroupedAssets(groupKeyHex string,
 			return nil, fmt.Errorf(
 				"unmarshal grouped asset: %w", err)
 		}
+		asset.AssetRef = groupRef
 		assets = append(assets, asset)
 	}
 
 	return &entities.GroupedAssets{
-		AssetRef: entities.AssetRefFromGroupKey(groupKey),
+		AssetRef: groupRef,
 		Assets:   assets,
 	}, nil
 }
@@ -1282,40 +1334,88 @@ func unmarshalAssetLeafKey(
 		return nil, fmt.Errorf("nil asset key")
 	}
 
-	if k.Outpoint == nil {
-		return nil, fmt.Errorf("nil outpoint")
-	}
-
-	outpoint := entities.Outpoint{
-		Index: k.Outpoint.OutputIndex,
-	}
-
-	txidBytes, err := parseHexBytes(k.Outpoint.Txid)
+	outpoint, err := unmarshalAssetKeyOutpoint(k)
 	if err != nil {
-		return nil, fmt.Errorf("invalid txid: %w", err)
+		return nil, err
 	}
 
-	if len(txidBytes) == 32 {
-		copy(outpoint.Txid[:], txidBytes)
-	}
-
-	scriptKeyBytes, err := parseHexBytes(k.ScriptKey)
+	scriptKeyBytes, err := parseHexBytes(assetKeyScriptKey(k))
 	if err != nil {
 		return nil, fmt.Errorf("invalid script_key: %w", err)
 	}
 
-	if len(scriptKeyBytes) != 33 {
-		return nil, fmt.Errorf("invalid script_key length: %d",
-			len(scriptKeyBytes))
+	scriptKey, err := entities.ParseScriptKey(scriptKeyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("invalid script_key: %w", err)
 	}
-
-	var scriptKey entities.PubKey
-	copy(scriptKey[:], scriptKeyBytes)
 
 	return &entities.AssetLeafKey{
 		Outpoint:  outpoint,
 		ScriptKey: scriptKey,
 	}, nil
+}
+
+func unmarshalAssetKeyOutpoint(k *jsonAssetKey) (entities.Outpoint, error) {
+	opStr := k.OpStr
+	if opStr != "" {
+		outpoint, err := entities.NewOutpointFromStr(opStr)
+		if err != nil {
+			return entities.Outpoint{}, fmt.Errorf(
+				"invalid outpoint: %w", err,
+			)
+		}
+
+		return outpoint, nil
+	}
+
+	op := k.Outpoint
+	if op == nil {
+		op = k.Op
+	}
+	if op == nil {
+		return entities.Outpoint{}, fmt.Errorf("nil outpoint")
+	}
+
+	return unmarshalJSONOutpoint(op)
+}
+
+func unmarshalJSONOutpoint(op *jsonOutpoint) (entities.Outpoint, error) {
+	opStr := firstNonEmpty(op.Txid, op.HashStr)
+	if opStr == "" {
+		return entities.Outpoint{}, fmt.Errorf("empty outpoint")
+	}
+
+	if strings.Contains(opStr, ":") {
+		return entities.NewOutpointFromStr(opStr)
+	}
+
+	txidBytes, err := parseHexBytes(opStr)
+	if err != nil {
+		return entities.Outpoint{}, fmt.Errorf("invalid txid: %w", err)
+	}
+	if len(txidBytes) != 32 {
+		return entities.Outpoint{}, fmt.Errorf(
+			"invalid txid length: %d", len(txidBytes),
+		)
+	}
+
+	index := op.OutputIndex
+	if index == 0 {
+		index = op.Index
+	}
+
+	outpoint := entities.Outpoint{
+		Index: index,
+	}
+	copy(outpoint.Txid[:], txidBytes)
+
+	return outpoint, nil
+}
+
+func assetKeyScriptKey(k *jsonAssetKey) string {
+	return firstNonEmpty(
+		k.ScriptKey, k.ScriptKeyBytes, k.ScriptKeyStr,
+	)
 }
 
 // unmarshalAssetLeaf converts a JSON asset leaf to an entity.
@@ -1369,14 +1469,7 @@ func unmarshalAssetProofResponse(
 		key := entities.UniverseKey{ID: *id}
 
 		if r.Req.LeafKey != nil {
-			leafKey, err := unmarshalAssetLeafKey(
-				&jsonAssetKey{
-					Outpoint: &jsonOutpoint{
-						Txid: r.Req.LeafKey.OpStr,
-					},
-					ScriptKey: r.Req.LeafKey.ScriptKeyBytes, //nolint:lll
-				},
-			)
+			leafKey, err := unmarshalAssetLeafKey(r.Req.LeafKey)
 			if err != nil {
 				return nil, fmt.Errorf(
 					"invalid leaf_key: %w", err,
@@ -1541,17 +1634,14 @@ func unmarshalAssetStatsSnapshot(
 	snapshot := &entities.AssetStatsSnapshot{}
 
 	if s.GroupKey != "" {
-		groupKeyBytes, err := parseHexBytes(s.GroupKey)
+		groupKey, err := entities.ParseGroupRefKey(s.GroupKey)
 		if err != nil {
 			return nil, fmt.Errorf("invalid group_key: %w",
 				err)
 		}
 
-		if len(groupKeyBytes) == 33 {
-			var groupKey entities.PubKey
-			copy(groupKey[:], groupKeyBytes)
-			snapshot.GroupKey = &groupKey
-		}
+		snapshot.GroupKey = &groupKey
+		snapshot.AssetRef = entities.AssetRefFromGroupKey(groupKey)
 	}
 
 	groupSupply, err := parseInt64(s.GroupSupply)
@@ -1575,6 +1665,9 @@ func unmarshalAssetStatsSnapshot(
 			return nil, fmt.Errorf("invalid asset: %w", err)
 		}
 		snapshot.Asset = asset
+		if snapshot.AssetRef.IsZero() {
+			snapshot.AssetRef = asset.AssetRef
+		}
 	}
 
 	totalSyncs, err := parseInt64(s.TotalSyncs)

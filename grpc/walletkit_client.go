@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/lightninglabs/tap-sdk/entities"
+	"github.com/lightninglabs/tap-sdk/internal/anchor"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/assetwalletrpc"
@@ -117,9 +118,15 @@ func (m *walletKitClient) CommitVirtualPsbts(ctx context.Context,
 	virtualPsbts [][]byte, passivePsbts [][]byte, satPerVByte uint64) (
 	*entities.CommittedTransfer, error) {
 
+	anchorPsbt, err := anchor.PreparePsbt(virtualPsbts, passivePsbts)
+	if err != nil {
+		return nil, fmt.Errorf("prepare anchor PSBT: %w", err)
+	}
+
 	req := &assetwalletrpc.CommitVirtualPsbtsRequest{
 		VirtualPsbts:      virtualPsbts,
 		PassiveAssetPsbts: passivePsbts,
+		AnchorPsbt:        anchorPsbt,
 		Fees: &assetwalletrpc.CommitVirtualPsbtsRequest_SatPerVbyte{
 			SatPerVbyte: satPerVByte,
 		},
