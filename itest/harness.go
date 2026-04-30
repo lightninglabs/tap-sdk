@@ -546,6 +546,31 @@ func (h *TestHarness) CreateV2EmbeddedReceiveAddress(t testing.TB,
 	return addr
 }
 
+// WaitForProofFile waits until tapd exposes a proof file for a concrete asset
+// output.
+func (h *TestHarness) WaitForProofFile(t testing.TB, ctx context.Context,
+	wallet *tapsdk.Wallet, ref entities.AssetRef,
+	scriptKey entities.PubKey,
+	outpoint *entities.Outpoint) *entities.ProofFile {
+
+	t.Helper()
+
+	var proof *entities.ProofFile
+	var lastErr error
+	require.Eventuallyf(t, func() bool {
+		proof, lastErr = wallet.ExportProofFile(
+			ctx, ref, scriptKey, outpoint,
+		)
+		return lastErr == nil && proof != nil &&
+			len(proof.RawProofFile) > 0
+	}, defaultWaitTimeout, time.Second,
+		"proof file for %s never became available: %v",
+		ref, lastErr,
+	)
+
+	return proof
+}
+
 // envOr returns the environment variable value or the fallback.
 func envOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {

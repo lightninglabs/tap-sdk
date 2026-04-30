@@ -98,13 +98,14 @@ func TestInteractiveTxBuilderEndToEnd(t *testing.T) {
 		h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
 		h.WaitForSync(t, ctx, h.BobClient, defaultSyncTimeout)
 
-		proof, err := h.AliceWallet.ExportProofFile(
-			ctx, entities.AssetRefFromAssetID(output.IssuanceID),
+		proof := h.WaitForProofFile(
+			t, ctx, h.AliceWallet,
+			entities.AssetRefFromAssetID(output.IssuanceID),
 			output.ScriptKey, &output.AnchorOutpoint,
 		)
-		require.NoError(t, err)
 		require.NotEmpty(t, proof.RawProofFile)
 
+		h.EnableUniverseBootstrap(t, ctx)
 		registered, err := h.BobWallet.ImportProofFile(ctx, proof)
 		require.NoError(t, err)
 		require.NotNil(t, registered)

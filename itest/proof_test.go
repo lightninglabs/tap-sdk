@@ -246,12 +246,13 @@ func TestProofImportInteractive(t *testing.T) {
 		h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
 		h.WaitForSync(t, ctx, h.BobClient, defaultSyncTimeout)
 
-		proof, err := h.AliceWallet.ExportProofFile(
-			ctx, entities.AssetRefFromAssetID(output.IssuanceID),
+		proof := h.WaitForProofFile(
+			t, ctx, h.AliceWallet,
+			entities.AssetRefFromAssetID(output.IssuanceID),
 			output.ScriptKey, &output.AnchorOutpoint,
 		)
-		require.NoError(t, err)
 
+		h.EnableUniverseBootstrap(t, ctx)
 		registered, err := h.BobWallet.ImportProof(
 			ctx, &entities.ProofBundle{
 				AssetRef: minted.Ref,

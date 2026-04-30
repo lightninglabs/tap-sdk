@@ -622,6 +622,132 @@ func expectEmptyBalances(mc *refMockClient, ctx context.Context,
 	}, nil)
 }
 
+func TestListBalances_ReturnsAllBalances(t *testing.T) {
+	mc := new(refMockClient)
+	w := NewWallet(mc, entities.NetworkRegtest)
+	ctx := context.Background()
+
+	first := entities.AssetRefFromGroupKey(testRefGroupKey(t))
+	second := entities.AssetRefFromAssetID(testRefAssetID())
+
+	mc.On("ListBalances", ctx, (*entities.ListBalancesRequest)(nil)).Return(
+		&entities.ListBalancesResponse{
+			Balances: map[string]*entities.Balance{
+				first.String(): {
+					AssetRef: first,
+					Balance:  21,
+				},
+				second.String(): {
+					AssetRef: second,
+					Balance:  1,
+				},
+			},
+			UnconfirmedTransfers: 2,
+		}, nil,
+	)
+
+	resp, err := w.ListBalances(ctx, nil)
+	require.NoError(t, err)
+	require.Len(t, resp.Balances, 2)
+	require.Equal(t, uint64(21), resp.Balances[first.String()].Balance)
+	require.Equal(t, uint64(1), resp.Balances[second.String()].Balance)
+	require.Equal(t, uint64(2), resp.UnconfirmedTransfers)
+
+	mc.AssertExpectations(t)
+}
+
+func TestListBalances_NormalizesEmptyResponse(t *testing.T) {
+	mc := new(refMockClient)
+	w := NewWallet(mc, entities.NetworkRegtest)
+	ctx := context.Background()
+
+	mc.On("ListBalances", ctx, (*entities.ListBalancesRequest)(nil)).Return(
+		&entities.ListBalancesResponse{}, nil,
+	)
+
+	resp, err := w.ListBalances(ctx, nil)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.NotNil(t, resp.Balances)
+	require.Empty(t, resp.Balances)
+
+	mc.AssertExpectations(t)
+}
+
+func TestListBalances_FilterKnownBalance(t *testing.T) {
+	mc := new(refMockClient)
+	w := NewWallet(mc, entities.NetworkRegtest)
+	ctx := context.Background()
+
+	ref := entities.AssetRefFromGroupKey(testRefGroupKey(t))
+	req := &entities.ListBalancesRequest{AssetRef: &ref}
+
+	mc.On("ListBalances", ctx, req).Return(&entities.ListBalancesResponse{
+		Balances: map[string]*entities.Balance{
+			ref.String(): {
+				AssetRef: ref,
+				Balance:  42000,
+			},
+		},
+	}, nil)
+
+	resp, err := w.ListBalances(ctx, req)
+	require.NoError(t, err)
+	require.Len(t, resp.Balances, 1)
+	require.Equal(t, uint64(42000), resp.Balances[ref.String()].Balance)
+
+	mc.AssertExpectations(t)
+}
+
+func TestListBalances_FilterKnownZero(t *testing.T) {
+	mc := new(refMockClient)
+	w := NewWallet(mc, entities.NetworkRegtest)
+	ctx := context.Background()
+
+	ref := entities.AssetRefFromGroupKey(testRefGroupKey(t))
+	req := &entities.ListBalancesRequest{AssetRef: &ref}
+
+	expectEmptyBalances(mc, ctx, ref)
+	mc.On("QueryAssetRoots", ctx, issuanceRootID(ref)).Return(
+		&entities.QueryRootResponse{
+			IssuanceRoot: &entities.UniverseRoot{
+				ID:        *issuanceRootID(ref),
+				AssetName: "known-zero",
+			},
+		}, nil,
+	)
+
+	resp, err := w.ListBalances(ctx, req)
+	require.NoError(t, err)
+	require.Len(t, resp.Balances, 1)
+	require.Equal(t, ref, resp.Balances[ref.String()].AssetRef)
+	require.Zero(t, resp.Balances[ref.String()].Balance)
+
+	mc.AssertExpectations(t)
+}
+
+func TestListBalances_UnknownAsset(t *testing.T) {
+	mc := new(refMockClient)
+	w := NewWallet(mc, entities.NetworkRegtest)
+	ctx := context.Background()
+
+	ref := entities.AssetRefFromGroupKey(testRefGroupKey(t))
+	req := &entities.ListBalancesRequest{AssetRef: &ref}
+
+	expectEmptyBalances(mc, ctx, ref)
+	mc.On("QueryAssetRoots", ctx, issuanceRootID(ref)).Return(
+		&entities.QueryRootResponse{}, nil,
+	)
+
+	resp, err := w.ListBalances(ctx, req)
+	require.Error(t, err)
+	require.ErrorIs(t, err, ErrAssetUnknown)
+	require.Contains(t, err.Error(), ref.String())
+	require.Nil(t, resp)
+
+	mc.AssertExpectations(t)
+}
+
 // issuanceRootID is the UniverseID the cold-path probe consults.
 func issuanceRootID(ref entities.AssetRef) *entities.UniverseID {
 	return &entities.UniverseID{

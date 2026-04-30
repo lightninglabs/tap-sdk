@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"encoding/hex"
 	"testing"
 
 	"github.com/lightninglabs/tap-sdk/entities"
@@ -42,4 +43,65 @@ func TestAssetRecordMatchesRef(t *testing.T) {
 
 	require.True(t, assetRecordMatchesRef(record, collectionRef))
 	require.True(t, assetRecordMatchesRef(record, itemRef))
+}
+
+func TestBurnAssetRequestBody(t *testing.T) {
+	var assetID entities.AssetID
+	copy(assetID[:], restTestAssetID)
+
+	var groupKey entities.PubKey
+	copy(groupKey[:], restTestPubKey)
+
+	tests := []struct {
+		name     string
+		req      *entities.BurnAssetRequest
+		validate func(*testing.T, map[string]any)
+	}{
+		{
+			name: "asset ID ref uses asset specifier",
+			req: &entities.BurnAssetRequest{
+				AssetRef:         entities.AssetRefFromAssetID(assetID),
+				AmountToBurn:     100,
+				ConfirmationText: "assets will be destroyed",
+				Note:             "test",
+			},
+			validate: func(t *testing.T, body map[string]any) {
+				specifier, ok := body["asset_specifier"].(map[string]string)
+				require.True(t, ok)
+				require.Equal(
+					t, hex.EncodeToString(restTestAssetID),
+					specifier["asset_id_str"],
+				)
+				require.NotContains(t, body, "asset_id_str")
+				require.Equal(t, "100", body["amount_to_burn"])
+				require.Equal(t, "test", body["note"])
+			},
+		},
+		{
+			name: "group key ref uses asset specifier",
+			req: &entities.BurnAssetRequest{
+				AssetRef:     entities.AssetRefFromGroupKey(groupKey),
+				AmountToBurn: 200,
+			},
+			validate: func(t *testing.T, body map[string]any) {
+				specifier, ok := body["asset_specifier"].(map[string]string)
+				require.True(t, ok)
+				require.Equal(
+					t, hex.EncodeToString(restTestPubKey),
+					specifier["group_key_str"],
+				)
+				require.NotContains(t, body, "asset_id_str")
+				require.Equal(t, "200", body["amount_to_burn"])
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			body, err := burnAssetRequestBody(tc.req)
+			require.NoError(t, err)
+
+			tc.validate(t, body)
+		})
+	}
 }

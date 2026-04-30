@@ -678,11 +678,23 @@ func unmarshalBalance(
 	if rpcBalance == nil {
 		return nil, fmt.Errorf("nil asset balance")
 	}
+
+	var genesis *entities.IssuanceGenesis
+	if rpcBalance.AssetGenesis != nil {
+		var err error
+		genesis, err = unmarshalIssuanceGenesis(rpcBalance.AssetGenesis)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	balance := &entities.Balance{
 		Balance: rpcBalance.Balance,
 	}
 
-	if len(rpcBalance.GroupKey) != 0 {
+	if len(rpcBalance.GroupKey) != 0 &&
+		(genesis == nil || genesis.Type != entities.AssetTypeCollectible) {
+
 		if len(rpcBalance.GroupKey) != 33 {
 			return nil, fmt.Errorf("invalid group key length: %d",
 				len(rpcBalance.GroupKey))
@@ -696,11 +708,6 @@ func unmarshalBalance(
 
 	if rpcBalance.AssetGenesis == nil {
 		return nil, fmt.Errorf("missing asset genesis")
-	}
-
-	genesis, err := unmarshalIssuanceGenesis(rpcBalance.AssetGenesis)
-	if err != nil {
-		return nil, err
 	}
 
 	balance.AssetRef = entities.AssetRefFromAsset(genesis.IssuanceID, nil)
