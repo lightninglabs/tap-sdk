@@ -67,16 +67,17 @@ func TestWalletSurface(t *testing.T) {
 	})
 }
 
-// TestBurnAsset exercises BurnAsset + ListBurns for an asset-id ref,
-// which works against both the pinned v0.7.2 image and tapd main.
+// TestBurnAsset exercises BurnAsset + ListBurns for an asset-id ref.
 func TestBurnAsset(t *testing.T) {
 	runForTransports(t, func(t *testing.T, transport Transport) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
 		minted, err := h.MintAssetAndConfirm(t, ctx,
 			&entities.CreateAsset{
-				AssetType:     entities.AssetTypeNormal,
-				Name:          "burn-token",
+				AssetType: entities.AssetTypeNormal,
+				Name: uniqueEventLabel(
+					"burn-token-" + string(transport),
+				),
 				InitialSupply: 500,
 			},
 		)
@@ -129,7 +130,8 @@ func TestBurnAssetByGroupKey(t *testing.T) {
 	runForTransports(t, func(t *testing.T, transport Transport) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
-		minted, err := h.MintGroupedAsset(t, ctx, "burn-group", 500)
+		name := uniqueEventLabel("burn-group-" + string(transport))
+		minted, err := h.MintGroupedAsset(t, ctx, name, 500)
 		require.NoError(t, err)
 		require.True(t, minted.Ref.IsGroupRef())
 

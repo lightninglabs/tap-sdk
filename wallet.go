@@ -202,7 +202,7 @@ func (s *Wallet) resolveExactGroupRef(ctx context.Context,
 func (s *Wallet) GetBalance(ctx context.Context,
 	ref entities.AssetRef) (uint64, error) {
 
-	resp, err := s.client.ListBalances(ctx, &entities.ListBalancesRequest{
+	resp, err := s.ListBalances(ctx, &entities.ListBalancesRequest{
 		AssetRef: &ref,
 	})
 	if err != nil {
@@ -213,22 +213,75 @@ func (s *Wallet) GetBalance(ctx context.Context,
 		return balance.Balance, nil
 	}
 
+	return 0, wrapErr("GetBalance", fmt.Errorf(
+		"%w: %s", ErrAssetUnknown, ref,
+	))
+}
+
+// ListBalances returns wallet balances keyed by user-facing AssetRef.
+//
+// If the request filters by AssetRef and the wallet has no confirmed units,
+// ListBalances checks the local universe to distinguish a known zero balance
+// from an unknown asset ref. Known zero balances are returned as an entry with
+// Balance set to zero. Unknown refs return an error wrapping ErrAssetUnknown.
+func (s *Wallet) ListBalances(ctx context.Context,
+	req *entities.ListBalancesRequest) (*entities.ListBalancesResponse, error) {
+
+	resp, err := s.client.ListBalances(ctx, req)
+	if err != nil {
+		return nil, wrapErr("ListBalances", err)
+	}
+
+	if resp == nil {
+		resp = &entities.ListBalancesResponse{}
+	}
+	if resp.Balances == nil {
+		resp.Balances = make(map[string]*entities.Balance)
+	}
+
+	if req == nil || req.AssetRef == nil {
+		return resp, nil
+	}
+
+	ref := *req.AssetRef
+	if _, ok := resp.Balances[ref.String()]; ok {
+		return resp, nil
+	}
+
+	known, err := s.assetKnown(ctx, ref)
+	if err != nil {
+		return nil, wrapErr("ListBalances", err)
+	}
+	if known {
+		resp.Balances[ref.String()] = &entities.Balance{
+			AssetRef: ref,
+		}
+
+		return resp, nil
+	}
+
+	return nil, wrapErr("ListBalances", fmt.Errorf(
+		"%w: %s", ErrAssetUnknown, ref,
+	))
+}
+
+func (s *Wallet) assetKnown(ctx context.Context,
+	ref entities.AssetRef) (bool, error) {
+
 	roots, err := s.client.QueryAssetRoots(ctx, &entities.UniverseID{
 		AssetRef:  ref,
 		ProofType: entities.ProofTypeIssuance,
 	})
 	if err != nil {
-		return 0, wrapErr("GetBalance", err)
+		return false, err
 	}
 	if roots != nil &&
 		(roots.IssuanceRoot != nil || roots.TransferRoot != nil) {
 
-		return 0, nil
+		return true, nil
 	}
 
-	return 0, wrapErr("GetBalance", fmt.Errorf(
-		"%w: %s", ErrAssetUnknown, ref,
-	))
+	return false, nil
 }
 
 // DeriveKeys derives a new script key and internal key for receiving assets.

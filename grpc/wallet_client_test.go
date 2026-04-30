@@ -313,6 +313,20 @@ func TestUnmarshalBalance(t *testing.T) {
 				Balance: 42,
 			},
 		},
+		{
+			name: "collection item balance uses asset ID",
+			rpcBalance: &taprpc.AssetBalance{
+				AssetGenesis: &taprpc.GenesisInfo{
+					GenesisPoint: zeroGenesisPoint,
+					Name:         "test-nft",
+					AssetId:      testAssetID,
+					OutputIndex:  1,
+					AssetType:    taprpc.AssetType_COLLECTIBLE,
+				},
+				Balance:  42,
+				GroupKey: testPubKey,
+			},
+		},
 	}
 
 	for _, tc := range tests {

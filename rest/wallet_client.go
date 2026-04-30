@@ -183,9 +183,23 @@ func (w *walletClient) ListBalances(ctx context.Context,
 	}
 
 	for _, ab := range resp.AssetBalances {
+		var genesis *entities.IssuanceGenesis
+		if ab.AssetGenesis != nil {
+			genesis, err = unmarshalIssuanceGenesis(
+				ab.AssetGenesis,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("balance "+
+					"genesis: %w", err)
+			}
+		}
+
 		var ref entities.AssetRef
 
-		if ab.GroupKey != "" {
+		if ab.GroupKey != "" &&
+			(genesis == nil ||
+				genesis.Type != entities.AssetTypeCollectible) {
+
 			gkBytes, err := parseHexBytes(
 				ab.GroupKey,
 			)
@@ -202,12 +216,9 @@ func (w *walletClient) ListBalances(ctx context.Context,
 
 			ref = entities.AssetRefFromGroupKey(gk)
 		} else {
-			genesis, err := unmarshalIssuanceGenesis(
-				ab.AssetGenesis,
-			)
-			if err != nil {
-				return nil, fmt.Errorf("balance "+
-					"genesis: %w", err)
+			if genesis == nil {
+				return nil, fmt.Errorf("balance genesis: " +
+					"missing asset genesis")
 			}
 
 			ref = entities.AssetRefFromAssetID(
@@ -707,6 +718,26 @@ func (w *walletClient) BurnAsset(ctx context.Context,
 	req *entities.BurnAssetRequest) (
 	*entities.BurnAssetResponse, error) {
 
+	body, err := burnAssetRequestBody(req)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp jsonBurnAssetResponse
+	err = w.transport.doPost(
+		ctx, "/v1/taproot-assets/burn",
+		macaroon.AdminServiceMac, body, &resp,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return unmarshalBurnAssetResponse(&resp)
+}
+
+func burnAssetRequestBody(req *entities.BurnAssetRequest) (map[string]any,
+	error) {
+
 	if req.AssetRef.IsZero() {
 		return nil, fmt.Errorf("asset ref is required")
 	}
@@ -720,31 +751,24 @@ func (w *walletClient) BurnAsset(ctx context.Context,
 		"confirmation_text": req.ConfirmationText,
 	}
 
-	specifier := map[string]string{}
 	switch {
 	case req.AssetRef.IsGroupRef():
 		groupKey, _ := req.AssetRef.GroupKey()
-		specifier["group_key_str"] = hex.EncodeToString(groupKey[:])
+		body["asset_specifier"] = map[string]string{
+			"group_key_str": hex.EncodeToString(groupKey[:]),
+		}
 	case req.AssetRef.IsAssetIDRef():
 		assetID, _ := req.AssetRef.AssetID()
-		specifier["asset_id_str"] = hex.EncodeToString(assetID[:])
+		body["asset_specifier"] = map[string]string{
+			"asset_id_str": hex.EncodeToString(assetID[:]),
+		}
 	}
-	body["asset_specifier"] = specifier
 
 	if req.Note != "" {
 		body["note"] = req.Note
 	}
 
-	var resp jsonBurnAssetResponse
-	err := w.transport.doPost(
-		ctx, "/v1/taproot-assets/burn",
-		macaroon.AdminServiceMac, body, &resp,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return unmarshalBurnAssetResponse(&resp)
+	return body, nil
 }
 
 // ListBurns lists asset burns with optional filtering.

@@ -14,8 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestBalanceQueries verifies the opinionated balance surface for fungible
-// and collectible assets across every transport.
+// TestBalanceQueries verifies the opinionated balance surface for grouped
+// fungible assets and standalone NFTs across every transport.
 func TestBalanceQueries(t *testing.T) {
 	runForTransports(t, func(t *testing.T, transport Transport) {
 		tests := []struct {
@@ -31,8 +31,11 @@ func TestBalanceQueries(t *testing.T) {
 				mint: func(t testing.TB, h *TestHarness,
 					ctx context.Context) (*MintResult, error) {
 
+					name := uniqueEventLabel(
+						"balance-token-" + string(transport),
+					)
 					return h.MintGroupedAsset(
-						t, ctx, "balance-token", 500,
+						t, ctx, name, 500,
 					)
 				},
 				wantAmount: 500,
@@ -41,12 +44,15 @@ func TestBalanceQueries(t *testing.T) {
 				},
 			},
 			{
-				name: "collectible asset",
+				name: "standalone NFT",
 				mint: func(t testing.TB, h *TestHarness,
 					ctx context.Context) (*MintResult, error) {
 
+					name := uniqueEventLabel(
+						"balance-nft-" + string(transport),
+					)
 					return h.MintCollectibleAsset(
-						t, ctx, "balance-nft",
+						t, ctx, name,
 					)
 				},
 				wantAmount: 1,
@@ -76,15 +82,99 @@ func TestBalanceQueries(t *testing.T) {
 				)
 				require.Equal(t, tc.wantAmount, balance)
 
-				// The convenience Wallet.GetBalance helper
-				// must agree with the low-level surface.
-				via, err := h.AliceWallet.GetBalance(
-					ctx, minted.Ref,
+				balances, err := h.AliceWallet.ListBalances(
+					ctx, &entities.ListBalancesRequest{
+						AssetRef: &minted.Ref,
+					},
 				)
 				require.NoError(t, err)
-				require.Equal(t, tc.wantAmount, via)
+				requireBalanceEntry(
+					t, balances, minted.Ref, tc.wantAmount,
+				)
 			})
 		}
+	})
+}
+
+// TestListBalancesMultiIssuanceFungible verifies a grouped fungible asset is
+// listed as one semantic balance even when wallet funds span multiple
+// issuances.
+func TestListBalancesMultiIssuanceFungible(t *testing.T) {
+	runForTransports(t, func(t *testing.T, transport Transport) {
+		h, ctx := newFundedHarnessFor(t, transport)
+
+		name := uniqueEventLabel(
+			"multi-balance-token-" + string(transport),
+		)
+		first, err := h.MintGroupedAsset(
+			t, ctx, name, 500,
+		)
+		require.NoError(t, err)
+		require.True(t, first.Ref.IsGroupRef())
+
+		_, err = h.IssueMoreAndConfirm(
+			t, ctx, first.Ref, name, 250,
+		)
+		require.NoError(t, err)
+
+		h.WaitForBalance(
+			t, ctx, h.AliceWallet, first.Ref, 750,
+			balanceTimeoutFor(first.Ref),
+		)
+
+		balances, err := h.AliceWallet.ListBalances(
+			ctx, &entities.ListBalancesRequest{
+				AssetRef: &first.Ref,
+			},
+		)
+		require.NoError(t, err)
+		requireBalanceEntry(t, balances, first.Ref, 750)
+	})
+}
+
+// TestListBalancesCollectionItems verifies collection members are balance
+// entries keyed by their NFT item AssetRefs. The collection AssetRef is a
+// grouping handle, not a balance-bearing asset.
+func TestListBalancesCollectionItems(t *testing.T) {
+	runForTransports(t, func(t *testing.T, transport Transport) {
+		h, ctx := newFundedHarnessFor(t, transport)
+
+		firstName := uniqueEventLabel(
+			"balance-collection-one-" + string(transport),
+		)
+		first, err := h.MintCollectibleCollection(
+			t, ctx, firstName,
+		)
+		require.NoError(t, err)
+		require.True(t, first.Ref.IsGroupRef())
+
+		secondName := uniqueEventLabel(
+			"balance-collection-two-" + string(transport),
+		)
+		second, err := h.IssueCollectionItemAndConfirm(
+			t, ctx, first.Ref, secondName,
+		)
+		require.NoError(t, err)
+		require.True(t, second.Ref.IsAssetIDRef())
+
+		firstItemRef := entities.AssetRefFromAssetID(
+			first.Asset.Genesis.IssuanceID,
+		)
+
+		h.WaitForBalance(
+			t, ctx, h.AliceWallet, firstItemRef, 1,
+			balanceTimeoutFor(firstItemRef),
+		)
+		h.WaitForBalance(
+			t, ctx, h.AliceWallet, second.Ref, 1,
+			balanceTimeoutFor(second.Ref),
+		)
+
+		balances, err := h.AliceWallet.ListBalances(ctx, nil)
+		require.NoError(t, err)
+		requireBalanceEntry(t, balances, firstItemRef, 1)
+		requireBalanceEntry(t, balances, second.Ref, 1)
+		require.NotContains(t, balances.Balances, first.Ref.String())
 	})
 }
 
@@ -103,6 +193,15 @@ func TestGetBalance_UnknownAsset(t *testing.T) {
 		require.NoError(t, err)
 
 		ref := randomAssetIDRef(t)
+
+		_, err = h.AliceWallet.ListBalances(
+			ctx, &entities.ListBalancesRequest{
+				AssetRef: &ref,
+			},
+		)
+		require.Error(t, err)
+		require.True(t, errors.Is(err, tapsdk.ErrAssetUnknown),
+			"expected ErrAssetUnknown, got %v", err)
 
 		_, err = h.AliceWallet.GetBalance(ctx, ref)
 		require.Error(t, err)
@@ -135,6 +234,16 @@ func TestGetBalance_ZeroAfterUniverseBootstrap(t *testing.T) {
 			return h.syncUniverseTarget(ctx, issuanceID) == nil
 		}, defaultWaitTimeout, time.Second)
 
+		balances, err := h.BobWallet.ListBalances(
+			ctx, &entities.ListBalancesRequest{
+				AssetRef: &minted.Ref,
+			},
+		)
+		require.NoError(t, err,
+			"Bob knows the group via universe but holds zero, "+
+				"expected a zero balance entry; got %v", err)
+		requireBalanceEntry(t, balances, minted.Ref, 0)
+
 		balance, err := h.BobWallet.GetBalance(ctx, minted.Ref)
 		require.NoError(t, err,
 			"Bob knows the group via universe but holds zero, "+
@@ -157,4 +266,16 @@ func randomAssetIDRef(t testing.TB) entities.AssetRef {
 	require.NoError(t, err)
 
 	return entities.AssetRefFromAssetID(id)
+}
+
+func requireBalanceEntry(t testing.TB,
+	resp *entities.ListBalancesResponse, ref entities.AssetRef,
+	amount uint64) {
+
+	t.Helper()
+
+	require.NotNil(t, resp)
+	require.Contains(t, resp.Balances, ref.String())
+	require.Equal(t, ref, resp.Balances[ref.String()].AssetRef)
+	require.Equal(t, amount, resp.Balances[ref.String()].Balance)
 }
