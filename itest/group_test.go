@@ -37,6 +37,25 @@ func TestMultiTrancheGroup(t *testing.T) {
 		)
 		require.Equal(t, uint64(1250), balance)
 
+		assets, err := h.AliceWallet.ListAssets(ctx,
+			&entities.ListAssetsRequest{
+				AssetRef: &first.Ref,
+			},
+		)
+		require.NoError(t, err)
+		require.Len(t, assets, 1)
+		require.Equal(t, first.Ref, assets[0].AssetRef)
+		require.Equal(t, entities.AssetTypeNormal, assets[0].Type)
+		require.GreaterOrEqual(t, assets[0].Amount, uint64(1250))
+
+		issuances, err := h.AliceWallet.ListIssuances(ctx,
+			&entities.ListIssuancesRequest{
+				AssetRef: &first.Ref,
+			},
+		)
+		require.NoError(t, err)
+		require.GreaterOrEqual(t, len(issuances), 2)
+
 		group := h.RequireGroup(t, ctx, first.Ref)
 		require.GreaterOrEqual(t, len(group.Assets), 2)
 
@@ -106,7 +125,7 @@ func (h *TestHarness) IssueMoreAndConfirm(t testing.TB,
 		return nil, err
 	}
 
-	var resultAsset *entities.Asset
+	var resultAsset *entities.AssetRecord
 	require.Eventually(t, func() bool {
 		assets, err := h.AliceClient.ListAssets(ctx,
 			&entities.ListAssetsRequest{

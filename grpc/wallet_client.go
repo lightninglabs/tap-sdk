@@ -61,7 +61,7 @@ func (s *walletClient) GetInfo(ctx context.Context) (*entities.Info, error) {
 }
 
 func (s *walletClient) ListAssets(ctx context.Context,
-	req *entities.ListAssetsRequest) ([]*entities.Asset, error) {
+	req *entities.ListAssetsRequest) ([]*entities.AssetRecord, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
@@ -107,14 +107,16 @@ func (s *walletClient) ListAssets(ctx context.Context,
 		return nil, err
 	}
 
-	assets := make([]*entities.Asset, 0, len(resp.Assets))
+	assets := make([]*entities.AssetRecord, 0, len(resp.Assets))
 	for _, rpcAsset := range resp.Assets {
 		asset, err := unmarshalAsset(rpcAsset)
 		if err != nil {
 			return nil, err
 		}
 
-		if assetRefFilter != nil && asset.AssetRef != *assetRefFilter {
+		if assetRefFilter != nil &&
+			!assetRecordMatchesRef(asset, *assetRefFilter) {
+
 			continue
 		}
 
@@ -122,6 +124,21 @@ func (s *walletClient) ListAssets(ctx context.Context,
 	}
 
 	return assets, nil
+}
+
+func assetRecordMatchesRef(asset *entities.AssetRecord,
+	ref entities.AssetRef) bool {
+
+	if asset == nil {
+		return false
+	}
+
+	if asset.AssetRef.Equivalent(ref) {
+		return true
+	}
+
+	assetID, ok := ref.AssetID()
+	return ok && asset.Genesis.IssuanceID == assetID
 }
 
 func (s *walletClient) ListBalances(ctx context.Context,
@@ -264,7 +281,7 @@ func (s *walletClient) listGroupBalance(ctx context.Context,
 // groupRepresentativeAsset returns any asset from the group so the
 // balance response carries the genesis metadata callers expect.
 func (s *walletClient) groupRepresentativeAsset(ctx context.Context,
-	req *entities.ListBalancesRequest) (*entities.Asset, error) {
+	req *entities.ListBalancesRequest) (*entities.AssetRecord, error) {
 
 	assets, err := s.ListAssets(ctx, &entities.ListAssetsRequest{
 		AssetRef:      req.AssetRef,
@@ -336,7 +353,7 @@ func (s *walletClient) SendAsset(ctx context.Context,
 	return unmarshalAssetTransfer(resp.Transfer)
 }
 
-func unmarshalAsset(rpcAsset *taprpc.Asset) (*entities.Asset, error) {
+func unmarshalAsset(rpcAsset *taprpc.Asset) (*entities.AssetRecord, error) {
 	if rpcAsset == nil {
 		return nil, fmt.Errorf("nil asset")
 	}
@@ -356,7 +373,7 @@ func unmarshalAsset(rpcAsset *taprpc.Asset) (*entities.Asset, error) {
 	var scriptKeyPub [33]byte
 	copy(scriptKeyPub[:], rpcAsset.ScriptKey)
 
-	asset := &entities.Asset{
+	asset := &entities.AssetRecord{
 		Version:          uint8(rpcAsset.Version),
 		Genesis:          *genesis,
 		Amount:           rpcAsset.Amount,
@@ -1247,7 +1264,7 @@ func unmarshalManagedUtxo(
 		return nil, fmt.Errorf("invalid merkle root: %w", err)
 	}
 
-	assets := make([]*entities.Asset, 0, len(rpcUtxo.Assets))
+	assets := make([]*entities.AssetRecord, 0, len(rpcUtxo.Assets))
 	for _, rpcAsset := range rpcUtxo.Assets {
 		asset, err := unmarshalAsset(rpcAsset)
 		if err != nil {

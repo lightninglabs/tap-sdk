@@ -3,6 +3,8 @@ package tapsdk
 import (
 	"context"
 	"fmt"
+	"math"
+	"math/bits"
 	"strings"
 
 	"github.com/lightninglabs/tap-sdk/entities"
@@ -12,7 +14,7 @@ import (
 // Wallet constitutes the high level service giving access to
 // Taproot Assets features.
 type Wallet struct {
-	Client
+	client Client
 
 	networkHRP              string
 	coinType                uint32
@@ -55,7 +57,7 @@ func NewWallet(client Client, network entities.Network,
 	networkHRP, coinType := getNetworkParams(network)
 
 	wallet := &Wallet{
-		Client:     client,
+		client:     client,
 		networkHRP: networkHRP,
 		coinType:   coinType,
 	}
@@ -69,13 +71,27 @@ func NewWallet(client Client, network entities.Network,
 
 // NewTxBuilder returns a new transaction builder for address-based transfers.
 func (s *Wallet) NewTxBuilder() *TxBuilder {
-	return newTxBuilder(s)
+	return newTxBuilder(s.client)
 }
 
 // NewInteractiveTxBuilder returns a new builder for interactive transfers
 // where the receiver provides their keys directly.
 func (s *Wallet) NewInteractiveTxBuilder() *InteractiveTxBuilder {
-	return newInteractiveTxBuilder(s, s.networkHRP, s.coinType)
+	return newInteractiveTxBuilder(s.client, s.networkHRP, s.coinType)
+}
+
+// Client returns the low-level composite client wrapped by the wallet.
+//
+// Most application code should prefer the Wallet methods. Use this accessor
+// for advanced RPC-shaped operations that intentionally are not promoted onto
+// the high-level wallet surface.
+func (s *Wallet) Client() Client {
+	return s.client
+}
+
+// Close releases resources held by the underlying client.
+func (s *Wallet) Close() error {
+	return s.client.Close()
 }
 
 // NewReceiveAddress creates a V2 address for receiving the given
@@ -99,12 +115,12 @@ func (s *Wallet) NewReceiveAddress(ctx context.Context,
 		AddressVersion:   &v2,
 	}
 
-	addr, err := s.NewAddr(ctx, req)
+	addr, err := s.client.NewAddr(ctx, req)
 	if err != nil {
 		if shouldRetryCollectibleAmount(ref, err) {
 			req.Amount = 1
 
-			addr, retryErr := s.NewAddr(ctx, req)
+			addr, retryErr := s.client.NewAddr(ctx, req)
 			if retryErr == nil {
 				return addr, nil
 			}
@@ -117,7 +133,7 @@ func (s *Wallet) NewReceiveAddress(ctx context.Context,
 			if exactRef != ref {
 				req.AssetRef = exactRef
 
-				addr, retryErr := s.NewAddr(ctx, req)
+				addr, retryErr := s.client.NewAddr(ctx, req)
 				if retryErr == nil {
 					return addr, nil
 				}
@@ -155,7 +171,7 @@ func (s *Wallet) resolveExactGroupRef(ctx context.Context,
 		return ref
 	}
 
-	groups, err := s.ListGroups(ctx)
+	groups, err := s.client.ListGroups(ctx)
 	if err != nil {
 		return ref
 	}
@@ -186,7 +202,7 @@ func (s *Wallet) resolveExactGroupRef(ctx context.Context,
 func (s *Wallet) GetBalance(ctx context.Context,
 	ref entities.AssetRef) (uint64, error) {
 
-	resp, err := s.ListBalances(ctx, &entities.ListBalancesRequest{
+	resp, err := s.client.ListBalances(ctx, &entities.ListBalancesRequest{
 		AssetRef: &ref,
 	})
 	if err != nil {
@@ -197,7 +213,7 @@ func (s *Wallet) GetBalance(ctx context.Context,
 		return balance.Balance, nil
 	}
 
-	roots, err := s.QueryAssetRoots(ctx, &entities.UniverseID{
+	roots, err := s.client.QueryAssetRoots(ctx, &entities.UniverseID{
 		AssetRef:  ref,
 		ProofType: entities.ProofTypeIssuance,
 	})
@@ -224,12 +240,12 @@ func (s *Wallet) GetBalance(ctx context.Context,
 func (s *Wallet) DeriveKeys(ctx context.Context) (*entities.DerivedKeys,
 	error) {
 
-	scriptKey, err := s.DeriveScriptKey(ctx)
+	scriptKey, err := s.client.DeriveScriptKey(ctx)
 	if err != nil {
 		return nil, wrapErr("DeriveKeys", err)
 	}
 
-	internalKey, err := s.DeriveInternalKey(ctx)
+	internalKey, err := s.client.DeriveInternalKey(ctx)
 	if err != nil {
 		return nil, wrapErr("DeriveKeys", err)
 	}
@@ -238,6 +254,304 @@ func (s *Wallet) DeriveKeys(ctx context.Context) (*entities.DerivedKeys,
 		ScriptKey:   *scriptKey,
 		InternalKey: *internalKey,
 	}, nil
+}
+
+// ListAssets returns wallet assets keyed by user-facing AssetRef.
+//
+// Grouped fungible issuances are aggregated under one group-key AssetRef. A
+// single NFT is returned as one asset-ID AssetRef. NFT collection items are
+// returned as NFT assets with their item asset-ID AssetRef and optional
+// CollectionRef; use ListCollections for collection-level rows.
+func (s *Wallet) ListAssets(ctx context.Context,
+	req *entities.ListAssetsRequest) ([]*entities.Asset, error) {
+
+	records, err := s.listAssetRecords(ctx, req)
+	if err != nil {
+		return nil, wrapErr("ListAssets", err)
+	}
+
+	return assetsFromRecords(records), nil
+}
+
+// ListCollections returns wallet-known NFT collections.
+//
+// A collection is a group of NFT assets. It is not returned by ListAssets as an
+// Asset because it is not itself transferable or spendable.
+func (s *Wallet) ListCollections(ctx context.Context,
+	req *entities.ListCollectionsRequest) ([]*entities.Collection, error) {
+
+	records, err := s.listAssetRecords(ctx, listCollectionsToRecordsReq(req))
+	if err != nil {
+		return nil, wrapErr("ListCollections", err)
+	}
+
+	return collectionsFromRecords(records), nil
+}
+
+// ListIssuances returns wallet-known fungible issuance/tranche records.
+//
+// This is the issuer/admin/debug companion to ListAssets. It intentionally
+// excludes NFTs and collections.
+func (s *Wallet) ListIssuances(ctx context.Context,
+	req *entities.ListIssuancesRequest) ([]*entities.Issuance, error) {
+
+	records, err := s.listAssetRecords(ctx, listIssuancesToRecordsReq(req))
+	if err != nil {
+		return nil, wrapErr("ListIssuances", err)
+	}
+
+	return issuancesFromRecords(records), nil
+}
+
+// ListCollectionItems returns wallet-known NFT assets that belong to a
+// collection.
+//
+// Each returned Asset uses the concrete NFT asset-ID AssetRef and has
+// CollectionRef set to the collection AssetRef.
+func (s *Wallet) ListCollectionItems(ctx context.Context,
+	req *entities.ListCollectionItemsRequest) ([]*entities.Asset, error) {
+
+	records, err := s.listAssetRecords(ctx, listCollectionItemsToRecordsReq(req))
+	if err != nil {
+		return nil, wrapErr("ListCollectionItems", err)
+	}
+
+	items := make([]*entities.Asset, 0, len(records))
+	for _, asset := range assetsFromRecords(records) {
+		if asset.Type != entities.AssetTypeCollectible ||
+			asset.CollectionRef == nil {
+
+			continue
+		}
+
+		items = append(items, asset)
+	}
+
+	return items, nil
+}
+
+func (s *Wallet) listAssetRecords(ctx context.Context,
+	req *entities.ListAssetsRequest) ([]*entities.AssetRecord, error) {
+
+	return s.client.ListAssets(ctx, req)
+}
+
+func listIssuancesToRecordsReq(
+	req *entities.ListIssuancesRequest) *entities.ListAssetsRequest {
+
+	if req == nil {
+		return nil
+	}
+
+	return &entities.ListAssetsRequest{
+		AssetRef: req.AssetRef,
+	}
+}
+
+func listCollectionsToRecordsReq(
+	req *entities.ListCollectionsRequest) *entities.ListAssetsRequest {
+
+	if req == nil {
+		return nil
+	}
+
+	return &entities.ListAssetsRequest{
+		AssetRef: req.AssetRef,
+	}
+}
+
+func listCollectionItemsToRecordsReq(
+	req *entities.ListCollectionItemsRequest) *entities.ListAssetsRequest {
+
+	if req == nil {
+		return nil
+	}
+
+	recordReq := &entities.ListAssetsRequest{}
+	switch {
+	case req.CollectionRef != nil:
+		recordReq.AssetRef = req.CollectionRef
+	case req.AssetRef != nil:
+		recordReq.AssetRef = req.AssetRef
+	}
+
+	return recordReq
+}
+
+type assetAccumulator struct {
+	asset            *entities.Asset
+	representativeID entities.AssetID
+	seenNFTIDs       map[entities.AssetID]struct{}
+}
+
+func assetsFromRecords(records []*entities.AssetRecord) []*entities.Asset {
+	accs := make(map[string]*assetAccumulator)
+	order := make([]string, 0, len(records))
+
+	for _, record := range records {
+		if record == nil {
+			continue
+		}
+
+		asset := assetFromRecord(record)
+		key := asset.AssetRef.String()
+
+		acc, ok := accs[key]
+		if !ok {
+			acc = &assetAccumulator{
+				asset:            asset,
+				representativeID: record.Genesis.IssuanceID,
+			}
+			accs[key] = acc
+			order = append(order, key)
+		} else if record.Genesis.IssuanceID.String() <
+			acc.representativeID.String() {
+
+			acc.asset.Name = record.Genesis.Tag
+			acc.asset.MetaHash = record.Genesis.MetaHash
+			acc.representativeID = record.Genesis.IssuanceID
+		}
+
+		if record.Genesis.Type == entities.AssetTypeCollectible {
+			if acc.seenNFTIDs == nil {
+				acc.seenNFTIDs = make(map[entities.AssetID]struct{})
+			}
+
+			if _, ok := acc.seenNFTIDs[record.Genesis.IssuanceID]; ok {
+				continue
+			}
+
+			acc.seenNFTIDs[record.Genesis.IssuanceID] = struct{}{}
+		}
+
+		acc.asset.Amount = addSaturatingUint64(
+			acc.asset.Amount, record.Amount,
+		)
+	}
+
+	assets := make([]*entities.Asset, 0, len(order))
+	for _, key := range order {
+		assets = append(assets, accs[key].asset)
+	}
+
+	return assets
+}
+
+func assetFromRecord(record *entities.AssetRecord) *entities.Asset {
+	ref := record.AssetRef
+	var collectionRef *entities.AssetRef
+	if record.Genesis.Type == entities.AssetTypeCollectible && ref.IsGroupRef() {
+		collRef := ref
+		collectionRef = &collRef
+		ref = entities.AssetRefFromAssetID(record.Genesis.IssuanceID)
+	}
+
+	return &entities.Asset{
+		AssetRef:      ref,
+		Type:          record.Genesis.Type,
+		Name:          record.Genesis.Tag,
+		MetaHash:      record.Genesis.MetaHash,
+		CollectionRef: collectionRef,
+	}
+}
+
+type collectionAccumulator struct {
+	collection *entities.Collection
+	itemIDs    map[entities.AssetID]struct{}
+}
+
+func collectionsFromRecords(
+	records []*entities.AssetRecord) []*entities.Collection {
+
+	accs := make(map[string]*collectionAccumulator)
+	order := make([]string, 0, len(records))
+
+	for _, record := range records {
+		if record == nil ||
+			record.Genesis.Type != entities.AssetTypeCollectible ||
+			!record.AssetRef.IsGroupRef() {
+
+			continue
+		}
+
+		key := record.AssetRef.String()
+		acc, ok := accs[key]
+		if !ok {
+			acc = &collectionAccumulator{
+				collection: &entities.Collection{
+					AssetRef: record.AssetRef,
+				},
+				itemIDs: make(map[entities.AssetID]struct{}),
+			}
+			accs[key] = acc
+			order = append(order, key)
+		}
+
+		acc.itemIDs[record.Genesis.IssuanceID] = struct{}{}
+		acc.collection.ItemCount = uint64(len(acc.itemIDs))
+	}
+
+	collections := make([]*entities.Collection, 0, len(order))
+	for _, key := range order {
+		collections = append(collections, accs[key].collection)
+	}
+
+	return collections
+}
+
+type issuanceAccumulator struct {
+	issuance *entities.Issuance
+}
+
+func issuancesFromRecords(
+	records []*entities.AssetRecord) []*entities.Issuance {
+
+	accs := make(map[string]*issuanceAccumulator)
+	order := make([]string, 0, len(records))
+
+	for _, record := range records {
+		if record == nil ||
+			record.Genesis.Type != entities.AssetTypeNormal {
+
+			continue
+		}
+
+		key := record.AssetRef.String() + "/" +
+			record.Genesis.IssuanceID.String()
+		acc, ok := accs[key]
+		if !ok {
+			acc = &issuanceAccumulator{
+				issuance: &entities.Issuance{
+					AssetRef:   record.AssetRef,
+					IssuanceID: record.Genesis.IssuanceID,
+					Name:       record.Genesis.Tag,
+					MetaHash:   record.Genesis.MetaHash,
+				},
+			}
+			accs[key] = acc
+			order = append(order, key)
+		}
+
+		acc.issuance.Amount = addSaturatingUint64(
+			acc.issuance.Amount, record.Amount,
+		)
+	}
+
+	issuances := make([]*entities.Issuance, 0, len(order))
+	for _, key := range order {
+		issuances = append(issuances, accs[key].issuance)
+	}
+
+	return issuances
+}
+
+func addSaturatingUint64(a, b uint64) uint64 {
+	sum, carry := bits.Add64(a, b, 0)
+	if carry != 0 {
+		return math.MaxUint64
+	}
+
+	return sum
 }
 
 // ExportProof exports all wallet-known proof files for the given user-facing
@@ -253,7 +567,7 @@ func (s *Wallet) ExportProof(ctx context.Context,
 		return nil, wrapErr("ExportProof", err)
 	}
 
-	assets, err := s.ListAssets(ctx, &entities.ListAssetsRequest{
+	assets, err := s.listAssetRecords(ctx, &entities.ListAssetsRequest{
 		AssetRef: &ref,
 	})
 	if err != nil {
@@ -327,7 +641,7 @@ func (s *Wallet) exportProofFile(ctx context.Context,
 	ref entities.AssetRef, scriptKey entities.PubKey,
 	outpoint *entities.Outpoint, op string) (*entities.ProofFile, error) {
 
-	proof, err := s.Client.ExportProof(ctx, ref, scriptKey, outpoint)
+	proof, err := s.client.ExportProof(ctx, ref, scriptKey, outpoint)
 	if err != nil {
 		return nil, wrapErr(op, err)
 	}
@@ -393,7 +707,7 @@ func (s *Wallet) importProofFile(ctx context.Context,
 	}
 
 	// Step 1: Unpack the proof file into individual proofs.
-	rawProofs, err := s.UnpackProofFile(ctx, proofFile.RawProofFile)
+	rawProofs, err := s.client.UnpackProofFile(ctx, proofFile.RawProofFile)
 	if err != nil {
 		return nil, wrapErr(op, err)
 	}
@@ -407,12 +721,12 @@ func (s *Wallet) importProofFile(ctx context.Context,
 	var lastDecoded *entities.DecodedProof
 	for _, rawProof := range rawProofs {
 		// TODO: Decode the proof locally without using the RPC client.
-		decoded, err := s.DecodeProof(ctx, rawProof)
+		decoded, err := s.client.DecodeProof(ctx, rawProof)
 		if err != nil {
 			return nil, wrapErr(op, err)
 		}
 
-		err = s.InsertProof(ctx, rawProof, decoded)
+		err = s.client.InsertProof(ctx, rawProof, decoded)
 		if err != nil {
 			return nil, wrapErr(op, err)
 		}
@@ -421,7 +735,7 @@ func (s *Wallet) importProofFile(ctx context.Context,
 	}
 
 	// Step 3: Register the transfer using the last proof's details.
-	registrar, ok := s.Client.(transferRegistrarWithIssuance)
+	registrar, ok := s.client.(transferRegistrarWithIssuance)
 	if ok {
 		registered, err := registrar.RegisterTransferWithIssuance(
 			ctx, lastDecoded.AssetRef, lastDecoded.IssuanceID,
@@ -434,7 +748,7 @@ func (s *Wallet) importProofFile(ctx context.Context,
 		return registered, nil
 	}
 
-	registered, err := s.RegisterTransfer(
+	registered, err := s.client.RegisterTransfer(
 		ctx, lastDecoded.AssetRef, lastDecoded.ScriptKey,
 		lastDecoded.Outpoint,
 	)
@@ -446,7 +760,7 @@ func (s *Wallet) importProofFile(ctx context.Context,
 }
 
 func proofBundleEntryRef(ref entities.AssetRef,
-	asset *entities.Asset) entities.AssetRef {
+	asset *entities.AssetRecord) entities.AssetRef {
 
 	if asset == nil {
 		return ref
@@ -507,7 +821,7 @@ func (s *Wallet) Send(ctx context.Context, addr string,
 		SkipProofCourierPingCheck: o.skipProofCourierPingCheck,
 	}
 
-	transfer, err := s.SendAsset(ctx, req)
+	transfer, err := s.client.SendAsset(ctx, req)
 	if err != nil {
 		return nil, wrapErr("Send", err)
 	}
@@ -615,17 +929,12 @@ func (s *Wallet) SendMulti(ctx context.Context,
 		SkipProofCourierPingCheck: o.skipProofCourierPingCheck,
 	}
 
-	transfer, err := s.SendAsset(ctx, req)
+	transfer, err := s.client.SendAsset(ctx, req)
 	if err != nil {
 		return nil, wrapErr("SendMulti", err)
 	}
 
 	return transfer, nil
-}
-
-// Close tears down the underlying client connection if it exists.
-func (s *Wallet) Close() error {
-	return s.Client.Close()
 }
 
 // getNetworkParams returns the HRP and coin type for a given network.

@@ -249,8 +249,8 @@ func unmarshalAssetGenesis(
 	}, nil
 }
 
-// unmarshalAsset converts a JSON asset to entities.Asset.
-func unmarshalAsset(a *jsonAsset) (*entities.Asset, error) {
+// unmarshalAsset converts a JSON asset to entities.AssetRecord.
+func unmarshalAsset(a *jsonAsset) (*entities.AssetRecord, error) {
 	if a == nil {
 		return nil, fmt.Errorf("nil asset")
 	}
@@ -278,7 +278,7 @@ func unmarshalAsset(a *jsonAsset) (*entities.Asset, error) {
 		return nil, fmt.Errorf("invalid amount: %w", err)
 	}
 
-	asset := &entities.Asset{
+	asset := &entities.AssetRecord{
 		Version:          uint8(parseAssetVersion(a.Version)),
 		Genesis:          *genesis,
 		Amount:           amount,
@@ -924,7 +924,7 @@ func unmarshalManagedUtxo(
 			err)
 	}
 
-	assets := make([]*entities.Asset, 0, len(u.Assets))
+	assets := make([]*entities.AssetRecord, 0, len(u.Assets))
 	for _, a := range u.Assets {
 		asset, err := unmarshalAsset(a)
 		if err != nil {

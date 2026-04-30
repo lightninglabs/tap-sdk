@@ -114,7 +114,8 @@ tapd's grpc-gateway WebSocket bridge for server-streaming RPCs.
 | `TestAddressSend` | Mint → address → send → verify balances, transfers and receive events |
 | `TestProofOperations` | Export, unpack, decode, and verify proofs |
 | `TestBalanceQueries` | AssetRef-based balance queries (fungible + collectible), `Wallet.GetBalance` parity |
-| `TestWalletSurface` | ListAssets/ListUtxos/ListGroups/FetchAssetMeta round-trips |
+| `TestWalletSurface` | Low-level ListAssets/ListUtxos/ListGroups/FetchAssetMeta round-trips |
+| `TestMultiTrancheGroup` | Wallet ListAssets fungible aggregation and ListIssuances tranche access |
 | `TestBurnAsset` | Burn + ListBurns lifecycle |
 | `TestErrorHandling` | Invalid inputs return proper errors |
 | `TestEventListenerMintAndSend` | `tapsdk.NewEventListener` delivers mint/send/receive events |

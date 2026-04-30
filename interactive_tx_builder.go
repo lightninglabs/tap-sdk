@@ -17,7 +17,7 @@ import (
 // the receiver.
 type InteractiveTxBuilder struct {
 	walletKit  WalletKitClient
-	resolver   interactiveAssetResolver
+	listAssets listInteractiveAssets
 	networkHRP string
 	coinType   uint32
 
@@ -40,8 +40,16 @@ type InteractiveTxBuilder struct {
 
 type interactiveAssetResolver interface {
 	ListAssets(ctx context.Context,
-		req *entities.ListAssetsRequest) ([]*entities.Asset, error)
+		req *entities.ListAssetsRequest) ([]*entities.AssetRecord, error)
 }
+
+type interactiveAssetRowResolver interface {
+	listAssetRecords(ctx context.Context,
+		req *entities.ListAssetsRequest) ([]*entities.AssetRecord, error)
+}
+
+type listInteractiveAssets func(context.Context,
+	*entities.ListAssetsRequest) ([]*entities.AssetRecord, error)
 
 // newInteractiveTxBuilder creates a new InteractiveTxBuilder.
 func newInteractiveTxBuilder(wallet WalletKitClient,
@@ -53,8 +61,10 @@ func newInteractiveTxBuilder(wallet WalletKitClient,
 		coinType:   coinType,
 	}
 
-	if resolver, ok := wallet.(interactiveAssetResolver); ok {
-		builder.resolver = resolver
+	if resolver, ok := wallet.(interactiveAssetRowResolver); ok {
+		builder.listAssets = resolver.listAssetRecords
+	} else if resolver, ok := wallet.(interactiveAssetResolver); ok {
+		builder.listAssets = resolver.ListAssets
 	}
 
 	return builder
@@ -185,7 +195,7 @@ func (b *InteractiveTxBuilder) validate() error {
 	}
 
 	if b.assetRef.IsZero() {
-		return &Error{Op: "Execute", Err: ErrNoAssetID}
+		return &Error{Op: "Execute", Err: ErrNoAssetRef}
 	}
 
 	if err := b.assetRef.Validate(); err != nil {
@@ -207,7 +217,7 @@ func (b *InteractiveTxBuilder) resolveAssetID(
 		if assetID == zeroID {
 			return entities.AssetID{}, &Error{
 				Op:  "Execute",
-				Err: ErrNoAssetID,
+				Err: ErrNoAssetRef,
 			}
 		}
 
@@ -217,18 +227,18 @@ func (b *InteractiveTxBuilder) resolveAssetID(
 	if !b.assetRef.IsGroupRef() {
 		return entities.AssetID{}, &Error{
 			Op:  "Execute",
-			Err: ErrNoAssetID,
+			Err: ErrNoAssetRef,
 		}
 	}
 
-	if b.resolver == nil {
+	if b.listAssets == nil {
 		return entities.AssetID{}, &Error{
 			Op:  "Execute",
 			Err: ErrGroupKeyNotSupported,
 		}
 	}
 
-	assets, err := b.resolver.ListAssets(ctx, &entities.ListAssetsRequest{
+	assets, err := b.listAssets(ctx, &entities.ListAssetsRequest{
 		AssetRef: &b.assetRef,
 	})
 	if err != nil {
@@ -241,7 +251,7 @@ func (b *InteractiveTxBuilder) resolveAssetID(
 			continue
 		}
 
-		total += asset.Amount
+		total = addSaturatingUint64(total, asset.Amount)
 		if asset.Amount >= b.amount {
 			return asset.Genesis.IssuanceID, nil
 		}

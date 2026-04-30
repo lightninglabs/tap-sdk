@@ -132,6 +132,26 @@ func TestMarshalListBalancesRequest(t *testing.T) {
 	}
 }
 
+func TestAssetRecordMatchesRef(t *testing.T) {
+	var assetID entities.AssetID
+	copy(assetID[:], testAssetID)
+	itemRef := entities.AssetRefFromAssetID(assetID)
+
+	var groupKey entities.PubKey
+	copy(groupKey[:], testPubKey)
+	collectionRef := entities.AssetRefFromGroupKey(groupKey)
+
+	record := &entities.AssetRecord{
+		AssetRef: collectionRef,
+		Genesis: entities.AssetGenesis{
+			IssuanceID: assetID,
+		},
+	}
+
+	require.True(t, assetRecordMatchesRef(record, collectionRef))
+	require.True(t, assetRecordMatchesRef(record, itemRef))
+}
+
 func TestMarshalSendAssetRequest(t *testing.T) {
 	amt := func(n uint64) *uint64 { return &n }
 

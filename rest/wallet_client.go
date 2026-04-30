@@ -38,7 +38,7 @@ func (w *walletClient) GetInfo(
 
 // ListAssets lists wallet assets with optional filtering.
 func (w *walletClient) ListAssets(ctx context.Context,
-	req *entities.ListAssetsRequest) ([]*entities.Asset, error) {
+	req *entities.ListAssetsRequest) ([]*entities.AssetRecord, error) {
 
 	params := url.Values{}
 	var assetRefFilter *entities.AssetRef
@@ -87,14 +87,16 @@ func (w *walletClient) ListAssets(ctx context.Context,
 		return nil, err
 	}
 
-	assets := make([]*entities.Asset, 0, len(resp.Assets))
+	assets := make([]*entities.AssetRecord, 0, len(resp.Assets))
 	for _, jsonAsset := range resp.Assets {
 		asset, err := unmarshalAsset(jsonAsset)
 		if err != nil {
 			return nil, err
 		}
 
-		if assetRefFilter != nil && asset.AssetRef != *assetRefFilter {
+		if assetRefFilter != nil &&
+			!assetRecordMatchesRef(asset, *assetRefFilter) {
+
 			continue
 		}
 
@@ -102,6 +104,21 @@ func (w *walletClient) ListAssets(ctx context.Context,
 	}
 
 	return assets, nil
+}
+
+func assetRecordMatchesRef(asset *entities.AssetRecord,
+	ref entities.AssetRef) bool {
+
+	if asset == nil {
+		return false
+	}
+
+	if asset.AssetRef.Equivalent(ref) {
+		return true
+	}
+
+	assetID, ok := ref.AssetID()
+	return ok && asset.Genesis.IssuanceID == assetID
 }
 
 // ListBalances returns asset balances keyed by AssetRef.
@@ -301,7 +318,7 @@ func (w *walletClient) listGroupBalance(ctx context.Context,
 // groupRepresentativeAsset returns any asset from the group so the
 // balance response carries the genesis metadata callers expect.
 func (w *walletClient) groupRepresentativeAsset(ctx context.Context,
-	req *entities.ListBalancesRequest) (*entities.Asset, error) {
+	req *entities.ListBalancesRequest) (*entities.AssetRecord, error) {
 
 	assets, err := w.ListAssets(ctx, &entities.ListAssetsRequest{
 		AssetRef:      req.AssetRef,

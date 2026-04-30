@@ -35,7 +35,9 @@ type ScriptKeyTypeQuery struct {
 	AllTypes bool
 }
 
-// ListAssetsRequest specifies filters for listing wallet assets.
+// ListAssetsRequest specifies filters for listing wallet assets. Wallet-level
+// ListAssets returns SDK business assets; low-level clients use the same
+// request for tapd's per-record rows.
 type ListAssetsRequest struct {
 	WithWitness             bool
 	IncludeSpent            bool
@@ -46,6 +48,33 @@ type ListAssetsRequest struct {
 	AssetRef                *AssetRef
 	AnchorOutpoint          *Outpoint
 	ScriptKeyType           *ScriptKeyTypeQuery
+}
+
+// ListIssuancesRequest specifies filters for wallet-known fungible
+// issuance/tranche rows. It is not a total issued-supply query; use universe
+// roots for supply/proof data that is independent of current wallet outputs.
+type ListIssuancesRequest struct {
+	// AssetRef filters by the fungible asset. For grouped fungibles this is
+	// the group-key AssetRef.
+	AssetRef *AssetRef
+}
+
+// ListCollectionsRequest specifies filters for NFT collections. A nil request
+// or nil AssetRef lists all wallet-known collections.
+type ListCollectionsRequest struct {
+	// AssetRef filters by collection AssetRef.
+	AssetRef *AssetRef
+}
+
+// ListCollectionItemsRequest specifies filters for NFTs within collections. A
+// nil request, or a request with both refs unset, lists all wallet-known NFT
+// collection items. If both refs are set, CollectionRef takes precedence.
+type ListCollectionItemsRequest struct {
+	// CollectionRef filters by collection AssetRef.
+	CollectionRef *AssetRef
+
+	// AssetRef filters by a single NFT AssetRef.
+	AssetRef *AssetRef
 }
 
 // ListTransfersRequest specifies filters for listing outgoing transfers.

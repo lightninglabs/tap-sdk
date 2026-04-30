@@ -121,7 +121,7 @@ func TestGroupedProofExportRequiresIssuanceEnumeration(t *testing.T) {
 		require.NoError(t, err)
 
 		assetsByIssuance := make(
-			map[entities.AssetID]*entities.Asset, len(walletAssets),
+			map[entities.AssetID]*entities.AssetRecord, len(walletAssets),
 		)
 		for _, asset := range walletAssets {
 			if asset == nil {

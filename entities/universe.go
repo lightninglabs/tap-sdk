@@ -108,8 +108,9 @@ type AssetLeafKeysRequest struct {
 
 // AssetLeaf is a leaf in the universe tree.
 type AssetLeaf struct {
-	// Asset is the asset associated with this leaf, if present.
-	Asset *Asset
+	// Asset is the low-level asset record associated with this leaf, if
+	// present.
+	Asset *AssetRecord
 
 	// Proof is the raw issuance or transfer proof bytes.
 	Proof []byte

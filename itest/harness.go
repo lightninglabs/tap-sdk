@@ -250,11 +250,11 @@ func (h *TestHarness) WaitForSync(t testing.TB, ctx context.Context,
 // event yet (#81 item 1).
 func (h *TestHarness) WaitForAssetByTag(t testing.TB, ctx context.Context,
 	client tapsdk.Client, tag string,
-	timeout time.Duration) *entities.Asset {
+	timeout time.Duration) *entities.AssetRecord {
 
 	t.Helper()
 
-	var found *entities.Asset
+	var found *entities.AssetRecord
 	require.Eventually(t, func() bool {
 		assets, err := client.ListAssets(ctx,
 			&entities.ListAssetsRequest{},
@@ -287,9 +287,7 @@ func (h *TestHarness) WaitForBalance(t testing.TB, ctx context.Context,
 	var balance uint64
 	var lastStatus string
 	require.Eventuallyf(t, func() bool {
-		resp, err := wallet.ListBalances(ctx, &entities.ListBalancesRequest{
-			AssetRef: &ref,
-		})
+		current, err := wallet.GetBalance(ctx, ref)
 		if err != nil {
 			lastStatus = fmt.Sprintf(
 				"balance lookup not ready for %s: %v",
@@ -299,23 +297,11 @@ func (h *TestHarness) WaitForBalance(t testing.TB, ctx context.Context,
 			return false
 		}
 
-		assetBalance, ok := resp.Balances[ref.String()]
-		if !ok {
-			lastStatus = fmt.Sprintf(
-				"balance for %s not visible yet (want %d, "+
-					"unconfirmed=%d)",
-				ref, amount, resp.UnconfirmedTransfers,
-			)
-			verboseLogf(t, "%s", lastStatus)
-			balance = 0
-			return false
-		}
-
-		balance = assetBalance.Balance
+		balance = current
 		if balance != amount {
 			lastStatus = fmt.Sprintf(
-				"balance for %s = %d, want %d (unconfirmed=%d)",
-				ref, balance, amount, resp.UnconfirmedTransfers,
+				"balance for %s = %d, want %d",
+				ref, balance, amount,
 			)
 			verboseLogf(t, "%s", lastStatus)
 		}
