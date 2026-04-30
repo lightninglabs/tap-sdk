@@ -20,7 +20,7 @@ func TestUniverseReadSurface(t *testing.T) {
 		h.EnableUniverseBootstrap(t, ctx)
 
 		name := uniqueEventLabel(fmt.Sprintf("universe-token-%s", transport))
-		minted, err := h.MintGroupedAsset(t, ctx, name, 1000)
+		minted, err := h.CreateFungibleAndConfirm(t, ctx, name, 1000)
 		require.NoError(t, err)
 
 		id := entities.UniverseIDFromRef(

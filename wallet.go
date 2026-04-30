@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/bits"
 	"strings"
+	"sync"
 
 	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/lightninglabs/tap-sdk/vpsbt"
@@ -19,6 +20,7 @@ type Wallet struct {
 	networkHRP              string
 	coinType                uint32
 	defaultProofCourierAddr string
+	issuerMu                sync.Mutex
 }
 
 // WalletOption configures optional Wallet behavior.

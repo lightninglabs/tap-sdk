@@ -20,14 +20,14 @@ func TestWalletCollectionSurface(t *testing.T) {
 		firstName := uniqueEventLabel(
 			fmt.Sprintf("collection-one-%s", transport),
 		)
-		first, err := h.MintCollectibleCollection(t, ctx, firstName)
+		first, err := h.CreateCollectionAndConfirm(t, ctx, firstName)
 		require.NoError(t, err)
 		require.True(t, first.Ref.IsGroupRef())
 
 		secondName := uniqueEventLabel(
 			fmt.Sprintf("collection-two-%s", transport),
 		)
-		second, err := h.IssueCollectionItemAndConfirm(
+		second, err := h.MintCollectionItemAndConfirm(
 			t, ctx, first.Ref, secondName,
 		)
 		require.NoError(t, err)

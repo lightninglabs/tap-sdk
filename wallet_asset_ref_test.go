@@ -183,16 +183,16 @@ func (m *refMockClient) InsertProof(ctx context.Context,
 
 // --- MintClient ---
 
-func (m *refMockClient) CreateAsset(ctx context.Context,
-	req *entities.CreateAssetRequest) (*entities.MintingBatch, error) {
+func (m *refMockClient) MintAsset(ctx context.Context,
+	req *entities.MintAssetRequest) (*entities.MintingBatch, error) {
 
-	panic("CreateAsset: unexpected call")
+	panic("MintAsset: unexpected call")
 }
 
-func (m *refMockClient) CreateIssuance(ctx context.Context,
-	req *entities.CreateIssuanceRequest) (*entities.MintingBatch, error) {
+func (m *refMockClient) MintIssuance(ctx context.Context,
+	req *entities.MintIssuanceRequest) (*entities.MintingBatch, error) {
 
-	panic("CreateIssuance: unexpected call")
+	panic("MintIssuance: unexpected call")
 }
 
 func (m *refMockClient) FundBatch(ctx context.Context,

@@ -101,7 +101,7 @@ func runSendCase(t *testing.T, transport Transport, tc sendCase) {
 	// Each subtest mints its own asset so group keys don't collide
 	// across cases or transports.
 	assetName := fmt.Sprintf("send-%s-%s", tc.name, transport)
-	minted, err := h.MintGroupedAsset(t, ctx, assetName, 5000)
+	minted, err := h.CreateFungibleAndConfirm(t, ctx, assetName, 5000)
 	require.NoError(t, err)
 
 	addr := tc.setup(h, ctx, minted.Ref, amount)
@@ -227,7 +227,7 @@ func runSendMultiCase(t *testing.T, transport Transport,
 	h, ctx := newFundedHarnessFor(t, transport)
 
 	assetName := fmt.Sprintf("multi-%s-%s", tc.name, transport)
-	minted, err := h.MintGroupedAsset(t, ctx, assetName, 5000)
+	minted, err := h.CreateFungibleAndConfirm(t, ctx, assetName, 5000)
 	require.NoError(t, err)
 
 	// All cases send 100 + 150 = 250 units total. "all-embedded" and
@@ -311,14 +311,14 @@ func TestSendMultiRejectsMixedAssets(t *testing.T) {
 	runForTransports(t, func(t *testing.T, transport Transport) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
-		first, err := h.MintGroupedAsset(
+		first, err := h.CreateFungibleAndConfirm(
 			t, ctx,
 			uniqueEventLabel(fmt.Sprintf("multi-a-%s", transport)),
 			1000,
 		)
 		require.NoError(t, err)
 
-		second, err := h.MintGroupedAsset(
+		second, err := h.CreateFungibleAndConfirm(
 			t, ctx,
 			uniqueEventLabel(fmt.Sprintf("multi-b-%s", transport)),
 			2000,
@@ -357,7 +357,7 @@ func TestSendRejections(t *testing.T) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
 		assetName := fmt.Sprintf("reject-%s", transport)
-		minted, err := h.MintGroupedAsset(t, ctx, assetName, 5000)
+		minted, err := h.CreateFungibleAndConfirm(t, ctx, assetName, 5000)
 		require.NoError(t, err)
 
 		noAmount := h.CreateGroupedReceiveAddress(
@@ -408,7 +408,7 @@ func TestAddressSend(t *testing.T) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
 		assetName := fmt.Sprintf("send-token-%s", transport)
-		minted, err := h.MintGroupedAsset(t, ctx, assetName, 5000)
+		minted, err := h.CreateFungibleAndConfirm(t, ctx, assetName, 5000)
 		require.NoError(t, err)
 		require.True(t, minted.Ref.IsGroupRef())
 
@@ -501,7 +501,7 @@ func TestCollectibleAddressSend(t *testing.T) {
 		assetName := uniqueEventLabel(
 			fmt.Sprintf("send-nft-%s", transport),
 		)
-		minted, err := h.MintCollectibleAsset(t, ctx, assetName)
+		minted, err := h.CreateNFTAndConfirm(t, ctx, assetName)
 		require.NoError(t, err)
 		require.True(t, minted.Ref.IsAssetIDRef())
 
@@ -556,14 +556,14 @@ func TestAddressRoundTrip(t *testing.T) {
 	runForTransports(t, func(t *testing.T, transport Transport) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
-		grouped, err := h.MintGroupedAsset(
+		grouped, err := h.CreateFungibleAndConfirm(
 			t, ctx,
 			uniqueEventLabel(fmt.Sprintf("addr-group-%s", transport)),
 			1000,
 		)
 		require.NoError(t, err)
 
-		collectible, err := h.MintCollectibleAsset(
+		collectible, err := h.CreateNFTAndConfirm(
 			t, ctx,
 			uniqueEventLabel(fmt.Sprintf("addr-nft-%s", transport)),
 		)

@@ -19,7 +19,7 @@ func TestTxBuilderEndToEnd(t *testing.T) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
 		name := uniqueEventLabel(fmt.Sprintf("builder-token-%s", transport))
-		minted, err := h.MintGroupedAsset(t, ctx, name, 5000)
+		minted, err := h.CreateFungibleAndConfirm(t, ctx, name, 5000)
 		require.NoError(t, err)
 
 		addr := h.CreateGroupedReceiveAddress(t, ctx, minted.Ref)
@@ -73,7 +73,7 @@ func TestInteractiveTxBuilderEndToEnd(t *testing.T) {
 		name := uniqueEventLabel(
 			fmt.Sprintf("interactive-token-%s", transport),
 		)
-		minted, err := h.MintGroupedAsset(t, ctx, name, 1000)
+		minted, err := h.CreateFungibleAndConfirm(t, ctx, name, 1000)
 		require.NoError(t, err)
 		require.True(t, minted.Ref.IsGroupRef())
 
@@ -130,7 +130,7 @@ func TestInteractiveTxBuilderRejections(t *testing.T) {
 		name := uniqueEventLabel(
 			fmt.Sprintf("interactive-reject-%s", transport),
 		)
-		minted, err := h.MintGroupedAsset(t, ctx, name, 100)
+		minted, err := h.CreateFungibleAndConfirm(t, ctx, name, 100)
 		require.NoError(t, err)
 
 		receiverKeys, err := h.BobWallet.DeriveKeys(ctx)

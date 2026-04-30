@@ -298,18 +298,17 @@ type UniverseClient interface {
 // MintClient exposes low-level minting operations from the Mint service gRPC
 // client.
 //
-// These methods are building blocks for advanced callers and for future,
-// more opinionated mint workflows. They should not be treated as the final
-// high-level mint UX of the SDK.
+// These methods are batch building blocks for advanced callers. Application
+// code that wants business entities should use Issuer instead.
 type MintClient interface {
-	// CreateAsset stages a brand-new asset in the pending mint batch.
-	CreateAsset(ctx context.Context,
-		req *entities.CreateAssetRequest) (*entities.MintingBatch, error)
+	// MintAsset adds a brand-new asset to the pending mint batch.
+	MintAsset(ctx context.Context,
+		req *entities.MintAssetRequest) (*entities.MintingBatch, error)
 
-	// CreateIssuance stages an additional issuance/tranche for an existing
+	// MintIssuance adds an additional issuance/tranche for an existing
 	// asset in the pending mint batch.
-	CreateIssuance(ctx context.Context,
-		req *entities.CreateIssuanceRequest) (*entities.MintingBatch, error)
+	MintIssuance(ctx context.Context,
+		req *entities.MintIssuanceRequest) (*entities.MintingBatch, error)
 
 	// FundBatch funds the current pending mint batch.
 	FundBatch(ctx context.Context,

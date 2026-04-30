@@ -16,7 +16,9 @@ func TestMintAsset(t *testing.T) {
 	runForTransports(t, func(t *testing.T, transport Transport) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
-		minted, err := h.MintGroupedAsset(t, ctx, "test-token", 1000)
+		minted, err := h.MintAssetAndConfirm(
+			t, ctx, mintGroupedAssetSpec("test-token", 1000),
+		)
 		require.NoError(t, err)
 		require.NotNil(t, minted.Asset)
 		require.NotNil(t, minted.Batch)
@@ -54,7 +56,9 @@ func TestMintCollectible(t *testing.T) {
 	runForTransports(t, func(t *testing.T, transport Transport) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
-		minted, err := h.MintCollectibleAsset(t, ctx, "test-nft")
+		minted, err := h.MintAssetAndConfirm(
+			t, ctx, mintCollectibleAssetSpec("test-nft"),
+		)
 		require.NoError(t, err)
 		require.NotNil(t, minted.Asset)
 		require.NotNil(t, minted.Batch)
@@ -89,9 +93,9 @@ func TestMultiAssetBatchLifecycle(t *testing.T) {
 			fmt.Sprintf("batch-nft-%s", transport),
 		)
 
-		firstBatch, err := h.AliceClient.CreateAsset(ctx,
-			&entities.CreateAssetRequest{
-				Asset: &entities.CreateAsset{
+		firstBatch, err := h.AliceClient.MintAsset(ctx,
+			&entities.MintAssetRequest{
+				Asset: &entities.MintAsset{
 					AssetType:     entities.AssetTypeNormal,
 					Name:          tokenName,
 					InitialSupply: 700,
@@ -102,9 +106,9 @@ func TestMultiAssetBatchLifecycle(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, firstBatch)
 
-		secondBatch, err := h.AliceClient.CreateAsset(ctx,
-			&entities.CreateAssetRequest{
-				Asset: &entities.CreateAsset{
+		secondBatch, err := h.AliceClient.MintAsset(ctx,
+			&entities.MintAssetRequest{
+				Asset: &entities.MintAsset{
 					AssetType:     entities.AssetTypeCollectible,
 					Name:          nftName,
 					InitialSupply: 1,
@@ -160,9 +164,9 @@ func TestCancelBatch(t *testing.T) {
 
 		// Stage a single asset into a fresh batch and cancel it
 		// before finalization.
-		_, err := h.AliceClient.CreateAsset(ctx,
-			&entities.CreateAssetRequest{
-				Asset: &entities.CreateAsset{
+		_, err := h.AliceClient.MintAsset(ctx,
+			&entities.MintAssetRequest{
+				Asset: &entities.MintAsset{
 					AssetType:     entities.AssetTypeNormal,
 					Name:          "cancel-token",
 					InitialSupply: 10,

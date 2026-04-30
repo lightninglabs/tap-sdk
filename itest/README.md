@@ -97,6 +97,12 @@ tapd's grpc-gateway WebSocket bridge for server-streaming RPCs.
   harness plus background context for connection-only tests.
 - `newFundedHarness(t)` / `newFundedHarnessFor(t, transport)` bootstrap
   Alice's LND wallet with coins so asset tests do not repeat funding.
+- `CreateFungibleAndConfirm`, `CreateNFTAndConfirm`, `CreateCollectionAndConfirm`,
+  `IssueFungibleAndConfirm`, and `MintCollectionItemAndConfirm` use the
+  high-level `Wallet.NewIssuer()` surface. They mine, wait for chain sync, and
+  wait for tapd's mint batch to leave the active lifecycle before returning.
+- `MintAssetAndConfirm` is reserved for tests that intentionally assert the
+  low-level mint batch lifecycle.
 - `MintResult.Ref` carries the semantic `AssetRef` that high-level wallet
   helpers should use, so grouped fungible tests do not depend on the raw
   group-key shape returned by `ListAssetRecords`.
@@ -108,8 +114,11 @@ tapd's grpc-gateway WebSocket bridge for server-streaming RPCs.
 | Test | Description |
 |------|-------------|
 | `TestGetInfo` | Connect and verify node information |
-| `TestMintAsset` | Mint a grouped fungible asset + list groups/batches |
-| `TestMintCollectible` | Mint a collectible (NFT) asset |
+| `TestMintAsset` | Low-level fungible mint + list groups/batches |
+| `TestMintCollectible` | Low-level NFT mint |
+| `TestIssuerFungibleSurface` | High-level issuer create/issue fungible flow |
+| `TestIssuerNFTCollectionSurface` | High-level issuer standalone NFT and collection flow |
+| `TestIssuerPendingBatchConflict` | High-level issuer rejects active low-level batches |
 | `TestCancelBatch` | Stage a batch and cancel before finalization |
 | `TestAddressSend` | Mint → address → send → verify balances, transfers and receive events |
 | `TestProofOperations` | Export, unpack, decode, and verify proofs |

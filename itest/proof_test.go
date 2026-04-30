@@ -17,7 +17,7 @@ func TestProofOperations(t *testing.T) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
 		minted, err := h.MintAssetAndConfirm(t, ctx,
-			&entities.CreateAsset{
+			&entities.MintAsset{
 				AssetType:     entities.AssetTypeNormal,
 				Name:          "proof-token",
 				InitialSupply: 100,
@@ -58,18 +58,18 @@ func TestProofOperations(t *testing.T) {
 }
 
 // TestGroupedProofExportRequiresIssuanceEnumeration verifies that the
-// AssetRef-first ProofBundle API hides issuance/tranche enumeration while the
-// low-level ExportProof API remains concrete-issuance oriented.
+// AssetRef-first Wallet.ExportProof hides issuance/tranche enumeration while
+// the low-level ExportProof API remains concrete-issuance oriented.
 func TestGroupedProofExportRequiresIssuanceEnumeration(t *testing.T) {
 	runForTransports(t, func(t *testing.T, transport Transport) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
 		name := uniqueEventLabel(fmt.Sprintf("proof-group-%s", transport))
-		first, err := h.MintGroupedAsset(t, ctx, name, 1000)
+		first, err := h.CreateFungibleAndConfirm(t, ctx, name, 1000)
 		require.NoError(t, err)
 
-		second, err := h.IssueMoreAndConfirm(
-			t, ctx, first.Ref, name, 250,
+		second, err := h.IssueFungibleAndConfirm(
+			t, ctx, first.Ref, 250,
 		)
 		require.NoError(t, err)
 
@@ -189,7 +189,7 @@ func TestCollectibleProofExport(t *testing.T) {
 	runForTransports(t, func(t *testing.T, transport Transport) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
-		minted, err := h.MintCollectibleAsset(
+		minted, err := h.CreateNFTAndConfirm(
 			t, ctx,
 			uniqueEventLabel(fmt.Sprintf("proof-nft-%s", transport)),
 		)
@@ -224,7 +224,7 @@ func TestProofImportInteractive(t *testing.T) {
 		name := uniqueEventLabel(
 			fmt.Sprintf("bundle-import-%s", transport),
 		)
-		minted, err := h.MintGroupedAsset(t, ctx, name, 1000)
+		minted, err := h.CreateFungibleAndConfirm(t, ctx, name, 1000)
 		require.NoError(t, err)
 
 		receiverKeys, err := h.BobWallet.DeriveKeys(ctx)

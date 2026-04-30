@@ -315,6 +315,59 @@ func (h *TestHarness) WaitForBalance(t testing.TB, ctx context.Context,
 	return balance
 }
 
+// WaitForNoActiveMintBatch polls until tapd has no in-flight mint batch.
+func (h *TestHarness) WaitForNoActiveMintBatch(t testing.TB,
+	ctx context.Context, client tapsdk.Client, timeout time.Duration) {
+
+	t.Helper()
+
+	var lastStatus string
+	require.Eventuallyf(t, func() bool {
+		batches, err := client.ListBatches(ctx,
+			&entities.ListBatchesRequest{},
+		)
+		if err != nil {
+			lastStatus = fmt.Sprintf(
+				"list batches failed: %v", err,
+			)
+			return false
+		}
+
+		for _, batch := range batches {
+			if batch == nil {
+				continue
+			}
+
+			if mintBatchActive(batch.Batch.State) {
+				lastStatus = fmt.Sprintf(
+					"batch %s still active in state %d",
+					batch.Batch.BatchKey, batch.Batch.State,
+				)
+				return false
+			}
+		}
+
+		return true
+	}, timeout, time.Second,
+		"mint batch never became inactive; last observation: %s",
+		lastObservation(lastStatus),
+	)
+}
+
+func mintBatchActive(state entities.BatchState) bool {
+	switch state {
+	case entities.BatchStatePending,
+		entities.BatchStateFrozen,
+		entities.BatchStateCommitted,
+		entities.BatchStateBroadcast:
+
+		return true
+
+	default:
+		return false
+	}
+}
+
 // WaitForReceiveAddress retries Wallet.NewReceiveAddress until the receiver is
 // ready to bootstrap the requested asset.
 func (h *TestHarness) WaitForReceiveAddress(
