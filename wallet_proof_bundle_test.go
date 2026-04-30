@@ -27,7 +27,7 @@ func TestExportProof_GroupRefEnumeratesIssuances(t *testing.T) {
 			entities.AssetTypeNormal),
 	}
 
-	mc.On("ListAssets", ctx, mock.MatchedBy(
+	mc.On("ListAssetRecords", ctx, mock.MatchedBy(
 		func(req *entities.ListAssetsRequest) bool {
 			return req != nil && req.AssetRef != nil &&
 				req.AssetRef.Equivalent(groupRef)
@@ -75,7 +75,7 @@ func TestExportProof_CollectibleEntryUsesAssetIDRef(t *testing.T) {
 	scriptKey := testKey(t, 34)
 	proofBytes := []byte{0x09}
 
-	mc.On("ListAssets", ctx, mock.MatchedBy(
+	mc.On("ListAssetRecords", ctx, mock.MatchedBy(
 		func(req *entities.ListAssetsRequest) bool {
 			return req != nil && req.AssetRef != nil &&
 				req.AssetRef.Equivalent(assetRef)
@@ -112,7 +112,7 @@ func TestExportProof_CollectionGroupEntriesUseAssetIDRefs(t *testing.T) {
 	firstKey := testKey(t, 38)
 	secondKey := testKey(t, 39)
 
-	mc.On("ListAssets", ctx, mock.MatchedBy(
+	mc.On("ListAssetRecords", ctx, mock.MatchedBy(
 		func(req *entities.ListAssetsRequest) bool {
 			return req != nil && req.AssetRef != nil &&
 				req.AssetRef.Equivalent(groupRef)
@@ -159,7 +159,7 @@ func TestExportProof_UnknownAsset(t *testing.T) {
 	wallet := NewWallet(mc, entities.NetworkRegtest)
 
 	ref := entities.AssetRefFromAssetID(bundleAssetID(4))
-	mc.On("ListAssets", ctx, mock.Anything).Return(
+	mc.On("ListAssetRecords", ctx, mock.Anything).Return(
 		[]*entities.AssetRecord{}, nil,
 	).Once()
 
@@ -285,7 +285,7 @@ func bundleAsset(ref entities.AssetRef, issuanceID entities.AssetID,
 
 	return &entities.AssetRecord{
 		AssetRef: ref,
-		Genesis: entities.AssetGenesis{
+		Genesis: entities.IssuanceGenesis{
 			IssuanceID: issuanceID,
 			Type:       assetType,
 		},

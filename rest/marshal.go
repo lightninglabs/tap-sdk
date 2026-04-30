@@ -198,10 +198,10 @@ func unmarshalInfo(resp *jsonGetInfoResponse) (*entities.Info, error) {
 	}, nil
 }
 
-// unmarshalAssetGenesis converts a JSON genesis to
-// entities.AssetGenesis.
-func unmarshalAssetGenesis(
-	g *jsonGenesisInfo) (*entities.AssetGenesis, error) {
+// unmarshalIssuanceGenesis converts a JSON asset_genesis wire field into the
+// SDK's concrete issuance genesis type.
+func unmarshalIssuanceGenesis(
+	g *jsonGenesisInfo) (*entities.IssuanceGenesis, error) {
 
 	if g == nil {
 		return nil, fmt.Errorf("nil asset genesis")
@@ -239,7 +239,7 @@ func unmarshalAssetGenesis(
 		copy(metaHash[:], metaHashBytes)
 	}
 
-	return &entities.AssetGenesis{
+	return &entities.IssuanceGenesis{
 		FirstPrevOut: firstPrevOut,
 		Tag:          g.Name,
 		MetaHash:     metaHash,
@@ -255,7 +255,7 @@ func unmarshalAsset(a *jsonAsset) (*entities.AssetRecord, error) {
 		return nil, fmt.Errorf("nil asset")
 	}
 
-	genesis, err := unmarshalAssetGenesis(a.AssetGenesis)
+	genesis, err := unmarshalIssuanceGenesis(a.AssetGenesis)
 	if err != nil {
 		return nil, err
 	}
@@ -987,11 +987,11 @@ func unmarshalManagedUtxo(
 	}, nil
 }
 
-// unmarshalGroupedAssets converts a JSON grouped assets to an entity. The
-// groupKeyHex is the map key from the ListGroups response, which tapd
+// unmarshalAssetGroupRecord converts a JSON grouped assets to an entity. The
+// groupKeyHex is the map key from the ListAssetGroups response, which tapd
 // returns as either 33-byte compressed or 32-byte x-only hex.
-func unmarshalGroupedAssets(groupKeyHex string,
-	g *jsonGroupedAssets) (*entities.GroupedAssets, error) {
+func unmarshalAssetGroupRecord(groupKeyHex string,
+	g *jsonGroupedAssets) (*entities.AssetGroupRecord, error) {
 
 	if g == nil {
 		return nil, fmt.Errorf("nil grouped assets")
@@ -1003,29 +1003,29 @@ func unmarshalGroupedAssets(groupKeyHex string,
 	}
 	groupRef := entities.AssetRefFromGroupKey(groupKey)
 
-	assets := make(
-		[]*entities.AssetHumanReadable, 0, len(g.Assets),
+	members := make(
+		[]*entities.AssetGroupMember, 0, len(g.Assets),
 	)
 	for _, a := range g.Assets {
-		asset, err := unmarshalAssetHumanReadable(a)
+		asset, err := unmarshalAssetGroupMember(a)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"unmarshal grouped asset: %w", err)
 		}
 		asset.AssetRef = groupRef
-		assets = append(assets, asset)
+		members = append(members, asset)
 	}
 
-	return &entities.GroupedAssets{
+	return &entities.AssetGroupRecord{
 		AssetRef: groupRef,
-		Assets:   assets,
+		Members:  members,
 	}, nil
 }
 
-// unmarshalAssetHumanReadable converts the simplified proto
-// AssetHumanReadable (used by ListGroups) into the SDK entity.
-func unmarshalAssetHumanReadable(
-	a *jsonAssetHumanReadable) (*entities.AssetHumanReadable, error) {
+// unmarshalAssetGroupMember converts tapd's simplified AssetHumanReadable JSON
+// row into the SDK group member entity.
+func unmarshalAssetGroupMember(
+	a *jsonAssetHumanReadable) (*entities.AssetGroupMember, error) {
 
 	if a == nil {
 		return nil, fmt.Errorf("nil asset")
@@ -1054,7 +1054,7 @@ func unmarshalAssetHumanReadable(
 		metaHash, _ = entities.ParseHash(hashBytes)
 	}
 
-	return &entities.AssetHumanReadable{
+	return &entities.AssetGroupMember{
 		AssetRef:         entities.AssetRefFromAssetID(assetID),
 		IssuanceID:       assetID,
 		Amount:           amount,

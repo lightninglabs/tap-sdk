@@ -171,8 +171,8 @@ const (
 	// SortByAssetName sorts by asset name.
 	SortByAssetName AssetQuerySort = 1
 
-	// SortByAssetID sorts by asset ID.
-	SortByAssetID AssetQuerySort = 2
+	// SortByIssuanceID sorts by concrete issuance asset ID.
+	SortByIssuanceID AssetQuerySort = 2
 
 	// SortByAssetType sorts by asset type.
 	SortByAssetType AssetQuerySort = 3

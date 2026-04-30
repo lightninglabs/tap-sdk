@@ -57,8 +57,9 @@ const (
 	AssetTypeNFT = AssetTypeCollectible
 )
 
-// AssetGenesis represents the genesis of an asset.
-type AssetGenesis struct {
+// IssuanceGenesis is the protocol-level genesis information for one concrete
+// asset issuance/tranche.
+type IssuanceGenesis struct {
 	// FirstPrevOut is the outpoint of the first input of the genesis transaction.
 	FirstPrevOut Outpoint
 
@@ -97,8 +98,8 @@ type AssetRecord struct {
 	// Version is the asset version.
 	Version uint8
 
-	// Genesis is the asset genesis definition.
-	Genesis AssetGenesis
+	// Genesis is the protocol issuance genesis for this concrete record.
+	Genesis IssuanceGenesis
 
 	// Amount is the asset amount.
 	Amount uint64
@@ -134,13 +135,10 @@ type Asset struct {
 	// Type is the asset type.
 	Type AssetType
 
-	// Name is representative human-readable asset metadata. For grouped
-	// fungibles with multiple issuances, use ListIssuances for per-tranche
-	// metadata.
+	// Name is the human-readable asset name.
 	Name string
 
-	// MetaHash is representative asset metadata. For grouped fungibles with
-	// multiple issuances, use ListIssuances for per-tranche metadata.
+	// MetaHash is the asset metadata hash.
 	MetaHash Hash
 
 	// Amount is the sum of wallet rows returned by the ListAssets request. With

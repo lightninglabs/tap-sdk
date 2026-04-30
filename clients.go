@@ -22,14 +22,14 @@ type Client interface {
 type WalletClient interface {
 	GetInfo(ctx context.Context) (*entities.Info, error)
 
-	// ListAssets lists tapd wallet asset records with optional filtering.
+	// ListAssetRecords lists tapd wallet asset records with optional filtering.
 	// This is the low-level per-output/per-issuance surface. Use the
 	// high-level Wallet.ListAssets, Wallet.ListCollections, and
 	// Wallet.ListIssuances methods for SDK business entities.
-	ListAssets(ctx context.Context,
+	ListAssetRecords(ctx context.Context,
 		req *entities.ListAssetsRequest) ([]*entities.AssetRecord, error)
 
-	// ListBalances lists wallet balances keyed by semantic AssetRef.
+	// ListBalances lists wallet balances keyed by AssetRef.
 	ListBalances(ctx context.Context,
 		req *entities.ListBalancesRequest) (*entities.ListBalancesResponse,
 		error)
@@ -82,11 +82,11 @@ type WalletClient interface {
 		req *entities.ListUtxosRequest) (
 		map[string]*entities.ManagedUtxo, error)
 
-	// ListGroups lists all known protocol-level asset groups. This is a
+	// ListAssetGroups lists all known protocol-level asset groups. This is a
 	// low-level group inspection surface; most wallet callers should use
 	// Wallet.ListAssets, Wallet.ListCollections, or Wallet.ListIssuances
 	// instead.
-	ListGroups(ctx context.Context) ([]entities.GroupedAssets, error)
+	ListAssetGroups(ctx context.Context) ([]entities.AssetGroupRecord, error)
 
 	// BurnAsset burns asset units. The confirmation text must be set
 	// to "assets will be destroyed" for the burn to succeed.

@@ -75,8 +75,9 @@ Design rules:
 - Request/response structs for API operations
 - No proto imports, no gRPC dependencies
 - High-level APIs must preserve the SDK's semantic asset model:
-  fungible assets are identified by group key, while collectibles are
-  identified by asset ID
+  fungible assets, NFT items, and collections are passed around by
+  `AssetRef`; raw group keys and concrete issuance asset IDs are protocol
+  details for low-level records and diagnostics.
 
 ### `grpc/`
 

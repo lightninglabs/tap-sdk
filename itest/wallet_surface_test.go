@@ -32,7 +32,7 @@ func TestWalletSurface(t *testing.T) {
 		require.NotNil(t, minted.Asset)
 
 		// --- ListAssets honors the AssetRef filter. -----------------
-		assets, err := h.AliceClient.ListAssets(ctx,
+		assets, err := h.AliceClient.ListAssetRecords(ctx,
 			&entities.ListAssetsRequest{
 				AssetRef: &minted.Asset.AssetRef,
 			},
@@ -50,8 +50,8 @@ func TestWalletSurface(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, utxos)
 
-		// --- ListGroups must be queryable without a filter. ---------
-		groups, err := h.AliceClient.ListGroups(ctx)
+		// --- ListAssetGroups must be queryable without a filter. ---------
+		groups, err := h.AliceClient.ListAssetGroups(ctx)
 		require.NoError(t, err)
 		require.NotNil(t, groups)
 

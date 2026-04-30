@@ -107,7 +107,7 @@ func (h *TestHarness) fetchMintBatch(ctx context.Context,
 
 // WaitForSemanticAssetRef resolves the user-facing AssetRef to use for a
 // minted asset. Fungible assets use the canonical group key exposed by
-// ListGroups, while collectibles keep their issuance asset ID.
+// ListAssetGroups, while collectibles keep their issuance asset ID.
 func (h *TestHarness) WaitForSemanticAssetRef(t testing.TB,
 	ctx context.Context, asset *entities.AssetRecord,
 	timeout time.Duration) entities.AssetRef {
@@ -125,7 +125,7 @@ func (h *TestHarness) WaitForSemanticAssetRef(t testing.TB,
 	var ref entities.AssetRef
 	var lastStatus string
 	require.Eventuallyf(t, func() bool {
-		groups, err := h.AliceClient.ListGroups(ctx)
+		groups, err := h.AliceClient.ListAssetGroups(ctx)
 		if err != nil {
 			lastStatus = fmt.Sprintf(
 				"group lookup not ready for %s: %v",
@@ -136,7 +136,7 @@ func (h *TestHarness) WaitForSemanticAssetRef(t testing.TB,
 		}
 
 		for _, group := range groups {
-			for _, candidate := range group.Assets {
+			for _, candidate := range group.Members {
 				if candidate == nil ||
 					candidate.IssuanceID != asset.Genesis.IssuanceID {
 

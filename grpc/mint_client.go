@@ -778,7 +778,7 @@ func unmarshalGenesisInfo(
 		GenesisPoint: rpcGenesis.GenesisPoint,
 		Name:         rpcGenesis.Name,
 		MetaHash:     metaHash,
-		AssetID:      assetID,
+		IssuanceID:   assetID,
 		AssetType:    entities.AssetType(rpcGenesis.AssetType),
 		OutputIndex:  rpcGenesis.OutputIndex,
 	}, nil

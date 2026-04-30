@@ -171,7 +171,7 @@ func (s *Wallet) resolveExactGroupRef(ctx context.Context,
 		return ref
 	}
 
-	groups, err := s.client.ListGroups(ctx)
+	groups, err := s.client.ListAssetGroups(ctx)
 	if err != nil {
 		return ref
 	}
@@ -333,7 +333,7 @@ func (s *Wallet) ListCollectionItems(ctx context.Context,
 func (s *Wallet) listAssetRecords(ctx context.Context,
 	req *entities.ListAssetsRequest) ([]*entities.AssetRecord, error) {
 
-	return s.client.ListAssets(ctx, req)
+	return s.client.ListAssetRecords(ctx, req)
 }
 
 func listIssuancesToRecordsReq(
@@ -379,9 +379,8 @@ func listCollectionItemsToRecordsReq(
 }
 
 type assetAccumulator struct {
-	asset            *entities.Asset
-	representativeID entities.AssetID
-	seenNFTIDs       map[entities.AssetID]struct{}
+	asset      *entities.Asset
+	seenNFTIDs map[entities.AssetID]struct{}
 }
 
 func assetsFromRecords(records []*entities.AssetRecord) []*entities.Asset {
@@ -399,17 +398,10 @@ func assetsFromRecords(records []*entities.AssetRecord) []*entities.Asset {
 		acc, ok := accs[key]
 		if !ok {
 			acc = &assetAccumulator{
-				asset:            asset,
-				representativeID: record.Genesis.IssuanceID,
+				asset: asset,
 			}
 			accs[key] = acc
 			order = append(order, key)
-		} else if record.Genesis.IssuanceID.String() <
-			acc.representativeID.String() {
-
-			acc.asset.Name = record.Genesis.Tag
-			acc.asset.MetaHash = record.Genesis.MetaHash
-			acc.representativeID = record.Genesis.IssuanceID
 		}
 
 		if record.Genesis.Type == entities.AssetTypeCollectible {

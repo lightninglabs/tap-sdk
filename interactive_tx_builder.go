@@ -39,7 +39,7 @@ type InteractiveTxBuilder struct {
 }
 
 type interactiveAssetResolver interface {
-	ListAssets(ctx context.Context,
+	ListAssetRecords(ctx context.Context,
 		req *entities.ListAssetsRequest) ([]*entities.AssetRecord, error)
 }
 
@@ -64,7 +64,7 @@ func newInteractiveTxBuilder(wallet WalletKitClient,
 	if resolver, ok := wallet.(interactiveAssetRowResolver); ok {
 		builder.listAssets = resolver.listAssetRecords
 	} else if resolver, ok := wallet.(interactiveAssetResolver); ok {
-		builder.listAssets = resolver.ListAssets
+		builder.listAssets = resolver.ListAssetRecords
 	}
 
 	return builder

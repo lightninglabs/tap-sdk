@@ -106,14 +106,14 @@ func TestGroupedProofExportRequiresIssuanceEnumeration(t *testing.T) {
 		}
 
 		group := h.RequireGroup(t, ctx, first.Ref)
-		require.GreaterOrEqual(t, len(group.Assets), 2)
+		require.GreaterOrEqual(t, len(group.Members), 2)
 
 		expected = map[entities.AssetID]bool{
 			first.Asset.Genesis.IssuanceID:  false,
 			second.Asset.Genesis.IssuanceID: false,
 		}
 
-		walletAssets, err := h.AliceClient.ListAssets(ctx,
+		walletAssets, err := h.AliceClient.ListAssetRecords(ctx,
 			&entities.ListAssetsRequest{
 				AssetRef: &first.Ref,
 			},
@@ -131,7 +131,7 @@ func TestGroupedProofExportRequiresIssuanceEnumeration(t *testing.T) {
 			assetsByIssuance[asset.Genesis.IssuanceID] = asset
 		}
 
-		for _, groupedAsset := range group.Assets {
+		for _, groupedAsset := range group.Members {
 			if groupedAsset == nil {
 				continue
 			}

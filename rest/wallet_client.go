@@ -36,8 +36,8 @@ func (w *walletClient) GetInfo(
 	return unmarshalInfo(&resp)
 }
 
-// ListAssets lists wallet assets with optional filtering.
-func (w *walletClient) ListAssets(ctx context.Context,
+// ListAssetRecords lists wallet asset records with optional filtering.
+func (w *walletClient) ListAssetRecords(ctx context.Context,
 	req *entities.ListAssetsRequest) ([]*entities.AssetRecord, error) {
 
 	params := url.Values{}
@@ -177,24 +177,13 @@ func (w *walletClient) ListBalances(ctx context.Context,
 
 	result := &entities.ListBalancesResponse{
 		Balances: make(
-			map[string]*entities.AssetBalance,
+			map[string]*entities.Balance,
 		),
 		UnconfirmedTransfers: unconfirmed,
 	}
 
 	for _, ab := range resp.AssetBalances {
-		genesis, err := unmarshalAssetGenesis(
-			ab.AssetGenesis,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("balance "+
-				"genesis: %w", err)
-		}
-
-		var (
-			ref      entities.AssetRef
-			groupKey *entities.PubKey
-		)
+		var ref entities.AssetRef
 
 		if ab.GroupKey != "" {
 			gkBytes, err := parseHexBytes(
@@ -212,8 +201,15 @@ func (w *walletClient) ListBalances(ctx context.Context,
 			}
 
 			ref = entities.AssetRefFromGroupKey(gk)
-			groupKey = &gk
 		} else {
+			genesis, err := unmarshalIssuanceGenesis(
+				ab.AssetGenesis,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("balance "+
+					"genesis: %w", err)
+			}
+
 			ref = entities.AssetRefFromAssetID(
 				genesis.IssuanceID,
 			)
@@ -228,10 +224,8 @@ func (w *walletClient) ListBalances(ctx context.Context,
 		key := ref.String()
 		balance, ok := result.Balances[key]
 		if !ok {
-			balance = &entities.AssetBalance{
-				AssetRef:     ref,
-				AssetGenesis: *genesis,
-				GroupKey:     groupKey,
+			balance = &entities.Balance{
+				AssetRef: ref,
 			}
 
 			result.Balances[key] = balance
@@ -243,9 +237,8 @@ func (w *walletClient) ListBalances(ctx context.Context,
 	return result, nil
 }
 
-// listGroupBalance queries a single-group balance via tapd's
-// group-by-group_key mode. The server returns only the aggregate for
-// the requested group, so genesis metadata is enriched from ListAssets.
+// listGroupBalance queries a single-group balance via tapd's group-by-group_key
+// mode.
 func (w *walletClient) listGroupBalance(ctx context.Context,
 	req *entities.ListBalancesRequest) (*entities.ListBalancesResponse,
 	error) {
@@ -283,7 +276,7 @@ func (w *walletClient) listGroupBalance(ctx context.Context,
 	}
 
 	result := &entities.ListBalancesResponse{
-		Balances:             map[string]*entities.AssetBalance{},
+		Balances:             map[string]*entities.Balance{},
 		UnconfirmedTransfers: unconfirmed,
 	}
 
@@ -300,41 +293,12 @@ func (w *walletClient) listGroupBalance(ctx context.Context,
 		return result, nil
 	}
 
-	representative, err := w.groupRepresentativeAsset(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	result.Balances[req.AssetRef.String()] = &entities.AssetBalance{
-		AssetRef:     *req.AssetRef,
-		AssetGenesis: representative.Genesis,
-		Balance:      amount,
-		GroupKey:     &groupKey,
+	result.Balances[req.AssetRef.String()] = &entities.Balance{
+		AssetRef: *req.AssetRef,
+		Balance:  amount,
 	}
 
 	return result, nil
-}
-
-// groupRepresentativeAsset returns any asset from the group so the
-// balance response carries the genesis metadata callers expect.
-func (w *walletClient) groupRepresentativeAsset(ctx context.Context,
-	req *entities.ListBalancesRequest) (*entities.AssetRecord, error) {
-
-	assets, err := w.ListAssets(ctx, &entities.ListAssetsRequest{
-		AssetRef:      req.AssetRef,
-		IncludeLeased: req.IncludeLeased,
-		ScriptKeyType: req.ScriptKeyType,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	if len(assets) == 0 {
-		return nil, fmt.Errorf("missing representative asset for %s",
-			req.AssetRef)
-	}
-
-	return assets[0], nil
 }
 
 // ListTransfers lists outgoing transfers with optional filtering.
@@ -712,9 +676,9 @@ func (w *walletClient) ListUtxos(ctx context.Context,
 	return result, nil
 }
 
-// ListGroups lists all known asset groups.
-func (w *walletClient) ListGroups(
-	ctx context.Context) ([]entities.GroupedAssets, error) {
+// ListAssetGroups lists all known asset groups.
+func (w *walletClient) ListAssetGroups(
+	ctx context.Context) ([]entities.AssetGroupRecord, error) {
 
 	var resp jsonListGroupsResponse
 	err := w.transport.doGet(
@@ -725,9 +689,9 @@ func (w *walletClient) ListGroups(
 		return nil, err
 	}
 
-	result := make([]entities.GroupedAssets, 0, len(resp.Groups))
+	result := make([]entities.AssetGroupRecord, 0, len(resp.Groups))
 	for k, v := range resp.Groups {
-		group, err := unmarshalGroupedAssets(k, v)
+		group, err := unmarshalAssetGroupRecord(k, v)
 		if err != nil {
 			return nil, fmt.Errorf("unmarshal group %s: %w",
 				k, err)

@@ -37,10 +37,11 @@ type ListUtxosRequest struct {
 	ScriptKeyType *ScriptKeyTypeQuery
 }
 
-// AssetHumanReadable is a simplified asset representation used in
-// group listings.
-type AssetHumanReadable struct {
-	// AssetRef is the SDK's user-facing identifier for the asset.
+// AssetGroupMember is one protocol-level member returned by tapd's group
+// listing RPC. It is not the SDK business Asset type; high-level callers should
+// use Wallet.ListAssets, Wallet.ListCollections, or Wallet.ListIssuances.
+type AssetGroupMember struct {
+	// AssetRef is the SDK identifier for the containing group.
 	AssetRef AssetRef
 
 	// IssuanceID is the 32-byte protocol-level identifier of this issuance.
@@ -68,14 +69,14 @@ type AssetHumanReadable struct {
 	Version uint8
 }
 
-// GroupedAssets represents a low-level Taproot Asset group listing from tapd.
-// Use Wallet.ListAssets, Wallet.ListCollections, or Wallet.ListIssuances for
-// the high-level business entities.
-type GroupedAssets struct {
+// AssetGroupRecord represents a low-level Taproot Asset group listing from
+// tapd. Use Wallet.ListAssets, Wallet.ListCollections, or Wallet.ListIssuances
+// for the high-level business entities.
+type AssetGroupRecord struct {
 	// AssetRef is the SDK identifier for this group. Callers that need
 	// the raw group public key can extract it via AssetRef.GroupKey().
 	AssetRef AssetRef
 
-	// Assets are the issuances (tranches) in this group.
-	Assets []*AssetHumanReadable
+	// Members are the concrete issuances or NFT items in this protocol group.
+	Members []*AssetGroupMember
 }
