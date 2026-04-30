@@ -28,7 +28,7 @@ func (m *mockClient) GetInfo(ctx context.Context) (*entities.Info, error) {
 	return args.Get(0).(*entities.Info), args.Error(1)
 }
 
-func (m *mockClient) ListAssets(ctx context.Context,
+func (m *mockClient) ListAssetRecords(ctx context.Context,
 	req *entities.ListAssetsRequest) ([]*entities.AssetRecord, error) {
 
 	args := m.Called(ctx, req)
@@ -355,15 +355,15 @@ func (m *mockClient) ListUtxos(ctx context.Context,
 		args.Error(1)
 }
 
-func (m *mockClient) ListGroups(
-	ctx context.Context) ([]entities.GroupedAssets, error) {
+func (m *mockClient) ListAssetGroups(
+	ctx context.Context) ([]entities.AssetGroupRecord, error) {
 
 	args := m.Called(ctx)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).([]entities.GroupedAssets), args.Error(1)
+	return args.Get(0).([]entities.AssetGroupRecord), args.Error(1)
 }
 
 func (m *mockClient) BurnAsset(ctx context.Context,

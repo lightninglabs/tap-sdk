@@ -14,7 +14,7 @@ import (
 
 // TestMultiTrancheGroup exercises a second issuance into an existing fungible
 // group and verifies the SDK reports the semantic asset as one AssetRef while
-// still exposing both issuance tranches in ListGroups.
+// still exposing both issuance tranches in ListAssetGroups.
 func TestMultiTrancheGroup(t *testing.T) {
 	runForTransports(t, func(t *testing.T, transport Transport) {
 		h, ctx := newFundedHarnessFor(t, transport)
@@ -57,14 +57,14 @@ func TestMultiTrancheGroup(t *testing.T) {
 		require.GreaterOrEqual(t, len(issuances), 2)
 
 		group := h.RequireGroup(t, ctx, first.Ref)
-		require.GreaterOrEqual(t, len(group.Assets), 2)
+		require.GreaterOrEqual(t, len(group.Members), 2)
 
 		var (
 			sawFirst  bool
 			sawSecond bool
 			total     uint64
 		)
-		for _, asset := range group.Assets {
+		for _, asset := range group.Members {
 			require.Equal(t, first.Ref, asset.AssetRef)
 			total += asset.Amount
 
@@ -127,7 +127,7 @@ func (h *TestHarness) IssueMoreAndConfirm(t testing.TB,
 
 	var resultAsset *entities.AssetRecord
 	require.Eventually(t, func() bool {
-		assets, err := h.AliceClient.ListAssets(ctx,
+		assets, err := h.AliceClient.ListAssetRecords(ctx,
 			&entities.ListAssetsRequest{
 				AssetRef: &ref,
 			},
@@ -157,11 +157,11 @@ func (h *TestHarness) IssueMoreAndConfirm(t testing.TB,
 
 // RequireGroup returns the grouped-asset row for a semantic group ref.
 func (h *TestHarness) RequireGroup(t testing.TB, ctx context.Context,
-	ref entities.AssetRef) entities.GroupedAssets {
+	ref entities.AssetRef) entities.AssetGroupRecord {
 
 	t.Helper()
 
-	groups, err := h.AliceClient.ListGroups(ctx)
+	groups, err := h.AliceClient.ListAssetGroups(ctx)
 	require.NoError(t, err)
 
 	for _, group := range groups {
@@ -171,5 +171,5 @@ func (h *TestHarness) RequireGroup(t testing.TB, ctx context.Context,
 	}
 
 	require.FailNowf(t, "group not found", "ref=%s", ref)
-	return entities.GroupedAssets{}
+	return entities.AssetGroupRecord{}
 }

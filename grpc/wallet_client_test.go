@@ -143,7 +143,7 @@ func TestAssetRecordMatchesRef(t *testing.T) {
 
 	record := &entities.AssetRecord{
 		AssetRef: collectionRef,
-		Genesis: entities.AssetGenesis{
+		Genesis: entities.IssuanceGenesis{
 			IssuanceID: assetID,
 		},
 	}
@@ -259,11 +259,12 @@ func TestMarshalSendAssetRequest(t *testing.T) {
 	}
 }
 
-func TestUnmarshalAssetBalance(t *testing.T) {
+func TestUnmarshalBalance(t *testing.T) {
 	tests := []struct {
-		name       string
-		rpcBalance *taprpc.AssetBalance
-		wantErr    string
+		name         string
+		rpcBalance   *taprpc.AssetBalance
+		wantErr      string
+		wantGroupRef bool
 	}{
 		{
 			name:       "nil balance",
@@ -292,7 +293,15 @@ func TestUnmarshalAssetBalance(t *testing.T) {
 			wantErr: "invalid group key length",
 		},
 		{
-			name: "valid asset balance",
+			name: "valid grouped asset balance",
+			rpcBalance: &taprpc.AssetBalance{
+				Balance:  42,
+				GroupKey: testPubKey,
+			},
+			wantGroupRef: true,
+		},
+		{
+			name: "valid ungrouped asset balance",
 			rpcBalance: &taprpc.AssetBalance{
 				AssetGenesis: &taprpc.GenesisInfo{
 					GenesisPoint: zeroGenesisPoint,
@@ -301,15 +310,14 @@ func TestUnmarshalAssetBalance(t *testing.T) {
 					OutputIndex:  1,
 					AssetType:    taprpc.AssetType_NORMAL,
 				},
-				Balance:  42,
-				GroupKey: testPubKey,
+				Balance: 42,
 			},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			balance, err := unmarshalAssetBalance(tc.rpcBalance)
+			balance, err := unmarshalBalance(tc.rpcBalance)
 
 			if tc.wantErr != "" {
 				require.Error(t, err)
@@ -320,65 +328,14 @@ func TestUnmarshalAssetBalance(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, balance)
 			require.Equal(t, uint64(42), balance.Balance)
-			require.NotNil(t, balance.GroupKey)
-			require.Equal(t, testPubKey, balance.GroupKey[:])
-			require.Equal(t, "test", balance.AssetGenesis.Tag)
-		})
-	}
-}
-
-func TestUnmarshalAssetGroupBalance(t *testing.T) {
-	tests := []struct {
-		name       string
-		rpcBalance *taprpc.AssetGroupBalance
-		wantErr    string
-	}{
-		{
-			name:       "nil balance",
-			rpcBalance: nil,
-			wantErr:    "nil asset group balance",
-		},
-		{
-			name: "invalid group key length",
-			rpcBalance: &taprpc.AssetGroupBalance{
-				GroupKey: []byte{0x01},
-				Balance:  5,
-			},
-			wantErr: "invalid group key length",
-		},
-		{
-			name: "valid grouped balance",
-			rpcBalance: &taprpc.AssetGroupBalance{
-				GroupKey: testPubKey,
-				Balance:  21,
-			},
-		},
-		{
-			name: "ungrouped balance",
-			rpcBalance: &taprpc.AssetGroupBalance{
-				Balance: 9,
-			},
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			balance, err := unmarshalAssetGroupBalance(tc.rpcBalance)
-
-			if tc.wantErr != "" {
-				require.Error(t, err)
-				require.Contains(t, err.Error(), tc.wantErr)
-				return
-			}
-
-			require.NoError(t, err)
-			require.NotNil(t, balance)
-			require.Equal(t, tc.rpcBalance.Balance, balance.Balance)
-			if len(tc.rpcBalance.GroupKey) == 0 {
-				require.Nil(t, balance.GroupKey)
+			if tc.wantGroupRef {
+				groupKey, ok := balance.AssetRef.GroupKey()
+				require.True(t, ok)
+				require.Equal(t, testPubKey, groupKey[:])
 			} else {
-				require.NotNil(t, balance.GroupKey)
-				require.Equal(t, testPubKey, balance.GroupKey[:])
+				assetID, ok := balance.AssetRef.AssetID()
+				require.True(t, ok)
+				require.Equal(t, testAssetID, assetID[:])
 			}
 		})
 	}
@@ -484,7 +441,7 @@ func TestUnmarshalManagedUtxo(t *testing.T) {
 	}
 }
 
-func TestUnmarshalGroupedAssets(t *testing.T) {
+func TestUnmarshalAssetGroupRecord(t *testing.T) {
 	compressedHex := hex.EncodeToString(testPubKey)
 	xOnlyHex := hex.EncodeToString(testPubKey[1:])
 
@@ -548,7 +505,7 @@ func TestUnmarshalGroupedAssets(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := unmarshalGroupedAssets(
+			result, err := unmarshalAssetGroupRecord(
 				tc.groupKeyHex, tc.rpcGroup,
 			)
 			if tc.wantErr != "" {
@@ -563,7 +520,7 @@ func TestUnmarshalGroupedAssets(t *testing.T) {
 			require.NotNil(t, result)
 			require.True(t, result.AssetRef.IsGroupRef())
 			require.Len(
-				t, result.Assets,
+				t, result.Members,
 				len(tc.rpcGroup.Assets),
 			)
 		})

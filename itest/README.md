@@ -99,7 +99,7 @@ tapd's grpc-gateway WebSocket bridge for server-streaming RPCs.
   Alice's LND wallet with coins so asset tests do not repeat funding.
 - `MintResult.Ref` carries the semantic `AssetRef` that high-level wallet
   helpers should use, so grouped fungible tests do not depend on the raw
-  group-key shape returned by `ListAssets`.
+  group-key shape returned by `ListAssetRecords`.
 - `CreateGroupedReceiveAddress(...)` centralises the V2 grouped receive
   bootstrap flow for Bob and retries until the receiver is ready.
 
@@ -114,7 +114,7 @@ tapd's grpc-gateway WebSocket bridge for server-streaming RPCs.
 | `TestAddressSend` | Mint → address → send → verify balances, transfers and receive events |
 | `TestProofOperations` | Export, unpack, decode, and verify proofs |
 | `TestBalanceQueries` | AssetRef-based balance queries (fungible + collectible), `Wallet.GetBalance` parity |
-| `TestWalletSurface` | Low-level ListAssets/ListUtxos/ListGroups/FetchAssetMeta round-trips |
+| `TestWalletSurface` | Low-level ListAssetRecords/ListUtxos/ListAssetGroups/FetchAssetMeta round-trips |
 | `TestMultiTrancheGroup` | Wallet ListAssets fungible aggregation and ListIssuances tranche access |
 | `TestBurnAsset` | Burn + ListBurns lifecycle |
 | `TestErrorHandling` | Invalid inputs return proper errors |

@@ -87,7 +87,7 @@ func marshalAssetQuerySort(s entities.AssetQuerySort) string {
 	switch s {
 	case entities.SortByAssetName:
 		return "SORT_BY_ASSET_NAME"
-	case entities.SortByAssetID:
+	case entities.SortByIssuanceID:
 		return "SORT_BY_ASSET_ID"
 	case entities.SortByAssetType:
 		return "SORT_BY_ASSET_TYPE"

@@ -26,7 +26,7 @@ func (m *refMockClient) GetInfo(ctx context.Context) (*entities.Info,
 	panic("GetInfo: unexpected call")
 }
 
-func (m *refMockClient) ListAssets(ctx context.Context,
+func (m *refMockClient) ListAssetRecords(ctx context.Context,
 	req *entities.ListAssetsRequest) ([]*entities.AssetRecord, error) {
 
 	args := m.Called(ctx, req)
@@ -236,8 +236,8 @@ func (m *refMockClient) ListUtxos(_ context.Context,
 	return nil, nil
 }
 
-func (m *refMockClient) ListGroups(
-	_ context.Context) ([]entities.GroupedAssets, error) {
+func (m *refMockClient) ListAssetGroups(
+	_ context.Context) ([]entities.AssetGroupRecord, error) {
 
 	return nil, nil
 }
@@ -569,7 +569,7 @@ func TestGetBalance_Fungible(t *testing.T) {
 	mc.On("ListBalances", ctx, &entities.ListBalancesRequest{
 		AssetRef: &ref,
 	}).Return(&entities.ListBalancesResponse{
-		Balances: map[string]*entities.AssetBalance{
+		Balances: map[string]*entities.Balance{
 			ref.String(): {
 				AssetRef: ref,
 				Balance:  42000,
@@ -595,7 +595,7 @@ func TestGetBalance_Collectible(t *testing.T) {
 	mc.On("ListBalances", ctx, &entities.ListBalancesRequest{
 		AssetRef: &ref,
 	}).Return(&entities.ListBalancesResponse{
-		Balances: map[string]*entities.AssetBalance{
+		Balances: map[string]*entities.Balance{
 			ref.String(): {
 				AssetRef: ref,
 				Balance:  1,
@@ -618,7 +618,7 @@ func expectEmptyBalances(mc *refMockClient, ctx context.Context,
 	mc.On("ListBalances", ctx, &entities.ListBalancesRequest{
 		AssetRef: &ref,
 	}).Return(&entities.ListBalancesResponse{
-		Balances: map[string]*entities.AssetBalance{},
+		Balances: map[string]*entities.Balance{},
 	}, nil)
 }
 

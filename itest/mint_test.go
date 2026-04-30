@@ -41,8 +41,8 @@ func TestMintAsset(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, batches)
 
-		// ListGroups must carry our new group.
-		groups, err := h.AliceClient.ListGroups(ctx)
+		// ListAssetGroups must carry our new group.
+		groups, err := h.AliceClient.ListAssetGroups(ctx)
 		require.NoError(t, err)
 		require.NotEmpty(t, groups)
 	})

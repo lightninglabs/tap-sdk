@@ -104,7 +104,7 @@ type interactiveResolverMock struct {
 	gotReq *entities.ListAssetsRequest
 }
 
-func (m *interactiveResolverMock) ListAssets(_ context.Context,
+func (m *interactiveResolverMock) ListAssetRecords(_ context.Context,
 	req *entities.ListAssetsRequest) ([]*entities.AssetRecord, error) {
 
 	m.gotReq = req
@@ -131,14 +131,14 @@ func TestInteractiveTxBuilder_GroupRefResolvesSpendableIssuance(
 		assets: []*entities.AssetRecord{
 			{
 				AssetRef: groupRef,
-				Genesis: entities.AssetGenesis{
+				Genesis: entities.IssuanceGenesis{
 					IssuanceID: smallID,
 				},
 				Amount: 250,
 			},
 			{
 				AssetRef: groupRef,
-				Genesis: entities.AssetGenesis{
+				Genesis: entities.IssuanceGenesis{
 					IssuanceID: selectedID,
 				},
 				Amount: 1000,

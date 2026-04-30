@@ -126,7 +126,8 @@ type GroupWitness struct {
 	Witness [][]byte
 }
 
-// GenesisInfo describes an asset genesis record used in mint responses.
+// GenesisInfo describes a concrete issuance genesis record used in mint
+// responses.
 type GenesisInfo struct {
 	// GenesisPoint is the outpoint that created the asset.
 	GenesisPoint string
@@ -137,8 +138,9 @@ type GenesisInfo struct {
 	// MetaHash is the metadata hash committed into genesis.
 	MetaHash Hash
 
-	// AssetID is the protocol-level asset identifier.
-	AssetID AssetID
+	// IssuanceID is the protocol-level identifier for this concrete
+	// issuance/tranche.
+	IssuanceID AssetID
 
 	// AssetType is the genesis asset type.
 	AssetType AssetType

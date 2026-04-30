@@ -438,8 +438,8 @@ type jsonListUtxosResponse struct {
 	ManagedUtxos map[string]*jsonManagedUtxo `json:"managed_utxos"`
 }
 
-// jsonAssetHumanReadable is the JSON shape of taprpc.AssetHumanReadable,
-// the simplified asset record returned by ListGroups (distinct from the
+// jsonAssetHumanReadable is the JSON shape of taprpc.AssetHumanReadable, the
+// simplified asset record returned by tapd's ListGroups RPC (distinct from the
 // full jsonAsset used by ListAssets).
 type jsonAssetHumanReadable struct {
 	ID               string `json:"id"`

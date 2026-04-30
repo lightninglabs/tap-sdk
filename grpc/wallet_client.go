@@ -60,7 +60,7 @@ func (s *walletClient) GetInfo(ctx context.Context) (*entities.Info, error) {
 	}, nil
 }
 
-func (s *walletClient) ListAssets(ctx context.Context,
+func (s *walletClient) ListAssetRecords(ctx context.Context,
 	req *entities.ListAssetsRequest) ([]*entities.AssetRecord, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
@@ -167,63 +167,32 @@ func (s *walletClient) ListBalances(ctx context.Context,
 
 	result := &entities.ListBalancesResponse{
 		Balances: make(
-			map[string]*entities.AssetBalance,
+			map[string]*entities.Balance,
 		),
 		UnconfirmedTransfers: rawResp.UnconfirmedTransfers,
 	}
 
 	for _, ab := range rawResp.AssetBalances {
-		genesis, err := unmarshalAssetGenesis(
-			ab.AssetGenesis,
-		)
+		row, err := unmarshalBalance(ab)
 		if err != nil {
-			return nil, fmt.Errorf("balance genesis: "+
-				"%w", err)
+			return nil, fmt.Errorf("balance: %w", err)
 		}
 
-		var (
-			ref      entities.AssetRef
-			groupKey *entities.PubKey
-		)
-
-		if len(ab.GroupKey) > 0 {
-			gk, err := entities.ParsePubKey(
-				ab.GroupKey,
-			)
-			if err != nil {
-				return nil, fmt.Errorf("balance "+
-					"group key: %w", err)
-			}
-
-			ref = entities.AssetRefFromGroupKey(gk)
-			groupKey = &gk
-		} else {
-			ref = entities.AssetRefFromAssetID(
-				genesis.IssuanceID,
-			)
-		}
-
-		key := ref.String()
+		key := row.AssetRef.String()
 		balance, ok := result.Balances[key]
 		if !ok {
-			balance = &entities.AssetBalance{
-				AssetRef:     ref,
-				AssetGenesis: *genesis,
-				GroupKey:     groupKey,
-			}
-
-			result.Balances[key] = balance
+			result.Balances[key] = row
+			continue
 		}
 
-		balance.Balance += ab.Balance
+		balance.Balance += row.Balance
 	}
 
 	return result, nil
 }
 
-// listGroupBalance queries a single-group balance via tapd's
-// group-by-group_key mode. The server returns only the aggregate for the
-// requested group, so genesis metadata is enriched from ListAssets.
+// listGroupBalance queries a single-group balance via tapd's group-by-group_key
+// mode.
 func (s *walletClient) listGroupBalance(ctx context.Context,
 	req *entities.ListBalancesRequest) (*entities.ListBalancesResponse,
 	error) {
@@ -254,7 +223,7 @@ func (s *walletClient) listGroupBalance(ctx context.Context,
 	}
 
 	result := &entities.ListBalancesResponse{
-		Balances:             map[string]*entities.AssetBalance{},
+		Balances:             map[string]*entities.Balance{},
 		UnconfirmedTransfers: rawResp.UnconfirmedTransfers,
 	}
 
@@ -263,41 +232,12 @@ func (s *walletClient) listGroupBalance(ctx context.Context,
 		return result, nil
 	}
 
-	representative, err := s.groupRepresentativeAsset(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	result.Balances[req.AssetRef.String()] = &entities.AssetBalance{
-		AssetRef:     *req.AssetRef,
-		AssetGenesis: representative.Genesis,
-		Balance:      groupBalance.Balance,
-		GroupKey:     &groupKey,
+	result.Balances[req.AssetRef.String()] = &entities.Balance{
+		AssetRef: *req.AssetRef,
+		Balance:  groupBalance.Balance,
 	}
 
 	return result, nil
-}
-
-// groupRepresentativeAsset returns any asset from the group so the
-// balance response carries the genesis metadata callers expect.
-func (s *walletClient) groupRepresentativeAsset(ctx context.Context,
-	req *entities.ListBalancesRequest) (*entities.AssetRecord, error) {
-
-	assets, err := s.ListAssets(ctx, &entities.ListAssetsRequest{
-		AssetRef:      req.AssetRef,
-		IncludeLeased: req.IncludeLeased,
-		ScriptKeyType: req.ScriptKeyType,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	if len(assets) == 0 {
-		return nil, fmt.Errorf("missing representative asset for %s",
-			req.AssetRef)
-	}
-
-	return assets[0], nil
 }
 
 func (s *walletClient) ListTransfers(ctx context.Context,
@@ -365,7 +305,7 @@ func unmarshalAsset(rpcAsset *taprpc.Asset) (*entities.AssetRecord, error) {
 			len(rpcAsset.ScriptKey))
 	}
 
-	genesis, err := unmarshalAssetGenesis(rpcAsset.AssetGenesis)
+	genesis, err := unmarshalIssuanceGenesis(rpcAsset.AssetGenesis)
 	if err != nil {
 		return nil, err
 	}
@@ -385,7 +325,7 @@ func unmarshalAsset(rpcAsset *taprpc.Asset) (*entities.AssetRecord, error) {
 		},
 	}
 
-	// tapd keys every queryable map (ListBalances, ListGroups,
+	// tapd keys every queryable map (ListBalances, ListAssetGroups,
 	// ListAssets filters) by the tweaked group key, so that's what
 	// AssetRef must encode.
 	var tweakedGroupKey *entities.PubKey
@@ -404,8 +344,10 @@ func unmarshalAsset(rpcAsset *taprpc.Asset) (*entities.AssetRecord, error) {
 	return asset, nil
 }
 
-func unmarshalAssetGenesis(rpcGenesis *taprpc.GenesisInfo) (
-	*entities.AssetGenesis, error) {
+// unmarshalIssuanceGenesis converts tapd's GenesisInfo into the SDK's concrete
+// issuance genesis type.
+func unmarshalIssuanceGenesis(rpcGenesis *taprpc.GenesisInfo) (
+	*entities.IssuanceGenesis, error) {
 
 	if rpcGenesis == nil {
 		return nil, fmt.Errorf("nil asset genesis")
@@ -436,7 +378,7 @@ func unmarshalAssetGenesis(rpcGenesis *taprpc.GenesisInfo) (
 		copy(metaHash[:], rpcGenesis.MetaHash)
 	}
 
-	return &entities.AssetGenesis{
+	return &entities.IssuanceGenesis{
 		FirstPrevOut: firstPrevOut,
 		Tag:          rpcGenesis.Name,
 		MetaHash:     metaHash,
@@ -730,51 +672,13 @@ func marshalScriptKeyTypeQuery(
 	return nil
 }
 
-func unmarshalAssetBalance(
-	rpcBalance *taprpc.AssetBalance) (*entities.AssetBalance, error) {
+func unmarshalBalance(
+	rpcBalance *taprpc.AssetBalance) (*entities.Balance, error) {
 
 	if rpcBalance == nil {
 		return nil, fmt.Errorf("nil asset balance")
 	}
-	if rpcBalance.AssetGenesis == nil {
-		return nil, fmt.Errorf("missing asset genesis")
-	}
-
-	genesis, err := unmarshalAssetGenesis(rpcBalance.AssetGenesis)
-	if err != nil {
-		return nil, err
-	}
-
-	balance := &entities.AssetBalance{
-		AssetRef:     entities.AssetRefFromAsset(genesis.IssuanceID, nil),
-		AssetGenesis: *genesis,
-		Balance:      rpcBalance.Balance,
-	}
-
-	if len(rpcBalance.GroupKey) != 0 {
-		if len(rpcBalance.GroupKey) != 33 {
-			return nil, fmt.Errorf("invalid group key length: %d",
-				len(rpcBalance.GroupKey))
-		}
-
-		var groupKey entities.PubKey
-		copy(groupKey[:], rpcBalance.GroupKey)
-		balance.GroupKey = &groupKey
-		balance.AssetRef = entities.AssetRefFromGroupKey(groupKey)
-	}
-
-	return balance, nil
-}
-
-func unmarshalAssetGroupBalance(
-	rpcBalance *taprpc.AssetGroupBalance) (*entities.AssetGroupBalance,
-	error) {
-
-	if rpcBalance == nil {
-		return nil, fmt.Errorf("nil asset group balance")
-	}
-
-	balance := &entities.AssetGroupBalance{
+	balance := &entities.Balance{
 		Balance: rpcBalance.Balance,
 	}
 
@@ -786,8 +690,20 @@ func unmarshalAssetGroupBalance(
 
 		var groupKey entities.PubKey
 		copy(groupKey[:], rpcBalance.GroupKey)
-		balance.GroupKey = &groupKey
+		balance.AssetRef = entities.AssetRefFromGroupKey(groupKey)
+		return balance, nil
 	}
+
+	if rpcBalance.AssetGenesis == nil {
+		return nil, fmt.Errorf("missing asset genesis")
+	}
+
+	genesis, err := unmarshalIssuanceGenesis(rpcBalance.AssetGenesis)
+	if err != nil {
+		return nil, err
+	}
+
+	balance.AssetRef = entities.AssetRefFromAsset(genesis.IssuanceID, nil)
 
 	return balance, nil
 }
@@ -1052,9 +968,9 @@ func (s *walletClient) ListUtxos(ctx context.Context,
 	return result, nil
 }
 
-// ListGroups lists all known asset groups.
-func (s *walletClient) ListGroups(
-	ctx context.Context) ([]entities.GroupedAssets, error) {
+// ListAssetGroups lists all known asset groups.
+func (s *walletClient) ListAssetGroups(
+	ctx context.Context) ([]entities.AssetGroupRecord, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
@@ -1068,10 +984,10 @@ func (s *walletClient) ListGroups(
 		return nil, err
 	}
 
-	result := make([]entities.GroupedAssets, 0, len(resp.Groups))
+	result := make([]entities.AssetGroupRecord, 0, len(resp.Groups))
 
 	for key, rpcGroup := range resp.Groups {
-		group, err := unmarshalGroupedAssets(key, rpcGroup)
+		group, err := unmarshalAssetGroupRecord(key, rpcGroup)
 		if err != nil {
 			return nil, fmt.Errorf("failed to unmarshal "+
 				"group %s: %w", key, err)
@@ -1289,11 +1205,11 @@ func unmarshalManagedUtxo(
 	}, nil
 }
 
-// unmarshalGroupedAssets converts an RPC GroupedAssets to an
-// entities.GroupedAssets. The groupKeyHex is the map key tapd returns,
+// unmarshalAssetGroupRecord converts an RPC GroupedAssets to an
+// entities.AssetGroupRecord. The groupKeyHex is the map key tapd returns,
 // which may be either 33-byte compressed or 32-byte x-only hex.
-func unmarshalGroupedAssets(groupKeyHex string,
-	rpcGroup *taprpc.GroupedAssets) (*entities.GroupedAssets, error) {
+func unmarshalAssetGroupRecord(groupKeyHex string,
+	rpcGroup *taprpc.GroupedAssets) (*entities.AssetGroupRecord, error) {
 
 	if rpcGroup == nil {
 		return nil, fmt.Errorf("nil grouped assets")
@@ -1305,8 +1221,8 @@ func unmarshalGroupedAssets(groupKeyHex string,
 	}
 	groupRef := entities.AssetRefFromGroupKey(groupKey)
 
-	assets := make(
-		[]*entities.AssetHumanReadable, 0, len(rpcGroup.Assets),
+	members := make(
+		[]*entities.AssetGroupMember, 0, len(rpcGroup.Assets),
 	)
 
 	for _, rpcAsset := range rpcGroup.Assets {
@@ -1326,7 +1242,7 @@ func unmarshalGroupedAssets(groupKeyHex string,
 				err)
 		}
 
-		assets = append(assets, &entities.AssetHumanReadable{
+		members = append(members, &entities.AssetGroupMember{
 			AssetRef:         groupRef,
 			IssuanceID:       assetID,
 			Amount:           rpcAsset.Amount,
@@ -1339,9 +1255,9 @@ func unmarshalGroupedAssets(groupKeyHex string,
 		})
 	}
 
-	return &entities.GroupedAssets{
+	return &entities.AssetGroupRecord{
 		AssetRef: groupRef,
-		Assets:   assets,
+		Members:  members,
 	}, nil
 }
 

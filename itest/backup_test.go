@@ -99,7 +99,7 @@ func (h *TestHarness) SyncAliceGroupsForBackupImport(t testing.TB,
 
 	h.EnableUniverseBootstrap(t, ctx)
 
-	groups, err := h.AliceClient.ListGroups(ctx)
+	groups, err := h.AliceClient.ListAssetGroups(ctx)
 	require.NoError(t, err)
 
 	for _, group := range groups {

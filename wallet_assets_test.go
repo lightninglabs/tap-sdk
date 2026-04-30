@@ -19,7 +19,7 @@ func TestListAssets_AggregatesGroupedFungibleIssuances(t *testing.T) {
 	secondID := bundleAssetID(12)
 	req := &entities.ListAssetsRequest{AssetRef: &groupRef}
 
-	mc.On("ListAssets", ctx, req).Return([]*entities.AssetRecord{
+	mc.On("ListAssetRecords", ctx, req).Return([]*entities.AssetRecord{
 		bundleAsset(groupRef, firstID, testKey(t, 42), 100,
 			entities.AssetTypeNormal),
 		bundleAsset(groupRef, secondID, testKey(t, 43), 250,
@@ -48,7 +48,7 @@ func TestListAssets_SingleCollectible(t *testing.T) {
 	assetRef := entities.AssetRefFromAssetID(assetID)
 	req := &entities.ListAssetsRequest{AssetRef: &assetRef}
 
-	mc.On("ListAssets", ctx, req).Return([]*entities.AssetRecord{
+	mc.On("ListAssetRecords", ctx, req).Return([]*entities.AssetRecord{
 		bundleAsset(assetRef, assetID, testKey(t, 44), 1,
 			entities.AssetTypeCollectible),
 	}, nil).Once()
@@ -76,7 +76,7 @@ func TestListAssets_ReturnsCollectionItemsAsNFTAssets(t *testing.T) {
 	secondID := bundleAssetID(15)
 	req := &entities.ListAssetsRequest{AssetRef: &collectionRef}
 
-	mc.On("ListAssets", ctx, req).Return([]*entities.AssetRecord{
+	mc.On("ListAssetRecords", ctx, req).Return([]*entities.AssetRecord{
 		bundleAsset(collectionRef, firstID, testKey(t, 46), 1,
 			entities.AssetTypeCollectible),
 		bundleAsset(collectionRef, secondID, testKey(t, 47), 1,
@@ -107,7 +107,7 @@ func TestListCollections_AggregatesCollectionItems(t *testing.T) {
 	collectionRef := entities.AssetRefFromGroupKey(testKey(t, 54))
 	req := &entities.ListCollectionsRequest{AssetRef: &collectionRef}
 
-	mc.On("ListAssets", ctx, &entities.ListAssetsRequest{
+	mc.On("ListAssetRecords", ctx, &entities.ListAssetsRequest{
 		AssetRef: &collectionRef,
 	}).Return([]*entities.AssetRecord{
 		bundleAsset(collectionRef, bundleAssetID(20), testKey(t, 55), 1,
@@ -137,7 +137,7 @@ func TestListAssets_DeduplicatesCollectibleRows(t *testing.T) {
 		IncludeSpent: true,
 	}
 
-	mc.On("ListAssets", ctx, req).Return([]*entities.AssetRecord{
+	mc.On("ListAssetRecords", ctx, req).Return([]*entities.AssetRecord{
 		bundleAsset(assetRef, assetID, testKey(t, 59), 1,
 			entities.AssetTypeCollectible),
 		bundleAsset(assetRef, assetID, testKey(t, 60), 1,
@@ -161,7 +161,7 @@ func TestListAssets_SaturatesFungibleOverflow(t *testing.T) {
 	groupRef := entities.AssetRefFromGroupKey(testKey(t, 61))
 	req := &entities.ListAssetsRequest{AssetRef: &groupRef}
 
-	mc.On("ListAssets", ctx, req).Return([]*entities.AssetRecord{
+	mc.On("ListAssetRecords", ctx, req).Return([]*entities.AssetRecord{
 		bundleAsset(groupRef, bundleAssetID(24), testKey(t, 62),
 			math.MaxUint64-5, entities.AssetTypeNormal),
 		bundleAsset(groupRef, bundleAssetID(25), testKey(t, 63),
@@ -185,7 +185,7 @@ func TestListIssuances_SaturatesOverflow(t *testing.T) {
 	issuanceID := bundleAssetID(26)
 	req := &entities.ListIssuancesRequest{AssetRef: &groupRef}
 
-	mc.On("ListAssets", ctx, &entities.ListAssetsRequest{
+	mc.On("ListAssetRecords", ctx, &entities.ListAssetsRequest{
 		AssetRef: &groupRef,
 	}).Return([]*entities.AssetRecord{
 		bundleAsset(groupRef, issuanceID, testKey(t, 65),
@@ -213,7 +213,7 @@ func TestListIssuances_FiltersCollectibles(t *testing.T) {
 	groupRef := entities.AssetRefFromGroupKey(testKey(t, 48))
 	nftRef := entities.AssetRefFromAssetID(bundleAssetID(16))
 
-	mc.On("ListAssets", ctx, (*entities.ListAssetsRequest)(nil)).Return(
+	mc.On("ListAssetRecords", ctx, (*entities.ListAssetsRequest)(nil)).Return(
 		[]*entities.AssetRecord{
 			bundleAsset(groupRef, bundleAssetID(17), testKey(t, 49),
 				100, entities.AssetTypeNormal),
@@ -242,7 +242,7 @@ func TestListCollectionItems_UsesConcreteItemRefs(t *testing.T) {
 	secondID := bundleAssetID(19)
 	req := &entities.ListCollectionItemsRequest{CollectionRef: &collectionRef}
 
-	mc.On("ListAssets", ctx, &entities.ListAssetsRequest{
+	mc.On("ListAssetRecords", ctx, &entities.ListAssetsRequest{
 		AssetRef: &collectionRef,
 	}).Return([]*entities.AssetRecord{
 		bundleAsset(collectionRef, firstID, testKey(t, 52), 1,
@@ -274,7 +274,7 @@ func TestListCollectionItems_ByItemAssetRef(t *testing.T) {
 	itemRef := entities.AssetRefFromAssetID(itemID)
 	req := &entities.ListCollectionItemsRequest{AssetRef: &itemRef}
 
-	mc.On("ListAssets", ctx, &entities.ListAssetsRequest{
+	mc.On("ListAssetRecords", ctx, &entities.ListAssetsRequest{
 		AssetRef: &itemRef,
 	}).Return([]*entities.AssetRecord{
 		bundleAsset(collectionRef, itemID, testKey(t, 58), 1,

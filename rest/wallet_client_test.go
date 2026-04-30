@@ -35,7 +35,7 @@ func TestAssetRecordMatchesRef(t *testing.T) {
 
 	record := &entities.AssetRecord{
 		AssetRef: collectionRef,
-		Genesis: entities.AssetGenesis{
+		Genesis: entities.IssuanceGenesis{
 			IssuanceID: assetID,
 		},
 	}

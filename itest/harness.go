@@ -256,7 +256,7 @@ func (h *TestHarness) WaitForAssetByTag(t testing.TB, ctx context.Context,
 
 	var found *entities.AssetRecord
 	require.Eventually(t, func() bool {
-		assets, err := client.ListAssets(ctx,
+		assets, err := client.ListAssetRecords(ctx,
 			&entities.ListAssetsRequest{},
 		)
 		if err != nil {
