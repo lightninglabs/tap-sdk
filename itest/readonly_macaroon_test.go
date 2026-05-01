@@ -40,7 +40,7 @@ func TestReadOnlyMacaroon(t *testing.T) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
 		name := uniqueEventLabel(fmt.Sprintf("readonly-token-%s", transport))
-		minted, err := h.MintGroupedAsset(t, ctx, name, 1000)
+		minted, err := h.CreateFungibleAndConfirm(t, ctx, name, 1000)
 		require.NoError(t, err)
 
 		readClient := newAliceClientWithMacHex(

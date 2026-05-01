@@ -34,7 +34,7 @@ func TestBalanceQueries(t *testing.T) {
 					name := uniqueEventLabel(
 						"balance-token-" + string(transport),
 					)
-					return h.MintGroupedAsset(
+					return h.CreateFungibleAndConfirm(
 						t, ctx, name, 500,
 					)
 				},
@@ -51,7 +51,7 @@ func TestBalanceQueries(t *testing.T) {
 					name := uniqueEventLabel(
 						"balance-nft-" + string(transport),
 					)
-					return h.MintCollectibleAsset(
+					return h.CreateNFTAndConfirm(
 						t, ctx, name,
 					)
 				},
@@ -106,15 +106,13 @@ func TestListBalancesMultiIssuanceFungible(t *testing.T) {
 		name := uniqueEventLabel(
 			"multi-balance-token-" + string(transport),
 		)
-		first, err := h.MintGroupedAsset(
+		first, err := h.CreateFungibleAndConfirm(
 			t, ctx, name, 500,
 		)
 		require.NoError(t, err)
 		require.True(t, first.Ref.IsGroupRef())
 
-		_, err = h.IssueMoreAndConfirm(
-			t, ctx, first.Ref, name, 250,
-		)
+		_, err = h.IssueFungibleAndConfirm(t, ctx, first.Ref, 250)
 		require.NoError(t, err)
 
 		h.WaitForBalance(
@@ -142,7 +140,7 @@ func TestListBalancesCollectionItems(t *testing.T) {
 		firstName := uniqueEventLabel(
 			"balance-collection-one-" + string(transport),
 		)
-		first, err := h.MintCollectibleCollection(
+		first, err := h.CreateCollectionAndConfirm(
 			t, ctx, firstName,
 		)
 		require.NoError(t, err)
@@ -151,7 +149,7 @@ func TestListBalancesCollectionItems(t *testing.T) {
 		secondName := uniqueEventLabel(
 			"balance-collection-two-" + string(transport),
 		)
-		second, err := h.IssueCollectionItemAndConfirm(
+		second, err := h.MintCollectionItemAndConfirm(
 			t, ctx, first.Ref, secondName,
 		)
 		require.NoError(t, err)
@@ -189,7 +187,7 @@ func TestGetBalance_UnknownAsset(t *testing.T) {
 
 		// An unrelated mint makes the "no record at all" outcome
 		// non-trivial: tapd has assets, just not this ref.
-		_, err := h.MintCollectibleAsset(t, ctx, "unknown-guard")
+		_, err := h.CreateNFTAndConfirm(t, ctx, "unknown-guard")
 		require.NoError(t, err)
 
 		ref := randomAssetIDRef(t)
@@ -219,7 +217,7 @@ func TestGetBalance_ZeroAfterUniverseBootstrap(t *testing.T) {
 	runForTransports(t, func(t *testing.T, transport Transport) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
-		minted, err := h.MintGroupedAsset(
+		minted, err := h.CreateFungibleAndConfirm(
 			t, ctx, "bootstrap-token", 1000,
 		)
 		require.NoError(t, err)

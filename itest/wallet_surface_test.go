@@ -18,7 +18,7 @@ func TestWalletSurface(t *testing.T) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
 		minted, err := h.MintAssetAndConfirm(t, ctx,
-			&entities.CreateAsset{
+			&entities.MintAsset{
 				AssetType:     entities.AssetTypeNormal,
 				Name:          "surface-token",
 				InitialSupply: 100,
@@ -73,7 +73,7 @@ func TestBurnAsset(t *testing.T) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
 		minted, err := h.MintAssetAndConfirm(t, ctx,
-			&entities.CreateAsset{
+			&entities.MintAsset{
 				AssetType: entities.AssetTypeNormal,
 				Name: uniqueEventLabel(
 					"burn-token-" + string(transport),
@@ -131,7 +131,7 @@ func TestBurnAssetByGroupKey(t *testing.T) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
 		name := uniqueEventLabel("burn-group-" + string(transport))
-		minted, err := h.MintGroupedAsset(t, ctx, name, 500)
+		minted, err := h.CreateFungibleAndConfirm(t, ctx, name, 500)
 		require.NoError(t, err)
 		require.True(t, minted.Ref.IsGroupRef())
 

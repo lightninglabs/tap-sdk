@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted and partially implemented.
+Accepted and implemented for the Wallet and Issuer core surfaces.
 
 This document defines the public direction for tap-sdk's asset identity and
 issuance naming model.
@@ -26,13 +26,13 @@ A user interacting with the SDK should not need to know:
 - that Taproot Assets internally distinguishes a user-facing asset from a
   protocol issuance/tranche
 
-The current API leaks that distinction in too many places:
+The early API leaked that distinction in too many places:
 
 - requests accept separate `assetId` vs `groupKey`
 - responses surface one or both and force callers to branch
 - balances inherit tapd's raw grouping modes instead of semantic asset balance
 - universe IDs mirror protocol identifier variants directly
-- minting uses `MintAsset` for two different actions:
+- tapd minting uses one low-level request shape for two different actions:
   - creating a brand-new asset
   - issuing more units of an existing asset
 
@@ -57,7 +57,7 @@ The current API leaks that distinction in too many places:
 
 5. **Clean minting nomenclature**
    - separate "create a new asset" from "create a new issuance"
-   - stop exposing `MintAsset` as an overloaded public concept
+- stop exposing `MintAsset` as the overloaded high-level issuer concept
 
 ## Non-Goals
 
@@ -126,7 +126,8 @@ Use these when the caller is referring to the asset as a user-visible thing:
 - `ListAssets`
 - `FetchAssetMeta`
 - `ListBalances`
-- `CreateAsset`
+- `CreateFungible`
+- `CreateNFT`
 
 ### Issuance/tranche-level fields
 
@@ -134,7 +135,8 @@ Use these when the field refers to one concrete protocol issuance:
 
 - `IssuanceID`
 - `TrancheID` when a shorter-lived or batch-local identifier is more precise
-- `CreateIssuance`
+- `IssueFungible`
+- `MintCollectionItem`
 
 ### Terms to avoid in the public SDK surface
 
@@ -226,7 +228,7 @@ This is the most important naming cleanup after `AssetRef`.
 
 ### Current problem
 
-`MintAsset` is overloaded.
+The protocol mint request is overloaded.
 
 It currently means both:
 
@@ -235,27 +237,35 @@ It currently means both:
 
 Those are not the same action.
 
-### New public actions
+### Public actions
 
-The public SDK should expose two different operations:
+The public SDK exposes explicit operations for each business action:
 
-#### `CreateAsset`
+#### `CreateFungible`
 
-Creates a new semantic asset.
+Creates a new grouped fungible asset and returns an `Asset` keyed by its group
+`AssetRef`.
 
-Example meanings:
+#### `IssueFungible`
 
-- create a new fungible asset family
-- create a new collectible
-- define whether future issuance is allowed
+Creates a new issuance/tranche for an existing fungible asset identified by
+`AssetRef` and returns an `Issuance`.
 
-#### `CreateIssuance`
+#### `CreateNFT`
 
-Creates a new issuance/tranche for an existing asset.
+Creates a standalone NFT and returns an `Asset` keyed by the NFT's asset-ID
+`AssetRef`.
 
-Example meaning:
+#### `CreateCollection`
 
-- issue 1,000 more units of the existing `USDT` asset identified by `AssetRef`
+Creates an NFT collection by minting the first collection item. It returns a
+`CollectionMintResult` containing the `Collection` keyed by group `AssetRef`
+and the first NFT `Asset` keyed by item asset-ID `AssetRef`.
+
+#### `MintCollectionItem`
+
+Mints another NFT item into an existing collection identified by collection
+`AssetRef`.
 
 ### Why this matters
 
@@ -272,8 +282,9 @@ They do **not** think in terms of:
 
 ### Internal mapping to tapd
 
-The SDK is free to continue using `mintrpc.MintAsset` under the hood.
-The overload belongs in the adapter, not in the public API.
+The SDK keeps tapd's `MintAsset` vocabulary on the low-level `MintClient`.
+The overload belongs there as an advanced daemon-shaped escape hatch, not in
+the high-level issuer API.
 
 ## Compatibility and Migration
 
@@ -287,7 +298,8 @@ Migration rules:
   concrete issuance
 - prefer `Balances[assetRef]` over raw grouped balance maps
 - replace `UniverseID{AssetID|GroupKey}` with `UniverseID{AssetRef}`
-- replace overloaded mint entrypoints with explicit asset vs issuance methods
+- replace overloaded mint entrypoints with explicit fungible, NFT, collection,
+  and issuance methods
 
 ## Implementation Strategy
 
@@ -301,9 +313,9 @@ Migration rules:
 
 ### Phase 2
 
-- finish the mint surface split into `CreateAsset` and `CreateIssuance`
-- rename batch/issuance entity names where they still say "asset" but really
-  mean issuance
+- split the high-level issuer surface into `CreateFungible`, `IssueFungible`,
+  `CreateNFT`, `CreateCollection`, and `MintCollectionItem`
+- keep `MintAsset` and `MintIssuance` as the low-level batch mint API
 - update examples and top-level README snippets
 
 ## Consequences
@@ -329,7 +341,8 @@ The SDK should model what users mean, not what tapd happens to require.
 
 `AssetRef` becomes the single public asset identifier.
 `IssuanceID` names concrete protocol-level tranches honestly.
-The mint API splits into separate actions for creating a new asset vs creating a
-new issuance.
+The issuer API splits into explicit actions for creating fungible assets,
+issuing more fungible supply, creating standalone NFTs, creating NFT
+collections, and minting more collection items.
 
 That is the right abstraction boundary for tap-sdk.

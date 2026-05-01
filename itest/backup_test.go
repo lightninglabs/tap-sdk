@@ -25,7 +25,7 @@ func TestBackupRestore(t *testing.T) {
 			fmt.Sprintf("backup-token-%s", transport),
 		)
 		minted, err := h.MintAssetAndConfirm(t, ctx,
-			&entities.CreateAsset{
+			&entities.MintAsset{
 				AssetType:     entities.AssetTypeNormal,
 				Name:          tokenName,
 				InitialSupply: 321,
@@ -37,14 +37,14 @@ func TestBackupRestore(t *testing.T) {
 		groupName := uniqueEventLabel(
 			fmt.Sprintf("backup-group-%s", transport),
 		)
-		grouped, err := h.MintGroupedAsset(t, ctx, groupName, 654)
+		grouped, err := h.CreateFungibleAndConfirm(t, ctx, groupName, 654)
 		require.NoError(t, err)
 		require.True(t, grouped.Ref.IsGroupRef())
 
 		nftName := uniqueEventLabel(
 			fmt.Sprintf("backup-nft-%s", transport),
 		)
-		collectible, err := h.MintCollectibleAsset(t, ctx, nftName)
+		collectible, err := h.CreateNFTAndConfirm(t, ctx, nftName)
 		require.NoError(t, err)
 		require.True(t, collectible.Ref.IsAssetIDRef())
 

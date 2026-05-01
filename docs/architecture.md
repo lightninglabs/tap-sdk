@@ -15,12 +15,12 @@ build Taproot Assets applications without direct dependency on the
 ┌─────────────────────────────────────────────────────┐
 │                   Application                       │
 │                                                     │
-│  Uses: tapsdk.Wallet, entities.*, TxBuilder, etc.   │
+│  Uses: tapsdk.Wallet, tapsdk.Issuer, TxBuilder, etc.│
 ├─────────────────────────────────────────────────────┤
 │                    tap-sdk                           │
 │                                                     │
 │  ┌──────────┐  ┌───────────┐  ┌──────────────────┐ │
-│  │  Wallet   │  │ TxBuilder │  │ InteractiveTxBldr│ │
+│  │  Wallet   │  │  Issuer  │  │ TxBuilder         │ │
 │  └────┬─────┘  └─────┬─────┘  └────────┬─────────┘ │
 │       │               │                 │           │
 │  ┌────┴───────────────┴─────────────────┴────────┐  │
@@ -50,6 +50,11 @@ The root package contains the high-level API surface:
   focused high-level methods for common operations (receive addresses, key
   derivation, proof import, asset listing). Raw RPC-shaped operations remain
   available through `Wallet.Client()`.
+
+- **`Issuer`** — High-level minting surface returned by `Wallet.NewIssuer()`.
+  Creates fungible assets, issues more fungible supply, creates standalone
+  NFTs, creates NFT collections, and mints collection items without exposing
+  tapd mint batch control to application code.
 
 - **`TxBuilder`** — Builder pattern for address-based asset transfers.
   Guides users through the Fund → Sign → Commit → Finish pipeline.

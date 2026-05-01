@@ -71,6 +71,46 @@ if err != nil {
 fmt.Printf("Anchor tx: %x\n", packet.AnchorTransaction)
 ```
 
+### Issue assets
+
+`Wallet.NewIssuer()` is the preferred minting entrypoint. It hides tapd's
+mint batch details and returns SDK business entities keyed by `AssetRef`.
+Use `Wallet.Client().MintAsset` and `MintIssuance` only when you need direct
+batch control.
+
+```go
+issuer := wallet.NewIssuer()
+
+token, err := issuer.CreateFungible(ctx, entities.FungibleAssetSpec{
+	Name:   "example-token",
+	Amount: 1_000_000,
+})
+if err != nil {
+	log.Fatal(err)
+}
+
+_, err = issuer.IssueFungible(ctx, token.AssetRef, 500_000)
+if err != nil {
+	log.Fatal(err)
+}
+
+created, err := issuer.CreateCollection(ctx, entities.NFTSpec{
+	Name: "example-collection-001",
+})
+if err != nil {
+	log.Fatal(err)
+}
+
+_, err = issuer.MintCollectionItem(ctx, created.Collection.AssetRef, entities.NFTSpec{
+	Name: "example-collection-002",
+})
+if err != nil {
+	log.Fatal(err)
+}
+
+fmt.Printf("first item: %s\n", created.FirstItem.AssetRef)
+```
+
 ### Interactive receive
 
 ```go

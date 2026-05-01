@@ -173,4 +173,33 @@ var (
 	// ErrIncompleteProofBundle is returned when a proof bundle is missing
 	// entries or entry proof bytes.
 	ErrIncompleteProofBundle = errors.New("proof bundle is incomplete")
+
+	// ErrAssetNameRequired is returned when an issuer call is missing the
+	// asset or NFT name required by tapd.
+	ErrAssetNameRequired = errors.New("asset name is required")
+
+	// ErrMintBatchActive is returned by high-level issuer calls when tapd
+	// already has a mint batch that has not reached a terminal state.
+	ErrMintBatchActive = errors.New("mint batch is already active")
+
+	// ErrWrongAssetType is returned when an AssetRef resolves successfully
+	// but not to the kind of entity required by the operation.
+	ErrWrongAssetType = errors.New("asset ref has the wrong asset type")
+
+	// ErrAssetNotIssuable is returned when an operation requires a grouped
+	// asset but the AssetRef resolves to a standalone issuance.
+	ErrAssetNotIssuable = errors.New("asset ref is not an issuable grouped asset")
+
+	// ErrMintResolveTimeout is returned when tapd accepted a high-level
+	// issuer mint request but the SDK timed out before the wallet projection
+	// exposed the resulting entity. This does not mean the mint failed. Callers
+	// must inspect wallet assets, issuances, collections, or mint batches
+	// before retrying to avoid duplicate issuance.
+	ErrMintResolveTimeout = errors.New("mint result resolution timed out")
+
+	// ErrMintResultNotFound is returned when the SDK resolved a wallet row for
+	// an accepted mint but could not map it into the requested high-level
+	// entity. This does not mean tapd rejected the mint; callers should inspect
+	// wallet state before retrying.
+	ErrMintResultNotFound = errors.New("mint result could not be mapped")
 )

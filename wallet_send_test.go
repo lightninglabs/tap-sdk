@@ -271,16 +271,26 @@ func (m *mockClient) InsertProof(ctx context.Context, rawProof []byte,
 
 // --- MintClient ---
 
-func (m *mockClient) CreateAsset(ctx context.Context,
-	req *entities.CreateAssetRequest) (*entities.MintingBatch, error) {
+func (m *mockClient) MintAsset(ctx context.Context,
+	req *entities.MintAssetRequest) (*entities.MintingBatch, error) {
 
-	panic("CreateAsset not expected in unit tests")
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*entities.MintingBatch), args.Error(1)
 }
 
-func (m *mockClient) CreateIssuance(ctx context.Context,
-	req *entities.CreateIssuanceRequest) (*entities.MintingBatch, error) {
+func (m *mockClient) MintIssuance(ctx context.Context,
+	req *entities.MintIssuanceRequest) (*entities.MintingBatch, error) {
 
-	panic("CreateIssuance not expected in unit tests")
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*entities.MintingBatch), args.Error(1)
 }
 
 func (m *mockClient) FundBatch(ctx context.Context,

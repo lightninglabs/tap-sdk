@@ -1,11 +1,7 @@
 package entities
 
-// The mint entities in this file intentionally model the low-level Mint RPC
-// building blocks.
-//
-// The higher-level mint UX of the SDK will be designed separately around the
-// semantic distinction between fungible assets and collectibles instead of
-// simply mirroring the raw RPC request shapes.
+// The mint entities in this file include the high-level issuer specs and the
+// low-level batch minting types exposed by MintClient.
 
 // ExternalKey describes an externally managed BIP-86 key derivation.
 type ExternalKey struct {
@@ -86,6 +82,32 @@ const (
 	// BatchStateSproutCancelled means a funded batch was cancelled.
 	BatchStateSproutCancelled BatchState = 8
 )
+
+// String returns the stable name for a mint batch state.
+func (s BatchState) String() string {
+	switch s {
+	case BatchStateUnknown:
+		return "unknown"
+	case BatchStatePending:
+		return "pending"
+	case BatchStateFrozen:
+		return "frozen"
+	case BatchStateCommitted:
+		return "committed"
+	case BatchStateBroadcast:
+		return "broadcast"
+	case BatchStateConfirmed:
+		return "confirmed"
+	case BatchStateFinalized:
+		return "finalized"
+	case BatchStateSeedlingCancelled:
+		return "seedling_cancelled"
+	case BatchStateSproutCancelled:
+		return "sprout_cancelled"
+	default:
+		return "unrecognized"
+	}
+}
 
 // TapLeaf represents a single leaf in a tapscript tree.
 type TapLeaf struct {
@@ -241,13 +263,64 @@ type VerboseMintingBatch struct {
 	UnsealedAssets []UnsealedMintAsset
 }
 
-// CreateAsset describes a brand-new semantic asset to stage in a minting
-// batch.
-type CreateAsset struct {
+// FungibleAssetSpec describes a fungible token created through the high-level
+// issuer surface. New fungible assets are grouped so their AssetRef remains
+// stable across future issuances.
+type FungibleAssetSpec struct {
+	// Name is the human-readable asset name.
+	Name string
+
+	// Amount is the number of units in the first issuance.
+	Amount uint64
+
+	// AssetMeta is the optional metadata committed to the first issuance.
+	AssetMeta *AssetMeta
+
 	// AssetVersion is the asset encoding version.
 	AssetVersion AssetVersion
 
-	// AssetType is the type of asset to create.
+	// DecimalDisplay is the wallet display precision for the asset.
+	DecimalDisplay uint32
+
+	// ScriptKey is the optional custom script key for the first issuance.
+	ScriptKey *ScriptKey
+
+	// EnableSupplyCommitments enables supply commitments for the asset.
+	EnableSupplyCommitments bool
+}
+
+// NFTSpec describes a non-fungible token created through the high-level issuer
+// surface. The same spec is used for standalone NFTs, first collection items,
+// and additional collection items.
+type NFTSpec struct {
+	// Name is the human-readable item name.
+	Name string
+
+	// AssetMeta is the optional metadata committed to the NFT.
+	AssetMeta *AssetMeta
+
+	// AssetVersion is the asset encoding version.
+	AssetVersion AssetVersion
+
+	// ScriptKey is the optional custom script key for the NFT.
+	ScriptKey *ScriptKey
+}
+
+// CollectionMintResult is returned when creating a new NFT collection.
+type CollectionMintResult struct {
+	// Collection is the collection-level entity keyed by group AssetRef.
+	Collection *Collection
+
+	// FirstItem is the NFT item minted to create the collection.
+	FirstItem *Asset
+}
+
+// MintAsset describes a brand-new protocol asset to add to a minting batch.
+type MintAsset struct {
+	// AssetVersion is the asset encoding version.
+	AssetVersion AssetVersion
+
+	// AssetType is the type of asset to mint.
 	AssetType AssetType
 
 	// Name is the asset tag.
@@ -284,18 +357,18 @@ type CreateAsset struct {
 	EnableSupplyCommitments bool
 }
 
-// CreateAssetRequest stages a brand-new asset in the pending mint batch.
-type CreateAssetRequest struct {
-	// Asset is the asset to create.
-	Asset *CreateAsset
+// MintAssetRequest adds a brand-new protocol asset to the pending mint batch.
+type MintAssetRequest struct {
+	// Asset is the asset to mint.
+	Asset *MintAsset
 
 	// ShortResponse asks the daemon to omit existing batch assets.
 	ShortResponse bool
 }
 
-// CreateIssuance describes an additional issuance/tranche for an existing
-// semantic asset.
-type CreateIssuance struct {
+// MintIssuance describes an additional issuance/tranche for an existing
+// grouped asset.
+type MintIssuance struct {
 	// AssetRef identifies the asset to issue more units of. It must resolve to a
 	// group key.
 	AssetRef AssetRef
@@ -307,8 +380,7 @@ type CreateIssuance struct {
 	// AssetType is the type of the existing asset.
 	AssetType AssetType
 
-	// AssetMeta is the metadata for the issuance. Callers should keep it aligned
-	// with the asset they are extending.
+	// AssetMeta is the optional metadata committed to this issuance.
 	AssetMeta *AssetMeta
 
 	// Amount is the number of units to issue in this tranche.
@@ -327,11 +399,10 @@ type CreateIssuance struct {
 	ExternalGroupKey *ExternalKey
 }
 
-// CreateIssuanceRequest stages an additional issuance in the pending mint
-// batch.
-type CreateIssuanceRequest struct {
-	// Issuance is the issuance to stage.
-	Issuance *CreateIssuance
+// MintIssuanceRequest adds an additional issuance to the pending mint batch.
+type MintIssuanceRequest struct {
+	// Issuance is the issuance to mint.
+	Issuance *MintIssuance
 
 	// ShortResponse asks the daemon to omit existing batch assets.
 	ShortResponse bool

@@ -21,14 +21,14 @@ func newMintClient(tp *transport) *mintClient {
 }
 
 // mintAssetRequest is the low-level RPC request shape for MintAsset.
-// It is internal to this package; callers use CreateAssetRequest or
-// CreateIssuanceRequest instead.
+// It is internal to this package; callers use MintAssetRequest or
+// MintIssuanceRequest instead.
 type mintAssetRequest struct {
 	asset         *mintAsset
 	shortResponse bool
 }
 
-// mintAsset describes a new asset to stage in a minting batch.
+// mintAsset describes an asset to add to a minting batch.
 type mintAsset struct {
 	entities.PendingMintAsset
 
@@ -44,7 +44,7 @@ type jsonMintAssetRequest struct {
 	ShortResponse bool           `json:"short_response,omitempty"`
 }
 
-// mintAssetRPC stages a new asset in the pending mint batch using
+// mintAssetRPC adds an asset to the pending mint batch using
 // the internal request type.
 func (m *mintClient) mintAssetRPC(ctx context.Context,
 	req *mintAssetRequest) (*entities.MintingBatch, error) {
@@ -67,23 +67,23 @@ func (m *mintClient) mintAssetRPC(ctx context.Context,
 	return unmarshalMintingBatch(resp.PendingBatch)
 }
 
-// CreateAsset stages a brand-new asset in the pending mint batch.
-func (m *mintClient) CreateAsset(ctx context.Context,
-	req *entities.CreateAssetRequest) (
+// MintAsset adds a brand-new asset to the pending mint batch.
+func (m *mintClient) MintAsset(ctx context.Context,
+	req *entities.MintAssetRequest) (
 	*entities.MintingBatch, error) {
 
 	return m.mintAssetRPC(
-		ctx, mintAssetRequestFromCreateAsset(req),
+		ctx, mintAssetRequestFromMintAsset(req),
 	)
 }
 
-// CreateIssuance stages an additional issuance in the pending
+// MintIssuance adds an additional issuance to the pending
 // mint batch.
-func (m *mintClient) CreateIssuance(ctx context.Context,
-	req *entities.CreateIssuanceRequest) (
+func (m *mintClient) MintIssuance(ctx context.Context,
+	req *entities.MintIssuanceRequest) (
 	*entities.MintingBatch, error) {
 
-	mintReq, err := mintAssetRequestFromCreateIssuance(req)
+	mintReq, err := mintAssetRequestFromMintIssuance(req)
 	if err != nil {
 		return nil, err
 	}
@@ -301,8 +301,8 @@ func unmarshalRESTVerboseBatch(
 	return &entities.VerboseMintingBatch{Batch: *batch}, nil
 }
 
-func mintAssetRequestFromCreateAsset(
-	req *entities.CreateAssetRequest) *mintAssetRequest {
+func mintAssetRequestFromMintAsset(
+	req *entities.MintAssetRequest) *mintAssetRequest {
 
 	if req == nil {
 		return nil
@@ -336,8 +336,8 @@ func mintAssetRequestFromCreateAsset(
 	}
 }
 
-func mintAssetRequestFromCreateIssuance(
-	req *entities.CreateIssuanceRequest) (*mintAssetRequest,
+func mintAssetRequestFromMintIssuance(
+	req *entities.MintIssuanceRequest) (*mintAssetRequest,
 	error) {
 
 	if req == nil {
@@ -354,7 +354,7 @@ func mintAssetRequestFromCreateIssuance(
 	groupKey, ok := issuance.AssetRef.GroupKey()
 	if !ok {
 		return nil, fmt.Errorf("asset ref must resolve " +
-			"to a group key to create an issuance")
+			"to a group key to mint an issuance")
 	}
 
 	return &mintAssetRequest{

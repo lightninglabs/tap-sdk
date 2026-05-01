@@ -80,7 +80,9 @@ func testEventListenerMintAndSend(t *testing.T, transport Transport) {
 	// tapd state persists across subtests, so each transport mints its
 	// own group to keep balance assertions isolated.
 	assetName := fmt.Sprintf("event-token-%s", transport)
-	minted, err := h.MintGroupedAsset(t, ctx, assetName, 1000)
+	minted, err := h.MintAssetAndConfirm(
+		t, ctx, mintGroupedAssetSpec(assetName, 1000),
+	)
 	require.NoError(t, err)
 	require.True(t, minted.Ref.IsGroupRef())
 
