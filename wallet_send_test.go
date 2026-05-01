@@ -763,18 +763,57 @@ func encodeV2NoAmount(t *testing.T, seed ...byte) string {
 	return encoded
 }
 
+func encodeV2NoAmountForRef(t *testing.T, ref entities.AssetRef,
+	seed byte) string {
+
+	t.Helper()
+
+	addr := &entities.Address{
+		AddressVersion:   entities.AddressVersionV2,
+		AssetVersion:     entities.AssetVersionV0,
+		AssetRef:         ref,
+		ScriptKey:        testKey(t, seed),
+		InternalKey:      testKey(t, seed+1),
+		ProofCourierAddr: "authmailbox+universerpc://localhost:10029",
+	}
+
+	encoded, err := entities.EncodeAddress(
+		addr, entities.NetworkRegtest,
+	)
+	require.NoError(t, err)
+	return encoded
+}
+
+func encodeV2EmbeddedForRef(t *testing.T, ref entities.AssetRef, amount uint64,
+	seed byte) string {
+
+	t.Helper()
+
+	addr := &entities.Address{
+		AddressVersion:   entities.AddressVersionV2,
+		AssetVersion:     entities.AssetVersionV0,
+		AssetRef:         ref,
+		Amount:           amount,
+		ScriptKey:        testKey(t, seed),
+		InternalKey:      testKey(t, seed+1),
+		ProofCourierAddr: "authmailbox+universerpc://localhost:10029",
+	}
+
+	encoded, err := entities.EncodeAddress(
+		addr, entities.NetworkRegtest,
+	)
+	require.NoError(t, err)
+	return encoded
+}
+
 // encodeEmbedded builds an address carrying an embedded amount so the
-// legacy RecipientsV1 path is exercised. seed distinguishes otherwise-
-// identical addresses across recipients in a single test.
+// legacy RecipientsV1 path is exercised.
 func encodeEmbedded(t *testing.T, amount uint64,
-	version entities.AddressVersion, seed ...byte) string {
+	version entities.AddressVersion) string {
 
 	t.Helper()
 
 	s := byte(17)
-	if len(seed) == 1 {
-		s = seed[0]
-	}
 
 	id := testAssetID()
 	// Mutate the first byte so the AssetRef differs between seeds.
@@ -976,8 +1015,9 @@ func TestSendMulti_MultipleRecipients(t *testing.T) {
 	w := NewWallet(mc, entities.NetworkRegtest)
 	ctx := context.Background()
 
-	aliceAddr := encodeV2NoAmount(t, 21)
-	bobAddr := encodeV2NoAmount(t, 22)
+	ref := entities.AssetRefFromGroupKey(testKey(t, 21))
+	aliceAddr := encodeV2NoAmountForRef(t, ref, 31)
+	bobAddr := encodeV2NoAmountForRef(t, ref, 41)
 
 	recipients := []entities.Recipient{
 		{Address: aliceAddr, Amount: amountp(100)},
@@ -1001,6 +1041,25 @@ func TestSendMulti_MultipleRecipients(t *testing.T) {
 	transfer, err := w.SendMulti(ctx, recipients)
 	require.NoError(t, err)
 	require.Equal(t, expectedTransfer, transfer)
+
+	mc.AssertExpectations(t)
+}
+
+func TestSendMulti_RejectsMixedAssetRefs(t *testing.T) {
+	mc := new(mockClient)
+	w := NewWallet(mc, entities.NetworkRegtest)
+	ctx := context.Background()
+
+	aliceAddr := encodeV2NoAmount(t, 21)
+	bobAddr := encodeV2NoAmount(t, 22)
+
+	recipients := []entities.Recipient{
+		{Address: aliceAddr, Amount: amountp(100)},
+		{Address: bobAddr, Amount: amountp(200)},
+	}
+
+	_, err := w.SendMulti(ctx, recipients)
+	require.ErrorIs(t, err, ErrMixedAssetBatchUnsupported)
 
 	mc.AssertExpectations(t)
 }
@@ -1063,8 +1122,9 @@ func TestSendMulti_MixedAmountsNormalised(t *testing.T) {
 	w := NewWallet(mc, entities.NetworkRegtest)
 	ctx := context.Background()
 
-	explicitAddr := encodeV2NoAmount(t, 41)
-	embeddedAddr := encodeEmbedded(t, 75, entities.AddressVersionV1, 42)
+	ref := entities.AssetRefFromGroupKey(testKey(t, 41))
+	explicitAddr := encodeV2NoAmountForRef(t, ref, 51)
+	embeddedAddr := encodeV2EmbeddedForRef(t, ref, 75, 61)
 
 	recipients := []entities.Recipient{
 		{Address: explicitAddr, Amount: amountp(200)},

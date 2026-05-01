@@ -148,6 +148,52 @@ type AssetTransfer struct {
 	AnchorTx []byte
 }
 
+// Transfer is a high-level wallet transfer summary keyed by AssetRef.
+type Transfer struct {
+	// TransferTimestamp is the timestamp of the transfer in UTC Unix time
+	// seconds.
+	TransferTimestamp int64
+
+	// AnchorTxid is the display-order transaction ID of the anchor
+	// transaction.
+	AnchorTxid string
+
+	// AnchorTxBlockHeight is the block height containing the anchor
+	// transaction, or zero if the transfer is unconfirmed.
+	AnchorTxBlockHeight uint32
+
+	// AnchorTxChainFees is the total fee paid by the anchor transaction in
+	// satoshis.
+	AnchorTxChainFees int64
+
+	// Label is the optional transfer label.
+	Label string
+
+	// Inputs are the assets spent by this transfer.
+	Inputs []TransferAsset
+
+	// Outputs are the assets created by this transfer.
+	Outputs []TransferAsset
+}
+
+// TransferAsset describes one asset amount in a high-level transfer summary.
+type TransferAsset struct {
+	// AssetRef is the SDK identifier for the logical asset.
+	AssetRef AssetRef
+
+	// IssuanceID is the concrete protocol issuance/tranche ID.
+	IssuanceID AssetID
+
+	// Amount is the number of asset units.
+	Amount uint64
+
+	// ScriptKey is the script key for this transfer item.
+	ScriptKey PubKey
+
+	// Outpoint is the anchor outpoint for this transfer item.
+	Outpoint Outpoint
+}
+
 // Outpoint represents a Bitcoin transaction outpoint.
 type Outpoint struct {
 	// Txid is the 32-byte transaction hash.

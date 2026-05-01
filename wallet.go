@@ -27,6 +27,7 @@ type Wallet struct {
 type WalletOption func(*Wallet)
 
 const authMailboxUniverseCourierScheme = "authmailbox+universerpc://"
+const burnConfirmationText = "assets will be destroyed"
 
 type transferRegistrarWithIssuance interface {
 	RegisterTransferWithIssuance(ctx context.Context,
@@ -385,6 +386,35 @@ func (s *Wallet) ListCollectionItems(ctx context.Context,
 	return items, nil
 }
 
+// ListTransfers returns high-level wallet transfer summaries keyed by
+// AssetRef.
+func (s *Wallet) ListTransfers(ctx context.Context,
+	req *entities.ListTransfersRequest) ([]*entities.Transfer, error) {
+
+	rawTransfers, err := s.client.ListTransfers(ctx, req)
+	if err != nil {
+		return nil, wrapErr("ListTransfers", err)
+	}
+
+	resolver, err := s.transferRefResolver(ctx)
+	if err != nil {
+		return nil, wrapErr("ListTransfers", err)
+	}
+
+	transfers := make([]*entities.Transfer, 0, len(rawTransfers))
+	for _, raw := range rawTransfers {
+		if raw == nil {
+			continue
+		}
+
+		transfers = append(
+			transfers, summarizeAssetTransfer(raw, resolver),
+		)
+	}
+
+	return transfers, nil
+}
+
 func (s *Wallet) listAssetRecords(ctx context.Context,
 	req *entities.ListAssetsRequest) ([]*entities.AssetRecord, error) {
 
@@ -599,6 +629,110 @@ func addSaturatingUint64(a, b uint64) uint64 {
 	}
 
 	return sum
+}
+
+func (s *Wallet) transferRefResolver(ctx context.Context) (
+	map[entities.AssetID]entities.AssetRef, error) {
+
+	allTypes := &entities.ScriptKeyTypeQuery{
+		AllTypes: true,
+	}
+	records, err := s.listAssetRecords(ctx, &entities.ListAssetsRequest{
+		IncludeSpent:  true,
+		ScriptKeyType: allTypes,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	refs := make(map[entities.AssetID]entities.AssetRef, len(records))
+	for _, record := range records {
+		if record == nil {
+			continue
+		}
+
+		issuanceID := record.Genesis.IssuanceID
+		if record.Genesis.Type == entities.AssetTypeCollectible {
+			refs[issuanceID] = entities.AssetRefFromAssetID(
+				issuanceID,
+			)
+			continue
+		}
+
+		refs[issuanceID] = record.AssetRef
+	}
+
+	return refs, nil
+}
+
+func summarizeAssetTransfer(raw *entities.AssetTransfer,
+	refs map[entities.AssetID]entities.AssetRef) *entities.Transfer {
+
+	transfer := &entities.Transfer{
+		TransferTimestamp:   raw.TransferTimestamp,
+		AnchorTxid:          raw.AnchorTxid,
+		AnchorTxBlockHeight: raw.AnchorTxBlockHeight,
+		AnchorTxChainFees:   raw.AnchorTxChainFees,
+		Label:               raw.Label,
+		Inputs: make(
+			[]entities.TransferAsset, 0, len(raw.Inputs),
+		),
+		Outputs: make(
+			[]entities.TransferAsset, 0, len(raw.Outputs),
+		),
+	}
+
+	for _, input := range raw.Inputs {
+		transfer.Inputs = append(transfer.Inputs,
+			entities.TransferAsset{
+				AssetRef: transferAssetRef(
+					input.IssuanceID, refs,
+				),
+				IssuanceID: input.IssuanceID,
+				Amount:     input.Amount,
+				ScriptKey:  input.ScriptKey,
+				Outpoint:   input.AnchorPoint,
+			},
+		)
+	}
+
+	for _, output := range raw.Outputs {
+		transfer.Outputs = append(transfer.Outputs,
+			entities.TransferAsset{
+				AssetRef: transferAssetRef(
+					output.IssuanceID, refs,
+				),
+				IssuanceID: output.IssuanceID,
+				Amount:     output.Amount,
+				ScriptKey:  output.ScriptKey,
+				Outpoint:   output.AnchorOutpoint,
+			},
+		)
+	}
+
+	return transfer
+}
+
+func transferAssetRef(issuanceID entities.AssetID,
+	refs map[entities.AssetID]entities.AssetRef) entities.AssetRef {
+
+	if ref, ok := refs[issuanceID]; ok && !ref.IsZero() {
+		return ref
+	}
+
+	return entities.AssetRefFromAssetID(issuanceID)
+}
+
+func appendUniqueAssetRef(refs []entities.AssetRef,
+	ref entities.AssetRef) []entities.AssetRef {
+
+	for _, existing := range refs {
+		if existing.Equivalent(ref) {
+			return refs
+		}
+	}
+
+	return append(refs, ref)
 }
 
 // ExportProof exports all wallet-known proof files for the given user-facing
@@ -820,6 +954,43 @@ func proofBundleEntryRef(ref entities.AssetRef,
 	return ref
 }
 
+// Burn destroys units of the asset identified by AssetRef.
+//
+// The SDK supplies tapd's confirmation text internally so normal callers do
+// not need to carry the daemon's safety phrase through application code.
+func (s *Wallet) Burn(ctx context.Context, ref entities.AssetRef,
+	amount uint64, opts ...BurnOption) (*entities.Burn, error) {
+
+	if amount == 0 {
+		return nil, wrapErr("Burn", ErrZeroAmount)
+	}
+	if err := ref.Validate(); err != nil {
+		return nil, wrapErr("Burn", err)
+	}
+
+	o := applyBurnOptions(opts)
+	resp, err := s.client.BurnAsset(ctx, &entities.BurnAssetRequest{
+		AssetRef:         ref,
+		AmountToBurn:     amount,
+		ConfirmationText: burnConfirmationText,
+		Note:             o.note,
+	})
+	if err != nil {
+		return nil, wrapErr("Burn", err)
+	}
+	if resp == nil {
+		resp = &entities.BurnAssetResponse{}
+	}
+
+	return &entities.Burn{
+		AssetRef: ref,
+		Amount:   amount,
+		Note:     o.note,
+		Transfer: resp.BurnTransfer,
+		Proof:    resp.BurnProof,
+	}, nil
+}
+
 // Send performs a simple one-shot address-based asset transfer.
 //
 // The addr must be a valid bech32m-encoded Taproot Asset address. The
@@ -894,11 +1065,13 @@ func validateSendAmount(addr *entities.Address, amount uint64) error {
 	return nil
 }
 
-// SendMulti sends to multiple recipients in a single anchor
-// transaction. Each Recipient.Amount is optional: nil means "use the
-// amount embedded in the address" (works for any address that embeds
-// an amount). A non-nil Amount must be positive; if the address also
-// embeds an amount, the two must match.
+// SendMulti sends one logical asset to multiple recipients in a single
+// anchor transaction. Every recipient address must resolve to the same
+// AssetRef. Mixed-asset payout batches must be split by the caller.
+//
+// Each Recipient.Amount is optional: nil means "use the amount embedded in the
+// address" (works for any address that embeds an amount). A non-nil Amount must
+// be positive; if the address also embeds an amount, the two must match.
 //
 // Mixing explicit and embedded amounts in a single call is supported
 // at this level: SendMulti decodes each address and echoes embedded
@@ -948,6 +1121,9 @@ func (s *Wallet) SendMulti(ctx context.Context,
 			))
 		}
 	}
+	if err := validateSingleAssetSendBatch(decoded); err != nil {
+		return nil, wrapErr("SendMulti", err)
+	}
 
 	// If any recipient is explicit, the low-level SendAsset demands
 	// every recipient be explicit too — so fill in the embedded
@@ -982,6 +1158,33 @@ func (s *Wallet) SendMulti(ctx context.Context,
 	}
 
 	return transfer, nil
+}
+
+func validateSingleAssetSendBatch(addrs []*entities.Address) error {
+	var batchRef entities.AssetRef
+	for idx, addr := range addrs {
+		if addr == nil || addr.AssetRef.IsZero() {
+			return fmt.Errorf("%w: recipient %d has no asset ref",
+				ErrInvalidAssetRef, idx)
+		}
+
+		if idx == 0 {
+			batchRef = addr.AssetRef
+			continue
+		}
+
+		if batchRef.Equivalent(addr.AssetRef) {
+			continue
+		}
+
+		return fmt.Errorf(
+			"%w: recipient 0 uses %s, recipient %d uses %s",
+			ErrMixedAssetBatchUnsupported, batchRef, idx,
+			addr.AssetRef,
+		)
+	}
+
+	return nil
 }
 
 // getNetworkParams returns the HRP and coin type for a given network.

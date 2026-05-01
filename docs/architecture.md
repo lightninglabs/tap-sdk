@@ -48,8 +48,9 @@ The root package contains the high-level API surface:
 
 - **`Wallet`** — The primary entrypoint. Wraps a `Client` and provides
   focused high-level methods for common operations (receive addresses, key
-  derivation, proof import, asset listing). Raw RPC-shaped operations remain
-  available through `Wallet.Client()`.
+  derivation, proof import, asset listing, send, burn, and transfer
+  summaries). Raw RPC-shaped operations remain available through
+  `Wallet.Client()`.
 
 - **`Issuer`** — High-level minting surface returned by `Wallet.NewIssuer()`.
   Creates fungible assets, issues more fungible supply, creates standalone
@@ -124,6 +125,11 @@ entities until the caller's context is cancelled.
 The high-level `tapsdk.EventListener` sits on top of `EventClient` and
 adds reconnect/backoff, so the two transports share reconnection
 behavior.
+
+`Wallet.SummarizeSendEvent` and `Wallet.SummarizeReceiveEvent` convert raw
+event payloads into AssetRef-keyed summaries. Raw event fields remain available
+for diagnostics, while application code can stay on the same semantic asset
+handles used by the rest of the Wallet API.
 
 ### `vpsbt/`
 

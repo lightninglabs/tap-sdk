@@ -26,6 +26,24 @@ type BurnAssetResponse struct {
 	BurnProof *DecodedProof
 }
 
+// Burn is the high-level result of burning asset units through Wallet.Burn.
+type Burn struct {
+	// AssetRef is the user-facing identifier requested by the caller.
+	AssetRef AssetRef
+
+	// Amount is the number of units burned.
+	Amount uint64
+
+	// Note is optional user-defined metadata for this burn.
+	Note string
+
+	// Transfer is the wallet transfer that committed the burn.
+	Transfer *AssetTransfer
+
+	// Proof is the transition proof for the burn output.
+	Proof *DecodedProof
+}
+
 // ListBurnsRequest specifies filters for listing asset burns.
 type ListBurnsRequest struct {
 	// AssetRef filters by the burnt asset.

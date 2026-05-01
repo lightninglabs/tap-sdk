@@ -303,50 +303,78 @@ func runSendMultiCase(t *testing.T, transport Transport,
 	require.Equal(t, uint64(250), bobBalance)
 }
 
-// TestSendMultiRejectsMixedAssets locks in the current tapd limitation:
-// one SendAsset request cannot mix addresses for different asset IDs or group
-// keys. A future SDK helper can hide this by splitting mixed logical-asset
-// batches into multiple sends.
+// TestSendMultiRejectsMixedAssets verifies that Wallet.SendMulti rejects
+// mixed logical assets before calling tapd. SendMulti is the one-logical-asset,
+// one-anchor API.
 func TestSendMultiRejectsMixedAssets(t *testing.T) {
 	runForTransports(t, func(t *testing.T, transport Transport) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
-		first, err := h.CreateFungibleAndConfirm(
+		firstFungible, err := h.CreateFungibleAndConfirm(
 			t, ctx,
 			uniqueEventLabel(fmt.Sprintf("multi-a-%s", transport)),
 			1000,
 		)
 		require.NoError(t, err)
 
-		second, err := h.CreateFungibleAndConfirm(
+		secondFungible, err := h.CreateFungibleAndConfirm(
 			t, ctx,
 			uniqueEventLabel(fmt.Sprintf("multi-b-%s", transport)),
 			2000,
 		)
 		require.NoError(t, err)
 
-		firstAddr := h.CreateReceiveAddress(t, ctx, first.Ref)
-		secondAddr := h.CreateReceiveAddress(t, ctx, second.Ref)
+		nft, err := h.CreateNFTAndConfirm(
+			t, ctx,
+			uniqueEventLabel(fmt.Sprintf("multi-nft-%s", transport)),
+		)
+		require.NoError(t, err)
+
+		firstAddr := h.CreateReceiveAddress(t, ctx, firstFungible.Ref)
+		secondAddr := h.CreateReceiveAddress(t, ctx, secondFungible.Ref)
+		nftAddr := h.CreateReceiveAddress(t, ctx, nft.Ref)
 
 		firstAmount := uint64(111)
 		secondAmount := uint64(222)
 
-		_, err = h.AliceWallet.SendMulti(
-			ctx,
-			[]entities.Recipient{
-				{
-					Address: firstAddr.Encoded,
-					Amount:  &firstAmount,
-				},
-				{
-					Address: secondAddr.Encoded,
-					Amount:  &secondAmount,
-				},
+		cases := []struct {
+			name       string
+			secondAddr *entities.Address
+			amount     uint64
+		}{
+			{
+				name:       "fungible-fungible",
+				secondAddr: secondAddr,
+				amount:     secondAmount,
 			},
-		)
-		require.Error(t, err)
-		require.Contains(t, err.Error(),
-			"all addrs must be of the same asset ID or group key")
+			{
+				name:       "fungible-nft",
+				secondAddr: nftAddr,
+				amount:     1,
+			},
+		}
+
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				_, err := h.AliceWallet.SendMulti(
+					ctx,
+					[]entities.Recipient{
+						{
+							Address: firstAddr.Encoded,
+							Amount:  &firstAmount,
+						},
+						{
+							Address: tc.secondAddr.Encoded,
+							Amount:  &tc.amount,
+						},
+					},
+				)
+				require.ErrorIs(
+					t, err,
+					tapsdk.ErrMixedAssetBatchUnsupported,
+				)
+			})
+		}
 	})
 }
 
@@ -480,6 +508,17 @@ func TestAddressSend(t *testing.T) {
 		)
 		require.NoError(t, err)
 		require.NotEmpty(t, transfers)
+
+		summaries, err := h.AliceWallet.ListTransfers(ctx,
+			&entities.ListTransfersRequest{
+				AnchorTxid: transfer.AnchorTxid,
+			},
+		)
+		require.NoError(t, err)
+		require.NotEmpty(t, summaries)
+		require.NotEmpty(t, summaries[0].Inputs)
+		require.True(t,
+			summaries[0].Inputs[0].AssetRef.Equivalent(minted.Ref))
 
 		// Bob should observe the incoming transfer through
 		// AddrReceives.
