@@ -154,9 +154,9 @@ type sendMultiCase struct {
 
 // TestSendMulti exercises Wallet.SendMulti end-to-end:
 //
-//   - all-explicit: every Recipient.Amount is non-nil (V2 + WithAmount
+//   - all-explicit: every Recipient.Amount is non-zero (V2 + WithAmount
 //     equivalent for multi).
-//   - all-embedded: every Recipient.Amount is nil; addresses all embed
+//   - all-embedded: every Recipient.Amount is zero; addresses all embed
 //     their amount. Routes via TapAddrs.
 //   - mixed-normalised: one explicit, one embedded — the SDK echoes
 //     the embedded value into the request so tapd sees a uniform
@@ -168,16 +168,14 @@ func TestSendMulti(t *testing.T) {
 			recipients: func(addrs []*entities.Address,
 			) []entities.Recipient {
 
-				amt1 := uint64(100)
-				amt2 := uint64(150)
 				return []entities.Recipient{
 					{
 						Address: addrs[0].Encoded,
-						Amount:  &amt1,
+						Amount:  100,
 					},
 					{
 						Address: addrs[1].Encoded,
-						Amount:  &amt2,
+						Amount:  150,
 					},
 				}
 			},
@@ -198,13 +196,12 @@ func TestSendMulti(t *testing.T) {
 			recipients: func(addrs []*entities.Address,
 			) []entities.Recipient {
 
-				amt := uint64(100)
 				return []entities.Recipient{
 					{
 						Address: addrs[0].Encoded,
-						Amount:  &amt,
+						Amount:  100,
 					},
-					// second recipient nil -> SDK echoes
+					// second recipient zero -> SDK echoes
 					// the embedded value into the wire.
 					{Address: addrs[1].Encoded},
 				}
@@ -261,7 +258,8 @@ func runSendMultiCase(t *testing.T, transport Transport,
 	}
 
 	recvEvents := make(
-		[]*eventSubscription[entities.ReceiveEvent], 0, len(addrs),
+		[]*eventSubscription[entities.ReceiveEventRecord], 0,
+		len(addrs),
 	)
 	for _, addr := range addrs {
 		// Receive streams are per address and must exist before the
@@ -303,50 +301,78 @@ func runSendMultiCase(t *testing.T, transport Transport,
 	require.Equal(t, uint64(250), bobBalance)
 }
 
-// TestSendMultiRejectsMixedAssets locks in the current tapd limitation:
-// one SendAsset request cannot mix addresses for different asset IDs or group
-// keys. A future SDK helper can hide this by splitting mixed logical-asset
-// batches into multiple sends.
+// TestSendMultiRejectsMixedAssets verifies that Wallet.SendMulti rejects
+// mixed logical assets before calling tapd. SendMulti is the one-logical-asset,
+// one-anchor API.
 func TestSendMultiRejectsMixedAssets(t *testing.T) {
 	runForTransports(t, func(t *testing.T, transport Transport) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
-		first, err := h.CreateFungibleAndConfirm(
+		firstFungible, err := h.CreateFungibleAndConfirm(
 			t, ctx,
 			uniqueEventLabel(fmt.Sprintf("multi-a-%s", transport)),
 			1000,
 		)
 		require.NoError(t, err)
 
-		second, err := h.CreateFungibleAndConfirm(
+		secondFungible, err := h.CreateFungibleAndConfirm(
 			t, ctx,
 			uniqueEventLabel(fmt.Sprintf("multi-b-%s", transport)),
 			2000,
 		)
 		require.NoError(t, err)
 
-		firstAddr := h.CreateReceiveAddress(t, ctx, first.Ref)
-		secondAddr := h.CreateReceiveAddress(t, ctx, second.Ref)
+		nft, err := h.CreateNFTAndConfirm(
+			t, ctx,
+			uniqueEventLabel(fmt.Sprintf("multi-nft-%s", transport)),
+		)
+		require.NoError(t, err)
+
+		firstAddr := h.CreateReceiveAddress(t, ctx, firstFungible.Ref)
+		secondAddr := h.CreateReceiveAddress(t, ctx, secondFungible.Ref)
+		nftAddr := h.CreateReceiveAddress(t, ctx, nft.Ref)
 
 		firstAmount := uint64(111)
 		secondAmount := uint64(222)
 
-		_, err = h.AliceWallet.SendMulti(
-			ctx,
-			[]entities.Recipient{
-				{
-					Address: firstAddr.Encoded,
-					Amount:  &firstAmount,
-				},
-				{
-					Address: secondAddr.Encoded,
-					Amount:  &secondAmount,
-				},
+		cases := []struct {
+			name       string
+			secondAddr *entities.Address
+			amount     uint64
+		}{
+			{
+				name:       "fungible-fungible",
+				secondAddr: secondAddr,
+				amount:     secondAmount,
 			},
-		)
-		require.Error(t, err)
-		require.Contains(t, err.Error(),
-			"all addrs must be of the same asset ID or group key")
+			{
+				name:       "fungible-nft",
+				secondAddr: nftAddr,
+				amount:     1,
+			},
+		}
+
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				_, err := h.AliceWallet.SendMulti(
+					ctx,
+					[]entities.Recipient{
+						{
+							Address: firstAddr.Encoded,
+							Amount:  firstAmount,
+						},
+						{
+							Address: tc.secondAddr.Encoded,
+							Amount:  tc.amount,
+						},
+					},
+				)
+				require.ErrorIs(
+					t, err,
+					tapsdk.ErrMixedAssetBatchUnsupported,
+				)
+			})
+		}
 	})
 }
 
@@ -389,11 +415,10 @@ func TestSendRejections(t *testing.T) {
 		})
 
 		t.Run("SendMulti/amount-mismatch", func(t *testing.T) {
-			amt := uint64(999)
 			_, err := h.AliceWallet.SendMulti(ctx,
 				[]entities.Recipient{{
 					Address: embedded.Encoded,
-					Amount:  &amt,
+					Amount:  999,
 				}},
 			)
 			require.ErrorIs(t, err, tapsdk.ErrAmountMismatch)
@@ -480,6 +505,18 @@ func TestAddressSend(t *testing.T) {
 		)
 		require.NoError(t, err)
 		require.NotEmpty(t, transfers)
+		requireRawTransferUsesGroupRef(t, transfers[0], minted.Ref)
+
+		walletTransfers, err := h.AliceWallet.ListTransfers(ctx,
+			&entities.ListTransfersRequest{
+				AnchorTxid: transfer.AnchorTxid,
+			},
+		)
+		require.NoError(t, err)
+		require.NotEmpty(t, walletTransfers)
+		requireTransferUsesAssetRef(
+			t, walletTransfers[0], minted.Ref,
+		)
 
 		// Bob should observe the incoming transfer through
 		// AddrReceives.

@@ -20,9 +20,9 @@ func parseParcelType(s string) entities.ParcelType {
 	}
 }
 
-// unmarshalReceiveEvent converts a JSON receive event to the SDK type.
+// unmarshalReceiveEvent converts a JSON receive event to the raw SDK record.
 func unmarshalReceiveEvent(
-	e *jsonReceiveEvent) (*entities.ReceiveEvent, error) {
+	e *jsonReceiveEvent) (*entities.ReceiveEventRecord, error) {
 
 	if e == nil {
 		return nil, fmt.Errorf("nil receive event")
@@ -33,7 +33,7 @@ func unmarshalReceiveEvent(
 		return nil, fmt.Errorf("invalid timestamp: %w", err)
 	}
 
-	event := &entities.ReceiveEvent{
+	event := &entities.ReceiveEventRecord{
 		Timestamp:          ts,
 		Outpoint:           e.Outpoint,
 		Status:             parseAddressEventStatus(e.Status),
@@ -54,9 +54,9 @@ func unmarshalReceiveEvent(
 	return event, nil
 }
 
-// unmarshalSendEvent converts a JSON send event to the SDK type.
+// unmarshalSendEvent converts a JSON send event to the raw SDK record.
 func unmarshalSendEvent(
-	e *jsonSendEvent) (*entities.SendEvent, error) {
+	e *jsonSendEvent) (*entities.SendEventRecord, error) {
 
 	if e == nil {
 		return nil, fmt.Errorf("nil send event")
@@ -67,7 +67,7 @@ func unmarshalSendEvent(
 		return nil, fmt.Errorf("invalid timestamp: %w", err)
 	}
 
-	event := &entities.SendEvent{
+	event := &entities.SendEventRecord{
 		Timestamp:     ts,
 		SendState:     entities.SendState(e.SendState),
 		ParcelType:    parseParcelType(e.ParcelType),

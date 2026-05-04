@@ -389,14 +389,14 @@ func (m *mockClient) BurnAsset(ctx context.Context,
 }
 
 func (m *mockClient) ListBurns(ctx context.Context,
-	req *entities.ListBurnsRequest) ([]*entities.AssetBurn, error) {
+	req *entities.ListBurnsRequest) ([]*entities.BurnRecord, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).([]*entities.AssetBurn), args.Error(1)
+	return args.Get(0).([]*entities.BurnRecord), args.Error(1)
 }
 
 func (m *mockClient) FetchAssetMeta(ctx context.Context,
@@ -685,14 +685,14 @@ func (m *mockClient) SyncUniverse(ctx context.Context,
 
 func (m *mockClient) SubscribeReceiveEvents(ctx context.Context,
 	req *entities.SubscribeReceiveEventsRequest) (
-	<-chan *entities.ReceiveEvent, <-chan error, error) {
+	<-chan *entities.ReceiveEventRecord, <-chan error, error) {
 
 	panic("SubscribeReceiveEvents not expected in unit tests")
 }
 
 func (m *mockClient) SubscribeSendEvents(ctx context.Context,
 	req *entities.SubscribeSendEventsRequest) (
-	<-chan *entities.SendEvent, <-chan error, error) {
+	<-chan *entities.SendEventRecord, <-chan error, error) {
 
 	panic("SubscribeSendEvents not expected in unit tests")
 }
@@ -710,10 +710,6 @@ func (m *mockClient) Close() error {
 }
 
 // --- Tests ---
-
-// amountp returns a pointer to its uint64 argument, making
-// entities.Recipient literals compact in tests.
-func amountp(n uint64) *uint64 { return &n }
 
 // testKey derives a valid compressed secp256k1 public key from a small
 // scalar, so fixture addresses the SDK decodes locally actually parse.
@@ -763,18 +759,57 @@ func encodeV2NoAmount(t *testing.T, seed ...byte) string {
 	return encoded
 }
 
+func encodeV2NoAmountForRef(t *testing.T, ref entities.AssetRef,
+	seed byte) string {
+
+	t.Helper()
+
+	addr := &entities.Address{
+		AddressVersion:   entities.AddressVersionV2,
+		AssetVersion:     entities.AssetVersionV0,
+		AssetRef:         ref,
+		ScriptKey:        testKey(t, seed),
+		InternalKey:      testKey(t, seed+1),
+		ProofCourierAddr: "authmailbox+universerpc://localhost:10029",
+	}
+
+	encoded, err := entities.EncodeAddress(
+		addr, entities.NetworkRegtest,
+	)
+	require.NoError(t, err)
+	return encoded
+}
+
+func encodeV2EmbeddedForRef(t *testing.T, ref entities.AssetRef, amount uint64,
+	seed byte) string {
+
+	t.Helper()
+
+	addr := &entities.Address{
+		AddressVersion:   entities.AddressVersionV2,
+		AssetVersion:     entities.AssetVersionV0,
+		AssetRef:         ref,
+		Amount:           amount,
+		ScriptKey:        testKey(t, seed),
+		InternalKey:      testKey(t, seed+1),
+		ProofCourierAddr: "authmailbox+universerpc://localhost:10029",
+	}
+
+	encoded, err := entities.EncodeAddress(
+		addr, entities.NetworkRegtest,
+	)
+	require.NoError(t, err)
+	return encoded
+}
+
 // encodeEmbedded builds an address carrying an embedded amount so the
-// legacy RecipientsV1 path is exercised. seed distinguishes otherwise-
-// identical addresses across recipients in a single test.
+// legacy RecipientsV1 path is exercised.
 func encodeEmbedded(t *testing.T, amount uint64,
-	version entities.AddressVersion, seed ...byte) string {
+	version entities.AddressVersion) string {
 
 	t.Helper()
 
 	s := byte(17)
-	if len(seed) == 1 {
-		s = seed[0]
-	}
 
 	id := testAssetID()
 	// Mutate the first byte so the AssetRef differs between seeds.
@@ -815,8 +850,7 @@ func TestSend_WithAmount(t *testing.T) {
 		func(req *entities.SendAssetRequest) bool {
 			return len(req.Recipients) == 1 &&
 				req.Recipients[0].Address == addr &&
-				req.Recipients[0].Amount != nil &&
-				*req.Recipients[0].Amount == amount &&
+				req.Recipients[0].Amount == amount &&
 				req.FeeRate == feeRate &&
 				req.Label == label
 		}),
@@ -849,7 +883,7 @@ func TestSend_NoAmountOption_UsesAddressEmbedded(t *testing.T) {
 		func(req *entities.SendAssetRequest) bool {
 			return len(req.Recipients) == 1 &&
 				req.Recipients[0].Address == addr &&
-				req.Recipients[0].Amount == nil
+				req.Recipients[0].Amount == 0
 		}),
 	).Return(expectedTransfer, nil)
 
@@ -904,8 +938,7 @@ func TestSend_AmountMatchesEmbedded(t *testing.T) {
 		func(req *entities.SendAssetRequest) bool {
 			return len(req.Recipients) == 1 &&
 				req.Recipients[0].Address == addr &&
-				req.Recipients[0].Amount != nil &&
-				*req.Recipients[0].Amount == 100
+				req.Recipients[0].Amount == 100
 		}),
 	).Return(&entities.AssetTransfer{AnchorTxid: "match"}, nil)
 
@@ -976,12 +1009,13 @@ func TestSendMulti_MultipleRecipients(t *testing.T) {
 	w := NewWallet(mc, entities.NetworkRegtest)
 	ctx := context.Background()
 
-	aliceAddr := encodeV2NoAmount(t, 21)
-	bobAddr := encodeV2NoAmount(t, 22)
+	ref := entities.AssetRefFromGroupKey(testKey(t, 21))
+	aliceAddr := encodeV2NoAmountForRef(t, ref, 31)
+	bobAddr := encodeV2NoAmountForRef(t, ref, 41)
 
 	recipients := []entities.Recipient{
-		{Address: aliceAddr, Amount: amountp(100)},
-		{Address: bobAddr, Amount: amountp(200)},
+		{Address: aliceAddr, Amount: 100},
+		{Address: bobAddr, Amount: 200},
 	}
 
 	expectedTransfer := &entities.AssetTransfer{AnchorTxid: "multi123"}
@@ -990,17 +1024,34 @@ func TestSendMulti_MultipleRecipients(t *testing.T) {
 		func(req *entities.SendAssetRequest) bool {
 			return len(req.Recipients) == 2 &&
 				req.Recipients[0].Address == aliceAddr &&
-				req.Recipients[0].Amount != nil &&
-				*req.Recipients[0].Amount == 100 &&
+				req.Recipients[0].Amount == 100 &&
 				req.Recipients[1].Address == bobAddr &&
-				req.Recipients[1].Amount != nil &&
-				*req.Recipients[1].Amount == 200
+				req.Recipients[1].Amount == 200
 		}),
 	).Return(expectedTransfer, nil)
 
 	transfer, err := w.SendMulti(ctx, recipients)
 	require.NoError(t, err)
 	require.Equal(t, expectedTransfer, transfer)
+
+	mc.AssertExpectations(t)
+}
+
+func TestSendMulti_RejectsMixedAssetRefs(t *testing.T) {
+	mc := new(mockClient)
+	w := NewWallet(mc, entities.NetworkRegtest)
+	ctx := context.Background()
+
+	aliceAddr := encodeV2NoAmount(t, 21)
+	bobAddr := encodeV2NoAmount(t, 22)
+
+	recipients := []entities.Recipient{
+		{Address: aliceAddr, Amount: 100},
+		{Address: bobAddr, Amount: 200},
+	}
+
+	_, err := w.SendMulti(ctx, recipients)
+	require.ErrorIs(t, err, ErrMixedAssetBatchUnsupported)
 
 	mc.AssertExpectations(t)
 }
@@ -1026,7 +1077,7 @@ func TestSendMulti_WithOptions(t *testing.T) {
 
 	addr := encodeV2NoAmount(t)
 	recipients := []entities.Recipient{
-		{Address: addr, Amount: amountp(50)},
+		{Address: addr, Amount: 50},
 	}
 
 	expectedTransfer := &entities.AssetTransfer{
@@ -1055,31 +1106,30 @@ func TestSendMulti_WithOptions(t *testing.T) {
 }
 
 // TestSendMulti_MixedAmountsNormalised feeds SendMulti a batch where
-// one recipient has an explicit amount and another leaves Amount nil.
+// one recipient has an explicit amount and another leaves Amount zero.
 // The low-level SendAsset must still see a uniform shape, so the SDK
-// echoes the embedded value into the nil-Amount slot.
+// echoes the embedded value into the zero-Amount slot.
 func TestSendMulti_MixedAmountsNormalised(t *testing.T) {
 	mc := new(mockClient)
 	w := NewWallet(mc, entities.NetworkRegtest)
 	ctx := context.Background()
 
-	explicitAddr := encodeV2NoAmount(t, 41)
-	embeddedAddr := encodeEmbedded(t, 75, entities.AddressVersionV1, 42)
+	ref := entities.AssetRefFromGroupKey(testKey(t, 41))
+	explicitAddr := encodeV2NoAmountForRef(t, ref, 51)
+	embeddedAddr := encodeV2EmbeddedForRef(t, ref, 75, 61)
 
 	recipients := []entities.Recipient{
-		{Address: explicitAddr, Amount: amountp(200)},
-		{Address: embeddedAddr}, // Amount nil; embedded is 75
+		{Address: explicitAddr, Amount: 200},
+		{Address: embeddedAddr}, // Amount zero; embedded is 75
 	}
 
 	mc.On("SendAsset", ctx, mock.MatchedBy(
 		func(req *entities.SendAssetRequest) bool {
 			return len(req.Recipients) == 2 &&
 				req.Recipients[0].Address == explicitAddr &&
-				req.Recipients[0].Amount != nil &&
-				*req.Recipients[0].Amount == 200 &&
+				req.Recipients[0].Amount == 200 &&
 				req.Recipients[1].Address == embeddedAddr &&
-				req.Recipients[1].Amount != nil &&
-				*req.Recipients[1].Amount == 75
+				req.Recipients[1].Amount == 75
 		}),
 	).Return(&entities.AssetTransfer{AnchorTxid: "mix"}, nil)
 
@@ -1098,7 +1148,7 @@ func TestSendMulti_AmountMismatch(t *testing.T) {
 
 	addr := encodeEmbedded(t, 75, entities.AddressVersionV1)
 	_, err := w.SendMulti(ctx, []entities.Recipient{
-		{Address: addr, Amount: amountp(200)},
+		{Address: addr, Amount: 200},
 	})
 	require.ErrorIs(t, err, ErrAmountMismatch)
 

@@ -96,7 +96,7 @@ type WalletClient interface {
 
 	// ListBurns lists asset burns with optional filtering.
 	ListBurns(ctx context.Context,
-		req *entities.ListBurnsRequest) ([]*entities.AssetBurn, error)
+		req *entities.ListBurnsRequest) ([]*entities.BurnRecord, error)
 
 	// FetchAssetMeta fetches the metadata for an asset by AssetRef or meta
 	// hash.
@@ -343,13 +343,13 @@ type EventClient interface {
 	// channels are closed when the context is cancelled.
 	SubscribeReceiveEvents(ctx context.Context,
 		req *entities.SubscribeReceiveEventsRequest) (
-		<-chan *entities.ReceiveEvent, <-chan error, error)
+		<-chan *entities.ReceiveEventRecord, <-chan error, error)
 
 	// SubscribeSendEvents streams outgoing asset transfer events.
 	// Filter by script key, label, or start time via the request.
 	SubscribeSendEvents(ctx context.Context,
 		req *entities.SubscribeSendEventsRequest) (
-		<-chan *entities.SendEvent, <-chan error, error)
+		<-chan *entities.SendEventRecord, <-chan error, error)
 
 	// SubscribeMintEvents streams minting batch lifecycle events.
 	SubscribeMintEvents(ctx context.Context,

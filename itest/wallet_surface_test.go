@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/require"
 )
@@ -135,17 +136,15 @@ func TestBurnAssetByGroupKey(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, minted.Ref.IsGroupRef())
 
-		resp, err := h.AliceClient.BurnAsset(ctx,
-			&entities.BurnAssetRequest{
-				AssetRef:         minted.Ref,
-				AmountToBurn:     100,
-				ConfirmationText: "assets will be destroyed",
-				Note:             "itest group burn",
-			},
+		burn, err := h.AliceWallet.Burn(
+			ctx, minted.Ref, 100,
+			tapsdk.WithBurnNote("itest group burn"),
 		)
 		require.NoError(t, err)
-		require.NotNil(t, resp)
-		require.NotNil(t, resp.BurnTransfer)
+		require.NotNil(t, burn)
+		require.Equal(t, minted.Ref, burn.AssetRef)
+		require.Equal(t, uint64(100), burn.Amount)
+		require.NotNil(t, burn.Transfer)
 
 		h.MineBlocks(t, defaultMineBlocks)
 		h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)

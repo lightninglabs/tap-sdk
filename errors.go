@@ -3,6 +3,7 @@ package tapsdk
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -97,8 +98,117 @@ func wrapErr(op string, err error) error {
 
 	return &Error{
 		Op:  op,
-		Err: err,
+		Err: normalizeErr(op, err),
 	}
+}
+
+func normalizeErr(op string, err error) error {
+	if err == nil || wrapsKnownErr(err) {
+		return err
+	}
+
+	if sentinel := matchErrorMessage(op, err.Error()); sentinel != nil {
+		return fmt.Errorf("%w: %w", sentinel, err)
+	}
+
+	st, ok := status.FromError(err)
+	if !ok {
+		return err
+	}
+
+	var sentinel error
+	switch st.Code() {
+	case codes.Unauthenticated:
+		sentinel = ErrUnauthenticated
+
+	case codes.PermissionDenied:
+		sentinel = ErrPermissionDenied
+
+	case codes.NotFound:
+		if isProofOp(op) {
+			sentinel = ErrProofNotFound
+		} else {
+			sentinel = ErrAssetUnknown
+		}
+
+	case codes.InvalidArgument:
+		msg := strings.ToLower(st.Message())
+		if strings.Contains(msg, "asset ref") {
+			sentinel = ErrInvalidAssetRef
+		} else {
+			sentinel = ErrTapdPrecondition
+		}
+
+	case codes.FailedPrecondition:
+		sentinel = ErrTapdPrecondition
+
+	case codes.Unimplemented:
+		sentinel = ErrUnsupportedByTapd
+	}
+
+	if sentinel == nil {
+		return err
+	}
+
+	return fmt.Errorf("%w: %w", sentinel, err)
+}
+
+func wrapsKnownErr(err error) bool {
+	for _, sentinel := range knownSentinelErrors {
+		if errors.Is(err, sentinel) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func matchErrorMessage(op, msg string) error {
+	lower := strings.ToLower(msg)
+
+	switch {
+	case strings.Contains(
+		lower, "all addrs must be of the same asset id or group key",
+	):
+		return ErrMixedAssetBatchUnsupported
+
+	case strings.Contains(lower, "invalid asset ref"):
+		return ErrInvalidAssetRef
+
+	case strings.Contains(lower, "insufficient") &&
+		strings.Contains(lower, "balance"):
+
+		return ErrInsufficientBalance
+
+	case isProofOp(op) && strings.Contains(lower, "proof") &&
+		(strings.Contains(lower, "not found") ||
+			strings.Contains(lower, "missing")):
+
+		return ErrProofNotFound
+
+	case strings.Contains(lower, "unable to find asset") ||
+		strings.Contains(lower, "asset lookup failed") ||
+		strings.Contains(lower, "unknown asset"):
+
+		return ErrAssetUnknown
+
+	case strings.Contains(lower, "permission denied"):
+		return ErrPermissionDenied
+
+	case strings.Contains(lower, "unauthenticated"):
+		return ErrUnauthenticated
+
+	case strings.Contains(lower, "unimplemented") ||
+		strings.Contains(lower, "unsupported"):
+
+		return ErrUnsupportedByTapd
+	}
+
+	return nil
+}
+
+func isProofOp(op string) bool {
+	return strings.Contains(op, "Proof")
 }
 
 // Sentinel errors for common SDK error conditions.
@@ -145,6 +255,37 @@ var (
 	// ref but cannot select enough spendable units for the requested
 	// operation.
 	ErrInsufficientBalance = errors.New("insufficient asset balance")
+
+	// ErrInvalidAssetRef is returned when an AssetRef is malformed or is
+	// rejected by tapd as an invalid asset identifier.
+	ErrInvalidAssetRef = errors.New("invalid asset ref")
+
+	// ErrPermissionDenied is returned when tapd rejects an operation because
+	// the macaroon or user credentials do not have enough permissions.
+	ErrPermissionDenied = errors.New("permission denied")
+
+	// ErrUnauthenticated is returned when tapd rejects an operation because
+	// authentication is missing or invalid.
+	ErrUnauthenticated = errors.New("unauthenticated")
+
+	// ErrProofNotFound is returned when tapd cannot locate a requested asset
+	// proof.
+	ErrProofNotFound = errors.New("proof not found")
+
+	// ErrTapdPrecondition is returned when tapd rejects a request because a
+	// daemon-side precondition is not satisfied.
+	ErrTapdPrecondition = errors.New("tapd precondition failed")
+
+	// ErrUnsupportedByTapd is returned when the connected tapd version does
+	// not support the requested operation.
+	ErrUnsupportedByTapd = errors.New("operation unsupported by tapd")
+
+	// ErrMixedAssetBatchUnsupported is returned when one high-level send
+	// request contains recipients for multiple logical assets. Wallet.SendMulti
+	// sends one logical asset in one tapd request.
+	ErrMixedAssetBatchUnsupported = errors.New(
+		"mixed-asset send batch unsupported",
+	)
 
 	// ErrAmountRequired is returned when attempting to send to a V2
 	// address that does not embed an amount without specifying one.
@@ -203,3 +344,34 @@ var (
 	// wallet state before retrying.
 	ErrMintResultNotFound = errors.New("mint result could not be mapped")
 )
+
+var knownSentinelErrors = []error{
+	ErrBuilderFinished,
+	ErrNotFunded,
+	ErrNotSigned,
+	ErrNotCommitted,
+	ErrNoRecipients,
+	ErrNoReceiverKeys,
+	ErrNoAssetRef,
+	ErrZeroAmount,
+	ErrGroupKeyNotSupported,
+	ErrInsufficientBalance,
+	ErrInvalidAssetRef,
+	ErrPermissionDenied,
+	ErrUnauthenticated,
+	ErrProofNotFound,
+	ErrTapdPrecondition,
+	ErrUnsupportedByTapd,
+	ErrMixedAssetBatchUnsupported,
+	ErrAmountRequired,
+	ErrAmountMismatch,
+	ErrAssetUnknown,
+	ErrNoProofs,
+	ErrIncompleteProofBundle,
+	ErrAssetNameRequired,
+	ErrMintBatchActive,
+	ErrWrongAssetType,
+	ErrAssetNotIssuable,
+	ErrMintResolveTimeout,
+	ErrMintResultNotFound,
+}

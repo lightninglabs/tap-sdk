@@ -27,6 +27,7 @@ type Wallet struct {
 type WalletOption func(*Wallet)
 
 const authMailboxUniverseCourierScheme = "authmailbox+universerpc://"
+const burnConfirmationText = "assets will be destroyed"
 
 type transferRegistrarWithIssuance interface {
 	RegisterTransferWithIssuance(ctx context.Context,
@@ -383,6 +384,27 @@ func (s *Wallet) ListCollectionItems(ctx context.Context,
 	}
 
 	return items, nil
+}
+
+// ListTransfers returns high-level wallet transfers keyed by AssetRef.
+func (s *Wallet) ListTransfers(ctx context.Context,
+	req *entities.ListTransfersRequest) ([]*entities.Transfer, error) {
+
+	rawTransfers, err := s.client.ListTransfers(ctx, req)
+	if err != nil {
+		return nil, wrapErr("ListTransfers", err)
+	}
+
+	transfers := make([]*entities.Transfer, 0, len(rawTransfers))
+	for _, raw := range rawTransfers {
+		if raw == nil {
+			continue
+		}
+
+		transfers = append(transfers, entities.NewTransfer(raw))
+	}
+
+	return transfers, nil
 }
 
 func (s *Wallet) listAssetRecords(ctx context.Context,
@@ -820,6 +842,62 @@ func proofBundleEntryRef(ref entities.AssetRef,
 	return ref
 }
 
+// Burn destroys units of the asset identified by AssetRef.
+//
+// The SDK supplies tapd's confirmation text internally so normal callers do
+// not need to carry the daemon's safety phrase through application code.
+func (s *Wallet) Burn(ctx context.Context, ref entities.AssetRef,
+	amount uint64, opts ...BurnOption) (*entities.Burn, error) {
+
+	if amount == 0 {
+		return nil, wrapErr("Burn", ErrZeroAmount)
+	}
+	if err := ref.Validate(); err != nil {
+		return nil, wrapErr("Burn", err)
+	}
+
+	o := applyBurnOptions(opts)
+	resp, err := s.client.BurnAsset(ctx, &entities.BurnAssetRequest{
+		AssetRef:         ref,
+		AmountToBurn:     amount,
+		ConfirmationText: burnConfirmationText,
+		Note:             o.note,
+	})
+	if err != nil {
+		return nil, wrapErr("Burn", err)
+	}
+	if resp == nil {
+		resp = &entities.BurnAssetResponse{}
+	}
+
+	return &entities.Burn{
+		AssetRef: ref,
+		Amount:   amount,
+		Note:     o.note,
+		Transfer: resp.BurnTransfer,
+		Proof:    resp.BurnProof,
+	}, nil
+}
+
+// ListBurns returns wallet burn history filtered by AssetRef and/or anchor
+// txid.
+//
+// This is the high-level companion to Wallet.Burn. It calls the same daemon
+// RPC as Client.ListBurns but wraps errors with operation context so callers
+// can use errors.Is against the SDK sentinels (ErrAssetUnknown, etc.). The
+// returned BurnRecord rows are already keyed by AssetRef, so application
+// code stays on the same logical handle it uses everywhere else.
+func (s *Wallet) ListBurns(ctx context.Context,
+	req *entities.ListBurnsRequest) ([]*entities.BurnRecord, error) {
+
+	burns, err := s.client.ListBurns(ctx, req)
+	if err != nil {
+		return nil, wrapErr("ListBurns", err)
+	}
+
+	return burns, nil
+}
+
 // Send performs a simple one-shot address-based asset transfer.
 //
 // The addr must be a valid bech32m-encoded Taproot Asset address. The
@@ -855,10 +933,9 @@ func (s *Wallet) Send(ctx context.Context, addr string,
 	// WithAmount set: route through the explicit-amount path to
 	// preserve caller intent on the wire. Otherwise rely on the
 	// amount embedded in the address.
-	recipient := entities.Recipient{Address: addr}
-	if o.amount > 0 {
-		amt := o.amount
-		recipient.Amount = &amt
+	recipient := entities.Recipient{
+		Address: addr,
+		Amount:  o.amount,
 	}
 
 	req := &entities.SendAssetRequest{
@@ -894,11 +971,14 @@ func validateSendAmount(addr *entities.Address, amount uint64) error {
 	return nil
 }
 
-// SendMulti sends to multiple recipients in a single anchor
-// transaction. Each Recipient.Amount is optional: nil means "use the
-// amount embedded in the address" (works for any address that embeds
-// an amount). A non-nil Amount must be positive; if the address also
-// embeds an amount, the two must match.
+// SendMulti sends one logical asset to multiple recipients in a single
+// anchor transaction. Every recipient address must resolve to the same
+// AssetRef. Mixed-asset payout batches must be split by the caller.
+//
+// Each Recipient.Amount is optional: zero means "use the amount embedded in
+// the address" (works for any address that embeds an amount). A non-zero
+// Amount is the explicit sender-chosen amount; if the address also embeds an
+// amount, the two must match.
 //
 // Mixing explicit and embedded amounts in a single call is supported
 // at this level: SendMulti decodes each address and echoes embedded
@@ -915,7 +995,7 @@ func (s *Wallet) SendMulti(ctx context.Context,
 
 	// Validate, collecting whether any Recipient carries an explicit
 	// amount. If any does, every Recipient needs an explicit amount
-	// on the wire; echo the embedded value for the nil ones.
+	// on the wire; echo the embedded value for the zero ones.
 	decoded := make([]*entities.Address, len(recipients))
 	anyExplicit := false
 	for i, r := range recipients {
@@ -925,7 +1005,7 @@ func (s *Wallet) SendMulti(ctx context.Context,
 		}
 		decoded[i] = addr
 
-		if r.Amount == nil {
+		if r.Amount == 0 {
 			if addr.Amount == 0 {
 				return nil, wrapErr(
 					"SendMulti", ErrAmountRequired,
@@ -935,34 +1015,30 @@ func (s *Wallet) SendMulti(ctx context.Context,
 		}
 
 		anyExplicit = true
-		if *r.Amount == 0 {
-			return nil, wrapErr("SendMulti", fmt.Errorf(
-				"%w: recipient %q has explicit Amount == 0",
-				ErrAmountRequired, r.Address,
-			))
-		}
-		if addr.Amount > 0 && addr.Amount != *r.Amount {
+		if addr.Amount > 0 && addr.Amount != r.Amount {
 			return nil, wrapErr("SendMulti", fmt.Errorf(
 				"%w: address embeds %d, caller passed %d",
-				ErrAmountMismatch, addr.Amount, *r.Amount,
+				ErrAmountMismatch, addr.Amount, r.Amount,
 			))
 		}
+	}
+	if err := validateSingleAssetSendBatch(decoded); err != nil {
+		return nil, wrapErr("SendMulti", err)
 	}
 
 	// If any recipient is explicit, the low-level SendAsset demands
 	// every recipient be explicit too — so fill in the embedded
-	// amount for the nil ones.
+	// amount for the zero ones.
 	if anyExplicit {
 		normalised := make([]entities.Recipient, len(recipients))
 		for i, r := range recipients {
-			if r.Amount != nil {
+			if r.Amount != 0 {
 				normalised[i] = r
 				continue
 			}
-			amt := decoded[i].Amount
 			normalised[i] = entities.Recipient{
 				Address: r.Address,
-				Amount:  &amt,
+				Amount:  decoded[i].Amount,
 			}
 		}
 		recipients = normalised
@@ -982,6 +1058,33 @@ func (s *Wallet) SendMulti(ctx context.Context,
 	}
 
 	return transfer, nil
+}
+
+func validateSingleAssetSendBatch(addrs []*entities.Address) error {
+	var batchRef entities.AssetRef
+	for idx, addr := range addrs {
+		if addr == nil || addr.AssetRef.IsZero() {
+			return fmt.Errorf("%w: recipient %d has no asset ref",
+				ErrInvalidAssetRef, idx)
+		}
+
+		if idx == 0 {
+			batchRef = addr.AssetRef
+			continue
+		}
+
+		if batchRef.Equivalent(addr.AssetRef) {
+			continue
+		}
+
+		return fmt.Errorf(
+			"%w: recipient 0 uses %s, recipient %d uses %s",
+			ErrMixedAssetBatchUnsupported, batchRef, idx,
+			addr.AssetRef,
+		)
+	}
+
+	return nil
 }
 
 // getNetworkParams returns the HRP and coin type for a given network.

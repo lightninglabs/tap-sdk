@@ -62,7 +62,7 @@ type wsEnvelope struct {
 // asset transfer events.
 func (c *eventClient) SubscribeReceiveEvents(ctx context.Context,
 	req *entities.SubscribeReceiveEventsRequest) (
-	<-chan *entities.ReceiveEvent, <-chan error, error) {
+	<-chan *entities.ReceiveEventRecord, <-chan error, error) {
 
 	body := &jsonSubscribeReceiveEventsRequest{}
 	if req != nil {
@@ -77,7 +77,9 @@ func (c *eventClient) SubscribeReceiveEvents(ctx context.Context,
 	return streamEvents(
 		ctx, c, "/v1/taproot-assets/events/asset-receive",
 		macaroon.AdminServiceMac, body,
-		func(raw json.RawMessage) (*entities.ReceiveEvent, error) {
+		func(raw json.RawMessage) (*entities.ReceiveEventRecord,
+			error) {
+
 			var ev jsonReceiveEvent
 			if err := json.Unmarshal(raw, &ev); err != nil {
 				return nil, err
@@ -92,7 +94,7 @@ func (c *eventClient) SubscribeReceiveEvents(ctx context.Context,
 // asset transfer events.
 func (c *eventClient) SubscribeSendEvents(ctx context.Context,
 	req *entities.SubscribeSendEventsRequest) (
-	<-chan *entities.SendEvent, <-chan error, error) {
+	<-chan *entities.SendEventRecord, <-chan error, error) {
 
 	body := &jsonSubscribeSendEventsRequest{}
 	if req != nil {
@@ -114,7 +116,9 @@ func (c *eventClient) SubscribeSendEvents(ctx context.Context,
 	return streamEvents(
 		ctx, c, "/v1/taproot-assets/events/asset-send",
 		macaroon.AdminServiceMac, body,
-		func(raw json.RawMessage) (*entities.SendEvent, error) {
+		func(raw json.RawMessage) (*entities.SendEventRecord,
+			error) {
+
 			var ev jsonSendEvent
 			if err := json.Unmarshal(raw, &ev); err != nil {
 				return nil, err

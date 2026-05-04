@@ -18,15 +18,15 @@ import (
 // controlling event delivery and stream errors.
 type mockEventClient struct {
 	mu             sync.Mutex
-	receiveSetup   func() (<-chan *entities.ReceiveEvent, <-chan error)
-	sendSetup      func() (<-chan *entities.SendEvent, <-chan error)
+	receiveSetup   func() (<-chan *entities.ReceiveEventRecord, <-chan error)
+	sendSetup      func() (<-chan *entities.SendEventRecord, <-chan error)
 	mintSetup      func() (<-chan *entities.MintEvent, <-chan error)
 	subscribeCalls int
 }
 
 func (m *mockEventClient) SubscribeReceiveEvents(_ context.Context,
 	_ *entities.SubscribeReceiveEventsRequest) (
-	<-chan *entities.ReceiveEvent, <-chan error, error) {
+	<-chan *entities.ReceiveEventRecord, <-chan error, error) {
 
 	m.mu.Lock()
 	m.subscribeCalls++
@@ -44,7 +44,7 @@ func (m *mockEventClient) SubscribeReceiveEvents(_ context.Context,
 
 func (m *mockEventClient) SubscribeSendEvents(_ context.Context,
 	_ *entities.SubscribeSendEventsRequest) (
-	<-chan *entities.SendEvent, <-chan error, error) {
+	<-chan *entities.SendEventRecord, <-chan error, error) {
 
 	m.mu.Lock()
 	m.subscribeCalls++
@@ -91,16 +91,16 @@ func TestEventListener_ReceiveEvents(t *testing.T) {
 
 	mc := &mockEventClient{
 		receiveSetup: func() (
-			<-chan *entities.ReceiveEvent, <-chan error) {
+			<-chan *entities.ReceiveEventRecord, <-chan error) {
 
-			evCh := make(chan *entities.ReceiveEvent, 3)
+			evCh := make(chan *entities.ReceiveEventRecord, 3)
 			errCh := make(chan error, 1)
 
-			evCh <- &entities.ReceiveEvent{
+			evCh <- &entities.ReceiveEventRecord{
 				Timestamp: 1,
 				Outpoint:  "txid:0",
 			}
-			evCh <- &entities.ReceiveEvent{
+			evCh <- &entities.ReceiveEventRecord{
 				Timestamp: 2,
 				Outpoint:  "txid:1",
 			}
@@ -145,17 +145,17 @@ func TestEventListener_Reconnect(t *testing.T) {
 
 	mc := &mockEventClient{
 		receiveSetup: func() (
-			<-chan *entities.ReceiveEvent, <-chan error) {
+			<-chan *entities.ReceiveEventRecord, <-chan error) {
 
 			call := callCount.Add(1)
 
-			evCh := make(chan *entities.ReceiveEvent, 1)
+			evCh := make(chan *entities.ReceiveEventRecord, 1)
 			errCh := make(chan error, 1)
 
 			if call == 1 {
 				// First call: deliver one event then
 				// fail with retriable error.
-				evCh <- &entities.ReceiveEvent{
+				evCh <- &entities.ReceiveEventRecord{
 					Timestamp: 1,
 				}
 				close(evCh)
@@ -163,7 +163,7 @@ func TestEventListener_Reconnect(t *testing.T) {
 			} else {
 				// Second call: deliver event and close
 				// cleanly.
-				evCh <- &entities.ReceiveEvent{
+				evCh <- &entities.ReceiveEventRecord{
 					Timestamp: 2,
 				}
 				close(evCh)
@@ -215,11 +215,11 @@ func TestEventListener_OnDisconnect(t *testing.T) {
 
 	mc := &mockEventClient{
 		receiveSetup: func() (
-			<-chan *entities.ReceiveEvent, <-chan error) {
+			<-chan *entities.ReceiveEventRecord, <-chan error) {
 
 			call := callCount.Add(1)
 
-			evCh := make(chan *entities.ReceiveEvent, 1)
+			evCh := make(chan *entities.ReceiveEventRecord, 1)
 			errCh := make(chan error, 1)
 
 			if call == 1 {
@@ -229,7 +229,7 @@ func TestEventListener_OnDisconnect(t *testing.T) {
 			} else {
 				// Second call: deliver event and close
 				// cleanly so the test terminates.
-				evCh <- &entities.ReceiveEvent{Timestamp: 1}
+				evCh <- &entities.ReceiveEventRecord{Timestamp: 1}
 				close(evCh)
 				close(errCh)
 			}
@@ -308,9 +308,9 @@ func TestEventListener_OnDisconnect(t *testing.T) {
 func TestEventListener_FatalError(t *testing.T) {
 	mc := &mockEventClient{
 		receiveSetup: func() (
-			<-chan *entities.ReceiveEvent, <-chan error) {
+			<-chan *entities.ReceiveEventRecord, <-chan error) {
 
-			evCh := make(chan *entities.ReceiveEvent)
+			evCh := make(chan *entities.ReceiveEventRecord)
 			errCh := make(chan error, 1)
 
 			// Send a fatal error immediately.
@@ -372,9 +372,9 @@ func TestEventListener_FatalError(t *testing.T) {
 func TestEventListener_MaxRetries(t *testing.T) {
 	mc := &mockEventClient{
 		receiveSetup: func() (
-			<-chan *entities.ReceiveEvent, <-chan error) {
+			<-chan *entities.ReceiveEventRecord, <-chan error) {
 
-			evCh := make(chan *entities.ReceiveEvent)
+			evCh := make(chan *entities.ReceiveEventRecord)
 			errCh := make(chan error, 1)
 
 			close(evCh)
@@ -420,9 +420,9 @@ func TestEventListener_Stop(t *testing.T) {
 	// Create a stream that blocks forever.
 	mc := &mockEventClient{
 		receiveSetup: func() (
-			<-chan *entities.ReceiveEvent, <-chan error) {
+			<-chan *entities.ReceiveEventRecord, <-chan error) {
 
-			return make(chan *entities.ReceiveEvent),
+			return make(chan *entities.ReceiveEventRecord),
 				make(chan error, 1)
 		},
 	}
@@ -479,19 +479,19 @@ func TestEventListener_MultipleStreams(t *testing.T) {
 
 	mc := &mockEventClient{
 		receiveSetup: func() (
-			<-chan *entities.ReceiveEvent, <-chan error) {
+			<-chan *entities.ReceiveEventRecord, <-chan error) {
 
-			ch := make(chan *entities.ReceiveEvent, 1)
-			ch <- &entities.ReceiveEvent{Timestamp: 1}
+			ch := make(chan *entities.ReceiveEventRecord, 1)
+			ch <- &entities.ReceiveEventRecord{Timestamp: 1}
 			close(ch)
 
 			return ch, make(chan error)
 		},
 		sendSetup: func() (
-			<-chan *entities.SendEvent, <-chan error) {
+			<-chan *entities.SendEventRecord, <-chan error) {
 
-			ch := make(chan *entities.SendEvent, 1)
-			ch <- &entities.SendEvent{Timestamp: 1}
+			ch := make(chan *entities.SendEventRecord, 1)
+			ch <- &entities.SendEventRecord{Timestamp: 1}
 			close(ch)
 
 			return ch, make(chan error)

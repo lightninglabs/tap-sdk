@@ -57,18 +57,29 @@ func main() {
 }
 ```
 
-### Address-based send
+### Address-based wallet operations
 
 ```go
-packet, err := wallet.NewTxBuilder().
-	AddRecipient(recipientAddr, 100).
-	SetFeeRate(2).
-	Execute(ctx, false)
+transfer, err := wallet.Send(ctx, recipientAddr, tapsdk.WithAmount(100))
 if err != nil {
 	log.Fatal(err)
 }
 
-fmt.Printf("Anchor tx: %x\n", packet.AnchorTransaction)
+fmt.Printf("Anchor tx: %s\n", transfer.AnchorTxid)
+
+burn, err := wallet.Burn(ctx, assetRef, 10, tapsdk.WithBurnNote("cleanup"))
+if err != nil {
+	log.Fatal(err)
+}
+
+fmt.Printf("Burned %d units of %s\n", burn.Amount, burn.AssetRef)
+
+transfers, err := wallet.ListTransfers(ctx, nil)
+if err != nil {
+	log.Fatal(err)
+}
+
+fmt.Printf("wallet has %d outgoing transfers\n", len(transfers))
 ```
 
 ### Issue assets
@@ -114,12 +125,12 @@ fmt.Printf("first item: %s\n", created.FirstItem.AssetRef)
 ### Interactive receive
 
 ```go
-registered, err := wallet.ImportProofFile(ctx, proofFile)
+registered, err := wallet.ImportProof(ctx, proofBundle)
 if err != nil {
 	log.Fatal(err)
 }
 
-fmt.Printf("Received %d units\n", registered.Amount)
+fmt.Printf("Imported %d proof entries\n", len(registered))
 ```
 
 ## Documentation

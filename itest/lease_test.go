@@ -28,7 +28,7 @@ func TestUTXOLeaseLifecycle(t *testing.T) {
 		funded, err := h.AliceClient.FundTransfer(ctx,
 			[]entities.Recipient{{
 				Address: addr.Encoded,
-				Amount:  &amount,
+				Amount:  amount,
 			}},
 			nil,
 		)

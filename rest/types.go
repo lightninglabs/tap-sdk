@@ -95,6 +95,7 @@ type jsonTransferOutput struct {
 	ScriptKey    string          `json:"script_key"`
 	NewProofBlob string          `json:"new_proof_blob"`
 	Anchor       *jsonAnchorInfo `json:"anchor"`
+	GroupKey     string          `json:"group_key"`
 }
 
 // jsonTransferInput is the JSON shape of taprpc.TransferInput.
@@ -103,6 +104,7 @@ type jsonTransferInput struct {
 	AssetID     string `json:"asset_id"`
 	ScriptKey   string `json:"script_key"`
 	Amount      string `json:"amount"`
+	GroupKey    string `json:"group_key"`
 }
 
 // jsonBlockHash is the JSON shape of taprpc.ProtoHash.

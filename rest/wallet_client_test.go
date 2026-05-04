@@ -25,6 +25,9 @@ var (
 	}
 )
 
+const restZeroOutpoint = "00000000000000000000000000000000" +
+	"00000000000000000000000000000000:1"
+
 func TestAssetRecordMatchesRef(t *testing.T) {
 	var assetID entities.AssetID
 	copy(assetID[:], restTestAssetID)
@@ -104,4 +107,37 @@ func TestBurnAssetRequestBody(t *testing.T) {
 			tc.validate(t, body)
 		})
 	}
+}
+
+func TestUnmarshalAssetTransferGroupKey(t *testing.T) {
+	pubKeyHex := hex.EncodeToString(restTestPubKey)
+	assetIDHex := hex.EncodeToString(restTestAssetID)
+
+	transfer, err := unmarshalAssetTransfer(&jsonAssetTransfer{
+		Inputs: []*jsonTransferInput{{
+			AnchorPoint: restZeroOutpoint,
+			AssetID:     assetIDHex,
+			ScriptKey:   pubKeyHex,
+			Amount:      "100",
+			GroupKey:    pubKeyHex,
+		}},
+		Outputs: []*jsonTransferOutput{{
+			Amount:    "60",
+			AssetID:   assetIDHex,
+			ScriptKey: pubKeyHex,
+			Anchor: &jsonAnchorInfo{
+				Outpoint: restZeroOutpoint,
+				Value:    "330",
+			},
+			GroupKey: pubKeyHex,
+		}},
+	})
+	require.NoError(t, err)
+	require.Len(t, transfer.Inputs, 1)
+	require.Len(t, transfer.Outputs, 1)
+
+	require.NotNil(t, transfer.Inputs[0].GroupKey)
+	require.Equal(t, restTestPubKey, transfer.Inputs[0].GroupKey[:])
+	require.NotNil(t, transfer.Outputs[0].GroupKey)
+	require.Equal(t, restTestPubKey, transfer.Outputs[0].GroupKey[:])
 }

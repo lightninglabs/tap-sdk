@@ -193,14 +193,11 @@ issuance ID when tapd still requires one.
 
 ### Burns
 
-Burn requests and burn history filters should accept `AssetRef`.
+`Wallet.Burn` accepts `AssetRef`, supplies tapd's confirmation text internally,
+and returns a compact burn result. The low-level `Client.BurnAsset` remains
+available for callers that need the raw daemon request shape.
 
-Important caveat:
-
-tapd still burns against a concrete issuance ID. For grouped assets, the SDK
-must resolve `AssetRef -> IssuanceID`. When a burn amount cannot be satisfied by
-one concrete issuance, the SDK should fail with a clear error instead of making
-callers reason about `group_key` themselves.
+Burn history filters also accept `AssetRef`.
 
 ### Universe
 
@@ -335,7 +332,7 @@ Migration rules:
 - grouped asset burns may still need concrete issuance resolution rules
 - this is a breaking change for early adopters
 
-## Summary
+## Takeaways
 
 The SDK should model what users mean, not what tapd happens to require.
 
