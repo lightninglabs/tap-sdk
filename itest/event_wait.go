@@ -41,7 +41,7 @@ type mintSubscriber interface {
 type receiveSubscriber interface {
 	SubscribeReceiveEvents(context.Context,
 		*entities.SubscribeReceiveEventsRequest) (
-		<-chan *entities.ReceiveEvent, <-chan error, error)
+		<-chan *entities.ReceiveEventRecord, <-chan error, error)
 }
 
 // sendSubscriber is the minimal client surface needed to open a send
@@ -49,7 +49,7 @@ type receiveSubscriber interface {
 type sendSubscriber interface {
 	SubscribeSendEvents(context.Context,
 		*entities.SubscribeSendEventsRequest) (
-		<-chan *entities.SendEvent, <-chan error, error)
+		<-chan *entities.SendEventRecord, <-chan error, error)
 }
 
 func (h *TestHarness) subscribeMintEvents(t testing.TB,
@@ -83,7 +83,7 @@ func (h *TestHarness) subscribeMintEvents(t testing.TB,
 // must subscribe before the sender broadcasts.
 func (h *TestHarness) subscribeReceiveEvents(t testing.TB,
 	ctx context.Context, client receiveSubscriber,
-	addr string) *eventSubscription[entities.ReceiveEvent] {
+	addr string) *eventSubscription[entities.ReceiveEventRecord] {
 
 	t.Helper()
 
@@ -95,7 +95,7 @@ func (h *TestHarness) subscribeReceiveEvents(t testing.TB,
 	)
 	require.NoError(t, err)
 
-	sub := &eventSubscription[entities.ReceiveEvent]{
+	sub := &eventSubscription[entities.ReceiveEventRecord]{
 		events: events,
 		errs:   errs,
 		cancel: cancel,
@@ -114,7 +114,7 @@ func (h *TestHarness) subscribeReceiveEvents(t testing.TB,
 // calling Send and still observe the terminal SendStateComplete event.
 func (h *TestHarness) subscribeSendEvents(t testing.TB,
 	ctx context.Context, client sendSubscriber, label string,
-	startTimestamp int64) *eventSubscription[entities.SendEvent] {
+	startTimestamp int64) *eventSubscription[entities.SendEventRecord] {
 
 	t.Helper()
 
@@ -127,7 +127,7 @@ func (h *TestHarness) subscribeSendEvents(t testing.TB,
 	)
 	require.NoError(t, err)
 
-	sub := &eventSubscription[entities.SendEvent]{
+	sub := &eventSubscription[entities.SendEventRecord]{
 		events: events,
 		errs:   errs,
 		cancel: cancel,
@@ -237,13 +237,13 @@ func waitForMintFinalized(t testing.TB,
 }
 
 func waitForReceiveCompleted(t testing.TB,
-	sub *eventSubscription[entities.ReceiveEvent], addr string,
-	timeout time.Duration) *entities.ReceiveEvent {
+	sub *eventSubscription[entities.ReceiveEventRecord], addr string,
+	timeout time.Duration) *entities.ReceiveEventRecord {
 
 	t.Helper()
 
 	return waitForEvent(t, sub, timeout, "receive completed",
-		func(event *entities.ReceiveEvent) (bool, string) {
+		func(event *entities.ReceiveEventRecord) (bool, string) {
 			if event == nil {
 				return false, "nil receive event"
 			}
@@ -270,13 +270,13 @@ func waitForReceiveCompleted(t testing.TB,
 }
 
 func waitForSendCompleted(t testing.TB,
-	sub *eventSubscription[entities.SendEvent], label string,
-	timeout time.Duration) *entities.SendEvent {
+	sub *eventSubscription[entities.SendEventRecord], label string,
+	timeout time.Duration) *entities.SendEventRecord {
 
 	t.Helper()
 
 	return waitForEvent(t, sub, timeout, "send completed",
-		func(event *entities.SendEvent) (bool, string) {
+		func(event *entities.SendEventRecord) (bool, string) {
 			if event == nil {
 				return false, "nil send event"
 			}
@@ -343,13 +343,20 @@ func hasCompletedSend(events []*entities.SendEvent, label string) bool {
 	return false
 }
 
-func hasCompletedReceive(events []*entities.ReceiveEvent, addr string) bool {
+// hasCompletedReceive checks whether any of the high-level receive events
+// emitted by EventListener match the given AssetRef and reached the
+// completed status. The post-projection event no longer carries the raw
+// address string, so callers identify the receive by its user-facing
+// AssetRef instead.
+func hasCompletedReceive(events []*entities.ReceiveEvent,
+	ref entities.AssetRef) bool {
+
 	for _, event := range events {
-		if event == nil || event.Address == nil || event.Error != "" {
+		if event == nil || event.Error != "" {
 			continue
 		}
 
-		if event.Address.Encoded == addr &&
+		if event.AssetRef.Equivalent(ref) &&
 			event.Status == entities.AddressEventStatusCompleted {
 
 			return true

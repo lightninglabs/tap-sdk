@@ -25,7 +25,7 @@ func TestUnmarshalReceiveEvent(t *testing.T) {
 		name     string
 		rpcEvent *taprpc.ReceiveEvent
 		wantErr  string
-		validate func(*testing.T, *entities.ReceiveEvent)
+		validate func(*testing.T, *entities.ReceiveEventRecord)
 	}{
 		{
 			name:     "nil event",
@@ -39,7 +39,7 @@ func TestUnmarshalReceiveEvent(t *testing.T) {
 				Outpoint:  "abc123:0",
 				Status:    taprpc.AddrEventStatus_ADDR_EVENT_STATUS_TRANSACTION_DETECTED,
 			},
-			validate: func(t *testing.T, e *entities.ReceiveEvent) {
+			validate: func(t *testing.T, e *entities.ReceiveEventRecord) {
 				require.Equal(t,
 					int64(1711627200000000),
 					e.Timestamp,
@@ -70,7 +70,7 @@ func TestUnmarshalReceiveEvent(t *testing.T) {
 				ConfirmationHeight: 800000,
 				Error:              "",
 			},
-			validate: func(t *testing.T, e *entities.ReceiveEvent) {
+			validate: func(t *testing.T, e *entities.ReceiveEventRecord) {
 				require.Equal(t,
 					int64(1711627200000000),
 					e.Timestamp,
@@ -97,7 +97,7 @@ func TestUnmarshalReceiveEvent(t *testing.T) {
 				Status:    taprpc.AddrEventStatus_ADDR_EVENT_STATUS_PROOF_RECEIVED,
 				Error:     "proof validation failed",
 			},
-			validate: func(t *testing.T, e *entities.ReceiveEvent) {
+			validate: func(t *testing.T, e *entities.ReceiveEventRecord) {
 				require.Equal(t,
 					entities.AddressEventStatusProofReceived,
 					e.Status,
@@ -127,7 +127,7 @@ func TestUnmarshalSendEvent(t *testing.T) {
 		name     string
 		rpcEvent *taprpc.SendEvent
 		wantErr  string
-		validate func(*testing.T, *entities.SendEvent)
+		validate func(*testing.T, *entities.SendEventRecord)
 	}{
 		{
 			name:     "nil event",
@@ -146,7 +146,7 @@ func TestUnmarshalSendEvent(t *testing.T) {
 				SendState:  string(entities.SendStateAnchorSign),
 				ParcelType: taprpc.ParcelType_PARCEL_TYPE_ADDRESS,
 			},
-			validate: func(t *testing.T, e *entities.SendEvent) {
+			validate: func(t *testing.T, e *entities.SendEventRecord) {
 				require.Equal(t,
 					int64(1711627200000000),
 					e.Timestamp,
@@ -178,7 +178,7 @@ func TestUnmarshalSendEvent(t *testing.T) {
 					{0x05, 0x06},
 				},
 			},
-			validate: func(t *testing.T, e *entities.SendEvent) {
+			validate: func(t *testing.T, e *entities.SendEventRecord) {
 				require.Equal(t,
 					entities.ParcelTypePreSigned,
 					e.ParcelType,
@@ -206,7 +206,7 @@ func TestUnmarshalSendEvent(t *testing.T) {
 					FinalTx: []byte{0xcc, 0xdd},
 				},
 			},
-			validate: func(t *testing.T, e *entities.SendEvent) {
+			validate: func(t *testing.T, e *entities.SendEventRecord) {
 				require.NotNil(t, e.AnchorTransaction)
 				require.Equal(t,
 					[]byte{0xaa, 0xbb},
@@ -250,7 +250,7 @@ func TestUnmarshalSendEvent(t *testing.T) {
 				NextSendState: string(entities.SendStateComplete),
 				Error:         "timeout",
 			},
-			validate: func(t *testing.T, e *entities.SendEvent) {
+			validate: func(t *testing.T, e *entities.SendEventRecord) {
 				require.Equal(t,
 					"payment-42", e.TransferLabel,
 				)

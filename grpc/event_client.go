@@ -41,7 +41,7 @@ func NewEventClient(conn grpc.ClientConnInterface,
 // the stream terminates.
 func (c *eventClient) SubscribeReceiveEvents(ctx context.Context,
 	req *entities.SubscribeReceiveEventsRequest) (
-	<-chan *entities.ReceiveEvent, <-chan error, error) {
+	<-chan *entities.ReceiveEventRecord, <-chan error, error) {
 
 	rpcCtx := c.adminMac.WithMacaroonAuth(ctx)
 
@@ -58,7 +58,7 @@ func (c *eventClient) SubscribeReceiveEvents(ctx context.Context,
 			"events: %w", err)
 	}
 
-	eventCh := make(chan *entities.ReceiveEvent)
+	eventCh := make(chan *entities.ReceiveEventRecord)
 	errCh := make(chan error, 1)
 
 	go func() {
@@ -95,7 +95,7 @@ func (c *eventClient) SubscribeReceiveEvents(ctx context.Context,
 // outgoing asset transfer events.
 func (c *eventClient) SubscribeSendEvents(ctx context.Context,
 	req *entities.SubscribeSendEventsRequest) (
-	<-chan *entities.SendEvent, <-chan error, error) {
+	<-chan *entities.SendEventRecord, <-chan error, error) {
 
 	rpcCtx := c.adminMac.WithMacaroonAuth(ctx)
 
@@ -113,7 +113,7 @@ func (c *eventClient) SubscribeSendEvents(ctx context.Context,
 			"events: %w", err)
 	}
 
-	eventCh := make(chan *entities.SendEvent)
+	eventCh := make(chan *entities.SendEventRecord)
 	errCh := make(chan error, 1)
 
 	go func() {

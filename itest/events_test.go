@@ -105,7 +105,7 @@ func testEventListenerMintAndSend(t *testing.T, transport Transport) {
 		return hasFinalizedMint(mintEvents,
 			minted.Batch.Batch.BatchKey) &&
 			hasCompletedSend(sendEvents, label) &&
-			hasCompletedReceive(recvEvents, bobAddr.Encoded)
+			hasCompletedReceive(recvEvents, bobAddr.AssetRef)
 	}, 2*time.Minute, time.Second, "expected events not delivered")
 
 	// The receive event has fired, but tapd's balance projection can

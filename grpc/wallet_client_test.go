@@ -153,8 +153,6 @@ func TestAssetRecordMatchesRef(t *testing.T) {
 }
 
 func TestMarshalSendAssetRequest(t *testing.T) {
-	amt := func(n uint64) *uint64 { return &n }
-
 	tests := []struct {
 		name     string
 		req      *entities.SendAssetRequest
@@ -171,7 +169,7 @@ func TestMarshalSendAssetRequest(t *testing.T) {
 			},
 		},
 		{
-			name: "all-nil Amount routes via TapAddrs",
+			name: "all-zero Amount routes via TapAddrs",
 			req: &entities.SendAssetRequest{
 				Recipients: []entities.Recipient{
 					{Address: "tap1first"},
@@ -197,11 +195,11 @@ func TestMarshalSendAssetRequest(t *testing.T) {
 				Recipients: []entities.Recipient{
 					{
 						Address: "tap1amountless",
-						Amount:  amt(150),
+						Amount:  150,
 					},
 					{
 						Address: "tap1fixed",
-						Amount:  amt(42),
+						Amount:  42,
 					},
 				},
 				SkipProofCourierPingCheck: true,
@@ -236,7 +234,7 @@ func TestMarshalSendAssetRequest(t *testing.T) {
 			name: "mixed Amount rejected",
 			req: &entities.SendAssetRequest{
 				Recipients: []entities.Recipient{
-					{Address: "tap1explicit", Amount: amt(50)},
+					{Address: "tap1explicit", Amount: 50},
 					{Address: "tap1embedded"},
 				},
 			},
@@ -541,7 +539,7 @@ func TestUnmarshalAssetGroupRecord(t *testing.T) {
 	}
 }
 
-func TestUnmarshalAssetBurn(t *testing.T) {
+func TestUnmarshalBurnRecord(t *testing.T) {
 	tests := []struct {
 		name    string
 		rpcBurn *taprpc.AssetBurn
@@ -574,7 +572,7 @@ func TestUnmarshalAssetBurn(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			result, err := unmarshalAssetBurn(tc.rpcBurn)
+			result, err := unmarshalBurnRecord(tc.rpcBurn)
 			if tc.wantErr != "" {
 				require.Error(t, err)
 				require.Contains(

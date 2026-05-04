@@ -154,9 +154,9 @@ type sendMultiCase struct {
 
 // TestSendMulti exercises Wallet.SendMulti end-to-end:
 //
-//   - all-explicit: every Recipient.Amount is non-nil (V2 + WithAmount
+//   - all-explicit: every Recipient.Amount is non-zero (V2 + WithAmount
 //     equivalent for multi).
-//   - all-embedded: every Recipient.Amount is nil; addresses all embed
+//   - all-embedded: every Recipient.Amount is zero; addresses all embed
 //     their amount. Routes via TapAddrs.
 //   - mixed-normalised: one explicit, one embedded — the SDK echoes
 //     the embedded value into the request so tapd sees a uniform
@@ -168,16 +168,14 @@ func TestSendMulti(t *testing.T) {
 			recipients: func(addrs []*entities.Address,
 			) []entities.Recipient {
 
-				amt1 := uint64(100)
-				amt2 := uint64(150)
 				return []entities.Recipient{
 					{
 						Address: addrs[0].Encoded,
-						Amount:  &amt1,
+						Amount:  100,
 					},
 					{
 						Address: addrs[1].Encoded,
-						Amount:  &amt2,
+						Amount:  150,
 					},
 				}
 			},
@@ -198,13 +196,12 @@ func TestSendMulti(t *testing.T) {
 			recipients: func(addrs []*entities.Address,
 			) []entities.Recipient {
 
-				amt := uint64(100)
 				return []entities.Recipient{
 					{
 						Address: addrs[0].Encoded,
-						Amount:  &amt,
+						Amount:  100,
 					},
-					// second recipient nil -> SDK echoes
+					// second recipient zero -> SDK echoes
 					// the embedded value into the wire.
 					{Address: addrs[1].Encoded},
 				}
@@ -261,7 +258,8 @@ func runSendMultiCase(t *testing.T, transport Transport,
 	}
 
 	recvEvents := make(
-		[]*eventSubscription[entities.ReceiveEvent], 0, len(addrs),
+		[]*eventSubscription[entities.ReceiveEventRecord], 0,
+		len(addrs),
 	)
 	for _, addr := range addrs {
 		// Receive streams are per address and must exist before the
@@ -361,11 +359,11 @@ func TestSendMultiRejectsMixedAssets(t *testing.T) {
 					[]entities.Recipient{
 						{
 							Address: firstAddr.Encoded,
-							Amount:  &firstAmount,
+							Amount:  firstAmount,
 						},
 						{
 							Address: tc.secondAddr.Encoded,
-							Amount:  &tc.amount,
+							Amount:  tc.amount,
 						},
 					},
 				)
@@ -417,11 +415,10 @@ func TestSendRejections(t *testing.T) {
 		})
 
 		t.Run("SendMulti/amount-mismatch", func(t *testing.T) {
-			amt := uint64(999)
 			_, err := h.AliceWallet.SendMulti(ctx,
 				[]entities.Recipient{{
 					Address: embedded.Encoded,
-					Amount:  &amt,
+					Amount:  999,
 				}},
 			)
 			require.ErrorIs(t, err, tapsdk.ErrAmountMismatch)

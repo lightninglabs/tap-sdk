@@ -8,15 +8,15 @@ import (
 	"github.com/lightninglabs/taproot-assets/taprpc/mintrpc"
 )
 
-// unmarshalReceiveEvent converts an RPC ReceiveEvent to the SDK type.
+// unmarshalReceiveEvent converts an RPC ReceiveEvent to the raw SDK record.
 func unmarshalReceiveEvent(
-	rpcEvent *taprpc.ReceiveEvent) (*entities.ReceiveEvent, error) {
+	rpcEvent *taprpc.ReceiveEvent) (*entities.ReceiveEventRecord, error) {
 
 	if rpcEvent == nil {
 		return nil, fmt.Errorf("nil receive event")
 	}
 
-	event := &entities.ReceiveEvent{
+	event := &entities.ReceiveEventRecord{
 		Timestamp:          rpcEvent.Timestamp,
 		Outpoint:           rpcEvent.Outpoint,
 		Status:             entities.AddressEventStatus(rpcEvent.Status),
@@ -36,15 +36,15 @@ func unmarshalReceiveEvent(
 	return event, nil
 }
 
-// unmarshalSendEvent converts an RPC SendEvent to the SDK type.
+// unmarshalSendEvent converts an RPC SendEvent to the raw SDK record.
 func unmarshalSendEvent(
-	rpcEvent *taprpc.SendEvent) (*entities.SendEvent, error) {
+	rpcEvent *taprpc.SendEvent) (*entities.SendEventRecord, error) {
 
 	if rpcEvent == nil {
 		return nil, fmt.Errorf("nil send event")
 	}
 
-	event := &entities.SendEvent{
+	event := &entities.SendEventRecord{
 		Timestamp:     rpcEvent.Timestamp,
 		SendState:     entities.SendState(rpcEvent.SendState),
 		ParcelType:    entities.ParcelType(rpcEvent.ParcelType),

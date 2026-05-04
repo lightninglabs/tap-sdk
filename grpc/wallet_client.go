@@ -440,6 +440,19 @@ func unmarshalAssetTransfer(rpcTransfer *taprpc.AssetTransfer) (
 			output.AnchorValue = out.Anchor.Value
 		}
 
+		// Group key is empty for ungrouped assets and on responses
+		// from older daemons; the SDK treats either as "no group" and
+		// falls back to the asset-id ref.
+		if len(out.GroupKey) > 0 {
+			groupKey, err := entities.ParsePubKey(out.GroupKey)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"invalid output group key: %w", err,
+				)
+			}
+			output.GroupKey = &groupKey
+		}
+
 		outputs = append(outputs, output)
 	}
 
@@ -472,12 +485,27 @@ func unmarshalAssetTransfer(rpcTransfer *taprpc.AssetTransfer) (
 			return nil, fmt.Errorf("invalid anchor point: %w", err)
 		}
 
-		inputs = append(inputs, entities.TransferInput{
+		input := entities.TransferInput{
 			AnchorPoint: anchorPoint,
 			IssuanceID:  assetID,
 			ScriptKey:   scriptKey,
 			Amount:      in.Amount,
-		})
+		}
+
+		// Group key is empty for ungrouped assets and on responses
+		// from older daemons; the SDK treats either as "no group" and
+		// falls back to the asset-id ref.
+		if len(in.GroupKey) > 0 {
+			groupKey, err := entities.ParsePubKey(in.GroupKey)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"invalid input group key: %w", err,
+				)
+			}
+			input.GroupKey = &groupKey
+		}
+
+		inputs = append(inputs, input)
 	}
 
 	var blockHash [32]byte
@@ -733,13 +761,13 @@ func marshalSendAssetRequest(
 	}
 
 	// tapd exposes two mutually exclusive wire paths: TapAddrs for
-	// addresses that already encode their amount (nil Recipient.Amount),
-	// and AddressesWithAmounts for the explicit-amount path (non-nil).
+	// addresses that already encode their amount (zero Recipient.Amount),
+	// and AddressesWithAmounts for the explicit-amount path (non-zero).
 	// Mixed inputs are a caller contract violation — Wallet.SendMulti
 	// is responsible for normalising them before reaching this layer.
 	allEmbedded, anyEmbedded := true, false
 	for _, r := range req.Recipients {
-		if r.Amount == nil {
+		if r.Amount == 0 {
 			anyEmbedded = true
 		} else {
 			allEmbedded = false
@@ -765,7 +793,7 @@ func marshalSendAssetRequest(
 			rpcReq.AddressesWithAmounts,
 			&taprpc.AddressWithAmount{
 				TapAddr: r.Address,
-				Amount:  *r.Amount,
+				Amount:  r.Amount,
 			},
 		)
 	}
@@ -1054,7 +1082,7 @@ func (s *walletClient) BurnAsset(ctx context.Context,
 
 // ListBurns lists asset burns with optional filtering.
 func (s *walletClient) ListBurns(ctx context.Context,
-	req *entities.ListBurnsRequest) ([]*entities.AssetBurn, error) {
+	req *entities.ListBurnsRequest) ([]*entities.BurnRecord, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
@@ -1086,9 +1114,9 @@ func (s *walletClient) ListBurns(ctx context.Context,
 		return nil, err
 	}
 
-	burns := make([]*entities.AssetBurn, 0, len(resp.Burns))
+	burns := make([]*entities.BurnRecord, 0, len(resp.Burns))
 	for _, rpcBurn := range resp.Burns {
-		burn, err := unmarshalAssetBurn(rpcBurn)
+		burn, err := unmarshalBurnRecord(rpcBurn)
 		if err != nil {
 			return nil, err
 		}
@@ -1268,9 +1296,9 @@ func unmarshalAssetGroupRecord(groupKeyHex string,
 	}, nil
 }
 
-// unmarshalAssetBurn converts an RPC AssetBurn to an entities.AssetBurn.
-func unmarshalAssetBurn(
-	rpcBurn *taprpc.AssetBurn) (*entities.AssetBurn, error) {
+// unmarshalBurnRecord converts an RPC AssetBurn to an entities.BurnRecord.
+func unmarshalBurnRecord(
+	rpcBurn *taprpc.AssetBurn) (*entities.BurnRecord, error) {
 
 	if rpcBurn == nil {
 		return nil, fmt.Errorf("nil asset burn")
@@ -1286,7 +1314,7 @@ func unmarshalAssetBurn(
 		return nil, fmt.Errorf("invalid anchor txid: %w", err)
 	}
 
-	burn := &entities.AssetBurn{
+	burn := &entities.BurnRecord{
 		Note:       rpcBurn.Note,
 		AssetRef:   entities.AssetRefFromAsset(assetID, nil),
 		IssuanceID: assetID,

@@ -31,20 +31,20 @@ type CommittedTransfer struct {
 
 // Recipient represents a recipient of an asset transfer.
 //
-// Amount is optional: a nil value means "use the amount embedded in
-// the address" (required for V0/V1 addresses and for V2 addresses that
-// bake in an amount). A non-nil Amount is the explicit sender-chosen
-// amount and is required for V2 addresses that omit the amount from
-// the payload.
+// Amount == 0 means "use the amount embedded in the address" (required
+// for V0/V1 addresses and for V2 addresses that bake in an amount).
+// A positive Amount is the explicit sender-chosen amount and is
+// required for V2 addresses that omit the amount from the payload.
 type Recipient struct {
 	// Address is the Taproot Asset address of the recipient.
 	Address string
 
-	// Amount is the number of asset units to send. Leave nil to use
-	// the amount embedded in the address. When non-nil, the value
+	// Amount is the number of asset units to send. Leave zero to use
+	// the amount embedded in the address. When non-zero, the value
 	// must be positive; if the address also embeds an amount, the
-	// two must match.
-	Amount *uint64
+	// two must match. An explicit zero amount is invalid because the
+	// daemon rejects empty sends.
+	Amount uint64
 }
 
 // InteractiveSendRequest represents a request to send assets interactively.
@@ -85,6 +85,12 @@ type TransferOutput struct {
 
 	// AltLeaves are auxiliary Taproot leaves (if present) decoded from proofs.
 	AltLeaves [][]byte
+
+	// GroupKey is the asset's group public key when the asset belongs to
+	// a group, or nil otherwise. The SDK uses this together with
+	// IssuanceID to reconstruct the user-facing AssetRef without an extra
+	// RPC round-trip.
+	GroupKey *PubKey
 }
 
 // TransferInput represents a single input in a transfer.
@@ -102,6 +108,12 @@ type TransferInput struct {
 
 	// Amount is the number of asset units spent.
 	Amount uint64
+
+	// GroupKey is the asset's group public key when the asset belongs to
+	// a group, or nil otherwise. The SDK uses this together with
+	// IssuanceID to reconstruct the user-facing AssetRef without an extra
+	// RPC round-trip.
+	GroupKey *PubKey
 }
 
 // AssetTransfer represents a wallet-recorded outgoing transfer.
@@ -192,6 +204,69 @@ type TransferAsset struct {
 
 	// Outpoint is the anchor outpoint for this transfer item.
 	Outpoint Outpoint
+}
+
+// NewTransfer projects a raw AssetTransfer into the high-level, AssetRef-keyed
+// Transfer summary. The AssetRef on each input and output is built from the
+// embedded GroupKey when present, falling back to IssuanceID otherwise — the
+// same convention every other AssetRef-keyed surface uses.
+//
+// Returns nil when raw is nil.
+func NewTransfer(raw *AssetTransfer) *Transfer {
+	if raw == nil {
+		return nil
+	}
+
+	transfer := &Transfer{
+		TransferTimestamp:   raw.TransferTimestamp,
+		AnchorTxid:          raw.AnchorTxid,
+		AnchorTxBlockHeight: raw.AnchorTxBlockHeight,
+		AnchorTxChainFees:   raw.AnchorTxChainFees,
+		Label:               raw.Label,
+		Inputs: make(
+			[]TransferAsset, 0, len(raw.Inputs),
+		),
+		Outputs: make(
+			[]TransferAsset, 0, len(raw.Outputs),
+		),
+	}
+
+	for _, input := range raw.Inputs {
+		transfer.Inputs = append(transfer.Inputs, TransferAsset{
+			AssetRef: assetRefFromGroupOrID(
+				input.GroupKey, input.IssuanceID,
+			),
+			IssuanceID: input.IssuanceID,
+			Amount:     input.Amount,
+			ScriptKey:  input.ScriptKey,
+			Outpoint:   input.AnchorPoint,
+		})
+	}
+
+	for _, output := range raw.Outputs {
+		transfer.Outputs = append(transfer.Outputs, TransferAsset{
+			AssetRef: assetRefFromGroupOrID(
+				output.GroupKey, output.IssuanceID,
+			),
+			IssuanceID: output.IssuanceID,
+			Amount:     output.Amount,
+			ScriptKey:  output.ScriptKey,
+			Outpoint:   output.AnchorOutpoint,
+		})
+	}
+
+	return transfer
+}
+
+// assetRefFromGroupOrID returns the user-facing AssetRef for a transfer
+// input/output: the group-key ref when the asset belongs to a group, the
+// asset-id ref otherwise.
+func assetRefFromGroupOrID(groupKey *PubKey, issuanceID AssetID) AssetRef {
+	if groupKey != nil {
+		return AssetRefFromGroupKey(*groupKey)
+	}
+
+	return AssetRefFromAssetID(issuanceID)
 }
 
 // Outpoint represents a Bitcoin transaction outpoint.

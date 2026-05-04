@@ -1,7 +1,11 @@
 package entities
 
-// ReceiveEvent represents an incoming asset transfer event.
-type ReceiveEvent struct {
+// ReceiveEventRecord is the raw, protocol-shaped incoming asset transfer event
+// returned by Client.SubscribeReceiveEvents. Most application code should
+// consume the high-level ReceiveEvent emitted by EventListener instead;
+// ReceiveEventRecord is the escape hatch for advanced callers that need every
+// daemon field.
+type ReceiveEventRecord struct {
 	// Timestamp is the event creation time as a Unix timestamp in
 	// microseconds.
 	Timestamp int64
@@ -109,8 +113,12 @@ const (
 	SendStateComplete SendState = "SendStateComplete"
 )
 
-// SendEvent represents an outgoing asset transfer event.
-type SendEvent struct {
+// SendEventRecord is the raw, protocol-shaped outgoing asset transfer event
+// returned by Client.SubscribeSendEvents. Most application code should consume
+// the high-level SendEvent emitted by EventListener instead; SendEventRecord
+// is the escape hatch for advanced callers that need PSBTs, virtual packets,
+// or other raw fields.
+type SendEventRecord struct {
 	// Timestamp is the event execution time as a Unix timestamp in
 	// microseconds.
 	Timestamp int64
@@ -151,6 +159,64 @@ type SendEvent struct {
 
 	// NextSendState is the next state that will be executed.
 	NextSendState SendState
+}
+
+// SendEvent is the high-level, AssetRef-keyed view of an outgoing send event
+// emitted by EventListener. Use this for application code that thinks in
+// terms of user-facing assets; for raw protocol fields (PSBTs, virtual
+// packets, ...) consume Client.SubscribeSendEvents directly to receive
+// SendEventRecord.
+type SendEvent struct {
+	// Timestamp is the event execution time as a Unix timestamp in
+	// microseconds.
+	Timestamp int64
+
+	// SendState is the last send state that was executed successfully.
+	SendState SendState
+
+	// NextSendState is the next state that will be executed.
+	NextSendState SendState
+
+	// TransferLabel is the label assigned to this transfer.
+	TransferLabel string
+
+	// AssetRefs are the logical asset refs involved in the send event.
+	AssetRefs []AssetRef
+
+	// Transfer is the final transfer summary when the event contains one.
+	Transfer *Transfer
+
+	// Error is an optional error string.
+	Error string
+}
+
+// ReceiveEvent is the high-level, AssetRef-keyed view of an incoming receive
+// event emitted by EventListener. Use this for application code that thinks
+// in terms of user-facing assets; for raw protocol fields consume
+// Client.SubscribeReceiveEvents directly to receive ReceiveEventRecord.
+type ReceiveEvent struct {
+	// Timestamp is the event creation time as a Unix timestamp in
+	// microseconds.
+	Timestamp int64
+
+	// AssetRef is the SDK identifier from the receiving address.
+	AssetRef AssetRef
+
+	// Amount is the address amount when the address embeds one.
+	Amount uint64
+
+	// Status is the current status of the receive event.
+	Status AddressEventStatus
+
+	// Outpoint is the outpoint of the on-chain receive transaction.
+	Outpoint string
+
+	// ConfirmationHeight is the block height at which the receive
+	// transaction was confirmed.
+	ConfirmationHeight uint32
+
+	// Error is an optional error string.
+	Error string
 }
 
 // MintEvent represents a minting batch event.
@@ -206,4 +272,89 @@ type SubscribeMintEventsRequest struct {
 	// ShortResponse omits the full asset list from batch events
 	// to reduce data volume for large batches.
 	ShortResponse bool
+}
+
+// NewSendEvent projects a raw SendEventRecord into the high-level SendEvent.
+//
+// AssetRefs is built from the raw event's recipient addresses; if no
+// addresses are present (e.g. for non-address parcel types), the raw
+// transfer's inputs and outputs supply them. The final Transfer summary,
+// when set on the record, is rebuilt with AssetRef-keyed inputs and outputs.
+//
+// Returns nil when record is nil.
+func NewSendEvent(record *SendEventRecord) *SendEvent {
+	if record == nil {
+		return nil
+	}
+
+	event := &SendEvent{
+		Timestamp:     record.Timestamp,
+		SendState:     record.SendState,
+		NextSendState: record.NextSendState,
+		TransferLabel: record.TransferLabel,
+		Error:         record.Error,
+	}
+
+	for _, addr := range record.Addresses {
+		if addr == nil || addr.AssetRef.IsZero() {
+			continue
+		}
+
+		event.AssetRefs = appendUniqueAssetRef(
+			event.AssetRefs, addr.AssetRef,
+		)
+	}
+
+	if record.Transfer == nil {
+		return event
+	}
+
+	event.Transfer = NewTransfer(record.Transfer)
+	if len(event.AssetRefs) == 0 {
+		for _, input := range event.Transfer.Inputs {
+			event.AssetRefs = appendUniqueAssetRef(
+				event.AssetRefs, input.AssetRef,
+			)
+		}
+		for _, output := range event.Transfer.Outputs {
+			event.AssetRefs = appendUniqueAssetRef(
+				event.AssetRefs, output.AssetRef,
+			)
+		}
+	}
+
+	return event
+}
+
+// NewReceiveEvent projects a raw ReceiveEventRecord into the high-level
+// ReceiveEvent. Returns nil when record is nil.
+func NewReceiveEvent(record *ReceiveEventRecord) *ReceiveEvent {
+	if record == nil {
+		return nil
+	}
+
+	event := &ReceiveEvent{
+		Timestamp:          record.Timestamp,
+		Status:             record.Status,
+		Outpoint:           record.Outpoint,
+		ConfirmationHeight: record.ConfirmationHeight,
+		Error:              record.Error,
+	}
+
+	if record.Address != nil {
+		event.AssetRef = record.Address.AssetRef
+		event.Amount = record.Address.Amount
+	}
+
+	return event
+}
+
+func appendUniqueAssetRef(refs []AssetRef, ref AssetRef) []AssetRef {
+	for _, existing := range refs {
+		if existing.Equivalent(ref) {
+			return refs
+		}
+	}
+
+	return append(refs, ref)
 }

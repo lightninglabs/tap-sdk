@@ -504,6 +504,30 @@ func unmarshalAssetTransfer(
 			output.AnchorValue = value
 		}
 
+		// Group key is empty for ungrouped assets and on responses
+		// from older daemons; the SDK treats either as "no group" and
+		// falls back to the asset-id ref.
+		if out.GroupKey != "" {
+			groupKeyBytes, err := parseHexBytes(out.GroupKey)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"invalid output group key: %w", err,
+				)
+			}
+			if len(groupKeyBytes) > 0 {
+				groupKey, err := entities.ParsePubKey(
+					groupKeyBytes,
+				)
+				if err != nil {
+					return nil, fmt.Errorf(
+						"invalid output group key: %w",
+						err,
+					)
+				}
+				output.GroupKey = &groupKey
+			}
+		}
+
 		outputs = append(outputs, output)
 	}
 
@@ -559,12 +583,38 @@ func unmarshalAssetTransfer(
 		var scriptKey [33]byte
 		copy(scriptKey[:], scriptKeyBytes)
 
-		inputs = append(inputs, entities.TransferInput{
+		input := entities.TransferInput{
 			AnchorPoint: anchorPoint,
 			IssuanceID:  assetID,
 			ScriptKey:   scriptKey,
 			Amount:      amount,
-		})
+		}
+
+		// Group key is empty for ungrouped assets and on responses
+		// from older daemons; the SDK treats either as "no group" and
+		// falls back to the asset-id ref.
+		if in.GroupKey != "" {
+			groupKeyBytes, err := parseHexBytes(in.GroupKey)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"invalid input group key: %w", err,
+				)
+			}
+			if len(groupKeyBytes) > 0 {
+				groupKey, err := entities.ParsePubKey(
+					groupKeyBytes,
+				)
+				if err != nil {
+					return nil, fmt.Errorf(
+						"invalid input group key: %w",
+						err,
+					)
+				}
+				input.GroupKey = &groupKey
+			}
+		}
+
+		inputs = append(inputs, input)
 	}
 
 	var blockHash [32]byte
@@ -1092,9 +1142,9 @@ func unmarshalBurnAssetResponse(
 	}, nil
 }
 
-// unmarshalAssetBurn converts a JSON asset burn to an entity.
-func unmarshalAssetBurn(
-	b *jsonAssetBurn) (*entities.AssetBurn, error) {
+// unmarshalBurnRecord converts a JSON asset burn to an entity.
+func unmarshalBurnRecord(
+	b *jsonAssetBurn) (*entities.BurnRecord, error) {
 
 	if b == nil {
 		return nil, fmt.Errorf("nil asset burn")
@@ -1132,7 +1182,7 @@ func unmarshalAssetBurn(
 	}
 	anchorTxid, _ := entities.ParseHash(txidBytes)
 
-	return &entities.AssetBurn{
+	return &entities.BurnRecord{
 		Note:       b.Note,
 		AssetRef:   entities.AssetRefFromAsset(assetID, groupKey),
 		IssuanceID: assetID,

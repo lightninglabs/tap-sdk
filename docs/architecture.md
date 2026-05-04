@@ -126,10 +126,13 @@ The high-level `tapsdk.EventListener` sits on top of `EventClient` and
 adds reconnect/backoff, so the two transports share reconnection
 behavior.
 
-`Wallet.SummarizeSendEvent` and `Wallet.SummarizeReceiveEvent` convert raw
-event payloads into AssetRef-keyed summaries. Raw event fields remain available
-for diagnostics, while application code can stay on the same semantic asset
-handles used by the rest of the Wallet API.
+`EventClient.SubscribeSendEvents` / `SubscribeReceiveEvents` deliver raw
+records (`SendEventRecord`, `ReceiveEventRecord`) for advanced consumers
+that need PSBTs, virtual packets, or other protocol-shaped fields. The
+high-level `EventListener` projects these records into the AssetRef-keyed
+`SendEvent` and `ReceiveEvent` shapes before invoking handlers, so
+application code stays on the same semantic asset handles used by the
+rest of the Wallet API.
 
 ### `vpsbt/`
 

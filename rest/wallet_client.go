@@ -379,9 +379,9 @@ func (w *walletClient) SendAsset(ctx context.Context,
 		body.SkipProofCourierPing = req.SkipProofCourierPingCheck
 
 		// tapd's REST surface mirrors the gRPC one: TapAddrs for
-		// addresses that encode their own amount (nil
+		// addresses that encode their own amount (zero
 		// Recipient.Amount), AddressesWithAmounts for the
-		// explicit-amount path (non-nil). The two fields are
+		// explicit-amount path (non-zero). The two fields are
 		// mutually exclusive; mixed inputs are a caller contract
 		// violation that Wallet.SendMulti normalises.
 		if err := marshalSendRecipients(req.Recipients, body); err != nil {
@@ -402,7 +402,7 @@ func (w *walletClient) SendAsset(ctx context.Context,
 }
 
 // marshalSendRecipients writes Recipients onto the JSON body, picking
-// the embedded-amount path (TapAddrs) when every Amount is nil and the
+// the embedded-amount path (TapAddrs) when every Amount is zero and the
 // explicit-amount path (AddressesWithAmounts) when every Amount is
 // set. Mixed inputs violate the low-level contract and produce
 // entities.ErrMixedRecipientAmounts.
@@ -415,7 +415,7 @@ func marshalSendRecipients(recipients []entities.Recipient,
 
 	allEmbedded, anyEmbedded := true, false
 	for _, r := range recipients {
-		if r.Amount == nil {
+		if r.Amount == 0 {
 			anyEmbedded = true
 		} else {
 			allEmbedded = false
@@ -440,7 +440,7 @@ func marshalSendRecipients(recipients []entities.Recipient,
 		body.Recipients = append(body.Recipients,
 			&jsonAddressWithAmount{
 				TapAddr: r.Address,
-				Amount:  fmt.Sprintf("%d", *r.Amount),
+				Amount:  fmt.Sprintf("%d", r.Amount),
 			},
 		)
 	}
@@ -773,7 +773,7 @@ func burnAssetRequestBody(req *entities.BurnAssetRequest) (map[string]any,
 
 // ListBurns lists asset burns with optional filtering.
 func (w *walletClient) ListBurns(ctx context.Context,
-	req *entities.ListBurnsRequest) ([]*entities.AssetBurn,
+	req *entities.ListBurnsRequest) ([]*entities.BurnRecord,
 	error) {
 
 	// grpc-gateway decodes query-string `bytes` fields as URL-safe
@@ -820,9 +820,9 @@ func (w *walletClient) ListBurns(ctx context.Context,
 		return nil, err
 	}
 
-	burns := make([]*entities.AssetBurn, 0, len(resp.Burns))
+	burns := make([]*entities.BurnRecord, 0, len(resp.Burns))
 	for _, b := range resp.Burns {
-		burn, err := unmarshalAssetBurn(b)
+		burn, err := unmarshalBurnRecord(b)
 		if err != nil {
 			return nil, err
 		}

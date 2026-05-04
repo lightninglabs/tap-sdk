@@ -57,3 +57,45 @@ func TestBurnRejectsZeroAmount(t *testing.T) {
 
 	mc.AssertExpectations(t)
 }
+
+func TestListBurns(t *testing.T) {
+	mc := new(mockClient)
+	w := NewWallet(mc, entities.NetworkRegtest)
+	ctx := context.Background()
+
+	ref := entities.AssetRefFromAssetID(testAssetID())
+	req := &entities.ListBurnsRequest{AssetRef: &ref}
+	expected := []*entities.BurnRecord{{
+		AssetRef:   ref,
+		IssuanceID: testAssetID(),
+		Amount:     42,
+		Note:       "accounting",
+	}}
+
+	mc.On("ListBurns", ctx, req).Return(expected, nil)
+
+	burns, err := w.ListBurns(ctx, req)
+	require.NoError(t, err)
+	require.Equal(t, expected, burns)
+
+	mc.AssertExpectations(t)
+}
+
+func TestListBurnsWrapsError(t *testing.T) {
+	mc := new(mockClient)
+	w := NewWallet(mc, entities.NetworkRegtest)
+	ctx := context.Background()
+
+	mc.On("ListBurns", ctx, (*entities.ListBurnsRequest)(nil)).Return(
+		nil, context.DeadlineExceeded,
+	)
+
+	_, err := w.ListBurns(ctx, nil)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+
+	var sdkErr *Error
+	require.ErrorAs(t, err, &sdkErr)
+	require.Equal(t, "ListBurns", sdkErr.Op)
+
+	mc.AssertExpectations(t)
+}

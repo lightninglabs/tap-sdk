@@ -3,9 +3,9 @@ package entities
 import "errors"
 
 // ErrMixedRecipientAmounts is returned by the low-level SendAsset when
-// a single request mixes recipients with explicit amounts (non-nil
+// a single request mixes recipients with explicit amounts (non-zero
 // Recipient.Amount) and recipients relying on the address-embedded
-// amount (nil Recipient.Amount). tapd's wire format does not support
+// amount (zero Recipient.Amount). tapd's wire format does not support
 // mixing the two paths; Wallet.SendMulti normalises such inputs before
 // reaching the low-level RPC.
 var ErrMixedRecipientAmounts = errors.New(
@@ -15,9 +15,9 @@ var ErrMixedRecipientAmounts = errors.New(
 // SendAssetRequest specifies a low-level one-shot address-based send.
 //
 // Recipients carries every destination. Each Recipient.Amount is
-// either explicit (non-nil) or left to the address's embedded amount
-// (nil). tapd exposes two mutually exclusive wire paths for these, so
-// callers must not mix explicit and embedded amounts in a single
+// either explicit (non-zero) or left to the address's embedded amount
+// (zero). tapd exposes two mutually exclusive wire paths for these,
+// so callers must not mix explicit and embedded amounts in a single
 // call; Client.SendAsset returns ErrMixedRecipientAmounts if they do.
 // The higher-level Wallet.SendMulti normalises mixed inputs before
 // reaching this layer.

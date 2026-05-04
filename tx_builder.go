@@ -48,10 +48,9 @@ func newTxBuilder(wallet WalletKitClient) *TxBuilder {
 // positive; TxBuilder wraps FundVirtualPsbt, which only accepts
 // explicit amounts.
 func (b *TxBuilder) AddRecipient(address string, amount uint64) *TxBuilder {
-	amt := amount
 	b.recipients = append(b.recipients, entities.Recipient{
 		Address: address,
-		Amount:  &amt,
+		Amount:  amount,
 	})
 	return b
 }

@@ -53,8 +53,8 @@ type ListBurnsRequest struct {
 	AnchorTxid *Hash
 }
 
-// AssetBurn represents a single asset burn event.
-type AssetBurn struct {
+// BurnRecord represents a single asset burn event from wallet history.
+type BurnRecord struct {
 	// Note is user-defined metadata for the burn.
 	Note string
 

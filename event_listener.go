@@ -335,7 +335,9 @@ func (l *EventListener) runStream(ctx context.Context, name string,
 }
 
 // subscribeReceive opens a receive event stream and delivers events
-// to the handler until the stream breaks.
+// to the handler until the stream breaks. The raw record from the
+// client is projected into the high-level ReceiveEvent before dispatch
+// so handlers operate on AssetRef-keyed shapes.
 func (l *EventListener) subscribeReceive(
 	ctx context.Context) streamResult {
 
@@ -352,13 +354,17 @@ func (l *EventListener) subscribeReceive(
 	}
 
 	return drainEvents(ctx, eventCh, errCh,
-		func(e *entities.ReceiveEvent) {
-			l.handler.OnReceive(ctx, e)
+		func(record *entities.ReceiveEventRecord) {
+			l.handler.OnReceive(ctx, entities.NewReceiveEvent(
+				record,
+			))
 		},
 	)
 }
 
-// subscribeSend opens a send event stream and delivers events.
+// subscribeSend opens a send event stream and delivers events. The raw
+// record from the client is projected into the high-level SendEvent
+// before dispatch so handlers operate on AssetRef-keyed shapes.
 func (l *EventListener) subscribeSend(
 	ctx context.Context) streamResult {
 
@@ -375,8 +381,8 @@ func (l *EventListener) subscribeSend(
 	}
 
 	return drainEvents(ctx, eventCh, errCh,
-		func(e *entities.SendEvent) {
-			l.handler.OnSend(ctx, e)
+		func(record *entities.SendEventRecord) {
+			l.handler.OnSend(ctx, entities.NewSendEvent(record))
 		},
 	)
 }

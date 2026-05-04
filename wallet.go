@@ -396,20 +396,13 @@ func (s *Wallet) ListTransfers(ctx context.Context,
 		return nil, wrapErr("ListTransfers", err)
 	}
 
-	resolver, err := s.transferRefResolver(ctx)
-	if err != nil {
-		return nil, wrapErr("ListTransfers", err)
-	}
-
 	transfers := make([]*entities.Transfer, 0, len(rawTransfers))
 	for _, raw := range rawTransfers {
 		if raw == nil {
 			continue
 		}
 
-		transfers = append(
-			transfers, summarizeAssetTransfer(raw, resolver),
-		)
+		transfers = append(transfers, entities.NewTransfer(raw))
 	}
 
 	return transfers, nil
@@ -629,110 +622,6 @@ func addSaturatingUint64(a, b uint64) uint64 {
 	}
 
 	return sum
-}
-
-func (s *Wallet) transferRefResolver(ctx context.Context) (
-	map[entities.AssetID]entities.AssetRef, error) {
-
-	allTypes := &entities.ScriptKeyTypeQuery{
-		AllTypes: true,
-	}
-	records, err := s.listAssetRecords(ctx, &entities.ListAssetsRequest{
-		IncludeSpent:  true,
-		ScriptKeyType: allTypes,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	refs := make(map[entities.AssetID]entities.AssetRef, len(records))
-	for _, record := range records {
-		if record == nil {
-			continue
-		}
-
-		issuanceID := record.Genesis.IssuanceID
-		if record.Genesis.Type == entities.AssetTypeCollectible {
-			refs[issuanceID] = entities.AssetRefFromAssetID(
-				issuanceID,
-			)
-			continue
-		}
-
-		refs[issuanceID] = record.AssetRef
-	}
-
-	return refs, nil
-}
-
-func summarizeAssetTransfer(raw *entities.AssetTransfer,
-	refs map[entities.AssetID]entities.AssetRef) *entities.Transfer {
-
-	transfer := &entities.Transfer{
-		TransferTimestamp:   raw.TransferTimestamp,
-		AnchorTxid:          raw.AnchorTxid,
-		AnchorTxBlockHeight: raw.AnchorTxBlockHeight,
-		AnchorTxChainFees:   raw.AnchorTxChainFees,
-		Label:               raw.Label,
-		Inputs: make(
-			[]entities.TransferAsset, 0, len(raw.Inputs),
-		),
-		Outputs: make(
-			[]entities.TransferAsset, 0, len(raw.Outputs),
-		),
-	}
-
-	for _, input := range raw.Inputs {
-		transfer.Inputs = append(transfer.Inputs,
-			entities.TransferAsset{
-				AssetRef: transferAssetRef(
-					input.IssuanceID, refs,
-				),
-				IssuanceID: input.IssuanceID,
-				Amount:     input.Amount,
-				ScriptKey:  input.ScriptKey,
-				Outpoint:   input.AnchorPoint,
-			},
-		)
-	}
-
-	for _, output := range raw.Outputs {
-		transfer.Outputs = append(transfer.Outputs,
-			entities.TransferAsset{
-				AssetRef: transferAssetRef(
-					output.IssuanceID, refs,
-				),
-				IssuanceID: output.IssuanceID,
-				Amount:     output.Amount,
-				ScriptKey:  output.ScriptKey,
-				Outpoint:   output.AnchorOutpoint,
-			},
-		)
-	}
-
-	return transfer
-}
-
-func transferAssetRef(issuanceID entities.AssetID,
-	refs map[entities.AssetID]entities.AssetRef) entities.AssetRef {
-
-	if ref, ok := refs[issuanceID]; ok && !ref.IsZero() {
-		return ref
-	}
-
-	return entities.AssetRefFromAssetID(issuanceID)
-}
-
-func appendUniqueAssetRef(refs []entities.AssetRef,
-	ref entities.AssetRef) []entities.AssetRef {
-
-	for _, existing := range refs {
-		if existing.Equivalent(ref) {
-			return refs
-		}
-	}
-
-	return append(refs, ref)
 }
 
 // ExportProof exports all wallet-known proof files for the given user-facing
@@ -991,6 +880,25 @@ func (s *Wallet) Burn(ctx context.Context, ref entities.AssetRef,
 	}, nil
 }
 
+// ListBurns returns wallet burn history filtered by AssetRef and/or anchor
+// txid.
+//
+// This is the high-level companion to Wallet.Burn. It calls the same daemon
+// RPC as Client.ListBurns but wraps errors with operation context so callers
+// can use errors.Is against the SDK sentinels (ErrAssetUnknown, etc.). The
+// returned BurnRecord rows are already keyed by AssetRef, so application
+// code stays on the same logical handle it uses everywhere else.
+func (s *Wallet) ListBurns(ctx context.Context,
+	req *entities.ListBurnsRequest) ([]*entities.BurnRecord, error) {
+
+	burns, err := s.client.ListBurns(ctx, req)
+	if err != nil {
+		return nil, wrapErr("ListBurns", err)
+	}
+
+	return burns, nil
+}
+
 // Send performs a simple one-shot address-based asset transfer.
 //
 // The addr must be a valid bech32m-encoded Taproot Asset address. The
@@ -1026,10 +934,9 @@ func (s *Wallet) Send(ctx context.Context, addr string,
 	// WithAmount set: route through the explicit-amount path to
 	// preserve caller intent on the wire. Otherwise rely on the
 	// amount embedded in the address.
-	recipient := entities.Recipient{Address: addr}
-	if o.amount > 0 {
-		amt := o.amount
-		recipient.Amount = &amt
+	recipient := entities.Recipient{
+		Address: addr,
+		Amount:  o.amount,
 	}
 
 	req := &entities.SendAssetRequest{
@@ -1069,9 +976,10 @@ func validateSendAmount(addr *entities.Address, amount uint64) error {
 // anchor transaction. Every recipient address must resolve to the same
 // AssetRef. Mixed-asset payout batches must be split by the caller.
 //
-// Each Recipient.Amount is optional: nil means "use the amount embedded in the
-// address" (works for any address that embeds an amount). A non-nil Amount must
-// be positive; if the address also embeds an amount, the two must match.
+// Each Recipient.Amount is optional: zero means "use the amount embedded in
+// the address" (works for any address that embeds an amount). A non-zero
+// Amount is the explicit sender-chosen amount; if the address also embeds an
+// amount, the two must match.
 //
 // Mixing explicit and embedded amounts in a single call is supported
 // at this level: SendMulti decodes each address and echoes embedded
@@ -1088,7 +996,7 @@ func (s *Wallet) SendMulti(ctx context.Context,
 
 	// Validate, collecting whether any Recipient carries an explicit
 	// amount. If any does, every Recipient needs an explicit amount
-	// on the wire; echo the embedded value for the nil ones.
+	// on the wire; echo the embedded value for the zero ones.
 	decoded := make([]*entities.Address, len(recipients))
 	anyExplicit := false
 	for i, r := range recipients {
@@ -1098,7 +1006,7 @@ func (s *Wallet) SendMulti(ctx context.Context,
 		}
 		decoded[i] = addr
 
-		if r.Amount == nil {
+		if r.Amount == 0 {
 			if addr.Amount == 0 {
 				return nil, wrapErr(
 					"SendMulti", ErrAmountRequired,
@@ -1108,16 +1016,10 @@ func (s *Wallet) SendMulti(ctx context.Context,
 		}
 
 		anyExplicit = true
-		if *r.Amount == 0 {
-			return nil, wrapErr("SendMulti", fmt.Errorf(
-				"%w: recipient %q has explicit Amount == 0",
-				ErrAmountRequired, r.Address,
-			))
-		}
-		if addr.Amount > 0 && addr.Amount != *r.Amount {
+		if addr.Amount > 0 && addr.Amount != r.Amount {
 			return nil, wrapErr("SendMulti", fmt.Errorf(
 				"%w: address embeds %d, caller passed %d",
-				ErrAmountMismatch, addr.Amount, *r.Amount,
+				ErrAmountMismatch, addr.Amount, r.Amount,
 			))
 		}
 	}
@@ -1127,18 +1029,17 @@ func (s *Wallet) SendMulti(ctx context.Context,
 
 	// If any recipient is explicit, the low-level SendAsset demands
 	// every recipient be explicit too — so fill in the embedded
-	// amount for the nil ones.
+	// amount for the zero ones.
 	if anyExplicit {
 		normalised := make([]entities.Recipient, len(recipients))
 		for i, r := range recipients {
-			if r.Amount != nil {
+			if r.Amount != 0 {
 				normalised[i] = r
 				continue
 			}
-			amt := decoded[i].Amount
 			normalised[i] = entities.Recipient{
 				Address: r.Address,
-				Amount:  &amt,
+				Amount:  decoded[i].Amount,
 			}
 		}
 		recipients = normalised

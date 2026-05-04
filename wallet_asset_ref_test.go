@@ -250,7 +250,7 @@ func (m *refMockClient) BurnAsset(_ context.Context,
 }
 
 func (m *refMockClient) ListBurns(_ context.Context,
-	_ *entities.ListBurnsRequest) ([]*entities.AssetBurn, error) {
+	_ *entities.ListBurnsRequest) ([]*entities.BurnRecord, error) {
 
 	return nil, nil
 }
@@ -433,14 +433,14 @@ func (m *refMockClient) SyncUniverse(_ context.Context,
 
 func (m *refMockClient) SubscribeReceiveEvents(_ context.Context,
 	_ *entities.SubscribeReceiveEventsRequest) (
-	<-chan *entities.ReceiveEvent, <-chan error, error) {
+	<-chan *entities.ReceiveEventRecord, <-chan error, error) {
 
 	panic("SubscribeReceiveEvents: unexpected call")
 }
 
 func (m *refMockClient) SubscribeSendEvents(_ context.Context,
 	_ *entities.SubscribeSendEventsRequest) (
-	<-chan *entities.SendEvent, <-chan error, error) {
+	<-chan *entities.SendEventRecord, <-chan error, error) {
 
 	panic("SubscribeSendEvents: unexpected call")
 }
