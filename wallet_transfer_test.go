@@ -97,8 +97,8 @@ func TestListTransfersUsesAssetIDRefWhenNoGroup(t *testing.T) {
 // TestNewSendEvent verifies that the entities-level projection of a raw send
 // event record into a high-level SendEvent populates AssetRefs from the
 // recipient addresses, falls back to the embedded transfer's inputs/outputs
-// when no addresses are present, and rebuilds the Transfer summary using
-// the embedded GroupKey on each input/output.
+// when no addresses are present, and rebuilds the Transfer using the embedded
+// GroupKey on each input/output.
 func TestNewSendEvent(t *testing.T) {
 	issuanceID := testAssetID()
 	groupKey := testKey(t, 93)

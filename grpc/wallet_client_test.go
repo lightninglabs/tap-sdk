@@ -353,6 +353,38 @@ func TestUnmarshalBalance(t *testing.T) {
 	}
 }
 
+func TestUnmarshalAssetTransferGroupKey(t *testing.T) {
+	rpcTransfer := &taprpc.AssetTransfer{
+		Inputs: []*taprpc.TransferInput{{
+			AnchorPoint: zeroGenesisPoint,
+			AssetId:     testAssetID,
+			ScriptKey:   testPubKey,
+			Amount:      100,
+			GroupKey:    testPubKey,
+		}},
+		Outputs: []*taprpc.TransferOutput{{
+			Amount:    60,
+			AssetId:   testAssetID,
+			ScriptKey: testPubKey,
+			Anchor: &taprpc.TransferOutputAnchor{
+				Outpoint: zeroGenesisPoint,
+				Value:    330,
+			},
+			GroupKey: testPubKey,
+		}},
+	}
+
+	transfer, err := unmarshalAssetTransfer(rpcTransfer)
+	require.NoError(t, err)
+	require.Len(t, transfer.Inputs, 1)
+	require.Len(t, transfer.Outputs, 1)
+
+	require.NotNil(t, transfer.Inputs[0].GroupKey)
+	require.Equal(t, testPubKey, transfer.Inputs[0].GroupKey[:])
+	require.NotNil(t, transfer.Outputs[0].GroupKey)
+	require.Equal(t, testPubKey, transfer.Outputs[0].GroupKey[:])
+}
+
 func TestScriptKeyTypeConstants(t *testing.T) {
 	require.Equal(t,
 		int(taprpc.ScriptKeyType_SCRIPT_KEY_UNKNOWN),

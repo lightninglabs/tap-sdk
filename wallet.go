@@ -386,8 +386,7 @@ func (s *Wallet) ListCollectionItems(ctx context.Context,
 	return items, nil
 }
 
-// ListTransfers returns high-level wallet transfer summaries keyed by
-// AssetRef.
+// ListTransfers returns high-level wallet transfers keyed by AssetRef.
 func (s *Wallet) ListTransfers(ctx context.Context,
 	req *entities.ListTransfersRequest) ([]*entities.Transfer, error) {
 

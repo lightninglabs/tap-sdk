@@ -48,9 +48,8 @@ The root package contains the high-level API surface:
 
 - **`Wallet`** — The primary entrypoint. Wraps a `Client` and provides
   focused high-level methods for common operations (receive addresses, key
-  derivation, proof import, asset listing, send, burn, and transfer
-  summaries). Raw RPC-shaped operations remain available through
-  `Wallet.Client()`.
+  derivation, proof import, asset listing, send, burn, and transfer history).
+  Raw RPC-shaped operations remain available through `Wallet.Client()`.
 
 - **`Issuer`** — High-level minting surface returned by `Wallet.NewIssuer()`.
   Creates fungible assets, issues more fungible supply, creates standalone

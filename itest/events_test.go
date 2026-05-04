@@ -108,6 +108,20 @@ func testEventListenerMintAndSend(t *testing.T, transport Transport) {
 			hasCompletedReceive(recvEvents, bobAddr.AssetRef)
 	}, 2*time.Minute, time.Second, "expected events not delivered")
 
+	mu.Lock()
+	completedSend := findCompletedSend(sendEvents, label)
+	completedReceive := findCompletedReceive(recvEvents, bobAddr.AssetRef)
+	mu.Unlock()
+
+	require.NotNil(t, completedSend)
+	requireAssetRefsContain(t, completedSend.AssetRefs, minted.Ref)
+	requireTransferUsesAssetRef(
+		t, completedSend.Transfer, minted.Ref,
+	)
+
+	require.NotNil(t, completedReceive)
+	require.True(t, completedReceive.AssetRef.Equivalent(minted.Ref))
+
 	// The receive event has fired, but tapd's balance projection can
 	// still lag the event stream slightly — especially over the REST
 	// WebSocket bridge — so poll until the balance materialises.

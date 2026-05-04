@@ -183,7 +183,7 @@ type SendEvent struct {
 	// AssetRefs are the logical asset refs involved in the send event.
 	AssetRefs []AssetRef
 
-	// Transfer is the final transfer summary when the event contains one.
+	// Transfer is the final transfer when the event contains one.
 	Transfer *Transfer
 
 	// Error is an optional error string.
@@ -278,7 +278,7 @@ type SubscribeMintEventsRequest struct {
 //
 // AssetRefs is built from the raw event's recipient addresses; if no
 // addresses are present (e.g. for non-address parcel types), the raw
-// transfer's inputs and outputs supply them. The final Transfer summary,
+// transfer's inputs and outputs supply them. The final Transfer,
 // when set on the record, is rebuilt with AssetRef-keyed inputs and outputs.
 //
 // Returns nil when record is nil.

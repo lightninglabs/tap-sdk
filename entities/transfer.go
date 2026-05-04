@@ -160,7 +160,7 @@ type AssetTransfer struct {
 	AnchorTx []byte
 }
 
-// Transfer is a high-level wallet transfer summary keyed by AssetRef.
+// Transfer is a high-level wallet transfer keyed by AssetRef.
 type Transfer struct {
 	// TransferTimestamp is the timestamp of the transfer in UTC Unix time
 	// seconds.
@@ -188,7 +188,7 @@ type Transfer struct {
 	Outputs []TransferAsset
 }
 
-// TransferAsset describes one asset amount in a high-level transfer summary.
+// TransferAsset describes one asset amount in a high-level transfer.
 type TransferAsset struct {
 	// AssetRef is the SDK identifier for the logical asset.
 	AssetRef AssetRef
@@ -207,7 +207,7 @@ type TransferAsset struct {
 }
 
 // NewTransfer projects a raw AssetTransfer into the high-level, AssetRef-keyed
-// Transfer summary. The AssetRef on each input and output is built from the
+// Transfer. The AssetRef on each input and output is built from the
 // embedded GroupKey when present, falling back to IssuanceID otherwise — the
 // same convention every other AssetRef-keyed surface uses.
 //

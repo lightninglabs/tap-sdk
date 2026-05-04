@@ -332,7 +332,7 @@ Migration rules:
 - grouped asset burns may still need concrete issuance resolution rules
 - this is a breaking change for early adopters
 
-## Summary
+## Takeaways
 
 The SDK should model what users mean, not what tapd happens to require.
 

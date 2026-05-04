@@ -505,17 +505,18 @@ func TestAddressSend(t *testing.T) {
 		)
 		require.NoError(t, err)
 		require.NotEmpty(t, transfers)
+		requireRawTransferUsesGroupRef(t, transfers[0], minted.Ref)
 
-		summaries, err := h.AliceWallet.ListTransfers(ctx,
+		walletTransfers, err := h.AliceWallet.ListTransfers(ctx,
 			&entities.ListTransfersRequest{
 				AnchorTxid: transfer.AnchorTxid,
 			},
 		)
 		require.NoError(t, err)
-		require.NotEmpty(t, summaries)
-		require.NotEmpty(t, summaries[0].Inputs)
-		require.True(t,
-			summaries[0].Inputs[0].AssetRef.Equivalent(minted.Ref))
+		require.NotEmpty(t, walletTransfers)
+		requireTransferUsesAssetRef(
+			t, walletTransfers[0], minted.Ref,
+		)
 
 		// Bob should observe the incoming transfer through
 		// AddrReceives.

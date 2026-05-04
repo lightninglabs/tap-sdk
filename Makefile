@@ -162,7 +162,9 @@ itest-down:
 
 itest-up-main:
 	@$(call print, "Starting itest stack (tapd built from taproot-assets main).")
-	$(DOCKER) compose -f $(ITEST_COMPOSE_MAIN) up -d --build
+	$(DOCKER) compose -f $(ITEST_COMPOSE_MAIN) build --no-cache \
+		tapd-alice tapd-bob
+	$(DOCKER) compose -f $(ITEST_COMPOSE_MAIN) up -d
 	@bash itest/scripts/wait-healthy.sh
 
 itest-down-main:

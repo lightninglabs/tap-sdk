@@ -328,6 +328,12 @@ func hasFinalizedMint(events []*entities.MintEvent,
 }
 
 func hasCompletedSend(events []*entities.SendEvent, label string) bool {
+	return findCompletedSend(events, label) != nil
+}
+
+func findCompletedSend(events []*entities.SendEvent,
+	label string) *entities.SendEvent {
+
 	for _, event := range events {
 		if event == nil || event.Error != "" {
 			continue
@@ -336,11 +342,11 @@ func hasCompletedSend(events []*entities.SendEvent, label string) bool {
 		if event.TransferLabel == label &&
 			event.SendState == entities.SendStateComplete {
 
-			return true
+			return event
 		}
 	}
 
-	return false
+	return nil
 }
 
 // hasCompletedReceive checks whether any of the high-level receive events
@@ -351,6 +357,12 @@ func hasCompletedSend(events []*entities.SendEvent, label string) bool {
 func hasCompletedReceive(events []*entities.ReceiveEvent,
 	ref entities.AssetRef) bool {
 
+	return findCompletedReceive(events, ref) != nil
+}
+
+func findCompletedReceive(events []*entities.ReceiveEvent,
+	ref entities.AssetRef) *entities.ReceiveEvent {
+
 	for _, event := range events {
 		if event == nil || event.Error != "" {
 			continue
@@ -359,11 +371,11 @@ func hasCompletedReceive(events []*entities.ReceiveEvent,
 		if event.AssetRef.Equivalent(ref) &&
 			event.Status == entities.AddressEventStatusCompleted {
 
-			return true
+			return event
 		}
 	}
 
-	return false
+	return nil
 }
 
 func uniqueEventLabel(prefix string) string {
