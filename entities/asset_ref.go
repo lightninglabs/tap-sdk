@@ -75,6 +75,19 @@ func AssetRefFromAsset(issuanceID AssetID, groupKey *PubKey) AssetRef {
 	return AssetRefFromAssetID(issuanceID)
 }
 
+// AssetRefFromTypedAsset returns the semantic asset identifier for an issuance
+// when the asset type is known. Fungibles use the group key when present;
+// collectibles use the concrete asset ID even when they belong to a collection.
+func AssetRefFromTypedAsset(issuanceID AssetID, groupKey *PubKey,
+	assetType AssetType) AssetRef {
+
+	if assetType == AssetTypeCollectible {
+		return AssetRefFromAssetID(issuanceID)
+	}
+
+	return AssetRefFromAsset(issuanceID, groupKey)
+}
+
 // ParseAssetRef validates an encoded asset reference and returns it in
 // canonical lowercase form.
 func ParseAssetRef(s string) (AssetRef, error) {

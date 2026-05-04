@@ -411,6 +411,7 @@ func unmarshalAssetTransfer(rpcTransfer *taprpc.AssetTransfer) (
 	for _, out := range rpcTransfer.Outputs {
 		output := entities.TransferOutput{
 			Amount:    out.Amount,
+			AssetType: entities.AssetType(out.AssetType),
 			ProofBlob: out.NewProofBlob,
 		}
 
@@ -488,6 +489,7 @@ func unmarshalAssetTransfer(rpcTransfer *taprpc.AssetTransfer) (
 		input := entities.TransferInput{
 			AnchorPoint: anchorPoint,
 			IssuanceID:  assetID,
+			AssetType:   entities.AssetType(in.AssetType),
 			ScriptKey:   scriptKey,
 			Amount:      in.Amount,
 		}
@@ -901,13 +903,24 @@ func unmarshalAddr(rpcAddr *taprpc.Addr) (*entities.Address, error) {
 		groupKey = &parsedGroupKey
 	}
 
-	if assetID != nil || groupKey != nil {
-		assetRef, err := entities.AssetRefFromSpecifier(assetID, groupKey)
-		if err != nil {
-			return nil, err
-		}
+	switch {
+	case assetID != nil && assetID.IsZero() && groupKey != nil:
+		addr.AssetRef = entities.AssetRefFromGroupKey(*groupKey)
 
-		addr.AssetRef = assetRef
+	case assetID != nil && assetID.IsZero():
+		return nil, fmt.Errorf("address asset ID is zero with no " +
+			"group key")
+
+	case assetID != nil:
+		addr.AssetRef = entities.AssetRefFromTypedAsset(
+			*assetID, groupKey, addr.AssetType,
+		)
+
+	case groupKey != nil:
+		addr.AssetRef = entities.AssetRefFromGroupKey(*groupKey)
+
+	default:
+		return nil, fmt.Errorf("address missing asset ID or group key")
 	}
 
 	// Parse script key (required).

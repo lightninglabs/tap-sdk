@@ -506,6 +506,9 @@ func TestAddressSend(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, transfers)
 		requireRawTransferUsesGroupRef(t, transfers[0], minted.Ref)
+		requireRawTransferUsesTypedAssetRef(
+			t, transfers[0], minted.Ref, entities.AssetTypeFungible,
+		)
 
 		walletTransfers, err := h.AliceWallet.ListTransfers(ctx,
 			&entities.ListTransfersRequest{
@@ -586,6 +589,89 @@ func TestCollectibleAddressSend(t *testing.T) {
 	})
 }
 
+// TestCollectionItemAddressSend verifies that grouped collectibles keep the
+// concrete NFT asset-ID AssetRef in transfer history and send events, even
+// though tapd also returns the collection group key.
+func TestCollectionItemAddressSend(t *testing.T) {
+	runForTransports(t, func(t *testing.T, transport Transport) {
+		h, ctx := newFundedHarnessFor(t, transport)
+
+		assetName := uniqueEventLabel(
+			fmt.Sprintf("send-collection-%s", transport),
+		)
+		minted, err := h.CreateCollectionAndConfirm(t, ctx, assetName)
+		require.NoError(t, err)
+
+		collectionRef := minted.Ref
+		itemRef := entities.AssetRefFromAssetID(
+			minted.Asset.Genesis.IssuanceID,
+		)
+		require.True(t, itemRef.IsAssetIDRef())
+		require.True(t, collectionRef.IsGroupRef())
+
+		bobAddr := h.CreateReceiveAddress(t, ctx, collectionRef)
+		require.Equal(t, entities.AssetTypeCollectible, bobAddr.AssetType)
+		require.True(t, bobAddr.AssetRef.Equivalent(collectionRef))
+
+		localDecoded, err := entities.DecodeAddress(bobAddr.Encoded)
+		require.NoError(t, err)
+		require.True(t, localDecoded.AssetRef.Equivalent(collectionRef))
+
+		recvEvents := h.subscribeReceiveEvents(
+			t, ctx, h.BobClient, bobAddr.Encoded,
+		)
+
+		label := uniqueEventLabel("collection-send")
+		startTimestamp := eventStartTimestamp()
+
+		transfer, err := h.AliceWallet.Send(
+			ctx, bobAddr.Encoded, tapsdk.WithAmount(1),
+			tapsdk.WithLabel(label),
+		)
+		require.NoError(t, err)
+		require.NotEmpty(t, transfer.AnchorTxid)
+
+		sendEvents := h.subscribeSendEvents(
+			t, ctx, h.AliceClient, label, startTimestamp,
+		)
+		h.MineBlocks(t, defaultMineBlocks)
+
+		completedSend := waitForSendCompleted(
+			t, sendEvents, label, balanceTimeoutFor(itemRef),
+		)
+		waitForReceiveCompleted(t, recvEvents, bobAddr.Encoded,
+			balanceTimeoutFor(itemRef))
+
+		highEvent := entities.NewSendEvent(completedSend)
+		requireAssetRefsContain(t, highEvent.AssetRefs, itemRef)
+		requireTransferUsesAssetRef(t, highEvent.Transfer, itemRef)
+
+		transfers, err := h.AliceClient.ListTransfers(ctx,
+			&entities.ListTransfersRequest{
+				AnchorTxid: transfer.AnchorTxid,
+			},
+		)
+		require.NoError(t, err)
+		require.NotEmpty(t, transfers)
+		requireRawTransferUsesTypedAssetRef(
+			t, transfers[0], itemRef, entities.AssetTypeCollectible,
+		)
+
+		walletTransfers, err := h.AliceWallet.ListTransfers(ctx,
+			&entities.ListTransfersRequest{
+				AnchorTxid: transfer.AnchorTxid,
+			},
+		)
+		require.NoError(t, err)
+		require.NotEmpty(t, walletTransfers)
+		requireTransferUsesAssetRef(t, walletTransfers[0], itemRef)
+
+		bobBalance := h.WaitForBalance(t, ctx, h.BobWallet,
+			itemRef, 1, balanceTimeoutFor(itemRef))
+		require.Equal(t, uint64(1), bobBalance)
+	})
+}
+
 // TestAddressRoundTrip locks in the modern V2 address shape for both logical
 // asset refs the SDK wants users to handle directly: group refs for fungibles
 // and asset-ID refs for single collectibles.
@@ -606,6 +692,13 @@ func TestAddressRoundTrip(t *testing.T) {
 		)
 		require.NoError(t, err)
 
+		collection, err := h.CreateCollectionAndConfirm(
+			t, ctx,
+			uniqueEventLabel(fmt.Sprintf(
+				"addr-collection-%s", transport,
+			)),
+		)
+		require.NoError(t, err)
 		cases := []struct {
 			name      string
 			ref       entities.AssetRef
@@ -619,6 +712,11 @@ func TestAddressRoundTrip(t *testing.T) {
 			{
 				name:      "collectible-asset-id-ref",
 				ref:       collectible.Ref,
+				assetType: entities.AssetTypeCollectible,
+			},
+			{
+				name:      "collection-group-ref",
+				ref:       collection.Ref,
 				assetType: entities.AssetTypeCollectible,
 			},
 		}
@@ -643,6 +741,13 @@ func TestAddressRoundTrip(t *testing.T) {
 					decoded.AssetType)
 				require.True(t,
 					decoded.AssetRef.Equivalent(tc.ref))
+
+				localDecoded, err := entities.DecodeAddress(
+					addr.Encoded,
+				)
+				require.NoError(t, err)
+				require.True(t,
+					localDecoded.AssetRef.Equivalent(tc.ref))
 			})
 		}
 	})

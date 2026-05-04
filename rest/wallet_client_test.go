@@ -117,6 +117,7 @@ func TestUnmarshalAssetTransferGroupKey(t *testing.T) {
 		Inputs: []*jsonTransferInput{{
 			AnchorPoint: restZeroOutpoint,
 			AssetID:     assetIDHex,
+			AssetType:   "NORMAL",
 			ScriptKey:   pubKeyHex,
 			Amount:      "100",
 			GroupKey:    pubKeyHex,
@@ -124,6 +125,7 @@ func TestUnmarshalAssetTransferGroupKey(t *testing.T) {
 		Outputs: []*jsonTransferOutput{{
 			Amount:    "60",
 			AssetID:   assetIDHex,
+			AssetType: "NORMAL",
 			ScriptKey: pubKeyHex,
 			Anchor: &jsonAnchorInfo{
 				Outpoint: restZeroOutpoint,
@@ -138,6 +140,128 @@ func TestUnmarshalAssetTransferGroupKey(t *testing.T) {
 
 	require.NotNil(t, transfer.Inputs[0].GroupKey)
 	require.Equal(t, restTestPubKey, transfer.Inputs[0].GroupKey[:])
+	require.Equal(t,
+		entities.AssetTypeNormal, transfer.Inputs[0].AssetType)
 	require.NotNil(t, transfer.Outputs[0].GroupKey)
 	require.Equal(t, restTestPubKey, transfer.Outputs[0].GroupKey[:])
+	require.Equal(t,
+		entities.AssetTypeNormal, transfer.Outputs[0].AssetType)
+}
+
+func TestUnmarshalAssetTransferCollectionItem(t *testing.T) {
+	pubKeyHex := hex.EncodeToString(restTestPubKey)
+	assetIDHex := hex.EncodeToString(restTestAssetID)
+
+	transfer, err := unmarshalAssetTransfer(&jsonAssetTransfer{
+		Inputs: []*jsonTransferInput{{
+			AnchorPoint: restZeroOutpoint,
+			AssetID:     assetIDHex,
+			AssetType:   "COLLECTIBLE",
+			ScriptKey:   pubKeyHex,
+			Amount:      "1",
+			GroupKey:    pubKeyHex,
+		}},
+		Outputs: []*jsonTransferOutput{{
+			Amount:    "1",
+			AssetID:   assetIDHex,
+			AssetType: "COLLECTIBLE",
+			ScriptKey: pubKeyHex,
+			Anchor: &jsonAnchorInfo{
+				Outpoint: restZeroOutpoint,
+				Value:    "330",
+			},
+			GroupKey: pubKeyHex,
+		}},
+	})
+	require.NoError(t, err)
+
+	var assetID entities.AssetID
+	copy(assetID[:], restTestAssetID)
+	wantRef := entities.AssetRefFromAssetID(assetID)
+
+	highLevel := entities.NewTransfer(transfer)
+	require.True(t, highLevel.Inputs[0].AssetRef.Equivalent(wantRef))
+	require.True(t, highLevel.Outputs[0].AssetRef.Equivalent(wantRef))
+	require.Equal(t,
+		entities.AssetTypeCollectible, highLevel.Inputs[0].Type)
+}
+
+func TestUnmarshalAddrCollectionItemUsesAssetID(t *testing.T) {
+	pubKeyHex := hex.EncodeToString(restTestPubKey)
+	assetIDHex := hex.EncodeToString(restTestAssetID)
+
+	addr, err := unmarshalAddr(&jsonAddr{
+		Encoded:          "tap1collection",
+		AssetID:          assetIDHex,
+		AssetType:        "COLLECTIBLE",
+		Amount:           "1",
+		GroupKey:         pubKeyHex,
+		ScriptKey:        pubKeyHex,
+		InternalKey:      pubKeyHex,
+		TaprootOutputKey: hex.EncodeToString(restTestAssetID),
+		AssetVersion:     "ASSET_VERSION_V1",
+		AddressVersion:   "ADDR_VERSION_V2",
+	})
+	require.NoError(t, err)
+
+	var assetID entities.AssetID
+	copy(assetID[:], restTestAssetID)
+	require.True(t,
+		addr.AssetRef.Equivalent(entities.AssetRefFromAssetID(assetID)))
+}
+
+func TestUnmarshalAddrCollectionAddressUsesGroupKey(t *testing.T) {
+	pubKeyHex := hex.EncodeToString(restTestPubKey)
+
+	addr, err := unmarshalAddr(&jsonAddr{
+		Encoded:          "tap1collection",
+		AssetID:          hex.EncodeToString(make([]byte, 32)),
+		AssetType:        "COLLECTIBLE",
+		Amount:           "1",
+		GroupKey:         pubKeyHex,
+		ScriptKey:        pubKeyHex,
+		InternalKey:      pubKeyHex,
+		TaprootOutputKey: hex.EncodeToString(restTestAssetID),
+		AssetVersion:     "ASSET_VERSION_V1",
+		AddressVersion:   "ADDR_VERSION_V2",
+	})
+	require.NoError(t, err)
+
+	var groupKey entities.PubKey
+	copy(groupKey[:], restTestPubKey)
+	require.True(t,
+		addr.AssetRef.Equivalent(entities.AssetRefFromGroupKey(groupKey)))
+}
+
+func TestUnmarshalAddrRejectsMissingAssetRef(t *testing.T) {
+	pubKeyHex := hex.EncodeToString(restTestPubKey)
+
+	_, err := unmarshalAddr(&jsonAddr{
+		Encoded:          "tap1missingref",
+		AssetType:        "NORMAL",
+		Amount:           "1",
+		ScriptKey:        pubKeyHex,
+		InternalKey:      pubKeyHex,
+		TaprootOutputKey: hex.EncodeToString(restTestAssetID),
+		AssetVersion:     "ASSET_VERSION_V1",
+		AddressVersion:   "ADDR_VERSION_V2",
+	})
+	require.ErrorContains(t, err, "missing asset ID or group key")
+}
+
+func TestUnmarshalAddrRejectsZeroAssetIDWithoutGroupKey(t *testing.T) {
+	pubKeyHex := hex.EncodeToString(restTestPubKey)
+
+	_, err := unmarshalAddr(&jsonAddr{
+		Encoded:          "tap1zeroasset",
+		AssetID:          hex.EncodeToString(make([]byte, 32)),
+		AssetType:        "COLLECTIBLE",
+		Amount:           "1",
+		ScriptKey:        pubKeyHex,
+		InternalKey:      pubKeyHex,
+		TaprootOutputKey: hex.EncodeToString(restTestAssetID),
+		AssetVersion:     "ASSET_VERSION_V1",
+		AddressVersion:   "ADDR_VERSION_V2",
+	})
+	require.ErrorContains(t, err, "zero with no group key")
 }

@@ -70,3 +70,33 @@ func requireRawTransferUsesGroupRef(t testing.TB,
 			"output %d group key mismatch", idx)
 	}
 }
+
+func requireRawTransferUsesTypedAssetRef(t testing.TB,
+	transfer *entities.AssetTransfer, want entities.AssetRef,
+	wantType entities.AssetType) {
+
+	t.Helper()
+
+	require.NotNil(t, transfer)
+	require.NotEmpty(t, transfer.Inputs)
+	for idx, input := range transfer.Inputs {
+		ref := entities.AssetRefFromTypedAsset(
+			input.IssuanceID, input.GroupKey, input.AssetType,
+		)
+		require.Truef(t, ref.Equivalent(want),
+			"input %d uses %s, want %s", idx, ref, want)
+		require.Equalf(t, wantType, input.AssetType,
+			"input %d asset type mismatch", idx)
+	}
+
+	require.NotEmpty(t, transfer.Outputs)
+	for idx, output := range transfer.Outputs {
+		ref := entities.AssetRefFromTypedAsset(
+			output.IssuanceID, output.GroupKey, output.AssetType,
+		)
+		require.Truef(t, ref.Equivalent(want),
+			"output %d uses %s, want %s", idx, ref, want)
+		require.Equalf(t, wantType, output.AssetType,
+			"output %d asset type mismatch", idx)
+	}
+}

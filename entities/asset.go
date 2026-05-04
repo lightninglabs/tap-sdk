@@ -13,6 +13,11 @@ func (id AssetID) String() string {
 	return hex.EncodeToString(id[:])
 }
 
+// IsZero returns true when id is the all-zero sentinel value.
+func (id AssetID) IsZero() bool {
+	return id == AssetID{}
+}
+
 // PrevID represents a previous asset input to be spent. It is the Taproot
 // Assets protocol-level identifier for an input asset.
 type PrevID struct {

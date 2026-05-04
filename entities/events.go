@@ -276,10 +276,10 @@ type SubscribeMintEventsRequest struct {
 
 // NewSendEvent projects a raw SendEventRecord into the high-level SendEvent.
 //
-// AssetRefs is built from the raw event's recipient addresses; if no
-// addresses are present (e.g. for non-address parcel types), the raw
-// transfer's inputs and outputs supply them. The final Transfer,
-// when set on the record, is rebuilt with AssetRef-keyed inputs and outputs.
+// AssetRefs is built from the final transfer's inputs and outputs when the
+// transfer is available. Before tapd logs the transfer, recipient addresses
+// provide the best available refs. The final Transfer, when set on the record,
+// is rebuilt with AssetRef-keyed inputs and outputs.
 //
 // Returns nil when record is nil.
 func NewSendEvent(record *SendEventRecord) *SendEvent {
@@ -295,22 +295,8 @@ func NewSendEvent(record *SendEventRecord) *SendEvent {
 		Error:         record.Error,
 	}
 
-	for _, addr := range record.Addresses {
-		if addr == nil || addr.AssetRef.IsZero() {
-			continue
-		}
-
-		event.AssetRefs = appendUniqueAssetRef(
-			event.AssetRefs, addr.AssetRef,
-		)
-	}
-
-	if record.Transfer == nil {
-		return event
-	}
-
-	event.Transfer = NewTransfer(record.Transfer)
-	if len(event.AssetRefs) == 0 {
+	if record.Transfer != nil {
+		event.Transfer = NewTransfer(record.Transfer)
 		for _, input := range event.Transfer.Inputs {
 			event.AssetRefs = appendUniqueAssetRef(
 				event.AssetRefs, input.AssetRef,
@@ -321,6 +307,20 @@ func NewSendEvent(record *SendEventRecord) *SendEvent {
 				event.AssetRefs, output.AssetRef,
 			)
 		}
+
+		if len(event.AssetRefs) > 0 {
+			return event
+		}
+	}
+
+	for _, addr := range record.Addresses {
+		if addr == nil || addr.AssetRef.IsZero() {
+			continue
+		}
+
+		event.AssetRefs = appendUniqueAssetRef(
+			event.AssetRefs, addr.AssetRef,
+		)
 	}
 
 	return event

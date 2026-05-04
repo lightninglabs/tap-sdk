@@ -121,6 +121,7 @@ tapd's grpc-gateway WebSocket bridge for server-streaming RPCs.
 | `TestIssuerPendingBatchConflict` | High-level issuer rejects active low-level batches |
 | `TestCancelBatch` | Stage a batch and cancel before finalization |
 | `TestAddressSend` | Mint → address → send → verify balances, transfers and receive events |
+| `TestCollectionItemAddressSend` | Collection item address send keeps the NFT item AssetRef across events and transfer history |
 | `TestProofOperations` | Export, unpack, decode, and verify proofs |
 | `TestBalanceQueries` | AssetRef-based balance queries (fungible + collectible), `Wallet.GetBalance` parity |
 | `TestWalletSurface` | Low-level ListAssetRecords/ListUtxos/ListAssetGroups/FetchAssetMeta round-trips |

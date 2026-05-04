@@ -40,7 +40,8 @@ const (
 // locally, without contacting tapd. The returned Address populates the
 // fields that are recoverable from the address string alone:
 //
-//   - AssetRef (from group key if present, otherwise the asset ID)
+//   - AssetRef (from group key for grouped assets unless a concrete
+//     non-zero asset ID is present, otherwise asset ID)
 //   - AddressVersion, AssetVersion
 //   - Amount
 //   - ScriptKey, InternalKey
@@ -86,6 +87,7 @@ func DecodeAddress(addr string) (*Address, error) {
 	var (
 		haveAssetID   bool
 		haveGroupKey  bool
+		assetID       AssetID
 		assetIDRef    AssetRef
 		groupKeyRef   AssetRef
 		prevType      uint64
@@ -112,7 +114,12 @@ func DecodeAddress(addr string) (*Address, error) {
 			return nil, fmt.Errorf("read tlv length: %w", err)
 		}
 
-		value := make([]byte, l)
+		if l > uint64(r.Len()) {
+			return nil, fmt.Errorf("tlv length %d exceeds "+
+				"remaining payload %d", l, r.Len())
+		}
+
+		value := make([]byte, int(l))
 		if _, err := io.ReadFull(r, value); err != nil {
 			return nil, fmt.Errorf(
 				"read tlv value (type %d): %w", t, err,
@@ -142,6 +149,7 @@ func DecodeAddress(addr string) (*Address, error) {
 			}
 			var id AssetID
 			copy(id[:], value)
+			assetID = id
 			assetIDRef = AssetRefFromAssetID(id)
 			haveAssetID = true
 
@@ -217,9 +225,13 @@ func DecodeAddress(addr string) (*Address, error) {
 	}
 
 	switch {
+	case haveGroupKey && haveAssetID && !assetID.IsZero():
+		// V2 grouped asset addresses carry a group key and a zero
+		// asset ID. If an address also carries a non-zero asset ID,
+		// keep the concrete item/tranche as the semantic ref.
+		result.AssetRef = assetIDRef
+
 	case haveGroupKey:
-		// Group key takes precedence over asset_id as the semantic
-		// identifier, matching the rest of the SDK.
 		result.AssetRef = groupKeyRef
 
 	case haveAssetID:

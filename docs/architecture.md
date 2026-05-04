@@ -133,6 +133,14 @@ high-level `EventListener` projects these records into the AssetRef-keyed
 application code stays on the same semantic asset handles used by the
 rest of the Wallet API.
 
+Transfer records include tapd's asset type for each input and output. The
+SDK uses it when projecting raw transfer rows so grouped fungibles stay keyed
+by their group `AssetRef`, while NFT collection items stay keyed by their
+concrete item `AssetRef`. Receive addresses for NFT collections are still
+collection `AssetRef`s because the concrete item is chosen at send time;
+completed send events and transfer history expose the item `AssetRef` once
+tapd has recorded the transfer.
+
 ### `vpsbt/`
 
 Virtual PSBT (vPSBT) encoding for interactive transfers. This package

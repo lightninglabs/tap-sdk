@@ -150,7 +150,7 @@ func (s *Wallet) NewReceiveAddress(ctx context.Context,
 }
 
 func shouldRetryCollectibleAmount(ref entities.AssetRef, err error) bool {
-	if !ref.IsAssetIDRef() || err == nil {
+	if ref.IsZero() || err == nil {
 		return false
 	}
 

@@ -86,6 +86,24 @@ func TestAssetRefFromAssetID(t *testing.T) {
 	require.False(t, ok)
 }
 
+func TestAssetRefFromTypedAsset(t *testing.T) {
+	groupKey := testGroupKey(t)
+	assetID := testAssetID()
+
+	require.Equal(
+		t, AssetRefFromGroupKey(groupKey),
+		AssetRefFromTypedAsset(assetID, &groupKey, AssetTypeNormal),
+	)
+	require.Equal(
+		t, AssetRefFromAssetID(assetID),
+		AssetRefFromTypedAsset(assetID, &groupKey, AssetTypeCollectible),
+	)
+	require.Equal(
+		t, AssetRefFromAssetID(assetID),
+		AssetRefFromTypedAsset(assetID, nil, AssetTypeNormal),
+	)
+}
+
 func TestAssetRefEncodingUsesBech32M(t *testing.T) {
 	refs := []AssetRef{
 		AssetRefFromGroupKey(testGroupKey(t)),

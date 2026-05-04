@@ -395,13 +395,24 @@ func unmarshalAddr(a *jsonAddr) (*entities.Address, error) {
 		groupKey = &parsedGroupKey
 	}
 
-	if assetID != nil || groupKey != nil {
-		addr.AssetRef, err = entities.AssetRefFromSpecifier(
-			assetID, groupKey,
+	switch {
+	case assetID != nil && assetID.IsZero() && groupKey != nil:
+		addr.AssetRef = entities.AssetRefFromGroupKey(*groupKey)
+
+	case assetID != nil && assetID.IsZero():
+		return nil, fmt.Errorf("address asset ID is zero with no " +
+			"group key")
+
+	case assetID != nil:
+		addr.AssetRef = entities.AssetRefFromTypedAsset(
+			*assetID, groupKey, addr.AssetType,
 		)
-		if err != nil {
-			return nil, err
-		}
+
+	case groupKey != nil:
+		addr.AssetRef = entities.AssetRefFromGroupKey(*groupKey)
+
+	default:
+		return nil, fmt.Errorf("address missing asset ID or group key")
 	}
 
 	tapscriptSibling, err := parseHexBytes(a.TapscriptSibling)
@@ -454,6 +465,7 @@ func unmarshalAssetTransfer(
 
 		output := entities.TransferOutput{
 			Amount:    amount,
+			AssetType: parseAssetType(out.AssetType),
 			ProofBlob: proofBlob,
 		}
 
@@ -586,6 +598,7 @@ func unmarshalAssetTransfer(
 		input := entities.TransferInput{
 			AnchorPoint: anchorPoint,
 			IssuanceID:  assetID,
+			AssetType:   parseAssetType(in.AssetType),
 			ScriptKey:   scriptKey,
 			Amount:      amount,
 		}

@@ -11,6 +11,11 @@ surface.
 
 **Pre-v1.0**. The API is evolving.
 
+The current SDK surface requires `tapd` from Taproot Assets v0.8.0 or newer.
+Older daemons are unsupported because wallet transfers must include per-row
+asset type data for correct `AssetRef` projection, especially for NFT
+collections.
+
 ## Installation
 
 ```bash
