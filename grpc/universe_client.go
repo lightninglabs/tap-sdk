@@ -191,6 +191,10 @@ func (u *universeClient) AssetLeafKeys(ctx context.Context,
 	req *entities.AssetLeafKeysRequest) ([]entities.AssetLeafKey,
 	error) {
 
+	if req == nil {
+		return nil, fmt.Errorf("nil request")
+	}
+
 	rpcCtx, cancel := context.WithTimeout(ctx, u.timeout)
 	defer cancel()
 
@@ -202,12 +206,10 @@ func (u *universeClient) AssetLeafKeys(ctx context.Context,
 	}
 
 	rpcReq := &universerpc.AssetLeafKeysRequest{
-		Id: rpcID,
-	}
-	if req != nil {
-		rpcReq.Offset = req.Offset
-		rpcReq.Limit = req.Limit
-		rpcReq.Direction = marshalSortDirection(req.Direction)
+		Id:        rpcID,
+		Offset:    req.Offset,
+		Limit:     req.Limit,
+		Direction: marshalSortDirection(req.Direction),
 	}
 
 	resp, err := u.client.AssetLeafKeys(rpcCtx, rpcReq)
@@ -241,7 +243,11 @@ func (u *universeClient) AssetLeaves(ctx context.Context,
 		return nil, err
 	}
 
-	resp, err := u.client.AssetLeaves(rpcCtx, rpcID)
+	resp, err := u.client.AssetLeaves(
+		rpcCtx, &universerpc.AssetLeavesRequest{
+			Id: rpcID,
+		},
+	)
 	if err != nil {
 		return nil, err
 	}

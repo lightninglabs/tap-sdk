@@ -445,20 +445,13 @@ func (h *TestHarness) EnableUniverseBootstrap(t testing.TB,
 	}
 }
 
-func (h *TestHarness) syncUniverseTarget(ctx context.Context,
-	id entities.UniverseID) error {
+func (h *TestHarness) syncUniverseAsset(ctx context.Context,
+	ref entities.AssetRef) error {
 
-	_, err := h.BobClient.SyncUniverse(ctx,
-		&entities.SyncRequest{
-			UniverseHost: envOr(
-				"TAPD_ALICE_UNIVERSE_HOST",
-				defaultAliceUniverseHost,
-			),
-			SyncMode: entities.SyncIssuanceOnly,
-			SyncTargets: []entities.SyncTarget{{
-				ID: id,
-			}},
-		},
+	_, err := h.BobWallet.NewUniverse().SyncAsset(
+		ctx, ref,
+		envOr("TAPD_ALICE_UNIVERSE_HOST", defaultAliceUniverseHost),
+		tapsdk.WithUniverseSyncMode(entities.SyncIssuanceOnly),
 	)
 	return err
 }
@@ -489,14 +482,10 @@ func (h *TestHarness) CreateReceiveAddress(t testing.TB,
 
 	h.EnableUniverseBootstrap(t, ctx)
 
-	issuanceID := entities.UniverseIDFromRef(
-		ref, entities.ProofTypeIssuance,
-	)
-
 	var addr *entities.Address
 	var lastStatus string
 	require.Eventuallyf(t, func() bool {
-		err := h.syncUniverseTarget(ctx, issuanceID)
+		err := h.syncUniverseAsset(ctx, ref)
 		if err != nil {
 			lastStatus = fmt.Sprintf(
 				"asset bootstrap sync not ready for %s: %v",
@@ -544,9 +533,6 @@ func (h *TestHarness) CreateV2EmbeddedReceiveAddress(t testing.TB,
 		"embedded receive requires a non-zero amount")
 
 	h.EnableUniverseBootstrap(t, ctx)
-	issuanceID := entities.UniverseIDFromRef(
-		ref, entities.ProofTypeIssuance,
-	)
 
 	// Mirror the courier the harness configures on Bob's Wallet via
 	// WithAuthMailboxCourier so the address is usable end-to-end.
@@ -566,7 +552,7 @@ func (h *TestHarness) CreateV2EmbeddedReceiveAddress(t testing.TB,
 	var addr *entities.Address
 	var lastStatus string
 	require.Eventuallyf(t, func() bool {
-		if err := h.syncUniverseTarget(ctx, issuanceID); err != nil {
+		if err := h.syncUniverseAsset(ctx, ref); err != nil {
 			lastStatus = fmt.Sprintf(
 				"V2 embedded bootstrap not ready for %s: %v",
 				ref, err,

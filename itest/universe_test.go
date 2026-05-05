@@ -8,13 +8,71 @@ import (
 	"testing"
 	"time"
 
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/require"
 )
 
-// TestUniverseReadSurface covers the read-only universe RPCs that applications
-// use to bootstrap and inspect asset state without falling back to taprpc.
-func TestUniverseReadSurface(t *testing.T) {
+// TestUniverseAssetRefSurface covers the high-level universe facade using the
+// same AssetRefs returned by Wallet and Issuer calls.
+func TestUniverseAssetRefSurface(t *testing.T) {
+	runForTransports(t, func(t *testing.T, transport Transport) {
+		h, ctx := newFundedHarnessFor(t, transport)
+		h.EnableUniverseBootstrap(t, ctx)
+
+		aliceUniverse := h.AliceWallet.NewUniverse()
+		bobUniverse := h.BobWallet.NewUniverse()
+
+		fungibleName := uniqueEventLabel(
+			fmt.Sprintf("universe-fungible-%s", transport),
+		)
+		fungible, err := h.CreateFungibleAndConfirm(
+			t, ctx, fungibleName, 1000,
+		)
+		require.NoError(t, err)
+
+		assertUniverseRefUsable(
+			t, ctx, aliceUniverse, fungible.Ref, fungibleName,
+		)
+		assertUniverseSyncsAsset(
+			t, ctx, bobUniverse, fungible.Ref,
+		)
+
+		nftName := uniqueEventLabel(
+			fmt.Sprintf("universe-nft-%s", transport),
+		)
+		nft, err := h.CreateNFTAndConfirm(t, ctx, nftName)
+		require.NoError(t, err)
+		assertUniverseRefUsable(t, ctx, aliceUniverse, nft.Ref, nftName)
+
+		collectionName := uniqueEventLabel(
+			fmt.Sprintf("universe-collection-%s", transport),
+		)
+		collection, err := h.CreateCollectionAndConfirm(
+			t, ctx, collectionName,
+		)
+		require.NoError(t, err)
+		assertUniverseRefUsable(
+			t, ctx, aliceUniverse, collection.Ref, collectionName,
+		)
+
+		itemRef := collection.Asset.AssetRef
+		assertUniverseRefUsable(
+			t, ctx, aliceUniverse, itemRef, collectionName,
+		)
+
+		unknown := entities.AssetRefFromAssetID(itestAssetID(99))
+		ok, err := aliceUniverse.HasAsset(ctx, unknown)
+		require.NoError(t, err)
+		require.False(t, ok)
+
+		_, err = aliceUniverse.GetRoots(ctx, unknown)
+		require.ErrorIs(t, err, tapsdk.ErrAssetUnknown)
+	})
+}
+
+// TestUniverseProtocolReadSurface covers the low-level universe RPC mapping.
+func TestUniverseProtocolReadSurface(t *testing.T) {
 	runForTransports(t, func(t *testing.T, transport Transport) {
 		h, ctx := newFundedHarnessFor(t, transport)
 		h.EnableUniverseBootstrap(t, ctx)
@@ -86,6 +144,79 @@ func TestUniverseReadSurface(t *testing.T) {
 		require.Truef(t, hasStatsForRef(assetStats, minted.Ref),
 			"missing stats for %s in %+v", minted.Ref, assetStats)
 	})
+}
+
+func assertUniverseRefUsable(t testing.TB, ctx context.Context,
+	universe *tapsdk.Universe, ref entities.AssetRef, name string) {
+
+	t.Helper()
+
+	var (
+		roots  *entities.UniverseRoots
+		proofs []*entities.UniverseProof
+	)
+	require.Eventually(t, func() bool {
+		var err error
+		roots, err = universe.GetRoots(ctx, ref)
+		if err != nil {
+			return false
+		}
+		if roots.IssuanceRoot == nil {
+			return false
+		}
+
+		proofs, err = universe.ListProofs(
+			ctx, ref,
+			tapsdk.WithUniverseProofType(
+				entities.ProofTypeIssuance,
+			),
+		)
+		return err == nil && len(proofs) > 0
+	}, defaultWaitTimeout, time.Second)
+
+	require.NotNil(t, roots)
+	require.NotEmpty(t, proofs)
+	require.True(t, roots.HasRoots())
+	require.Equal(t, name, roots.IssuanceRoot.AssetName)
+	require.NotEmpty(t, proofs[0].Proof)
+
+	proof, err := universe.GetProof(
+		ctx, ref, proofs[0].LeafKey,
+		tapsdk.WithUniverseProofType(proofs[0].ProofType),
+	)
+	require.NoError(t, err)
+	require.Equal(t, proofs[0].LeafKey, proof.LeafKey)
+	require.Equal(t, proofs[0].ProofType, proof.ProofType)
+	require.NotEmpty(t, proof.Proof)
+}
+
+func assertUniverseSyncsAsset(t testing.TB, ctx context.Context,
+	universe *tapsdk.Universe, ref entities.AssetRef) {
+
+	t.Helper()
+
+	host := envOr("TAPD_ALICE_UNIVERSE_HOST", defaultAliceUniverseHost)
+	require.Eventually(t, func() bool {
+		_, err := universe.SyncAsset(
+			ctx, ref, host,
+			tapsdk.WithUniverseSyncMode(entities.SyncIssuanceOnly),
+		)
+		if err != nil {
+			return false
+		}
+
+		ok, err := universe.HasAsset(ctx, ref)
+		return err == nil && ok
+	}, defaultWaitTimeout, time.Second)
+}
+
+func itestAssetID(seed byte) entities.AssetID {
+	var id entities.AssetID
+	for i := range id {
+		id[i] = seed + byte(i)
+	}
+
+	return id
 }
 
 func (h *TestHarness) WaitForUniverseRoot(t testing.TB,

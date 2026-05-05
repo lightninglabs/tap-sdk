@@ -107,11 +107,8 @@ func (h *TestHarness) SyncAliceGroupsForBackupImport(t testing.TB,
 			continue
 		}
 
-		id := entities.UniverseIDFromRef(
-			group.AssetRef, entities.ProofTypeIssuance,
-		)
 		require.Eventuallyf(t, func() bool {
-			return h.syncUniverseTarget(ctx, id) == nil
+			return h.syncUniverseAsset(ctx, group.AssetRef) == nil
 		}, defaultWaitTimeout, time.Second,
 			"group universe %s never synced before backup import",
 			group.AssetRef)
