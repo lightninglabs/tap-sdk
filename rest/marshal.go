@@ -85,12 +85,16 @@ func parseInt64(s string) (int64, error) {
 }
 
 // parseAssetType converts a proto enum string to entities.AssetType.
-func parseAssetType(s string) entities.AssetType {
+func parseAssetType(s string) (entities.AssetType, error) {
 	switch s {
+	case assetTypeNormalJSON:
+		return entities.AssetTypeFungible, nil
+
 	case assetTypeCollectibleJSON:
-		return entities.AssetTypeCollectible
+		return entities.AssetTypeNFT, nil
+
 	default:
-		return entities.AssetTypeNormal
+		return 0, fmt.Errorf("unknown asset_type: %s", s)
 	}
 }
 
@@ -260,13 +264,18 @@ func unmarshalIssuanceGenesis(
 		copy(metaHash[:], metaHashBytes)
 	}
 
+	assetType, err := parseAssetType(g.AssetType)
+	if err != nil {
+		return nil, err
+	}
+
 	return &entities.IssuanceGenesis{
 		FirstPrevOut: firstPrevOut,
 		Tag:          g.Name,
 		MetaHash:     metaHash,
 		IssuanceID:   assetID,
 		OutputIndex:  g.OutputIndex,
-		Type:         parseAssetType(g.AssetType),
+		Type:         assetType,
 	}, nil
 }
 
@@ -373,9 +382,14 @@ func unmarshalAddr(a *jsonAddr) (*entities.Address, error) {
 		)
 	}
 
+	assetType, err := parseAssetType(a.AssetType)
+	if err != nil {
+		return nil, err
+	}
+
 	addr := &entities.Address{
 		Encoded:          a.Encoded,
-		AssetType:        parseAssetType(a.AssetType),
+		AssetType:        assetType,
 		ProofCourierAddr: a.ProofCourierAddr,
 		AssetVersion:     parseAssetVersion(a.AssetVersion),
 		AddressVersion:   parseAddressVersion(a.AddressVersion),
@@ -484,9 +498,14 @@ func unmarshalAssetTransfer(
 			return nil, fmt.Errorf("invalid proof blob: %w", err)
 		}
 
+		assetType, err := parseAssetType(out.AssetType)
+		if err != nil {
+			return nil, err
+		}
+
 		output := entities.TransferOutput{
 			Amount:    amount,
-			AssetType: parseAssetType(out.AssetType),
+			AssetType: assetType,
 			ProofBlob: proofBlob,
 		}
 
@@ -616,10 +635,15 @@ func unmarshalAssetTransfer(
 		var scriptKey [33]byte
 		copy(scriptKey[:], scriptKeyBytes)
 
+		assetType, err := parseAssetType(in.AssetType)
+		if err != nil {
+			return nil, err
+		}
+
 		input := entities.TransferInput{
 			AnchorPoint: anchorPoint,
 			IssuanceID:  assetID,
-			AssetType:   parseAssetType(in.AssetType),
+			AssetType:   assetType,
 			ScriptKey:   scriptKey,
 			Amount:      amount,
 		}
@@ -898,9 +922,14 @@ func unmarshalPendingMintAsset(
 			err)
 	}
 
+	assetType, err := parseAssetType(a.AssetType)
+	if err != nil {
+		return nil, err
+	}
+
 	asset := &entities.PendingMintAsset{
 		AssetVersion:       parseAssetVersion(a.AssetVersion),
-		AssetType:          parseAssetType(a.AssetType),
+		AssetType:          assetType,
 		Name:               a.Name,
 		Amount:             amount,
 		NewGroupedAsset:    a.NewGroupedAsset,
@@ -1138,6 +1167,11 @@ func unmarshalAssetGroupMember(
 		metaHash, _ = entities.ParseHash(hashBytes)
 	}
 
+	assetType, err := parseAssetType(a.Type)
+	if err != nil {
+		return nil, err
+	}
+
 	return &entities.AssetGroupMember{
 		AssetRef:         entities.AssetRefFromAssetID(assetID),
 		IssuanceID:       assetID,
@@ -1146,7 +1180,7 @@ func unmarshalAssetGroupMember(
 		RelativeLockTime: a.RelativeLockTime,
 		Tag:              a.Tag,
 		MetaHash:         metaHash,
-		Type:             parseAssetType(a.Type),
+		Type:             assetType,
 		Version:          uint8(parseAssetVersion(a.Version)),
 	}, nil
 }
@@ -1717,13 +1751,18 @@ func unmarshalAssetStatsAsset(
 		)
 	}
 
+	assetType, err := parseAssetType(a.AssetType)
+	if err != nil {
+		return nil, err
+	}
+
 	return &entities.AssetStatsAsset{
 		AssetRef:         entities.AssetRefFromAssetID(assetID),
 		IssuanceID:       assetID,
 		GenesisPoint:     a.GenesisPoint,
 		TotalSupply:      totalSupply,
 		AssetName:        a.AssetName,
-		AssetType:        parseAssetType(a.AssetType),
+		AssetType:        assetType,
 		GenesisHeight:    a.GenesisHeight,
 		GenesisTimestamp: genesisTimestamp,
 		AnchorPoint:      a.AnchorPoint,

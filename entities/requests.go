@@ -1,5 +1,7 @@
 package entities
 
+import "fmt"
+
 // ScriptKeyType represents the role of an asset script key.
 type ScriptKeyType uint8
 
@@ -35,19 +37,85 @@ type ScriptKeyTypeQuery struct {
 	AllTypes bool
 }
 
+// Validate returns an error if the script-key type query cannot be mapped to
+// tapd's filter shape.
+func (q *ScriptKeyTypeQuery) Validate() error {
+	if q == nil {
+		return nil
+	}
+
+	if q.ExplicitType != nil && q.AllTypes {
+		return fmt.Errorf("script key type query cannot set both " +
+			"explicit type and all types")
+	}
+
+	if q.ExplicitType != nil && !q.ExplicitType.Valid() {
+		return fmt.Errorf("unknown script key type: %d",
+			*q.ExplicitType)
+	}
+
+	return nil
+}
+
+// Valid returns true if the script-key type is known by this SDK version.
+func (t ScriptKeyType) Valid() bool {
+	switch t {
+	case ScriptKeyTypeUnknown, ScriptKeyTypeBIP86,
+		ScriptKeyTypeScriptPathExternal, ScriptKeyTypeBurn,
+		ScriptKeyTypeTombstone, ScriptKeyTypeChannel,
+		ScriptKeyTypeUniquePedersen:
+
+		return true
+	default:
+		return false
+	}
+}
+
 // ListAssetsRequest specifies filters for listing wallet assets. Wallet-level
 // ListAssets returns SDK business assets; low-level clients use the same
 // request for tapd's per-record rows.
 type ListAssetsRequest struct {
-	WithWitness             bool
-	IncludeSpent            bool
-	IncludeLeased           bool
+	// WithWitness includes asset witnesses in low-level records. It is
+	// forwarded to tapd unchanged by all listing surfaces.
+	WithWitness bool
+
+	// IncludeSpent includes spent assets. It is forwarded to tapd unchanged
+	// by all listing surfaces.
+	IncludeSpent bool
+
+	// IncludeLeased includes leased assets. It is forwarded to tapd
+	// unchanged by all listing surfaces.
+	IncludeLeased bool
+
+	// IncludeUnconfirmedMints includes freshly minted assets before anchor
+	// confirmation. It is forwarded to tapd unchanged by all listing
+	// surfaces.
 	IncludeUnconfirmedMints bool
-	MinAmount               uint64
-	MaxAmount               uint64
-	AssetRef                *AssetRef
-	AnchorOutpoint          *Outpoint
-	ScriptKeyType           *ScriptKeyTypeQuery
+
+	// MinAmount filters by amount. Wallet.ListAssets applies it after
+	// aggregating protocol rows into semantic assets; low-level
+	// Client.ListAssetRecords forwards it to tapd as a per-record filter.
+	// Zero means unset.
+	MinAmount uint64
+
+	// MaxAmount filters by amount. Wallet.ListAssets applies it after
+	// aggregating protocol rows into semantic assets; low-level
+	// Client.ListAssetRecords forwards it to tapd as a per-record filter.
+	// Zero means unset.
+	MaxAmount uint64
+
+	// AssetRef filters by SDK asset identity. Group refs are forwarded to
+	// tapd's group_key filter; asset-ID refs are matched locally because
+	// tapd's asset listing endpoint has no asset-ID filter.
+	AssetRef *AssetRef
+
+	// AnchorOutpoint filters records by the Bitcoin outpoint that anchors
+	// them. It is forwarded to tapd unchanged.
+	AnchorOutpoint *Outpoint
+
+	// ScriptKeyType filters by script-key role. It is forwarded to tapd
+	// unchanged after SDK-side validation.
+	ScriptKeyType *ScriptKeyTypeQuery
 }
 
 // ListIssuancesRequest specifies filters for wallet-known fungible

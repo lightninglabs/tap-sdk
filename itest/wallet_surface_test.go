@@ -11,10 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestWalletSurface covers read-only wallet operations that are easy to
-// reason about once at least one asset has been minted. We run it against
-// every transport so gRPC and REST stay in lock-step.
-func TestWalletSurface(t *testing.T) {
+// TestProtocolRecordSurface covers low-level client operations that expose
+// tapd protocol rows. User-flow tests should prefer Wallet and Issuer.
+func TestProtocolRecordSurface(t *testing.T) {
 	runForTransports(t, func(t *testing.T, transport Transport) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
@@ -32,7 +31,7 @@ func TestWalletSurface(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, minted.Asset)
 
-		// --- ListAssets honors the AssetRef filter. -----------------
+		// --- ListAssetRecords honors the AssetRef filter. -----------
 		assets, err := h.AliceClient.ListAssetRecords(ctx,
 			&entities.ListAssetsRequest{
 				AssetRef: &minted.Asset.AssetRef,
@@ -43,6 +42,34 @@ func TestWalletSurface(t *testing.T) {
 		for _, a := range assets {
 			require.Equal(t, minted.Asset.AssetRef, a.AssetRef)
 		}
+
+		filtered, err := h.AliceClient.ListAssetRecords(ctx,
+			&entities.ListAssetsRequest{
+				AssetRef:  &minted.Asset.AssetRef,
+				MinAmount: minted.Asset.Amount,
+				MaxAmount: minted.Asset.Amount,
+			},
+		)
+		require.NoError(t, err)
+		require.NotEmpty(t, filtered)
+
+		filtered, err = h.AliceClient.ListAssetRecords(ctx,
+			&entities.ListAssetsRequest{
+				AssetRef:  &minted.Asset.AssetRef,
+				MinAmount: minted.Asset.Amount + 1,
+			},
+		)
+		require.NoError(t, err)
+		require.Empty(t, filtered)
+
+		filtered, err = h.AliceClient.ListAssetRecords(ctx,
+			&entities.ListAssetsRequest{
+				AssetRef:  &minted.Asset.AssetRef,
+				MaxAmount: minted.Asset.Amount - 1,
+			},
+		)
+		require.NoError(t, err)
+		require.Empty(t, filtered)
 
 		// --- ListUtxos surfaces managed UTXOs. ----------------------
 		utxos, err := h.AliceClient.ListUtxos(ctx,

@@ -176,6 +176,63 @@ func TestListAssets_SaturatesFungibleOverflow(t *testing.T) {
 	mc.AssertExpectations(t)
 }
 
+func TestListAssets_FiltersSemanticAmountAfterAggregation(t *testing.T) {
+	ctx := context.Background()
+	mc := new(mockClient)
+	wallet := NewWallet(mc, entities.NetworkRegtest)
+
+	groupRef := entities.AssetRefFromGroupKey(testKey(t, 67))
+	req := &entities.ListAssetsRequest{
+		AssetRef:  &groupRef,
+		MinAmount: 300,
+		MaxAmount: 400,
+	}
+
+	mc.On("ListAssetRecords", ctx, &entities.ListAssetsRequest{
+		AssetRef: &groupRef,
+	}).Return([]*entities.AssetRecord{
+		bundleAsset(groupRef, bundleAssetID(27), testKey(t, 68), 100,
+			entities.AssetTypeNormal),
+		bundleAsset(groupRef, bundleAssetID(28), testKey(t, 69), 250,
+			entities.AssetTypeNormal),
+	}, nil).Once()
+
+	assets, err := wallet.ListAssets(ctx, req)
+	require.NoError(t, err)
+	require.Len(t, assets, 1)
+	require.Equal(t, groupRef, assets[0].AssetRef)
+	require.Equal(t, uint64(350), assets[0].Amount)
+
+	mc.AssertExpectations(t)
+}
+
+func TestListAssets_FiltersSemanticAmountMiss(t *testing.T) {
+	ctx := context.Background()
+	mc := new(mockClient)
+	wallet := NewWallet(mc, entities.NetworkRegtest)
+
+	groupRef := entities.AssetRefFromGroupKey(testKey(t, 70))
+	req := &entities.ListAssetsRequest{
+		AssetRef:  &groupRef,
+		MinAmount: 400,
+	}
+
+	mc.On("ListAssetRecords", ctx, &entities.ListAssetsRequest{
+		AssetRef: &groupRef,
+	}).Return([]*entities.AssetRecord{
+		bundleAsset(groupRef, bundleAssetID(29), testKey(t, 71), 100,
+			entities.AssetTypeNormal),
+		bundleAsset(groupRef, bundleAssetID(30), testKey(t, 72), 250,
+			entities.AssetTypeNormal),
+	}, nil).Once()
+
+	assets, err := wallet.ListAssets(ctx, req)
+	require.NoError(t, err)
+	require.Empty(t, assets)
+
+	mc.AssertExpectations(t)
+}
+
 func TestListIssuances_SaturatesOverflow(t *testing.T) {
 	ctx := context.Background()
 	mc := new(mockClient)

@@ -47,6 +47,27 @@ func TestMultiTrancheGroup(t *testing.T) {
 		require.Equal(t, entities.AssetTypeNormal, assets[0].Type)
 		require.GreaterOrEqual(t, assets[0].Amount, uint64(1250))
 
+		assets, err = h.AliceWallet.ListAssets(ctx,
+			&entities.ListAssetsRequest{
+				AssetRef:  &first.Ref,
+				MinAmount: 1250,
+				MaxAmount: 1250,
+			},
+		)
+		require.NoError(t, err)
+		require.Len(t, assets, 1)
+		require.Equal(t, first.Ref, assets[0].AssetRef)
+		require.Equal(t, uint64(1250), assets[0].Amount)
+
+		assets, err = h.AliceWallet.ListAssets(ctx,
+			&entities.ListAssetsRequest{
+				AssetRef:  &first.Ref,
+				MinAmount: 1251,
+			},
+		)
+		require.NoError(t, err)
+		require.Empty(t, assets)
+
 		issuances, err := h.AliceWallet.ListIssuances(ctx,
 			&entities.ListIssuancesRequest{
 				AssetRef: &first.Ref,

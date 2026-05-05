@@ -25,7 +25,8 @@ type WalletClient interface {
 	// ListAssetRecords lists tapd wallet asset records with optional filtering.
 	// This is the low-level per-output/per-issuance surface. Use the
 	// high-level Wallet.ListAssets, Wallet.ListCollections, and
-	// Wallet.ListIssuances methods for SDK business entities.
+	// Wallet.ListIssuances methods for SDK business entities. Amount filters
+	// in ListAssetsRequest are forwarded to tapd as per-record filters here.
 	ListAssetRecords(ctx context.Context,
 		req *entities.ListAssetsRequest) ([]*entities.AssetRecord, error)
 
