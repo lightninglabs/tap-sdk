@@ -1327,16 +1327,18 @@ func unmarshalBurnRecord(
 		return nil, fmt.Errorf("invalid anchor txid: %w", err)
 	}
 
-	burn := &entities.BurnRecord{
-		Note:       rpcBurn.Note,
-		AssetRef:   entities.AssetRefFromAsset(assetID, nil),
-		IssuanceID: assetID,
-		Amount:     rpcBurn.Amount,
-		AnchorTxid: anchorTxid,
+	assetType, err := unmarshalBurnAssetType(rpcBurn.AssetType)
+	if err != nil {
+		return nil, err
+	}
+	if assetType == entities.AssetTypeCollectible && rpcBurn.Amount != 1 {
+		return nil, fmt.Errorf("invalid collectible burn amount: %d",
+			rpcBurn.Amount)
 	}
 
+	var groupKey *entities.PubKey
 	if len(rpcBurn.TweakedGroupKey) > 0 {
-		groupKey, err := entities.ParsePubKey(
+		parsedGroupKey, err := entities.ParsePubKey(
 			rpcBurn.TweakedGroupKey,
 		)
 		if err != nil {
@@ -1344,10 +1346,44 @@ func unmarshalBurnRecord(
 				"key: %w", err)
 		}
 
-		burn.AssetRef = entities.AssetRefFromGroupKey(groupKey)
+		groupKey = &parsedGroupKey
+	}
+
+	var collectionRef *entities.AssetRef
+	if assetType == entities.AssetTypeCollectible && groupKey != nil {
+		ref := entities.AssetRefFromGroupKey(*groupKey)
+		collectionRef = &ref
+	}
+
+	burn := &entities.BurnRecord{
+		Note:          rpcBurn.Note,
+		AssetRef:      entities.AssetRefFromTypedAsset(assetID, groupKey, assetType),
+		CollectionRef: collectionRef,
+		Type:          assetType,
+		IssuanceID:    assetID,
+		Amount:        rpcBurn.Amount,
+		AnchorTxid:    anchorTxid,
 	}
 
 	return burn, nil
+}
+
+// unmarshalBurnAssetType converts the tapd burn asset type enum to the SDK
+// type. Burn history rejects unknown values because the type determines how
+// the row is keyed by AssetRef.
+func unmarshalBurnAssetType(assetType taprpc.AssetType) (entities.AssetType,
+	error) {
+
+	switch assetType {
+	case taprpc.AssetType_NORMAL:
+		return entities.AssetTypeFungible, nil
+
+	case taprpc.AssetType_COLLECTIBLE:
+		return entities.AssetTypeNFT, nil
+
+	default:
+		return 0, fmt.Errorf("unknown burn asset type: %v", assetType)
+	}
 }
 
 // marshalBurnAssetRequest converts a BurnAssetRequest to an RPC request.

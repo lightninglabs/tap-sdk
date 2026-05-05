@@ -616,10 +616,21 @@ func TestUnmarshalAssetGroupRecord(t *testing.T) {
 }
 
 func TestUnmarshalBurnRecord(t *testing.T) {
+	var (
+		assetID  entities.AssetID
+		groupKey entities.PubKey
+	)
+	copy(assetID[:], testAssetID)
+	copy(groupKey[:], validPubKeyBytes)
+	collectionRef := entities.AssetRefFromGroupKey(groupKey)
+
 	tests := []struct {
-		name    string
-		rpcBurn *taprpc.AssetBurn
-		wantErr string
+		name     string
+		rpcBurn  *taprpc.AssetBurn
+		wantRef  entities.AssetRef
+		wantColl *entities.AssetRef
+		wantType entities.AssetType
+		wantErr  string
 	}{
 		{
 			name:    "nil burn",
@@ -634,15 +645,75 @@ func TestUnmarshalBurnRecord(t *testing.T) {
 				Amount:     500,
 				AnchorTxid: testAssetID,
 			},
+			wantRef:  entities.AssetRefFromAssetID(assetID),
+			wantType: entities.AssetTypeFungible,
 		},
 		{
-			name: "valid burn with group key",
+			name: "fungible burn with group key",
 			rpcBurn: &taprpc.AssetBurn{
 				AssetId:         testAssetID,
 				TweakedGroupKey: validPubKeyBytes,
 				Amount:          100,
 				AnchorTxid:      testAssetID,
+				AssetType:       taprpc.AssetType_NORMAL,
 			},
+			wantRef:  entities.AssetRefFromGroupKey(groupKey),
+			wantType: entities.AssetTypeFungible,
+		},
+		{
+			name: "standalone collection item burn",
+			rpcBurn: &taprpc.AssetBurn{
+				AssetId:    testAssetID,
+				Amount:     1,
+				AnchorTxid: testAssetID,
+				AssetType:  taprpc.AssetType_COLLECTIBLE,
+			},
+			wantRef:  entities.AssetRefFromAssetID(assetID),
+			wantType: entities.AssetTypeNFT,
+		},
+		{
+			name: "collection item burn with group key",
+			rpcBurn: &taprpc.AssetBurn{
+				AssetId:         testAssetID,
+				TweakedGroupKey: validPubKeyBytes,
+				Amount:          1,
+				AnchorTxid:      testAssetID,
+				AssetType:       taprpc.AssetType_COLLECTIBLE,
+			},
+			wantRef:  entities.AssetRefFromAssetID(assetID),
+			wantColl: &collectionRef,
+			wantType: entities.AssetTypeNFT,
+		},
+		{
+			name: "invalid group key",
+			rpcBurn: &taprpc.AssetBurn{
+				AssetId:         testAssetID,
+				TweakedGroupKey: []byte{0x02, 0x03},
+				Amount:          100,
+				AnchorTxid:      testAssetID,
+				AssetType:       taprpc.AssetType_NORMAL,
+			},
+			wantErr: "invalid tweaked group key",
+		},
+		{
+			name: "invalid collection item amount",
+			rpcBurn: &taprpc.AssetBurn{
+				AssetId:    testAssetID,
+				Amount:     2,
+				AnchorTxid: testAssetID,
+				AssetType:  taprpc.AssetType_COLLECTIBLE,
+			},
+			wantErr: "invalid collectible burn amount",
+		},
+		{
+			name: "unknown asset type",
+			rpcBurn: &taprpc.AssetBurn{
+				AssetId:    testAssetID,
+				Amount:     100,
+				AnchorTxid: testAssetID,
+				AssetType:  taprpc.AssetType(99),
+			},
+			wantErr: "unknown burn asset type",
 		},
 	}
 
@@ -660,6 +731,9 @@ func TestUnmarshalBurnRecord(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, result)
 			require.Equal(t, tc.rpcBurn.Amount, result.Amount)
+			require.Equal(t, tc.wantRef, result.AssetRef)
+			require.Equal(t, tc.wantColl, result.CollectionRef)
+			require.Equal(t, tc.wantType, result.Type)
 		})
 	}
 }
