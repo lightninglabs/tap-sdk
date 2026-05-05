@@ -92,6 +92,7 @@ type jsonAnchorInfo struct {
 type jsonTransferOutput struct {
 	Amount       string          `json:"amount"`
 	AssetID      string          `json:"asset_id"`
+	AssetType    string          `json:"asset_type"`
 	ScriptKey    string          `json:"script_key"`
 	NewProofBlob string          `json:"new_proof_blob"`
 	Anchor       *jsonAnchorInfo `json:"anchor"`
@@ -102,6 +103,7 @@ type jsonTransferOutput struct {
 type jsonTransferInput struct {
 	AnchorPoint string `json:"anchor_point"`
 	AssetID     string `json:"asset_id"`
+	AssetType   string `json:"asset_type"`
 	ScriptKey   string `json:"script_key"`
 	Amount      string `json:"amount"`
 	GroupKey    string `json:"group_key"`

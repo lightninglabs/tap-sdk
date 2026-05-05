@@ -361,6 +361,7 @@ func TestUnmarshalAssetTransferGroupKey(t *testing.T) {
 			ScriptKey:   testPubKey,
 			Amount:      100,
 			GroupKey:    testPubKey,
+			AssetType:   taprpc.AssetType_NORMAL,
 		}},
 		Outputs: []*taprpc.TransferOutput{{
 			Amount:    60,
@@ -370,7 +371,8 @@ func TestUnmarshalAssetTransferGroupKey(t *testing.T) {
 				Outpoint: zeroGenesisPoint,
 				Value:    330,
 			},
-			GroupKey: testPubKey,
+			GroupKey:  testPubKey,
+			AssetType: taprpc.AssetType_NORMAL,
 		}},
 	}
 
@@ -381,8 +383,50 @@ func TestUnmarshalAssetTransferGroupKey(t *testing.T) {
 
 	require.NotNil(t, transfer.Inputs[0].GroupKey)
 	require.Equal(t, testPubKey, transfer.Inputs[0].GroupKey[:])
+	require.Equal(t,
+		entities.AssetTypeNormal, transfer.Inputs[0].AssetType)
 	require.NotNil(t, transfer.Outputs[0].GroupKey)
 	require.Equal(t, testPubKey, transfer.Outputs[0].GroupKey[:])
+	require.Equal(t,
+		entities.AssetTypeNormal, transfer.Outputs[0].AssetType)
+}
+
+func TestUnmarshalAssetTransferCollectionItem(t *testing.T) {
+	rpcTransfer := &taprpc.AssetTransfer{
+		Inputs: []*taprpc.TransferInput{{
+			AnchorPoint: zeroGenesisPoint,
+			AssetId:     testAssetID,
+			ScriptKey:   testPubKey,
+			Amount:      1,
+			GroupKey:    testPubKey,
+			AssetType:   taprpc.AssetType_COLLECTIBLE,
+		}},
+		Outputs: []*taprpc.TransferOutput{{
+			Amount:    1,
+			AssetId:   testAssetID,
+			ScriptKey: testPubKey,
+			Anchor: &taprpc.TransferOutputAnchor{
+				Outpoint: zeroGenesisPoint,
+				Value:    330,
+			},
+			GroupKey:  testPubKey,
+			AssetType: taprpc.AssetType_COLLECTIBLE,
+		}},
+	}
+
+	transfer, err := unmarshalAssetTransfer(rpcTransfer)
+	require.NoError(t, err)
+
+	highLevel := entities.NewTransfer(transfer)
+	wantRef := entities.AssetRefFromAssetID(func() entities.AssetID {
+		var id entities.AssetID
+		copy(id[:], testAssetID)
+		return id
+	}())
+	require.True(t, highLevel.Inputs[0].AssetRef.Equivalent(wantRef))
+	require.True(t, highLevel.Outputs[0].AssetRef.Equivalent(wantRef))
+	require.Equal(t,
+		entities.AssetTypeCollectible, highLevel.Inputs[0].Type)
 }
 
 func TestScriptKeyTypeConstants(t *testing.T) {

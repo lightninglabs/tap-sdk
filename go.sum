@@ -1123,6 +1123,8 @@ github.com/lightninglabs/taproot-assets/taprpc v1.0.12-0.20260413123009-b3d5a2b2
 github.com/lightninglabs/taproot-assets/taprpc v1.0.12-0.20260413123009-b3d5a2b297e8/go.mod h1:i8HZAcybDA7QQNqCXZkBpKr/2euP0sVEsQBbwzPymwY=
 github.com/lightninglabs/taproot-assets/taprpc v1.0.12-0.20260504135658-4b17bc4a39da h1:ZZxYp4nI9xsU/SLqK9pbHB5ohISG023KpUmOjxTDSFQ=
 github.com/lightninglabs/taproot-assets/taprpc v1.0.12-0.20260504135658-4b17bc4a39da/go.mod h1:Q/rk5HnRcBKsHIIqIWCRGUKYu22uG2LJ8oYlRcPXR9A=
+github.com/lightninglabs/taproot-assets/taprpc v1.0.12-0.20260504192921-5555f5878852 h1:RSt3vqR3DG72VbO7wRFFfJSx7clJ6S4Xy6HXP18eRZM=
+github.com/lightninglabs/taproot-assets/taprpc v1.0.12-0.20260504192921-5555f5878852/go.mod h1:Q/rk5HnRcBKsHIIqIWCRGUKYu22uG2LJ8oYlRcPXR9A=
 github.com/lightningnetwork/lightning-onion v1.3.0 h1:FqILgHjD6euc/Muo1VOzZ4+XDPuFnw6EYROBq0rR/5c=
 github.com/lightningnetwork/lightning-onion v1.3.0/go.mod h1:nP85zMHG7c0si/eHBbSQpuDCtnIXfSvFrK3tW6YWzmU=
 github.com/lightningnetwork/lnd v0.20.0-beta.rc4.0.20260421084739-a8a3e13120eb h1:qhzjbUJau0bZCUAGlJwjxKLHI0337Z0KR+37aFoLhbg=
@@ -1392,6 +1394,7 @@ go.opentelemetry.io/otel/sdk v1.43.0/go.mod h1:P+IkVU3iWukmiit/Yf9AWvpyRDlUeBaRg
 go.opentelemetry.io/otel/sdk/metric v1.40.0 h1:mtmdVqgQkeRxHgRv4qhyJduP3fYJRMX4AtAlbuWdCYw=
 go.opentelemetry.io/otel/sdk/metric v1.40.0/go.mod h1:4Z2bGMf0KSK3uRjlczMOeMhKU2rhUqdWNoKcYrtcBPg=
 go.opentelemetry.io/otel/sdk/metric v1.43.0 h1:S88dyqXjJkuBNLeMcVPRFXpRw2fuwdvfCGLEo89fDkw=
+go.opentelemetry.io/otel/sdk/metric v1.43.0/go.mod h1:C/RJtwSEJ5hzTiUz5pXF1kILHStzb9zFlIEe85bhj6A=
 go.opentelemetry.io/otel/trace v1.40.0 h1:WA4etStDttCSYuhwvEa8OP8I5EWu24lkOzp+ZYblVjw=
 go.opentelemetry.io/otel/trace v1.40.0/go.mod h1:zeAhriXecNGP/s2SEG3+Y8X9ujcJOTqQ5RgdEJcawiA=
 go.opentelemetry.io/otel/trace v1.43.0 h1:BkNrHpup+4k4w+ZZ86CZoHHEkohws8AY+WTX09nk+3A=

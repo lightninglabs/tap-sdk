@@ -1,9 +1,12 @@
 package entities
 
 import (
+	"bytes"
+	"math"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil/bech32"
 	"github.com/stretchr/testify/require"
 )
 
@@ -86,6 +89,37 @@ func TestDecodeAddress_RoundTrip_V2_GroupKey_NoAmount(t *testing.T) {
 	)
 }
 
+func TestDecodeAddress_CollectionItemPrefersAssetID(t *testing.T) {
+	t.Parallel()
+
+	assetID := testAssetID()
+	encoded := encodeAddressWithAssetIDAndGroupKey(
+		t, assetID, testGroupKey(t),
+	)
+
+	decoded, err := DecodeAddress(encoded)
+	require.NoError(t, err)
+	require.Equal(t, AssetRefFromAssetID(assetID), decoded.AssetRef)
+}
+
+func TestDecodeAddress_RejectsOversizedTLVLength(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	scratch := make([]byte, 9)
+	require.NoError(t, writeBigSize(&buf, addrTLVVersion, scratch))
+	require.NoError(t, writeBigSize(&buf, math.MaxUint64, scratch))
+
+	data5, err := bech32.ConvertBits(buf.Bytes(), 8, 5, true)
+	require.NoError(t, err)
+
+	encoded, err := bech32.EncodeM(tapHRPRegtest, data5)
+	require.NoError(t, err)
+
+	_, err = DecodeAddress(encoded)
+	require.ErrorContains(t, err, "tlv length")
+}
+
 func TestDecodeAddress_RoundTrip_WithTapscriptSibling(t *testing.T) {
 	t.Parallel()
 
@@ -108,6 +142,41 @@ func TestDecodeAddress_RoundTrip_WithTapscriptSibling(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, sibling, decoded.TapscriptSibling)
 	require.Equal(t, uint64(250), decoded.Amount)
+}
+
+func encodeAddressWithAssetIDAndGroupKey(t *testing.T, assetID AssetID,
+	groupKey PubKey) string {
+
+	t.Helper()
+
+	var buf bytes.Buffer
+	scratch := make([]byte, 9)
+
+	writeTLV := func(tlvType uint64, value []byte) {
+		require.NoError(t, writeBigSize(&buf, tlvType, scratch))
+		require.NoError(
+			t, writeBigSize(&buf, uint64(len(value)), scratch),
+		)
+		_, err := buf.Write(value)
+		require.NoError(t, err)
+	}
+
+	writeTLV(addrTLVVersion, []byte{byte(AddressVersionV2 - 1)})
+	writeTLV(addrTLVAssetVersion, []byte{byte(AssetVersionV1)})
+	writeTLV(addrTLVAssetID, assetID[:])
+	writeTLV(addrTLVGroupKey, groupKey[:])
+	scriptKey := derivePub(t, 7)
+	internalKey := derivePub(t, 11)
+	writeTLV(addrTLVScriptKey, scriptKey[:])
+	writeTLV(addrTLVInternalKey, internalKey[:])
+
+	data5, err := bech32.ConvertBits(buf.Bytes(), 8, 5, true)
+	require.NoError(t, err)
+
+	encoded, err := bech32.EncodeM(tapHRPRegtest, data5)
+	require.NoError(t, err)
+
+	return encoded
 }
 
 func TestDecodeAddress_LargeAmount(t *testing.T) {

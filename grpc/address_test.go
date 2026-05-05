@@ -39,6 +39,7 @@ func TestUnmarshalAddr(t *testing.T) {
 	tests := []struct {
 		name    string
 		rpcAddr *taprpc.Addr
+		wantRef func() entities.AssetRef
 		wantErr string
 	}{
 		{
@@ -50,6 +51,7 @@ func TestUnmarshalAddr(t *testing.T) {
 			name: "invalid script key length",
 			rpcAddr: &taprpc.Addr{
 				Encoded:          "tap1test",
+				AssetId:          testAssetID,
 				ScriptKey:        []byte{0x01, 0x02}, // Too short
 				InternalKey:      testPubKey,
 				TaprootOutputKey: testXOnlyPubKey,
@@ -60,6 +62,7 @@ func TestUnmarshalAddr(t *testing.T) {
 			name: "invalid internal key length",
 			rpcAddr: &taprpc.Addr{
 				Encoded:          "tap1test",
+				AssetId:          testAssetID,
 				ScriptKey:        testPubKey,
 				InternalKey:      []byte{0x01, 0x02}, // Too short
 				TaprootOutputKey: testXOnlyPubKey,
@@ -70,6 +73,7 @@ func TestUnmarshalAddr(t *testing.T) {
 			name: "invalid taproot output key length",
 			rpcAddr: &taprpc.Addr{
 				Encoded:          "tap1test",
+				AssetId:          testAssetID,
 				ScriptKey:        testPubKey,
 				InternalKey:      testPubKey,
 				TaprootOutputKey: []byte{0x01, 0x02}, // Too short
@@ -90,6 +94,11 @@ func TestUnmarshalAddr(t *testing.T) {
 				AssetVersion:     taprpc.AssetVersion_ASSET_VERSION_V0,
 				AddressVersion:   taprpc.AddrVersion_ADDR_VERSION_V0,
 			},
+			wantRef: func() entities.AssetRef {
+				var expectedAssetID entities.AssetID
+				copy(expectedAssetID[:], testAssetID)
+				return entities.AssetRefFromAssetID(expectedAssetID)
+			},
 			wantErr: "",
 		},
 		{
@@ -106,7 +115,84 @@ func TestUnmarshalAddr(t *testing.T) {
 				AssetVersion:     taprpc.AssetVersion_ASSET_VERSION_V1,
 				AddressVersion:   taprpc.AddrVersion_ADDR_VERSION_V2,
 			},
+			wantRef: func() entities.AssetRef {
+				var expectedGroupKey entities.PubKey
+				copy(expectedGroupKey[:], testPubKey)
+				return entities.AssetRefFromGroupKey(expectedGroupKey)
+			},
 			wantErr: "",
+		},
+		{
+			name: "collection item address with group key",
+			rpcAddr: &taprpc.Addr{
+				Encoded:          "tap1testcollection",
+				AssetId:          testAssetID,
+				AssetType:        taprpc.AssetType_COLLECTIBLE,
+				Amount:           1,
+				GroupKey:         testPubKey,
+				ScriptKey:        testPubKey,
+				InternalKey:      testPubKey,
+				TaprootOutputKey: testXOnlyPubKey,
+				ProofCourierAddr: "authmailbox+universerpc://localhost:10029",
+				AssetVersion:     taprpc.AssetVersion_ASSET_VERSION_V1,
+				AddressVersion:   taprpc.AddrVersion_ADDR_VERSION_V2,
+			},
+			wantRef: func() entities.AssetRef {
+				var expectedAssetID entities.AssetID
+				copy(expectedAssetID[:], testAssetID)
+				return entities.AssetRefFromAssetID(expectedAssetID)
+			},
+			wantErr: "",
+		},
+		{
+			name: "collection address with group key",
+			rpcAddr: &taprpc.Addr{
+				Encoded:          "tap1testcollectiongroup",
+				AssetId:          make([]byte, 32),
+				AssetType:        taprpc.AssetType_COLLECTIBLE,
+				Amount:           1,
+				GroupKey:         testPubKey,
+				ScriptKey:        testPubKey,
+				InternalKey:      testPubKey,
+				TaprootOutputKey: testXOnlyPubKey,
+				AssetVersion:     taprpc.AssetVersion_ASSET_VERSION_V1,
+				AddressVersion:   taprpc.AddrVersion_ADDR_VERSION_V2,
+			},
+			wantRef: func() entities.AssetRef {
+				var expectedGroupKey entities.PubKey
+				copy(expectedGroupKey[:], testPubKey)
+				return entities.AssetRefFromGroupKey(expectedGroupKey)
+			},
+			wantErr: "",
+		},
+		{
+			name: "zero asset ID without group key",
+			rpcAddr: &taprpc.Addr{
+				Encoded:          "tap1testzeroasset",
+				AssetId:          make([]byte, 32),
+				AssetType:        taprpc.AssetType_COLLECTIBLE,
+				Amount:           1,
+				ScriptKey:        testPubKey,
+				InternalKey:      testPubKey,
+				TaprootOutputKey: testXOnlyPubKey,
+				AssetVersion:     taprpc.AssetVersion_ASSET_VERSION_V1,
+				AddressVersion:   taprpc.AddrVersion_ADDR_VERSION_V2,
+			},
+			wantErr: "zero with no group key",
+		},
+		{
+			name: "missing asset reference",
+			rpcAddr: &taprpc.Addr{
+				Encoded:          "tap1testmissingref",
+				AssetType:        taprpc.AssetType_NORMAL,
+				Amount:           1,
+				ScriptKey:        testPubKey,
+				InternalKey:      testPubKey,
+				TaprootOutputKey: testXOnlyPubKey,
+				AssetVersion:     taprpc.AssetVersion_ASSET_VERSION_V1,
+				AddressVersion:   taprpc.AddrVersion_ADDR_VERSION_V2,
+			},
+			wantErr: "missing asset ID or group key",
 		},
 	}
 
@@ -133,22 +219,9 @@ func TestUnmarshalAddr(t *testing.T) {
 				addr.AddressVersion,
 			)
 
-			if len(tc.rpcAddr.GroupKey) == 33 {
-				var expectedGroupKey entities.PubKey
-				copy(expectedGroupKey[:], tc.rpcAddr.GroupKey)
-				require.Equal(
-					t,
-					entities.AssetRefFromGroupKey(expectedGroupKey),
-					addr.AssetRef,
-				)
-			} else if len(tc.rpcAddr.AssetId) == 32 {
-				var expectedAssetID entities.AssetID
-				copy(expectedAssetID[:], tc.rpcAddr.AssetId)
-				require.Equal(
-					t,
-					entities.AssetRefFromAssetID(expectedAssetID),
-					addr.AssetRef,
-				)
+			if tc.wantRef != nil {
+				require.True(t,
+					addr.AssetRef.Equivalent(tc.wantRef()))
 			}
 		})
 	}
@@ -362,6 +435,7 @@ func TestUnmarshalAddrEvent(t *testing.T) {
 				HasProof:                true,
 				Addr: &taprpc.Addr{
 					Encoded:          "tap1test",
+					AssetId:          testAssetID,
 					ScriptKey:        testPubKey,
 					InternalKey:      testPubKey,
 					TaprootOutputKey: testXOnlyPubKey,

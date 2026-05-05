@@ -68,6 +68,9 @@ type TransferOutput struct {
 	// asset issuance/tranche created at this output.
 	IssuanceID AssetID
 
+	// AssetType is the type of the transferred asset.
+	AssetType AssetType
+
 	// AnchorValue is the BTC value of the anchor output in sats.
 	AnchorValue int64
 
@@ -87,9 +90,8 @@ type TransferOutput struct {
 	AltLeaves [][]byte
 
 	// GroupKey is the asset's group public key when the asset belongs to
-	// a group, or nil otherwise. The SDK uses this together with
-	// IssuanceID to reconstruct the user-facing AssetRef without an extra
-	// RPC round-trip.
+	// a group, or nil otherwise. For collectibles, the high-level AssetRef
+	// remains the IssuanceID even when GroupKey is set.
 	GroupKey *PubKey
 }
 
@@ -103,6 +105,9 @@ type TransferInput struct {
 	// issuance/tranche that was spent.
 	IssuanceID AssetID
 
+	// AssetType is the type of the transferred asset.
+	AssetType AssetType
+
 	// ScriptKey is the 33-byte script key of the asset that was spent.
 	ScriptKey PubKey
 
@@ -110,9 +115,8 @@ type TransferInput struct {
 	Amount uint64
 
 	// GroupKey is the asset's group public key when the asset belongs to
-	// a group, or nil otherwise. The SDK uses this together with
-	// IssuanceID to reconstruct the user-facing AssetRef without an extra
-	// RPC round-trip.
+	// a group, or nil otherwise. For collectibles, the high-level AssetRef
+	// remains the IssuanceID even when GroupKey is set.
 	GroupKey *PubKey
 }
 
@@ -196,6 +200,9 @@ type TransferAsset struct {
 	// IssuanceID is the concrete protocol issuance/tranche ID.
 	IssuanceID AssetID
 
+	// Type is the transferred asset type.
+	Type AssetType
+
 	// Amount is the number of asset units.
 	Amount uint64
 
@@ -207,9 +214,9 @@ type TransferAsset struct {
 }
 
 // NewTransfer projects a raw AssetTransfer into the high-level, AssetRef-keyed
-// Transfer. The AssetRef on each input and output is built from the
-// embedded GroupKey when present, falling back to IssuanceID otherwise — the
-// same convention every other AssetRef-keyed surface uses.
+// Transfer. The AssetRef on each input and output is built from AssetType,
+// GroupKey, and IssuanceID: fungibles prefer group-key refs, while
+// collectibles use their concrete asset-ID refs.
 //
 // Returns nil when raw is nil.
 func NewTransfer(raw *AssetTransfer) *Transfer {
@@ -233,10 +240,12 @@ func NewTransfer(raw *AssetTransfer) *Transfer {
 
 	for _, input := range raw.Inputs {
 		transfer.Inputs = append(transfer.Inputs, TransferAsset{
-			AssetRef: assetRefFromGroupOrID(
-				input.GroupKey, input.IssuanceID,
+			AssetRef: AssetRefFromTypedAsset(
+				input.IssuanceID, input.GroupKey,
+				input.AssetType,
 			),
 			IssuanceID: input.IssuanceID,
+			Type:       input.AssetType,
 			Amount:     input.Amount,
 			ScriptKey:  input.ScriptKey,
 			Outpoint:   input.AnchorPoint,
@@ -245,10 +254,12 @@ func NewTransfer(raw *AssetTransfer) *Transfer {
 
 	for _, output := range raw.Outputs {
 		transfer.Outputs = append(transfer.Outputs, TransferAsset{
-			AssetRef: assetRefFromGroupOrID(
-				output.GroupKey, output.IssuanceID,
+			AssetRef: AssetRefFromTypedAsset(
+				output.IssuanceID, output.GroupKey,
+				output.AssetType,
 			),
 			IssuanceID: output.IssuanceID,
+			Type:       output.AssetType,
 			Amount:     output.Amount,
 			ScriptKey:  output.ScriptKey,
 			Outpoint:   output.AnchorOutpoint,
@@ -256,17 +267,6 @@ func NewTransfer(raw *AssetTransfer) *Transfer {
 	}
 
 	return transfer
-}
-
-// assetRefFromGroupOrID returns the user-facing AssetRef for a transfer
-// input/output: the group-key ref when the asset belongs to a group, the
-// asset-id ref otherwise.
-func assetRefFromGroupOrID(groupKey *PubKey, issuanceID AssetID) AssetRef {
-	if groupKey != nil {
-		return AssetRefFromGroupKey(*groupKey)
-	}
-
-	return AssetRefFromAssetID(issuanceID)
 }
 
 // Outpoint represents a Bitcoin transaction outpoint.
