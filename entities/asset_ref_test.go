@@ -102,6 +102,10 @@ func TestAssetRefFromTypedAsset(t *testing.T) {
 		t, AssetRefFromAssetID(assetID),
 		AssetRefFromTypedAsset(assetID, nil, AssetTypeNormal),
 	)
+	require.Equal(
+		t, AssetRefFromAssetID(assetID),
+		AssetRefFromTypedAsset(assetID, nil, AssetTypeCollectible),
+	)
 }
 
 func TestAssetRefEncodingUsesBech32M(t *testing.T) {

@@ -11,6 +11,11 @@ import (
 	"github.com/lightninglabs/tap-sdk/entities"
 )
 
+const (
+	assetTypeNormalJSON      = "NORMAL"
+	assetTypeCollectibleJSON = "COLLECTIBLE"
+)
+
 // parseHexBytes decodes a hex string into a byte slice, returning nil
 // for empty input. tapd's REST gateway uses UseHexForBytes, so all
 // proto `bytes` fields in JSON bodies travel as hex.
@@ -82,10 +87,26 @@ func parseInt64(s string) (int64, error) {
 // parseAssetType converts a proto enum string to entities.AssetType.
 func parseAssetType(s string) entities.AssetType {
 	switch s {
-	case "COLLECTIBLE":
+	case assetTypeCollectibleJSON:
 		return entities.AssetTypeCollectible
 	default:
 		return entities.AssetTypeNormal
+	}
+}
+
+// parseBurnAssetType converts a burn asset_type enum string to
+// entities.AssetType. Burn history rejects unknown values because the type
+// determines how the row is keyed by AssetRef.
+func parseBurnAssetType(s string) (entities.AssetType, error) {
+	switch s {
+	case assetTypeNormalJSON:
+		return entities.AssetTypeFungible, nil
+
+	case assetTypeCollectibleJSON:
+		return entities.AssetTypeNFT, nil
+
+	default:
+		return 0, fmt.Errorf("unknown burn asset_type: %s", s)
 	}
 }
 
@@ -1168,39 +1189,65 @@ func unmarshalBurnRecord(
 		return nil, fmt.Errorf("invalid burn amount: %w", err)
 	}
 
-	var assetID entities.AssetID
 	idBytes, err := parseHexBytes(b.AssetID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid burn asset_id: %w",
 			err)
 	}
-	copy(assetID[:], idBytes)
-
-	groupKeyBytes, err := parseHexBytes(b.GroupKey)
+	assetID, err := entities.ParseAssetID(idBytes)
 	if err != nil {
-		return nil, fmt.Errorf("invalid burn group_key: %w",
+		return nil, fmt.Errorf("invalid burn asset_id: %w", err)
+	}
+
+	groupKeyBytes, err := parseHexBytes(b.TweakedGroupKey)
+	if err != nil {
+		return nil, fmt.Errorf("invalid burn tweaked_group_key: %w",
 			err)
 	}
 
 	var groupKey *entities.PubKey
 	if len(groupKeyBytes) > 0 {
-		var pk entities.PubKey
-		copy(pk[:], groupKeyBytes)
+		pk, err := entities.ParsePubKey(groupKeyBytes)
+		if err != nil {
+			return nil, fmt.Errorf("invalid burn tweaked_group_key: "+
+				"%w", err)
+		}
+
 		groupKey = &pk
 	}
 
-	txidBytes, err := parseHexBytes(b.TransferTxid)
+	assetType, err := parseBurnAssetType(b.AssetType)
+	if err != nil {
+		return nil, err
+	}
+	if assetType == entities.AssetTypeCollectible && amount != 1 {
+		return nil, fmt.Errorf("invalid collectible burn amount: %d",
+			amount)
+	}
+
+	txidBytes, err := parseHexBytes(b.AnchorTxid)
 	if err != nil {
 		return nil, fmt.Errorf("invalid burn txid: %w", err)
 	}
-	anchorTxid, _ := entities.ParseHash(txidBytes)
+	anchorTxid, err := entities.ParseHash(txidBytes)
+	if err != nil {
+		return nil, fmt.Errorf("invalid burn txid: %w", err)
+	}
+
+	var collectionRef *entities.AssetRef
+	if assetType == entities.AssetTypeCollectible && groupKey != nil {
+		ref := entities.AssetRefFromGroupKey(*groupKey)
+		collectionRef = &ref
+	}
 
 	return &entities.BurnRecord{
-		Note:       b.Note,
-		AssetRef:   entities.AssetRefFromAsset(assetID, groupKey),
-		IssuanceID: assetID,
-		Amount:     amount,
-		AnchorTxid: anchorTxid,
+		Note:          b.Note,
+		AssetRef:      entities.AssetRefFromTypedAsset(assetID, groupKey, assetType),
+		CollectionRef: collectionRef,
+		Type:          assetType,
+		IssuanceID:    assetID,
+		Amount:        amount,
+		AnchorTxid:    anchorTxid,
 	}, nil
 }
 

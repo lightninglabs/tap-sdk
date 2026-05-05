@@ -1,6 +1,8 @@
 package rest
 
 import (
+	"encoding/hex"
+	"encoding/json"
 	"testing"
 
 	"github.com/lightninglabs/tap-sdk/entities"
@@ -139,12 +141,12 @@ func TestParseAssetType(t *testing.T) {
 	}{
 		{
 			name:  "normal",
-			input: "NORMAL",
+			input: assetTypeNormalJSON,
 			want:  0,
 		},
 		{
 			name:  "collectible",
-			input: "COLLECTIBLE",
+			input: assetTypeCollectibleJSON,
 			want:  1,
 		},
 		{
@@ -158,6 +160,183 @@ func TestParseAssetType(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got := parseAssetType(tc.input)
 			require.Equal(t, tc.want, int(got))
+		})
+	}
+}
+
+func TestParseBurnAssetType(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    entities.AssetType
+		wantErr string
+	}{
+		{
+			name:  "normal",
+			input: assetTypeNormalJSON,
+			want:  entities.AssetTypeFungible,
+		},
+		{
+			name:  "collectible",
+			input: assetTypeCollectibleJSON,
+			want:  entities.AssetTypeNFT,
+		},
+		{
+			name:    "empty",
+			input:   "",
+			wantErr: "unknown burn asset_type",
+		},
+		{
+			name:    "unknown",
+			input:   "UNKNOWN",
+			wantErr: "unknown burn asset_type",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseBurnAssetType(tc.input)
+			if tc.wantErr != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestUnmarshalBurnRecord(t *testing.T) {
+	var (
+		assetID  entities.AssetID
+		groupKey entities.PubKey
+	)
+	copy(assetID[:], restTestAssetID)
+	copy(groupKey[:], restTestPubKey)
+	collectionRef := entities.AssetRefFromGroupKey(groupKey)
+
+	tests := []struct {
+		name      string
+		groupKey  string
+		assetType string
+		wantRef   entities.AssetRef
+		wantColl  *entities.AssetRef
+		wantType  entities.AssetType
+	}{
+		{
+			name:      "fungible group burn",
+			groupKey:  hex.EncodeToString(restTestPubKey),
+			assetType: assetTypeNormalJSON,
+			wantRef:   entities.AssetRefFromGroupKey(groupKey),
+			wantType:  entities.AssetTypeFungible,
+		},
+		{
+			name:      "standalone NFT burn",
+			assetType: assetTypeCollectibleJSON,
+			wantRef:   entities.AssetRefFromAssetID(assetID),
+			wantType:  entities.AssetTypeNFT,
+		},
+		{
+			name:      "collection item burn",
+			groupKey:  hex.EncodeToString(restTestPubKey),
+			assetType: assetTypeCollectibleJSON,
+			wantRef:   entities.AssetRefFromAssetID(assetID),
+			wantColl:  &collectionRef,
+			wantType:  entities.AssetTypeNFT,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			body := map[string]string{
+				"asset_id":          hex.EncodeToString(restTestAssetID),
+				"tweaked_group_key": tc.groupKey,
+				"amount":            "1",
+				"anchor_txid":       hex.EncodeToString(restTestAssetID),
+				"asset_type":        tc.assetType,
+			}
+
+			raw, err := json.Marshal(body)
+			require.NoError(t, err)
+
+			var burn jsonAssetBurn
+			require.NoError(t, json.Unmarshal(raw, &burn))
+
+			result, err := unmarshalBurnRecord(&burn)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantRef, result.AssetRef)
+			require.Equal(t, tc.wantColl, result.CollectionRef)
+			require.Equal(t, tc.wantType, result.Type)
+			require.Equal(t, assetID, result.IssuanceID)
+			require.Equal(t, uint64(1), result.Amount)
+		})
+	}
+}
+
+func TestUnmarshalBurnRecordRejectsMalformedFields(t *testing.T) {
+	validBurn := func() jsonAssetBurn {
+		return jsonAssetBurn{
+			AssetID:         hex.EncodeToString(restTestAssetID),
+			TweakedGroupKey: hex.EncodeToString(restTestPubKey),
+			Amount:          "1",
+			AnchorTxid:      hex.EncodeToString(restTestAssetID),
+			AssetType:       assetTypeNormalJSON,
+		}
+	}
+
+	tests := []struct {
+		name    string
+		mutate  func(*jsonAssetBurn)
+		wantErr string
+	}{
+		{
+			name: "invalid asset ID length",
+			mutate: func(b *jsonAssetBurn) {
+				b.AssetID = "01"
+			},
+			wantErr: "invalid burn asset_id",
+		},
+		{
+			name: "invalid group key length",
+			mutate: func(b *jsonAssetBurn) {
+				b.TweakedGroupKey = "02"
+			},
+			wantErr: "invalid burn tweaked_group_key",
+		},
+		{
+			name: "invalid anchor txid length",
+			mutate: func(b *jsonAssetBurn) {
+				b.AnchorTxid = "01"
+			},
+			wantErr: "invalid burn txid",
+		},
+		{
+			name: "invalid collection item amount",
+			mutate: func(b *jsonAssetBurn) {
+				b.AssetType = assetTypeCollectibleJSON
+				b.Amount = "2"
+			},
+			wantErr: "invalid collectible burn amount",
+		},
+		{
+			name: "unknown asset type",
+			mutate: func(b *jsonAssetBurn) {
+				b.AssetType = "UNKNOWN"
+			},
+			wantErr: "unknown burn asset_type",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			burn := validBurn()
+			tc.mutate(&burn)
+
+			_, err := unmarshalBurnRecord(&burn)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tc.wantErr)
 		})
 	}
 }
@@ -426,12 +605,12 @@ func TestMarshalAssetTypeJSON(t *testing.T) {
 		{
 			name:  "normal",
 			input: 0,
-			want:  "NORMAL",
+			want:  assetTypeNormalJSON,
 		},
 		{
 			name:  "collectible",
 			input: 1,
-			want:  "COLLECTIBLE",
+			want:  assetTypeCollectibleJSON,
 		},
 	}
 

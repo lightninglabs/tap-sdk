@@ -794,7 +794,7 @@ func (w *walletClient) ListBurns(ctx context.Context,
 			}
 
 			if groupKey, ok := req.AssetRef.GroupKey(); ok {
-				params.Set("group_key",
+				params.Set("tweaked_group_key",
 					base64.URLEncoding.EncodeToString(
 						groupKey[:]))
 			}

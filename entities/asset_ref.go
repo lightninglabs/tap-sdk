@@ -65,8 +65,9 @@ func AssetRefFromSpecifier(assetID *AssetID, groupKey *PubKey) (AssetRef,
 	}
 }
 
-// AssetRefFromAsset returns the semantic asset identifier for an issuance.
-// Grouped assets use the group key. Ungrouped assets use the issuance asset ID.
+// AssetRefFromAsset returns the semantic asset identifier for an issuance when
+// asset type is not known. Grouped assets use the group key. Ungrouped assets
+// use the issuance asset ID.
 func AssetRefFromAsset(issuanceID AssetID, groupKey *PubKey) AssetRef {
 	if groupKey != nil {
 		return AssetRefFromGroupKey(*groupKey)

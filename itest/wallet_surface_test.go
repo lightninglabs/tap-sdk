@@ -160,5 +160,55 @@ func TestBurnAssetByGroupKey(t *testing.T) {
 		)
 		require.NoError(t, err)
 		require.NotEmpty(t, burns)
+		require.Equal(t, minted.Ref, burns[0].AssetRef)
+		require.Equal(t, entities.AssetTypeFungible, burns[0].Type)
+	})
+}
+
+// TestBurnCollectionItemUsesItemAssetRef verifies a burnt collection item is
+// keyed by the NFT item AssetRef, not the collection AssetRef.
+func TestBurnCollectionItemUsesItemAssetRef(t *testing.T) {
+	requireTapdMain(t)
+
+	runForTransports(t, func(t *testing.T, transport Transport) {
+		h, ctx := newFundedHarnessFor(t, transport)
+
+		name := uniqueEventLabel("burn-item-" + string(transport))
+		collection, err := h.CreateCollectionAndConfirm(t, ctx, name)
+		require.NoError(t, err)
+		require.True(t, collection.Ref.IsGroupRef())
+
+		itemRef := entities.AssetRefFromAssetID(
+			collection.Asset.Genesis.IssuanceID,
+		)
+
+		burn, err := h.AliceWallet.Burn(
+			ctx, itemRef, 1,
+			tapsdk.WithBurnNote("itest collection item burn"),
+		)
+		require.NoError(t, err)
+		require.NotNil(t, burn)
+		require.Equal(t, itemRef, burn.AssetRef)
+
+		h.MineBlocks(t, defaultMineBlocks)
+		h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
+
+		var burns []*entities.BurnRecord
+		require.Eventually(t, func() bool {
+			burns, err = h.AliceWallet.ListBurns(
+				ctx, &entities.ListBurnsRequest{
+					AssetRef: &collection.Ref,
+				},
+			)
+			return err == nil && len(burns) > 0
+		}, defaultWaitTimeout, time.Second)
+
+		require.Equal(t, itemRef, burns[0].AssetRef)
+		require.NotEqual(t, collection.Ref, burns[0].AssetRef)
+		require.NotNil(t, burns[0].CollectionRef)
+		require.Equal(t, collection.Ref, *burns[0].CollectionRef)
+		require.Equal(t, entities.AssetTypeNFT, burns[0].Type)
+		require.Equal(t, collection.Asset.Genesis.IssuanceID,
+			burns[0].IssuanceID)
 	})
 }

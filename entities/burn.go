@@ -61,6 +61,16 @@ type BurnRecord struct {
 	// AssetRef is the SDK's user-facing identifier for the burnt asset.
 	AssetRef AssetRef
 
+	// CollectionRef identifies the parent collection when the burnt asset
+	// is an NFT collection item. It is nil for standalone NFTs and
+	// fungible assets.
+	CollectionRef *AssetRef
+
+	// Type is the asset type reported by tapd for this burn. Use this
+	// field for asset typing; AssetRef is the stable handle used to key
+	// the burn record.
+	Type AssetType
+
 	// IssuanceID is the specific issuance/tranche that was burnt.
 	IssuanceID AssetID
 

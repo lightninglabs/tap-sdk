@@ -476,12 +476,12 @@ type jsonBurnAssetResponse struct {
 
 // jsonAssetBurn is the JSON shape of taprpc.AssetBurn.
 type jsonAssetBurn struct {
-	Note         string `json:"note"`
-	AssetID      string `json:"asset_id"`
-	GroupKey     string `json:"group_key"`
-	Amount       string `json:"amount"`
-	TransferTxid string `json:"transfer_txid"`
-	AnchorPoint  string `json:"anchor_point"`
+	Note            string `json:"note"`
+	AssetID         string `json:"asset_id"`
+	TweakedGroupKey string `json:"tweaked_group_key"`
+	Amount          string `json:"amount"`
+	AnchorTxid      string `json:"anchor_txid"`
+	AssetType       string `json:"asset_type"`
 }
 
 // jsonListBurnsResponse is the JSON shape of

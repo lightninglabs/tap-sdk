@@ -28,8 +28,9 @@ make itest-down   # stop + clean volumes
 ### Running against tapd built from `main`
 
 The default compose file pins `lightninglabs/taproot-assets:v0.7.2`.
-Some tests (e.g. `TestBurnAssetByGroupKey`) require features that only
-ship in tapd `main`, so they are skipped unless `TAP_SDK_TAPD_MAIN=1`.
+Some tests (e.g. `TestBurnAssetByGroupKey` and
+`TestBurnCollectionItemUsesItemAssetRef`) require features that only ship in
+tapd `main`, so they are skipped unless `TAP_SDK_TAPD_MAIN=1`.
 
 To run the full suite against a locally-built tapd:
 
@@ -127,6 +128,7 @@ tapd's grpc-gateway WebSocket bridge for server-streaming RPCs.
 | `TestWalletSurface` | Low-level ListAssetRecords/ListUtxos/ListAssetGroups/FetchAssetMeta round-trips |
 | `TestMultiTrancheGroup` | Wallet ListAssets fungible aggregation and ListIssuances tranche access |
 | `TestBurnAsset` | Burn + ListBurns lifecycle |
+| `TestBurnCollectionItemUsesItemAssetRef` | Collection item burns stay keyed by the NFT item AssetRef |
 | `TestErrorHandling` | Invalid inputs return proper errors |
 | `TestEventListenerMintAndSend` | `tapsdk.NewEventListener` delivers mint/send/receive events |
 | `TestTLSAndMacaroonGuards` | Valid creds connect; bad TLS/macaroon rejected |

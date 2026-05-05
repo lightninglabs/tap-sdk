@@ -1,10 +1,18 @@
 package rest
 
 import (
+	"context"
+	"encoding/base64"
 	"encoding/hex"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/lightninglabs/tap-sdk/entities"
+	"github.com/lightninglabs/tap-sdk/macaroon"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -107,6 +115,42 @@ func TestBurnAssetRequestBody(t *testing.T) {
 			tc.validate(t, body)
 		})
 	}
+}
+
+func TestListBurnsUsesTweakedGroupKeyQuery(t *testing.T) {
+	var groupKey entities.PubKey
+	copy(groupKey[:], restTestPubKey)
+	ref := entities.AssetRefFromGroupKey(groupKey)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,
+		r *http.Request) {
+
+		assert.Equal(t, "/v1/taproot-assets/burns", r.URL.Path)
+		assert.Empty(t, r.URL.Query().Get("group_key"))
+		assert.Equal(
+			t, base64.URLEncoding.EncodeToString(restTestPubKey),
+			r.URL.Query().Get("tweaked_group_key"),
+		)
+
+		_, err := fmt.Fprint(w, `{"burns":[]}`)
+		assert.NoError(t, err)
+	}))
+	defer srv.Close()
+
+	client := newWalletClient(&transport{
+		baseURL:   srv.URL,
+		client:    srv.Client(),
+		timeout:   time.Second,
+		macaroons: macaroon.Pouch{},
+	})
+
+	burns, err := client.ListBurns(
+		context.Background(), &entities.ListBurnsRequest{
+			AssetRef: &ref,
+		},
+	)
+	require.NoError(t, err)
+	require.Empty(t, burns)
 }
 
 func TestUnmarshalAssetTransferGroupKey(t *testing.T) {
