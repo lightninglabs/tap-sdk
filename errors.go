@@ -343,6 +343,27 @@ var (
 	// entity. This does not mean tapd rejected the mint; callers should inspect
 	// wallet state before retrying.
 	ErrMintResultNotFound = errors.New("mint result could not be mapped")
+
+	// ErrUniverseHostRequired is returned when a universe sync request does
+	// not specify the remote universe host.
+	ErrUniverseHostRequired = errors.New("universe host is required")
+
+	// ErrInvalidUniverseHost is returned when a universe sync host is not a
+	// host:port address accepted by the high-level universe facade.
+	ErrInvalidUniverseHost = errors.New("invalid universe host")
+
+	// ErrDuplicateAssetRef is returned when a batch call receives the same
+	// asset ref more than once.
+	ErrDuplicateAssetRef = errors.New("duplicate asset ref")
+
+	// ErrUniverseProofTypeRequired is returned when a universe proof query
+	// requires an explicit issuance or transfer proof type.
+	ErrUniverseProofTypeRequired = errors.New(
+		"universe proof type is required",
+	)
+
+	// ErrInvalidPagination is returned when pagination options are malformed.
+	ErrInvalidPagination = errors.New("invalid pagination")
 )
 
 var knownSentinelErrors = []error{
@@ -374,4 +395,9 @@ var knownSentinelErrors = []error{
 	ErrAssetNotIssuable,
 	ErrMintResolveTimeout,
 	ErrMintResultNotFound,
+	ErrUniverseHostRequired,
+	ErrInvalidUniverseHost,
+	ErrDuplicateAssetRef,
+	ErrUniverseProofTypeRequired,
+	ErrInvalidPagination,
 }

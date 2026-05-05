@@ -146,6 +146,53 @@ type AssetProofResponse struct {
 	MultiverseInclusionProof []byte
 }
 
+// UniverseRoots groups the issuance and transfer roots for one AssetRef.
+type UniverseRoots struct {
+	// AssetRef identifies the asset universe.
+	AssetRef AssetRef
+
+	// IssuanceRoot is the issuance proof root, if known locally.
+	IssuanceRoot *UniverseRoot
+
+	// TransferRoot is the transfer proof root, if known locally.
+	TransferRoot *UniverseRoot
+}
+
+// HasRoots reports whether at least one universe root is present.
+func (r *UniverseRoots) HasRoots() bool {
+	return r != nil && (r.IssuanceRoot != nil || r.TransferRoot != nil)
+}
+
+// UniverseProof is a high-level universe proof entry for one AssetRef.
+type UniverseProof struct {
+	// AssetRef identifies the asset universe that contains this proof.
+	AssetRef AssetRef
+
+	// ProofType identifies whether this is an issuance or transfer proof.
+	ProofType ProofType
+
+	// LeafKey identifies the concrete proof leaf in the universe tree.
+	LeafKey AssetLeafKey
+
+	// Proof is the raw issuance or transfer proof bytes.
+	Proof []byte
+
+	// Asset is the decoded low-level asset record, if tapd returned one.
+	Asset *AssetRecord
+
+	// UniverseRoot is the root that includes this proof.
+	UniverseRoot *UniverseRoot
+
+	// UniverseInclusionProof is the raw MS-SMT inclusion proof.
+	UniverseInclusionProof []byte
+
+	// MultiverseRoot is the root of the wider multiverse tree.
+	MultiverseRoot *MerkleSumNode
+
+	// MultiverseInclusionProof is the multiverse inclusion proof.
+	MultiverseInclusionProof []byte
+}
+
 // UniverseStats contains aggregate universe statistics.
 type UniverseStats struct {
 	// NumTotalAssets is the total number of known assets.
@@ -356,6 +403,18 @@ type SyncedUniverse struct {
 
 	// NewAssetLeaves are the newly synced leaves.
 	NewAssetLeaves []AssetLeaf
+}
+
+// UniverseSyncResult is the high-level sync result for one AssetRef.
+type UniverseSyncResult struct {
+	// AssetRef identifies the synced asset universe.
+	AssetRef AssetRef
+
+	// Issuance is the issuance-universe diff, if one changed.
+	Issuance *SyncedUniverse
+
+	// Transfer is the transfer-universe diff, if one changed.
+	Transfer *SyncedUniverse
 }
 
 // GlobalFederationSyncConfig is a per-proof-type federation sync policy.

@@ -225,11 +225,8 @@ func TestGetBalance_ZeroAfterUniverseBootstrap(t *testing.T) {
 
 		// Bootstrap Bob via universe sync but do not send any units.
 		h.EnableUniverseBootstrap(t, ctx)
-		issuanceID := entities.UniverseIDFromRef(
-			minted.Ref, entities.ProofTypeIssuance,
-		)
 		require.Eventually(t, func() bool {
-			return h.syncUniverseTarget(ctx, issuanceID) == nil
+			return h.syncUniverseAsset(ctx, minted.Ref) == nil
 		}, defaultWaitTimeout, time.Second)
 
 		balances, err := h.BobWallet.ListBalances(

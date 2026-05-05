@@ -127,6 +127,37 @@ if err != nil {
 fmt.Printf("first item: %s\n", created.FirstItem.AssetRef)
 ```
 
+### Universe proofs and sync
+
+`Wallet.NewUniverse()` is the preferred universe entrypoint. It accepts the
+same `AssetRef` values returned by wallet and issuer calls.
+
+```go
+universe := wallet.NewUniverse()
+
+known, err := universe.HasAsset(ctx, token.AssetRef)
+if err != nil {
+	log.Fatal(err)
+}
+if !known {
+	log.Fatal("asset is not known to the local universe")
+}
+
+proofs, err := universe.ListProofs(ctx, token.AssetRef)
+if err != nil {
+	log.Fatal(err)
+}
+
+fmt.Printf("local universe has %d proofs\n", len(proofs))
+
+// Use a trusted universe host from configuration. Current tapd versions dial
+// remote universe servers without certificate verification during sync.
+_, err = universe.SyncAsset(ctx, token.AssetRef, "tapd.example:10029")
+if err != nil {
+	log.Fatal(err)
+}
+```
+
 ### Interactive receive
 
 ```go

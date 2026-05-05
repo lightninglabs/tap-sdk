@@ -10,7 +10,7 @@ require (
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0
 	github.com/coder/websocket v1.8.14
 	github.com/lightninglabs/taproot-assets v0.7.1-0.20260428151226-4cce83d171b3
-	github.com/lightninglabs/taproot-assets/taprpc v1.0.12-0.20260504192921-5555f5878852
+	github.com/lightninglabs/taproot-assets/taprpc v1.0.12-0.20260505143348-cfa6c0435b92
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/grpc v1.79.3
 )

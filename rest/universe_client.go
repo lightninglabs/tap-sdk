@@ -450,7 +450,7 @@ func (u *universeClient) AssetLeaves(ctx context.Context,
 	}
 
 	var path string
-	proofTypeParam := "?proof_type=" + marshalProofType(
+	proofTypeParam := "?id.proof_type=" + marshalProofType(
 		id.ProofType,
 	)
 	path = fmt.Sprintf(

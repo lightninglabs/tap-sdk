@@ -15,15 +15,15 @@ build Taproot Assets applications without direct dependency on the
 ┌─────────────────────────────────────────────────────┐
 │                   Application                       │
 │                                                     │
-│  Uses: tapsdk.Wallet, tapsdk.Issuer, TxBuilder, etc.│
+│  Uses: Wallet, Issuer, Universe, TxBuilder, etc.    │
 ├─────────────────────────────────────────────────────┤
 │                    tap-sdk                           │
 │                                                     │
-│  ┌──────────┐  ┌───────────┐  ┌──────────────────┐ │
-│  │  Wallet   │  │  Issuer  │  │ TxBuilder         │ │
-│  └────┬─────┘  └─────┬─────┘  └────────┬─────────┘ │
-│       │               │                 │           │
-│  ┌────┴───────────────┴─────────────────┴────────┐  │
+│  ┌────────┐ ┌────────┐ ┌──────────┐ ┌───────────┐ │
+│  │ Wallet │ │ Issuer │ │ Universe │ │ TxBuilder │ │
+│  └───┬────┘ └───┬────┘ └────┬─────┘ └─────┬─────┘ │
+│      │          │           │             │       │
+│  ┌───┴──────────┴───────────┴─────────────┴────┐  │
 │  │              Client Interfaces                │  │
 │  │  WalletClient | WalletKitClient | ProofClient │  │
 │  │                UniverseClient                 │  │
@@ -55,6 +55,11 @@ The root package contains the high-level API surface:
   Creates fungible assets, issues more fungible supply, creates standalone
   NFTs, creates NFT collections, and mints collection items without exposing
   tapd mint batch control to application code.
+
+- **`Universe`** — High-level universe surface returned by
+  `Wallet.NewUniverse()`. Provides `AssetRef`-first known-asset checks, root
+  lookup, proof listing, proof lookup, and targeted sync helpers. Raw
+  protocol-shaped universe RPCs remain on `UniverseClient`.
 
 - **`TxBuilder`** — Builder pattern for address-based asset transfers.
   Guides users through the Fund → Sign → Commit → Finish pipeline.

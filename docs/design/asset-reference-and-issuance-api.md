@@ -201,7 +201,22 @@ Burn history filters also accept `AssetRef`.
 
 ### Universe
 
-Universe IDs should use:
+The high-level universe facade uses `AssetRef` directly:
+
+```go
+universe := wallet.NewUniverse()
+
+known, err := universe.HasAsset(ctx, ref)
+roots, err := universe.GetRoots(ctx, ref)
+proofs, err := universe.ListProofs(ctx, ref)
+_, err = universe.SyncAsset(ctx, ref, "tapd.example:10029")
+```
+
+Universe sync hosts should be trusted configuration, not direct user input.
+Current tapd versions dial remote universe servers without certificate
+verification during sync.
+
+The low-level universe client still uses:
 
 ```go
 UniverseID {
@@ -210,8 +225,8 @@ UniverseID {
 }
 ```
 
-The public API should no longer make callers build either `AssetID` or
-`GroupKey` branches manually.
+This keeps normal application code on `AssetRef` while retaining direct
+protocol access for advanced callers.
 
 ### Proofs
 
