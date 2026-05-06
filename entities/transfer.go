@@ -30,21 +30,36 @@ type CommittedTransfer struct {
 }
 
 // Recipient represents a recipient of an asset transfer.
-//
-// Amount == 0 means "use the amount embedded in the address" (required
-// for V0/V1 addresses and for V2 addresses that bake in an amount).
-// A positive Amount is the explicit sender-chosen amount and is
-// required for V2 addresses that omit the amount from the payload.
 type Recipient struct {
 	// Address is the Taproot Asset address of the recipient.
 	Address string
 
-	// Amount is the number of asset units to send. Leave zero to use
-	// the amount embedded in the address. When non-zero, the value
-	// must be positive; if the address also embeds an amount, the
-	// two must match. An explicit zero amount is invalid because the
-	// daemon rejects empty sends.
-	Amount uint64
+	amount    uint64
+	hasAmount bool
+}
+
+// RecipientWithAmount creates a recipient with an explicit sender-chosen
+// amount.
+func RecipientWithAmount(address string, amount uint64) Recipient {
+	return Recipient{
+		Address:   address,
+		amount:    amount,
+		hasAmount: true,
+	}
+}
+
+// RecipientWithEmbeddedAmount creates a recipient that uses the amount encoded
+// in the Taproot Asset address.
+func RecipientWithEmbeddedAmount(address string) Recipient {
+	return Recipient{
+		Address: address,
+	}
+}
+
+// Amount returns the explicit amount and whether one was supplied. If the
+// boolean is false, the recipient uses the amount embedded in the address.
+func (r Recipient) Amount() (uint64, bool) {
+	return r.amount, r.hasAmount
 }
 
 // InteractiveSendRequest represents a request to send assets interactively.

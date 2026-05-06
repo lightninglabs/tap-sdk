@@ -203,7 +203,7 @@ func TestTxBuilder_Execute(t *testing.T) {
 
 	// Test data
 	ctx := context.Background()
-	addr := "tap1xyz"
+	addr := encodeV2NoAmount(t)
 	amount := uint64(100)
 	feeRate := uint64(50)
 	fundedPsbt := []byte("funded_psbt")
@@ -216,7 +216,7 @@ func TestTxBuilder_Execute(t *testing.T) {
 		func(recipients []entities.Recipient) bool {
 			return len(recipients) == 1 &&
 				recipients[0].Address == addr &&
-				recipients[0].Amount == amount
+				recipientAmountIs(recipients[0], amount)
 		}), mock.Anything).Return(&entities.FundedTransfer{
 		FundedPsbt: fundedPsbt,
 	}, nil)
@@ -259,14 +259,14 @@ func TestTxBuilder_Execute(t *testing.T) {
 	require.Equal(t, anchorPsbt, committed.AnchorPsbt)
 	require.Equal(t, [][]byte{signedPsbt}, committed.VirtualPsbts)
 
-	packet, err := builder.Finish(ctx, false)
+	packet, err := builder.Finish(ctx)
 	require.NoError(t, err)
 
 	require.Equal(t, finalAnchorTx, packet.AnchorTransaction)
 	require.Equal(t, [][]byte{signedPsbt}, packet.VirtualTransactions)
 
 	// Verify re-calling Finish fails
-	_, err = builder.Finish(ctx, false)
+	_, err = builder.Finish(ctx)
 	require.ErrorIs(t, err, ErrBuilderFinished)
 
 	mockWalletKit.AssertExpectations(t)
@@ -307,7 +307,53 @@ func TestTxBuilder_StateInjection(t *testing.T) {
 	_, err := builder.Commit(ctx)
 	require.NoError(t, err)
 
-	packet, err := builder.Finish(ctx, false)
+	packet, err := builder.Finish(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expectedPacket, packet)
+
+	mockWalletKit.AssertExpectations(t)
+}
+
+func TestTxBuilder_ExecuteWithSkipBroadcast(t *testing.T) {
+	mockWalletKit := new(MockWalletKitClient)
+
+	ctx := context.Background()
+	addr := encodeV2NoAmount(t)
+	amount := uint64(100)
+	fundedPsbt := []byte("funded_psbt")
+	signedPsbt := []byte("signed_psbt")
+	anchorPsbt := []byte("anchor_psbt")
+	finalAnchorTx := []byte("final_anchor_tx")
+
+	mockWalletKit.On("FundTransfer", ctx, mock.MatchedBy(
+		func(recipients []entities.Recipient) bool {
+			return len(recipients) == 1 &&
+				recipients[0].Address == addr &&
+				recipientAmountIs(recipients[0], amount)
+		}), mock.Anything).Return(&entities.FundedTransfer{
+		FundedPsbt: fundedPsbt,
+	}, nil)
+
+	mockWalletKit.On("SignVirtualPsbt", ctx, fundedPsbt).Return(
+		signedPsbt, nil)
+
+	mockWalletKit.On("CommitVirtualPsbts", ctx, [][]byte{signedPsbt},
+		mock.Anything, uint64(1)).Return(
+		&entities.CommittedTransfer{
+			AnchorPsbt:   anchorPsbt,
+			VirtualPsbts: [][]byte{signedPsbt},
+		}, nil)
+
+	expectedPacket := &entities.AssetPacket{
+		AnchorTransaction:   finalAnchorTx,
+		VirtualTransactions: [][]byte{signedPsbt},
+	}
+	mockWalletKit.On("PublishAndLogTransfer", ctx, anchorPsbt,
+		[][]byte{signedPsbt}, mock.Anything, true).Return(
+		expectedPacket, nil)
+
+	builder := newTxBuilder(mockWalletKit).AddRecipient(addr, amount)
+	packet, err := builder.Execute(ctx, WithSkipBroadcast())
 	require.NoError(t, err)
 	require.Equal(t, expectedPacket, packet)
 
@@ -349,7 +395,7 @@ func TestTxBuilder_AnchorSigning(t *testing.T) {
 	_, err := builder.Commit(ctx)
 	require.NoError(t, err)
 
-	packet, err := builder.Finish(ctx, false)
+	packet, err := builder.Finish(ctx)
 	require.NoError(t, err)
 	require.Equal(t, expectedPacket, packet)
 
@@ -375,7 +421,7 @@ func TestTxBuilder_AnchorPsbtInjection(t *testing.T) {
 		[][]byte{signedPsbt}, mock.Anything, true).Return(
 		expectedPacket, nil)
 
-	packet, err := builder.Finish(ctx, true)
+	packet, err := builder.Finish(ctx, WithSkipBroadcast())
 	require.NoError(t, err)
 	require.Equal(t, expectedPacket, packet)
 
@@ -393,6 +439,32 @@ func TestTxBuilder_NoRecipients(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoRecipients)
 
 	// Execute without setting recipients should fail.
-	_, err = builder.Execute(ctx, false)
+	_, err = builder.Execute(ctx)
 	require.ErrorIs(t, err, ErrNoRecipients)
+}
+
+func TestTxBuilder_AddTapAddressUsesEmbeddedAmount(t *testing.T) {
+	mockWalletKit := new(MockWalletKitClient)
+
+	ctx := context.Background()
+	amount := uint64(42)
+	addr := encodeEmbedded(t, amount, entities.AddressVersionV1)
+	fundedPsbt := []byte("funded_psbt")
+
+	mockWalletKit.On("FundTransfer", ctx, mock.MatchedBy(
+		func(recipients []entities.Recipient) bool {
+			return len(recipients) == 1 &&
+				recipients[0].Address == addr &&
+				recipientAmountIs(recipients[0], amount)
+		}), mock.Anything).Return(&entities.FundedTransfer{
+		FundedPsbt: fundedPsbt,
+	}, nil)
+
+	builder := newTxBuilder(mockWalletKit).AddTapAddress(addr)
+
+	funded, err := builder.Fund(ctx)
+	require.NoError(t, err)
+	require.Equal(t, fundedPsbt, funded.FundedPsbt)
+
+	mockWalletKit.AssertExpectations(t)
 }

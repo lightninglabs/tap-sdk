@@ -62,7 +62,9 @@ The root package contains the high-level API surface:
   protocol-shaped universe RPCs remain on `UniverseClient`.
 
 - **`TxBuilder`** — Builder pattern for address-based asset transfers.
-  Guides users through the Fund → Sign → Commit → Finish pipeline.
+  Guides users through the Fund → Sign → Commit → Finish pipeline, with
+  explicit recipient methods for sender-chosen amounts and address-embedded
+  amounts.
 
 - **`InteractiveTxBuilder`** — Builder for interactive transfers where
   the receiver provides keys directly instead of an address. Handles
@@ -245,7 +247,8 @@ promote.
 ```
 Sender                             tapd
   │                                  │
-  ├─ TxBuilder.AddRecipient(addr) ─►│
+  ├─ TxBuilder.AddRecipient(addr, amount)
+  │  or AddTapAddress(addr) ──────►│
   ├─ TxBuilder.Fund() ──────────►│ FundVirtualPsbt
   ├─ TxBuilder.Sign() ──────────►│ SignVirtualPsbt
   ├─ TxBuilder.Commit() ────────►│ CommitVirtualPsbts

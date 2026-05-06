@@ -974,9 +974,9 @@ func (s *Wallet) Send(ctx context.Context, addr string,
 	// WithAmount set: route through the explicit-amount path to
 	// preserve caller intent on the wire. Otherwise rely on the
 	// amount embedded in the address.
-	recipient := entities.Recipient{
-		Address: addr,
-		Amount:  o.amount,
+	recipient := entities.RecipientWithEmbeddedAmount(addr)
+	if o.amount != 0 {
+		recipient = entities.RecipientWithAmount(addr, o.amount)
 	}
 
 	req := &entities.SendAssetRequest{
@@ -1012,18 +1012,15 @@ func validateSendAmount(addr *entities.Address, amount uint64) error {
 	return nil
 }
 
-// SendMulti sends one logical asset to multiple recipients in a single
-// anchor transaction. Every recipient address must resolve to the same
-// AssetRef. Mixed-asset payout batches must be split by the caller.
+// SendMulti sends one logical asset to multiple recipients in a single anchor
+// transaction. Every recipient address must resolve to the same AssetRef.
+// Mixed-asset payout batches must be split by the caller.
 //
-// Each Recipient.Amount is optional: zero means "use the amount embedded in
-// the address" (works for any address that embeds an amount). A non-zero
-// Amount is the explicit sender-chosen amount; if the address also embeds an
-// amount, the two must match.
-//
-// Mixing explicit and embedded amounts in a single call is supported
-// at this level: SendMulti decodes each address and echoes embedded
-// values into the wire request so tapd sees a uniform shape.
+// Use entities.RecipientWithAmount for explicit sender-chosen amounts and
+// entities.RecipientWithEmbeddedAmount for addresses that encode their amount.
+// Mixing the two recipient forms is supported: SendMulti decodes each address
+// and echoes embedded values into the wire request so tapd sees a uniform
+// shape.
 //
 // For single-recipient sends, prefer Send for simplicity.
 func (s *Wallet) SendMulti(ctx context.Context,
@@ -1034,60 +1031,14 @@ func (s *Wallet) SendMulti(ctx context.Context,
 		return nil, wrapErr("SendMulti", ErrNoRecipients)
 	}
 
-	// Validate, collecting whether any Recipient carries an explicit
-	// amount. If any does, every Recipient needs an explicit amount
-	// on the wire; echo the embedded value for the zero ones.
-	decoded := make([]*entities.Address, len(recipients))
-	anyExplicit := false
-	for i, r := range recipients {
-		addr, err := entities.DecodeAddress(r.Address)
-		if err != nil {
-			return nil, wrapErr("SendMulti", err)
-		}
-		decoded[i] = addr
-
-		if r.Amount == 0 {
-			if addr.Amount == 0 {
-				return nil, wrapErr(
-					"SendMulti", ErrAmountRequired,
-				)
-			}
-			continue
-		}
-
-		anyExplicit = true
-		if addr.Amount > 0 && addr.Amount != r.Amount {
-			return nil, wrapErr("SendMulti", fmt.Errorf(
-				"%w: address embeds %d, caller passed %d",
-				ErrAmountMismatch, addr.Amount, r.Amount,
-			))
-		}
-	}
-	if err := validateSingleAssetSendBatch(decoded); err != nil {
+	normalised, err := normaliseSendRecipients(recipients, false)
+	if err != nil {
 		return nil, wrapErr("SendMulti", err)
-	}
-
-	// If any recipient is explicit, the low-level SendAsset demands
-	// every recipient be explicit too — so fill in the embedded
-	// amount for the zero ones.
-	if anyExplicit {
-		normalised := make([]entities.Recipient, len(recipients))
-		for i, r := range recipients {
-			if r.Amount != 0 {
-				normalised[i] = r
-				continue
-			}
-			normalised[i] = entities.Recipient{
-				Address: r.Address,
-				Amount:  decoded[i].Amount,
-			}
-		}
-		recipients = normalised
 	}
 
 	o := applySendOptions(opts)
 	req := &entities.SendAssetRequest{
-		Recipients:                recipients,
+		Recipients:                normalised,
 		FeeRate:                   o.feeRate,
 		Label:                     o.label,
 		SkipProofCourierPingCheck: o.skipProofCourierPingCheck,
