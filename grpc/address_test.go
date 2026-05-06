@@ -81,6 +81,19 @@ func TestUnmarshalAddr(t *testing.T) {
 			wantErr: "invalid taproot output key length",
 		},
 		{
+			name: "unknown asset type",
+			rpcAddr: &taprpc.Addr{
+				Encoded:          "tap1testunknown",
+				AssetId:          testAssetID,
+				AssetType:        taprpc.AssetType(99),
+				Amount:           1,
+				ScriptKey:        testPubKey,
+				InternalKey:      testPubKey,
+				TaprootOutputKey: testXOnlyPubKey,
+			},
+			wantErr: "unknown asset type",
+		},
+		{
 			name: "valid V0 address",
 			rpcAddr: &taprpc.Addr{
 				Encoded:          "tap1testaddr",

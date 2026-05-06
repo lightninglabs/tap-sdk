@@ -317,16 +317,17 @@ func (s *Wallet) DeriveKeys(ctx context.Context) (*entities.DerivedKeys,
 // Grouped fungible issuances are aggregated under one group-key AssetRef. A
 // single NFT is returned as one asset-ID AssetRef. NFT collection items are
 // returned as NFT assets with their item asset-ID AssetRef and optional
-// CollectionRef; use ListCollections for collection-level rows.
+// CollectionRef; use ListCollections for collection-level rows. Amount filters
+// are applied after this high-level aggregation.
 func (s *Wallet) ListAssets(ctx context.Context,
 	req *entities.ListAssetsRequest) ([]*entities.Asset, error) {
 
-	records, err := s.listAssetRecords(ctx, req)
+	records, err := s.listAssetRecords(ctx, listAssetsToRecordsReq(req))
 	if err != nil {
 		return nil, wrapErr("ListAssets", err)
 	}
 
-	return assetsFromRecords(records), nil
+	return filterAssetsByAmount(assetsFromRecords(records), req), nil
 }
 
 // ListCollections returns wallet-known NFT collections.
@@ -411,6 +412,20 @@ func (s *Wallet) listAssetRecords(ctx context.Context,
 	req *entities.ListAssetsRequest) ([]*entities.AssetRecord, error) {
 
 	return s.client.ListAssetRecords(ctx, req)
+}
+
+func listAssetsToRecordsReq(
+	req *entities.ListAssetsRequest) *entities.ListAssetsRequest {
+
+	if req == nil {
+		return nil
+	}
+
+	recordReq := *req
+	recordReq.MinAmount = 0
+	recordReq.MaxAmount = 0
+
+	return &recordReq
 }
 
 func listIssuancesToRecordsReq(
@@ -504,6 +519,32 @@ func assetsFromRecords(records []*entities.AssetRecord) []*entities.Asset {
 	}
 
 	return assets
+}
+
+func filterAssetsByAmount(assets []*entities.Asset,
+	req *entities.ListAssetsRequest) []*entities.Asset {
+
+	if req == nil || (req.MinAmount == 0 && req.MaxAmount == 0) {
+		return assets
+	}
+
+	filtered := make([]*entities.Asset, 0, len(assets))
+	for _, asset := range assets {
+		if asset == nil {
+			continue
+		}
+
+		if req.MinAmount != 0 && asset.Amount < req.MinAmount {
+			continue
+		}
+		if req.MaxAmount != 0 && asset.Amount > req.MaxAmount {
+			continue
+		}
+
+		filtered = append(filtered, asset)
+	}
+
+	return filtered
 }
 
 func assetFromRecord(record *entities.AssetRecord) *entities.Asset {

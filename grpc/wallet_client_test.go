@@ -12,6 +12,121 @@ import (
 const zeroGenesisPoint = "00000000000000000000000000000000" +
 	"00000000000000000000000000000000:1"
 
+func TestMarshalListAssetRecordsRequest(t *testing.T) {
+	var assetID entities.AssetID
+	copy(assetID[:], testAssetID)
+	assetIDRef := entities.AssetRefFromAssetID(assetID)
+
+	var groupPubKey entities.PubKey
+	copy(groupPubKey[:], testPubKey)
+	groupKeyRef := entities.AssetRefFromGroupKey(groupPubKey)
+
+	explicitType := entities.ScriptKeyTypeBurn
+	invalidType := entities.ScriptKeyType(99)
+	anchor := entities.Outpoint{
+		Txid:  assetID,
+		Index: 7,
+	}
+
+	tests := []struct {
+		name     string
+		req      *entities.ListAssetsRequest
+		wantErr  string
+		validate func(*testing.T, *taprpc.ListAssetRequest,
+			*entities.AssetRef)
+	}{
+		{
+			name: "nil request",
+			req:  nil,
+			validate: func(t *testing.T, rpcReq *taprpc.ListAssetRequest,
+				ref *entities.AssetRef) {
+
+				require.NotNil(t, rpcReq)
+				require.Nil(t, ref)
+				require.Empty(t, rpcReq.GroupKey)
+				require.Nil(t, rpcReq.AnchorOutpoint)
+			},
+		},
+		{
+			name: "all protocol filters",
+			req: &entities.ListAssetsRequest{
+				WithWitness:             true,
+				IncludeSpent:            true,
+				IncludeLeased:           true,
+				IncludeUnconfirmedMints: true,
+				MinAmount:               7,
+				MaxAmount:               11,
+				AssetRef:                &groupKeyRef,
+				AnchorOutpoint:          &anchor,
+				ScriptKeyType: &entities.ScriptKeyTypeQuery{
+					ExplicitType: &explicitType,
+				},
+			},
+			validate: func(t *testing.T, rpcReq *taprpc.ListAssetRequest,
+				ref *entities.AssetRef) {
+
+				require.True(t, rpcReq.WithWitness)
+				require.True(t, rpcReq.IncludeSpent)
+				require.True(t, rpcReq.IncludeLeased)
+				require.True(t, rpcReq.IncludeUnconfirmedMints)
+				require.Equal(t, uint64(7), rpcReq.MinAmount)
+				require.Equal(t, uint64(11), rpcReq.MaxAmount)
+				require.Equal(t, groupPubKey[:], rpcReq.GroupKey)
+				require.NotNil(t, rpcReq.AnchorOutpoint)
+				require.Equal(
+					t, assetID[:],
+					rpcReq.AnchorOutpoint.Txid,
+				)
+				require.Equal(
+					t, uint32(7),
+					rpcReq.AnchorOutpoint.OutputIndex,
+				)
+				require.Equal(t, &groupKeyRef, ref)
+				require.NotNil(t, rpcReq.ScriptKeyType)
+				require.Equal(
+					t,
+					taprpc.ScriptKeyType_SCRIPT_KEY_BURN,
+					rpcReq.ScriptKeyType.GetExplicitType(),
+				)
+			},
+		},
+		{
+			name: "asset ID ref uses local filter only",
+			req: &entities.ListAssetsRequest{
+				AssetRef: &assetIDRef,
+			},
+			validate: func(t *testing.T, rpcReq *taprpc.ListAssetRequest,
+				ref *entities.AssetRef) {
+
+				require.Empty(t, rpcReq.GroupKey)
+				require.Equal(t, &assetIDRef, ref)
+			},
+		},
+		{
+			name: "unknown script key type",
+			req: &entities.ListAssetsRequest{
+				ScriptKeyType: &entities.ScriptKeyTypeQuery{
+					ExplicitType: &invalidType,
+				},
+			},
+			wantErr: "unknown script key type",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rpcReq, ref, err := marshalListAssetRecordsRequest(tc.req)
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+			tc.validate(t, rpcReq, ref)
+		})
+	}
+}
+
 func TestMarshalListBalancesRequest(t *testing.T) {
 	var assetID entities.AssetID
 	copy(assetID[:], testAssetID)
@@ -125,7 +240,8 @@ func TestMarshalListBalancesRequest(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			rpcReq := marshalListBalancesRequest(tc.req)
+			rpcReq, err := marshalListBalancesRequest(tc.req)
+			require.NoError(t, err)
 			require.NotNil(t, rpcReq)
 			tc.validate(t, rpcReq)
 		})
@@ -141,6 +257,11 @@ func TestAssetRecordMatchesRef(t *testing.T) {
 	copy(groupKey[:], testPubKey)
 	collectionRef := entities.AssetRefFromGroupKey(groupKey)
 
+	var otherID entities.AssetID
+	copy(otherID[:], testAssetID)
+	otherID[0] ^= 0xff
+	otherRef := entities.AssetRefFromAssetID(otherID)
+
 	record := &entities.AssetRecord{
 		AssetRef: collectionRef,
 		Genesis: entities.IssuanceGenesis{
@@ -148,8 +269,44 @@ func TestAssetRecordMatchesRef(t *testing.T) {
 		},
 	}
 
-	require.True(t, assetRecordMatchesRef(record, collectionRef))
-	require.True(t, assetRecordMatchesRef(record, itemRef))
+	tests := []struct {
+		name   string
+		record *entities.AssetRecord
+		ref    entities.AssetRef
+		want   bool
+	}{
+		{
+			name:   "nil record",
+			record: nil,
+			ref:    collectionRef,
+		},
+		{
+			name:   "group ref matches canonical asset ref",
+			record: record,
+			ref:    collectionRef,
+			want:   true,
+		},
+		{
+			name:   "issuance ID ref matches grouped record",
+			record: record,
+			ref:    itemRef,
+			want:   true,
+		},
+		{
+			name:   "unrelated asset ID ref",
+			record: record,
+			ref:    otherRef,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(
+				t, tc.want,
+				assetRecordMatchesRef(tc.record, tc.ref),
+			)
+		})
+	}
 }
 
 func TestMarshalSendAssetRequest(t *testing.T) {
@@ -312,6 +469,20 @@ func TestUnmarshalBalance(t *testing.T) {
 			},
 		},
 		{
+			name: "unknown asset type",
+			rpcBalance: &taprpc.AssetBalance{
+				AssetGenesis: &taprpc.GenesisInfo{
+					GenesisPoint: zeroGenesisPoint,
+					Name:         "test",
+					AssetId:      testAssetID,
+					OutputIndex:  1,
+					AssetType:    taprpc.AssetType(99),
+				},
+				Balance: 42,
+			},
+			wantErr: "unknown asset type",
+		},
+		{
 			name: "collection item balance uses asset ID",
 			rpcBalance: &taprpc.AssetBalance{
 				AssetGenesis: &taprpc.GenesisInfo{
@@ -427,6 +598,45 @@ func TestUnmarshalAssetTransferCollectionItem(t *testing.T) {
 	require.True(t, highLevel.Outputs[0].AssetRef.Equivalent(wantRef))
 	require.Equal(t,
 		entities.AssetTypeCollectible, highLevel.Inputs[0].Type)
+}
+
+func TestUnmarshalAssetTransferUnknownAssetType(t *testing.T) {
+	tests := []struct {
+		name     string
+		transfer *taprpc.AssetTransfer
+		wantErr  string
+	}{
+		{
+			name: "unknown output asset type",
+			transfer: &taprpc.AssetTransfer{
+				Outputs: []*taprpc.TransferOutput{{
+					Amount:    1,
+					AssetType: taprpc.AssetType(99),
+				}},
+			},
+			wantErr: "invalid output asset type",
+		},
+		{
+			name: "unknown input asset type",
+			transfer: &taprpc.AssetTransfer{
+				Inputs: []*taprpc.TransferInput{{
+					AnchorPoint: zeroGenesisPoint,
+					AssetId:     testAssetID,
+					ScriptKey:   testPubKey,
+					Amount:      1,
+					AssetType:   taprpc.AssetType(99),
+				}},
+			},
+			wantErr: "invalid input asset type",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := unmarshalAssetTransfer(tc.transfer)
+			require.ErrorContains(t, err, tc.wantErr)
+		})
+	}
 }
 
 func TestScriptKeyTypeConstants(t *testing.T) {
@@ -588,6 +798,18 @@ func TestUnmarshalAssetGroupRecord(t *testing.T) {
 				Assets: []*taprpc.AssetHumanReadable{nil},
 			},
 			wantErr: "nil asset in group",
+		},
+		{
+			name:        "unknown asset type",
+			groupKeyHex: compressedHex,
+			rpcGroup: &taprpc.GroupedAssets{
+				Assets: []*taprpc.AssetHumanReadable{{
+					Id:       testAssetID,
+					MetaHash: testAssetID,
+					Type:     taprpc.AssetType(99),
+				}},
+			},
+			wantErr: "unknown asset type",
 		},
 	}
 

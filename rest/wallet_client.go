@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/url"
+	"strconv"
 
 	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/lightninglabs/tap-sdk/macaroon"
@@ -40,38 +41,9 @@ func (w *walletClient) GetInfo(
 func (w *walletClient) ListAssetRecords(ctx context.Context,
 	req *entities.ListAssetsRequest) ([]*entities.AssetRecord, error) {
 
-	params := url.Values{}
-	var assetRefFilter *entities.AssetRef
-	if req != nil {
-		if req.WithWitness {
-			params.Set("with_witness", "true")
-		}
-		if req.IncludeSpent {
-			params.Set("include_spent", "true")
-		}
-		if req.IncludeLeased {
-			params.Set("include_leased", "true")
-		}
-		if req.IncludeUnconfirmedMints {
-			params.Set("include_unconfirmed_mints", "true")
-		}
-		if req.AssetRef != nil {
-			if err := req.AssetRef.Validate(); err != nil {
-				return nil, err
-			}
-
-			assetRefFilter = req.AssetRef
-			if groupKey, ok := req.AssetRef.GroupKey(); ok {
-				// grpc-gateway rejects hex for `bytes` query
-				// params; it expects URL-safe base64.
-				params.Set(
-					"group_key",
-					base64.URLEncoding.EncodeToString(
-						groupKey[:],
-					),
-				)
-			}
-		}
+	params, assetRefFilter, err := listAssetRecordsQueryParams(req)
+	if err != nil {
+		return nil, err
 	}
 
 	path := "/v1/taproot-assets/assets"
@@ -80,7 +52,7 @@ func (w *walletClient) ListAssetRecords(ctx context.Context,
 	}
 
 	var resp jsonListAssetsResponse
-	err := w.transport.doGet(
+	err = w.transport.doGet(
 		ctx, path, macaroon.AdminServiceMac, &resp,
 	)
 	if err != nil {
@@ -104,6 +76,119 @@ func (w *walletClient) ListAssetRecords(ctx context.Context,
 	}
 
 	return assets, nil
+}
+
+func listAssetRecordsQueryParams(
+	req *entities.ListAssetsRequest) (url.Values, *entities.AssetRef, error) {
+
+	params := url.Values{}
+	var assetRefFilter *entities.AssetRef
+	if req == nil {
+		return params, assetRefFilter, nil
+	}
+
+	if req.WithWitness {
+		params.Set("with_witness", "true")
+	}
+	if req.IncludeSpent {
+		params.Set("include_spent", "true")
+	}
+	if req.IncludeLeased {
+		params.Set("include_leased", "true")
+	}
+	if req.IncludeUnconfirmedMints {
+		params.Set("include_unconfirmed_mints", "true")
+	}
+	if req.MinAmount != 0 {
+		params.Set("min_amount", strconv.FormatUint(req.MinAmount, 10))
+	}
+	if req.MaxAmount != 0 {
+		params.Set("max_amount", strconv.FormatUint(req.MaxAmount, 10))
+	}
+
+	if req.AssetRef != nil {
+		if err := req.AssetRef.Validate(); err != nil {
+			return nil, nil, err
+		}
+
+		assetRefFilter = req.AssetRef
+		if groupKey, ok := req.AssetRef.GroupKey(); ok {
+			// grpc-gateway rejects hex for `bytes` query params; it
+			// expects URL-safe base64.
+			params.Set(
+				"group_key",
+				base64.URLEncoding.EncodeToString(groupKey[:]),
+			)
+		}
+	}
+
+	if req.AnchorOutpoint != nil {
+		params.Set(
+			"anchor_outpoint.txid",
+			base64.URLEncoding.EncodeToString(
+				req.AnchorOutpoint.Txid[:],
+			),
+		)
+		params.Set(
+			"anchor_outpoint.output_index",
+			strconv.FormatUint(uint64(req.AnchorOutpoint.Index), 10),
+		)
+	}
+
+	if err := marshalScriptKeyTypeQueryParams(
+		params, req.ScriptKeyType,
+	); err != nil {
+		return nil, nil, err
+	}
+
+	return params, assetRefFilter, nil
+}
+
+func marshalScriptKeyTypeQueryParams(params url.Values,
+	query *entities.ScriptKeyTypeQuery) error {
+
+	if err := query.Validate(); err != nil {
+		return err
+	}
+
+	if query == nil {
+		return nil
+	}
+
+	if query.ExplicitType != nil {
+		params.Set(
+			"script_key_type.explicit_type",
+			marshalScriptKeyType(*query.ExplicitType),
+		)
+		return nil
+	}
+
+	if query.AllTypes {
+		params.Set("script_key_type.all_types", "true")
+	}
+
+	return nil
+}
+
+func marshalScriptKeyType(scriptKeyType entities.ScriptKeyType) string {
+	switch scriptKeyType {
+	case entities.ScriptKeyTypeUnknown:
+		return "SCRIPT_KEY_UNKNOWN"
+	case entities.ScriptKeyTypeBIP86:
+		return "SCRIPT_KEY_BIP86"
+	case entities.ScriptKeyTypeScriptPathExternal:
+		return "SCRIPT_KEY_SCRIPT_PATH_EXTERNAL"
+	case entities.ScriptKeyTypeBurn:
+		return "SCRIPT_KEY_BURN"
+	case entities.ScriptKeyTypeTombstone:
+		return "SCRIPT_KEY_TOMBSTONE"
+	case entities.ScriptKeyTypeChannel:
+		return "SCRIPT_KEY_CHANNEL"
+	case entities.ScriptKeyTypeUniquePedersen:
+		return "SCRIPT_KEY_UNIQUE_PEDERSEN"
+	default:
+		return ""
+	}
 }
 
 func assetRecordMatchesRef(asset *entities.AssetRecord,

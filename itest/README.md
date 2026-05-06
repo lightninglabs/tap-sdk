@@ -125,7 +125,7 @@ tapd's grpc-gateway WebSocket bridge for server-streaming RPCs.
 | `TestCollectionItemAddressSend` | Collection item address send keeps the NFT item AssetRef across events and transfer history |
 | `TestProofOperations` | Export, unpack, decode, and verify proofs |
 | `TestBalanceQueries` | AssetRef-based balance queries (fungible + collectible), `Wallet.GetBalance` parity |
-| `TestWalletSurface` | Low-level ListAssetRecords/ListUtxos/ListAssetGroups/FetchAssetMeta round-trips |
+| `TestProtocolRecordSurface` | Low-level ListAssetRecords/ListUtxos/ListAssetGroups/FetchAssetMeta round-trips |
 | `TestMultiTrancheGroup` | Wallet ListAssets fungible aggregation and ListIssuances tranche access |
 | `TestBurnAsset` | Burn + ListBurns lifecycle |
 | `TestBurnCollectionItemUsesItemAssetRef` | Collection item burns stay keyed by the NFT item AssetRef |

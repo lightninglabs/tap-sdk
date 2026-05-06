@@ -133,61 +133,59 @@ func TestParseUint64(t *testing.T) {
 	}
 }
 
-func TestParseAssetType(t *testing.T) {
-	tests := []struct {
-		name  string
-		input string
-		want  int
-	}{
-		{
-			name:  "normal",
-			input: assetTypeNormalJSON,
-			want:  0,
-		},
-		{
-			name:  "collectible",
-			input: assetTypeCollectibleJSON,
-			want:  1,
-		},
-		{
-			name:  "unknown defaults to normal",
-			input: "UNKNOWN",
-			want:  0,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := parseAssetType(tc.input)
-			require.Equal(t, tc.want, int(got))
-		})
-	}
-}
-
-func TestParseBurnAssetType(t *testing.T) {
+func TestParseAssetTypes(t *testing.T) {
 	tests := []struct {
 		name    string
+		parse   func(string) (entities.AssetType, error)
 		input   string
 		want    entities.AssetType
 		wantErr string
 	}{
 		{
-			name:  "normal",
+			name:  "asset normal",
+			parse: parseAssetType,
 			input: assetTypeNormalJSON,
 			want:  entities.AssetTypeFungible,
 		},
 		{
-			name:  "collectible",
+			name:  "asset collectible",
+			parse: parseAssetType,
 			input: assetTypeCollectibleJSON,
 			want:  entities.AssetTypeNFT,
 		},
 		{
-			name:    "empty",
+			name:    "asset unknown",
+			parse:   parseAssetType,
+			input:   "UNKNOWN",
+			wantErr: "unknown asset_type",
+		},
+		{
+			name:    "asset empty",
+			parse:   parseAssetType,
+			input:   "",
+			wantErr: "unknown asset_type",
+		},
+		{
+			name:  "burn normal",
+			parse: parseBurnAssetType,
+			input: assetTypeNormalJSON,
+			want:  entities.AssetTypeFungible,
+		},
+		{
+			name:  "burn collectible",
+			parse: parseBurnAssetType,
+			input: assetTypeCollectibleJSON,
+			want:  entities.AssetTypeNFT,
+		},
+		{
+			name:    "burn empty",
+			parse:   parseBurnAssetType,
 			input:   "",
 			wantErr: "unknown burn asset_type",
 		},
 		{
-			name:    "unknown",
+			name:    "burn unknown",
+			parse:   parseBurnAssetType,
 			input:   "UNKNOWN",
 			wantErr: "unknown burn asset_type",
 		},
@@ -195,7 +193,7 @@ func TestParseBurnAssetType(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := parseBurnAssetType(tc.input)
+			got, err := tc.parse(tc.input)
 			if tc.wantErr != "" {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.wantErr)

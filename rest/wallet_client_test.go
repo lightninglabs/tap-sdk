@@ -45,6 +45,11 @@ func TestAssetRecordMatchesRef(t *testing.T) {
 	copy(groupKey[:], restTestPubKey)
 	collectionRef := entities.AssetRefFromGroupKey(groupKey)
 
+	var otherID entities.AssetID
+	copy(otherID[:], restTestAssetID)
+	otherID[0] ^= 0xff
+	otherRef := entities.AssetRefFromAssetID(otherID)
+
 	record := &entities.AssetRecord{
 		AssetRef: collectionRef,
 		Genesis: entities.IssuanceGenesis{
@@ -52,8 +57,268 @@ func TestAssetRecordMatchesRef(t *testing.T) {
 		},
 	}
 
-	require.True(t, assetRecordMatchesRef(record, collectionRef))
-	require.True(t, assetRecordMatchesRef(record, itemRef))
+	tests := []struct {
+		name   string
+		record *entities.AssetRecord
+		ref    entities.AssetRef
+		want   bool
+	}{
+		{
+			name:   "nil record",
+			record: nil,
+			ref:    collectionRef,
+		},
+		{
+			name:   "group ref matches canonical asset ref",
+			record: record,
+			ref:    collectionRef,
+			want:   true,
+		},
+		{
+			name:   "issuance ID ref matches grouped record",
+			record: record,
+			ref:    itemRef,
+			want:   true,
+		},
+		{
+			name:   "unrelated asset ID ref",
+			record: record,
+			ref:    otherRef,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(
+				t, tc.want,
+				assetRecordMatchesRef(tc.record, tc.ref),
+			)
+		})
+	}
+}
+
+func TestListAssetRecordsUsesFilterQuery(t *testing.T) {
+	var groupKey entities.PubKey
+	copy(groupKey[:], restTestPubKey)
+	ref := entities.AssetRefFromGroupKey(groupKey)
+
+	var anchorTxid [32]byte
+	copy(anchorTxid[:], restTestAssetID)
+	anchor := entities.Outpoint{
+		Txid:  anchorTxid,
+		Index: 7,
+	}
+
+	explicitType := entities.ScriptKeyTypeBurn
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,
+		r *http.Request) {
+
+		query := r.URL.Query()
+		assert.Equal(t, "/v1/taproot-assets/assets", r.URL.Path)
+		assert.Equal(t, "true", query.Get("with_witness"))
+		assert.Equal(t, "true", query.Get("include_spent"))
+		assert.Equal(t, "true", query.Get("include_leased"))
+		assert.Equal(
+			t, "true", query.Get("include_unconfirmed_mints"),
+		)
+		assert.Equal(t, "7", query.Get("min_amount"))
+		assert.Equal(t, "11", query.Get("max_amount"))
+		assert.Equal(
+			t,
+			base64.URLEncoding.EncodeToString(restTestPubKey),
+			query.Get("group_key"),
+		)
+		assert.Equal(
+			t,
+			base64.URLEncoding.EncodeToString(restTestAssetID),
+			query.Get("anchor_outpoint.txid"),
+		)
+		assert.Equal(
+			t, "7", query.Get("anchor_outpoint.output_index"),
+		)
+		assert.Equal(
+			t, "SCRIPT_KEY_BURN",
+			query.Get("script_key_type.explicit_type"),
+		)
+
+		_, err := fmt.Fprint(w, `{"assets":[]}`)
+		assert.NoError(t, err)
+	}))
+	defer srv.Close()
+
+	client := newWalletClient(&transport{
+		baseURL:   srv.URL,
+		client:    srv.Client(),
+		timeout:   time.Second,
+		macaroons: macaroon.Pouch{},
+	})
+
+	assets, err := client.ListAssetRecords(
+		context.Background(), &entities.ListAssetsRequest{
+			WithWitness:             true,
+			IncludeSpent:            true,
+			IncludeLeased:           true,
+			IncludeUnconfirmedMints: true,
+			MinAmount:               7,
+			MaxAmount:               11,
+			AssetRef:                &ref,
+			AnchorOutpoint:          &anchor,
+			ScriptKeyType: &entities.ScriptKeyTypeQuery{
+				ExplicitType: &explicitType,
+			},
+		},
+	)
+	require.NoError(t, err)
+	require.Empty(t, assets)
+}
+
+func TestListAssetRecordsQueryParams(t *testing.T) {
+	var assetID entities.AssetID
+	copy(assetID[:], restTestAssetID)
+	assetIDRef := entities.AssetRefFromAssetID(assetID)
+
+	var groupKey entities.PubKey
+	copy(groupKey[:], restTestPubKey)
+	groupRef := entities.AssetRefFromGroupKey(groupKey)
+
+	invalidType := entities.ScriptKeyType(99)
+
+	tests := []struct {
+		name     string
+		req      *entities.ListAssetsRequest
+		wantRef  *entities.AssetRef
+		wantErr  string
+		validate func(*testing.T, map[string][]string)
+	}{
+		{
+			name: "nil request",
+			req:  nil,
+			validate: func(t *testing.T, values map[string][]string) {
+				require.Empty(t, values)
+			},
+		},
+		{
+			name: "zero amount bounds omitted",
+			req:  &entities.ListAssetsRequest{},
+			validate: func(t *testing.T, values map[string][]string) {
+				require.NotContains(t, values, "min_amount")
+				require.NotContains(t, values, "max_amount")
+			},
+		},
+		{
+			name:    "asset ID ref uses local filter only",
+			req:     &entities.ListAssetsRequest{AssetRef: &assetIDRef},
+			wantRef: &assetIDRef,
+			validate: func(t *testing.T, values map[string][]string) {
+				require.NotContains(t, values, "group_key")
+			},
+		},
+		{
+			name:    "group ref uses server filter",
+			req:     &entities.ListAssetsRequest{AssetRef: &groupRef},
+			wantRef: &groupRef,
+			validate: func(t *testing.T, values map[string][]string) {
+				require.Equal(
+					t,
+					base64.URLEncoding.EncodeToString(
+						restTestPubKey,
+					),
+					values["group_key"][0],
+				)
+			},
+		},
+		{
+			name: "all script key types",
+			req: &entities.ListAssetsRequest{
+				ScriptKeyType: &entities.ScriptKeyTypeQuery{
+					AllTypes: true,
+				},
+			},
+			validate: func(t *testing.T, values map[string][]string) {
+				require.Equal(
+					t, "true",
+					values["script_key_type.all_types"][0],
+				)
+			},
+		},
+		{
+			name: "unknown script key type",
+			req: &entities.ListAssetsRequest{
+				ScriptKeyType: &entities.ScriptKeyTypeQuery{
+					ExplicitType: &invalidType,
+				},
+			},
+			wantErr: "unknown script key type",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			params, ref, err := listAssetRecordsQueryParams(tc.req)
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, tc.wantRef, ref)
+			tc.validate(t, params)
+		})
+	}
+}
+
+func TestMarshalScriptKeyType(t *testing.T) {
+	tests := []struct {
+		name          string
+		scriptKeyType entities.ScriptKeyType
+		want          string
+	}{
+		{
+			name:          "unknown",
+			scriptKeyType: entities.ScriptKeyTypeUnknown,
+			want:          "SCRIPT_KEY_UNKNOWN",
+		},
+		{
+			name:          "bip86",
+			scriptKeyType: entities.ScriptKeyTypeBIP86,
+			want:          "SCRIPT_KEY_BIP86",
+		},
+		{
+			name:          "script path external",
+			scriptKeyType: entities.ScriptKeyTypeScriptPathExternal,
+			want:          "SCRIPT_KEY_SCRIPT_PATH_EXTERNAL",
+		},
+		{
+			name:          "burn",
+			scriptKeyType: entities.ScriptKeyTypeBurn,
+			want:          "SCRIPT_KEY_BURN",
+		},
+		{
+			name:          "tombstone",
+			scriptKeyType: entities.ScriptKeyTypeTombstone,
+			want:          "SCRIPT_KEY_TOMBSTONE",
+		},
+		{
+			name:          "channel",
+			scriptKeyType: entities.ScriptKeyTypeChannel,
+			want:          "SCRIPT_KEY_CHANNEL",
+		},
+		{
+			name:          "unique pedersen",
+			scriptKeyType: entities.ScriptKeyTypeUniquePedersen,
+			want:          "SCRIPT_KEY_UNIQUE_PEDERSEN",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(
+				t, tc.want,
+				marshalScriptKeyType(tc.scriptKeyType),
+			)
+		})
+	}
 }
 
 func TestBurnAssetRequestBody(t *testing.T) {
