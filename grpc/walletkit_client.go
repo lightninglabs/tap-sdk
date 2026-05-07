@@ -387,6 +387,9 @@ func (m *walletKitClient) ProveAssetOwnership(ctx context.Context,
 			"asset-ID ref; group-key refs span multiple " +
 			"tranches (see issue #85)")
 	}
+	if err := entities.ValidateOwnershipChallenge(req.Challenge); err != nil {
+		return nil, err
+	}
 
 	authCtx, client := m.rawClientWithMacAuth(ctx)
 
@@ -409,6 +412,10 @@ func (m *walletKitClient) ProveAssetOwnership(ctx context.Context,
 	}
 
 	return &entities.OwnershipProof{
+		AssetRef:         req.AssetRef,
+		IssuanceID:       assetID,
+		ScriptKey:        req.ScriptKey,
+		Outpoint:         req.Outpoint,
 		ProofWithWitness: resp.ProofWithWitness,
 	}, nil
 }
@@ -417,6 +424,10 @@ func (m *walletKitClient) ProveAssetOwnership(ctx context.Context,
 func (m *walletKitClient) VerifyAssetOwnership(ctx context.Context,
 	req *entities.VerifyOwnershipRequest) (
 	*entities.VerifyOwnershipResponse, error) {
+
+	if err := entities.ValidateOwnershipChallenge(req.Challenge); err != nil {
+		return nil, err
+	}
 
 	authCtx, client := m.rawClientWithMacAuth(ctx)
 
@@ -433,20 +444,53 @@ func (m *walletKitClient) VerifyAssetOwnership(ctx context.Context,
 		return nil, err
 	}
 
+	return unmarshalVerifyOwnershipResponse(resp)
+}
+
+func unmarshalVerifyOwnershipResponse(
+	resp *assetwalletrpc.VerifyAssetOwnershipResponse) (
+	*entities.VerifyOwnershipResponse, error) {
+
+	if resp == nil {
+		return nil, fmt.Errorf("nil verify ownership response")
+	}
+
 	result := &entities.VerifyOwnershipResponse{
 		Valid:       resp.ValidProof,
 		BlockHeight: resp.BlockHeight,
 	}
 
 	if resp.Outpoint != nil {
+		if len(resp.Outpoint.Txid) != len(result.Outpoint.Txid) {
+			return nil, fmt.Errorf(
+				"invalid outpoint txid length: got %d bytes, want %d",
+				len(resp.Outpoint.Txid), len(result.Outpoint.Txid),
+			)
+		}
+
 		result.Outpoint = entities.Outpoint{
 			Index: resp.Outpoint.OutputIndex,
 		}
 		copy(result.Outpoint.Txid[:], resp.Outpoint.Txid)
 	}
 
-	if len(resp.BlockHash) == 32 {
+	switch len(resp.BlockHash) {
+	case 0:
+
+	case len(result.BlockHash):
 		copy(result.BlockHash[:], resp.BlockHash)
+
+	default:
+		return nil, fmt.Errorf(
+			"invalid block hash length: got %d bytes, want %d",
+			len(resp.BlockHash), len(result.BlockHash),
+		)
+	}
+
+	if result.Valid && result.Outpoint == (entities.Outpoint{}) {
+		return nil, fmt.Errorf(
+			"valid ownership proof response missing outpoint",
+		)
 	}
 
 	return result, nil

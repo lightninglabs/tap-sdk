@@ -549,6 +549,9 @@ func (w *walletKitClient) ProveAssetOwnership(ctx context.Context,
 			"asset-ID ref; group-key refs span multiple " +
 			"tranches (see issue #85)")
 	}
+	if err := entities.ValidateOwnershipChallenge(req.Challenge); err != nil {
+		return nil, err
+	}
 
 	body := map[string]any{
 		"asset_id": hex.EncodeToString(
@@ -585,6 +588,10 @@ func (w *walletKitClient) ProveAssetOwnership(ctx context.Context,
 	}
 
 	return &entities.OwnershipProof{
+		AssetRef:         req.AssetRef,
+		IssuanceID:       assetID,
+		ScriptKey:        req.ScriptKey,
+		Outpoint:         req.Outpoint,
 		ProofWithWitness: proofBytes,
 	}, nil
 }
@@ -594,10 +601,17 @@ func (w *walletKitClient) VerifyAssetOwnership(ctx context.Context,
 	req *entities.VerifyOwnershipRequest) (
 	*entities.VerifyOwnershipResponse, error) {
 
+	if err := entities.ValidateOwnershipChallenge(req.Challenge); err != nil {
+		return nil, err
+	}
+
 	body := map[string]any{
 		"proof_with_witness": hex.EncodeToString(
 			req.ProofWithWitness,
 		),
+	}
+	if len(req.Challenge) > 0 {
+		body["challenge"] = hex.EncodeToString(req.Challenge)
 	}
 
 	var resp jsonVerifyOwnershipResponse
@@ -609,9 +623,7 @@ func (w *walletKitClient) VerifyAssetOwnership(ctx context.Context,
 		return nil, err
 	}
 
-	return &entities.VerifyOwnershipResponse{
-		Valid: resp.ValidProof,
-	}, nil
+	return unmarshalVerifyOwnershipResponse(&resp)
 }
 
 // RemoveUTXOLease removes a lease on a UTXO.

@@ -48,6 +48,7 @@ func TestVerifyOwnershipResponseUnmarshal(t *testing.T) {
 	tests := []struct {
 		name     string
 		resp     *assetwalletrpc.VerifyAssetOwnershipResponse
+		wantErr  string
 		validate func(*testing.T,
 			*entities.VerifyOwnershipResponse)
 	}{
@@ -87,32 +88,40 @@ func TestVerifyOwnershipResponseUnmarshal(t *testing.T) {
 				require.False(t, result.Valid)
 			},
 		},
+		{
+			name: "valid proof without outpoint",
+			resp: &assetwalletrpc.VerifyAssetOwnershipResponse{
+				ValidProof: true,
+			},
+			wantErr: "missing outpoint",
+		},
+		{
+			name: "invalid outpoint txid length",
+			resp: &assetwalletrpc.VerifyAssetOwnershipResponse{
+				Outpoint: &taprpc.OutPoint{
+					Txid: []byte{1, 2, 3},
+				},
+			},
+			wantErr: "invalid outpoint txid length",
+		},
+		{
+			name: "invalid block hash length",
+			resp: &assetwalletrpc.VerifyAssetOwnershipResponse{
+				BlockHash: []byte{1, 2, 3},
+			},
+			wantErr: "invalid block hash length",
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			result := &entities.VerifyOwnershipResponse{
-				Valid:       tc.resp.ValidProof,
-				BlockHeight: tc.resp.BlockHeight,
+			result, err := unmarshalVerifyOwnershipResponse(tc.resp)
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				return
 			}
 
-			if tc.resp.Outpoint != nil {
-				result.Outpoint = entities.Outpoint{
-					Index: tc.resp.Outpoint.OutputIndex,
-				}
-				copy(
-					result.Outpoint.Txid[:],
-					tc.resp.Outpoint.Txid,
-				)
-			}
-
-			if len(tc.resp.BlockHash) == 32 {
-				copy(
-					result.BlockHash[:],
-					tc.resp.BlockHash,
-				)
-			}
-
+			require.NoError(t, err)
 			tc.validate(t, result)
 		})
 	}

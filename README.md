@@ -168,6 +168,39 @@ if err != nil {
 }
 ```
 
+### Ownership proofs
+
+`Wallet.ProveOwnership()` accepts the same `AssetRef` handles used by the rest
+of the wallet API. It resolves the concrete issuance ID, script key, and anchor
+outpoint internally before calling tapd's low-level ownership RPC.
+
+```go
+challenge := make([]byte, 32)
+if _, err := rand.Read(challenge); err != nil {
+	log.Fatal(err)
+}
+
+proofs, err := wallet.ProveOwnership(ctx, token.AssetRef,
+	tapsdk.WithOwnershipChallenge(challenge),
+	tapsdk.WithOwnershipAmount(100),
+)
+if err != nil {
+	log.Fatal(err)
+}
+
+for _, proof := range proofs.Proofs {
+	verified, err := wallet.VerifyOwnership(ctx, proof.ProofWithWitness,
+		tapsdk.WithOwnershipChallenge(challenge),
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if !verified.Valid {
+		log.Fatal("invalid ownership proof")
+	}
+}
+```
+
 ### Interactive receive
 
 ```go

@@ -315,6 +315,24 @@ var (
 	// entries or entry proof bytes.
 	ErrIncompleteProofBundle = errors.New("proof bundle is incomplete")
 
+	// ErrOwnershipProofRequired is returned when ownership verification is
+	// attempted without proof bytes.
+	ErrOwnershipProofRequired = errors.New("ownership proof is required")
+
+	// ErrInvalidChallenge is returned when an ownership proof challenge is
+	// explicitly set but is not a non-zero 32-byte value.
+	ErrInvalidChallenge = errors.New("invalid ownership proof challenge")
+
+	// ErrOwnershipAmountRequired is returned when proving fungible asset
+	// ownership without an explicit amount.
+	ErrOwnershipAmountRequired = errors.New(
+		"ownership proof amount is required",
+	)
+
+	// ErrOwnershipProofInvalid is returned when ownership verification
+	// completes but tapd reports the proof is invalid.
+	ErrOwnershipProofInvalid = errors.New("ownership proof is invalid")
+
 	// ErrAssetNameRequired is returned when an issuer call is missing the
 	// asset or NFT name required by tapd.
 	ErrAssetNameRequired = errors.New("asset name is required")
@@ -389,6 +407,10 @@ var knownSentinelErrors = []error{
 	ErrAssetUnknown,
 	ErrNoProofs,
 	ErrIncompleteProofBundle,
+	ErrOwnershipProofRequired,
+	ErrInvalidChallenge,
+	ErrOwnershipAmountRequired,
+	ErrOwnershipProofInvalid,
 	ErrAssetNameRequired,
 	ErrMintBatchActive,
 	ErrWrongAssetType,
