@@ -1,10 +1,13 @@
 package rest
 
 import (
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"testing"
 
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/require"
 )
@@ -337,6 +340,99 @@ func TestUnmarshalBurnRecordRejectsMalformedFields(t *testing.T) {
 			require.Contains(t, err.Error(), tc.wantErr)
 		})
 	}
+}
+
+func TestUnmarshalVerifyOwnershipResponse(t *testing.T) {
+	var (
+		txid      [32]byte
+		blockHash [32]byte
+	)
+	for i := range txid {
+		txid[i] = byte(i + 1)
+		blockHash[i] = byte(32 - i)
+	}
+
+	resp, err := unmarshalVerifyOwnershipResponse(
+		&jsonVerifyOwnershipResponse{
+			ValidProof: true,
+			Outpoint: &jsonOutpoint{
+				Txid:        hex.EncodeToString(txid[:]),
+				OutputIndex: 7,
+			},
+			BlockHash:   hex.EncodeToString(blockHash[:]),
+			BlockHeight: 800000,
+		},
+	)
+	require.NoError(t, err)
+	require.True(t, resp.Valid)
+	require.Equal(t, uint32(7), resp.Outpoint.Index)
+	require.Equal(t, txid, resp.Outpoint.Txid)
+	require.Equal(t, entities.Hash(blockHash), resp.BlockHash)
+	require.Equal(t, uint32(800000), resp.BlockHeight)
+
+	displayHash := chainhash.Hash(blockHash)
+	resp, err = unmarshalVerifyOwnershipResponse(
+		&jsonVerifyOwnershipResponse{
+			ValidProof: false,
+			OutpointStr: fmt.Sprintf(
+				"%s:%d", hex.EncodeToString(txid[:]), 3,
+			),
+			BlockHashStr: displayHash.String(),
+		},
+	)
+	require.NoError(t, err)
+	require.False(t, resp.Valid)
+	require.Equal(t, uint32(3), resp.Outpoint.Index)
+	require.Equal(t, entities.Hash(blockHash), resp.BlockHash)
+
+	resp, err = unmarshalVerifyOwnershipResponse(
+		&jsonVerifyOwnershipResponse{
+			OutpointStr: fmt.Sprintf(
+				"%s:%d", hex.EncodeToString(txid[:]), 4,
+			),
+			BlockHashStr: displayHash.String(),
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, entities.Hash(blockHash), resp.BlockHash)
+
+	var fallbackHash [32]byte
+	for i := range fallbackHash {
+		fallbackHash[i] = 0xff - byte(i)
+	}
+	resp, err = unmarshalVerifyOwnershipResponse(
+		&jsonVerifyOwnershipResponse{
+			OutpointStr: fmt.Sprintf(
+				"%s:%d", hex.EncodeToString(txid[:]), 5,
+			),
+			BlockHash: base64.StdEncoding.EncodeToString(
+				fallbackHash[:],
+			),
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, entities.Hash(fallbackHash), resp.BlockHash)
+
+	_, err = unmarshalVerifyOwnershipResponse(
+		&jsonVerifyOwnershipResponse{
+			BlockHash: "01",
+		},
+	)
+	require.ErrorContains(t, err, "invalid block hash length")
+
+	_, err = unmarshalVerifyOwnershipResponse(
+		&jsonVerifyOwnershipResponse{
+			BlockHash: "not hex or base64",
+		},
+	)
+	require.ErrorContains(t, err, "invalid block_hash")
+
+	_, err = unmarshalVerifyOwnershipResponse(
+		&jsonVerifyOwnershipResponse{
+			ValidProof: true,
+		},
+	)
+	require.ErrorContains(t, err, "missing outpoint")
 }
 
 func TestParseAssetVersion(t *testing.T) {

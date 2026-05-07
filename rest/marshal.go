@@ -1285,6 +1285,92 @@ func unmarshalBurnRecord(
 	}, nil
 }
 
+func unmarshalVerifyOwnershipResponse(
+	resp *jsonVerifyOwnershipResponse) (*entities.VerifyOwnershipResponse,
+	error) {
+
+	if resp == nil {
+		return nil, fmt.Errorf("nil verify ownership response")
+	}
+
+	result := &entities.VerifyOwnershipResponse{
+		Valid:       resp.ValidProof,
+		BlockHeight: resp.BlockHeight,
+	}
+
+	switch {
+	case resp.Outpoint != nil:
+		outpoint, err := unmarshalJSONOutpoint(resp.Outpoint)
+		if err != nil {
+			return nil, fmt.Errorf("invalid outpoint: %w", err)
+		}
+		result.Outpoint = outpoint
+
+	case resp.OutpointStr != "":
+		outpoint, err := entities.NewOutpointFromStr(resp.OutpointStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid outpoint: %w", err)
+		}
+		result.Outpoint = outpoint
+	}
+
+	blockHashBytes, err := parseOwnershipBlockHash(resp)
+	if err != nil {
+		return nil, err
+	}
+	switch len(blockHashBytes) {
+	case 0:
+
+	case len(result.BlockHash):
+		copy(result.BlockHash[:], blockHashBytes)
+
+	default:
+		return nil, fmt.Errorf(
+			"invalid block hash length: got %d bytes, want %d",
+			len(blockHashBytes), len(result.BlockHash),
+		)
+	}
+	if result.Valid && result.Outpoint == (entities.Outpoint{}) {
+		return nil, fmt.Errorf(
+			"valid ownership proof response missing outpoint",
+		)
+	}
+
+	return result, nil
+}
+
+func parseOwnershipBlockHash(
+	resp *jsonVerifyOwnershipResponse) ([]byte, error) {
+
+	if resp.BlockHash != "" {
+		blockHash, err := parseHexBytes(resp.BlockHash)
+		if err == nil {
+			return blockHash, nil
+		}
+
+		blockHash, b64Err := parseBase64Bytes(resp.BlockHash)
+		if b64Err != nil {
+			return nil, fmt.Errorf(
+				"invalid block_hash: hex=%v base64=%w",
+				err, b64Err,
+			)
+		}
+
+		return blockHash, nil
+	}
+
+	if resp.BlockHashStr == "" {
+		return nil, nil
+	}
+
+	blockHash, err := chainhash.NewHashFromStr(resp.BlockHashStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid block_hash_str: %w", err)
+	}
+
+	return blockHash.CloneBytes(), nil
+}
+
 // unmarshalFetchAssetMetaResponse converts a JSON fetch meta response
 // to an entity.
 func unmarshalFetchAssetMetaResponse(

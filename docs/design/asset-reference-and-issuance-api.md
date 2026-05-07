@@ -234,6 +234,13 @@ Proof decode and transfer registration responses should include `AssetRef`.
 When the proof is about a specific issuance, the concrete identifier should be
 named `IssuanceID`.
 
+Ownership proof requests are also `AssetRef`-first at the Wallet layer.
+`Wallet.ProveOwnership` resolves wallet-owned outputs to the concrete
+issuance ID, script key, and outpoint needed by tapd's low-level ownership RPC.
+Fungible proofs require an explicit amount and may return multiple concrete
+proofs to satisfy it. Collection refs prove one owned NFT item by default, or
+every owned item when requested explicitly.
+
 ## Minting Redesign
 
 This is the most important naming cleanup after `AssetRef`.

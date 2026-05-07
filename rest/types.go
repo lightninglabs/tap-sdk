@@ -528,7 +528,12 @@ type jsonOwnershipProof struct {
 // jsonVerifyOwnershipResponse is the JSON shape of
 // assetwalletrpc.VerifyAssetOwnershipResponse.
 type jsonVerifyOwnershipResponse struct {
-	ValidProof bool `json:"valid_proof"`
+	ValidProof   bool          `json:"valid_proof"`
+	Outpoint     *jsonOutpoint `json:"outpoint"`
+	OutpointStr  string        `json:"outpoint_str"`
+	BlockHash    string        `json:"block_hash"`
+	BlockHashStr string        `json:"block_hash_str"`
+	BlockHeight  uint32        `json:"block_height"`
 }
 
 // jsonDeclareScriptKeyResponse is the JSON shape of
