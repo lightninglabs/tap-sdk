@@ -3,7 +3,7 @@ package grpc
 import (
 	"testing"
 
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/universerpc"
 	"github.com/stretchr/testify/require"
@@ -20,23 +20,23 @@ var validGroupKey = []byte{
 }
 
 func TestMarshalUniverseID(t *testing.T) {
-	assetID := entities.AssetID{}
+	assetID := tapsdk.AssetID{}
 	copy(assetID[:], testAssetID)
 
-	groupKey, err := entities.ParsePubKey(validGroupKey)
+	groupKey, err := tapsdk.ParsePubKey(validGroupKey)
 	require.NoError(t, err)
 
 	tests := []struct {
 		name     string
-		id       *entities.UniverseID
+		id       *tapsdk.UniverseID
 		wantErr  bool
 		validate func(*testing.T, *universerpc.ID)
 	}{
 		{
 			name: "by asset ID",
-			id: &entities.UniverseID{
-				AssetRef:  entities.AssetRefFromAssetID(assetID),
-				ProofType: entities.ProofTypeIssuance,
+			id: &tapsdk.UniverseID{
+				AssetRef:  tapsdk.AssetRefFromAssetID(assetID),
+				ProofType: tapsdk.ProofTypeIssuance,
 			},
 			validate: func(t *testing.T,
 				rpcID *universerpc.ID) {
@@ -54,9 +54,9 @@ func TestMarshalUniverseID(t *testing.T) {
 		},
 		{
 			name: "by group key",
-			id: &entities.UniverseID{
-				AssetRef:  entities.AssetRefFromGroupKey(groupKey),
-				ProofType: entities.ProofTypeTransfer,
+			id: &tapsdk.UniverseID{
+				AssetRef:  tapsdk.AssetRefFromGroupKey(groupKey),
+				ProofType: tapsdk.ProofTypeTransfer,
 			},
 			validate: func(t *testing.T,
 				rpcID *universerpc.ID) {
@@ -74,7 +74,7 @@ func TestMarshalUniverseID(t *testing.T) {
 		},
 		{
 			name:    "unspecified",
-			id:      &entities.UniverseID{},
+			id:      &tapsdk.UniverseID{},
 			wantErr: true,
 		},
 	}
@@ -97,7 +97,7 @@ func TestUnmarshalUniverseID(t *testing.T) {
 		name     string
 		rpcID    *universerpc.ID
 		wantErr  string
-		validate func(*testing.T, *entities.UniverseID)
+		validate func(*testing.T, *tapsdk.UniverseID)
 	}{
 		{
 			name:    "nil ID",
@@ -113,11 +113,11 @@ func TestUnmarshalUniverseID(t *testing.T) {
 				ProofType: universerpc.ProofType_PROOF_TYPE_ISSUANCE,
 			},
 			validate: func(t *testing.T,
-				id *entities.UniverseID) {
+				id *tapsdk.UniverseID) {
 
 				require.True(t, id.AssetRef.IsAssetIDRef())
 				require.Equal(
-					t, entities.ProofTypeIssuance,
+					t, tapsdk.ProofTypeIssuance,
 					id.ProofType,
 				)
 			},
@@ -131,11 +131,11 @@ func TestUnmarshalUniverseID(t *testing.T) {
 				ProofType: universerpc.ProofType_PROOF_TYPE_TRANSFER,
 			},
 			validate: func(t *testing.T,
-				id *entities.UniverseID) {
+				id *tapsdk.UniverseID) {
 
 				require.True(t, id.AssetRef.IsGroupRef())
 				require.Equal(
-					t, entities.ProofTypeTransfer,
+					t, tapsdk.ProofTypeTransfer,
 					id.ProofType,
 				)
 			},
@@ -358,21 +358,21 @@ func TestUnmarshalAssetLeaf(t *testing.T) {
 }
 
 func TestMarshalUniverseKey(t *testing.T) {
-	assetID := entities.AssetID{}
+	assetID := tapsdk.AssetID{}
 	copy(assetID[:], testAssetID)
 
-	scriptKey, err := entities.ParsePubKey(validGroupKey)
+	scriptKey, err := tapsdk.ParsePubKey(validGroupKey)
 	require.NoError(t, err)
 
-	op, err := entities.NewOutpointFromStr(zeroGenesisPoint)
+	op, err := tapsdk.NewOutpointFromStr(zeroGenesisPoint)
 	require.NoError(t, err)
 
-	key := &entities.UniverseKey{
-		ID: entities.UniverseID{
-			AssetRef:  entities.AssetRefFromAssetID(assetID),
-			ProofType: entities.ProofTypeIssuance,
+	key := &tapsdk.UniverseKey{
+		ID: tapsdk.UniverseID{
+			AssetRef:  tapsdk.AssetRefFromAssetID(assetID),
+			ProofType: tapsdk.ProofTypeIssuance,
 		},
-		LeafKey: entities.AssetLeafKey{
+		LeafKey: tapsdk.AssetLeafKey{
 			Outpoint:  op,
 			ScriptKey: scriptKey,
 		},
@@ -391,22 +391,22 @@ func TestMarshalUniverseKey(t *testing.T) {
 func TestMarshalProofType(t *testing.T) {
 	tests := []struct {
 		name string
-		in   entities.ProofType
+		in   tapsdk.ProofType
 		want universerpc.ProofType
 	}{
 		{
 			name: "issuance",
-			in:   entities.ProofTypeIssuance,
+			in:   tapsdk.ProofTypeIssuance,
 			want: universerpc.ProofType_PROOF_TYPE_ISSUANCE,
 		},
 		{
 			name: "transfer",
-			in:   entities.ProofTypeTransfer,
+			in:   tapsdk.ProofTypeTransfer,
 			want: universerpc.ProofType_PROOF_TYPE_TRANSFER,
 		},
 		{
 			name: "unspecified",
-			in:   entities.ProofTypeUnspecified,
+			in:   tapsdk.ProofTypeUnspecified,
 			want: universerpc.ProofType_PROOF_TYPE_UNSPECIFIED,
 		},
 	}
@@ -423,22 +423,22 @@ func TestUnmarshalProofType(t *testing.T) {
 	tests := []struct {
 		name string
 		in   universerpc.ProofType
-		want entities.ProofType
+		want tapsdk.ProofType
 	}{
 		{
 			name: "issuance",
 			in:   universerpc.ProofType_PROOF_TYPE_ISSUANCE,
-			want: entities.ProofTypeIssuance,
+			want: tapsdk.ProofTypeIssuance,
 		},
 		{
 			name: "transfer",
 			in:   universerpc.ProofType_PROOF_TYPE_TRANSFER,
-			want: entities.ProofTypeTransfer,
+			want: tapsdk.ProofTypeTransfer,
 		},
 		{
 			name: "unspecified",
 			in:   universerpc.ProofType_PROOF_TYPE_UNSPECIFIED,
-			want: entities.ProofTypeUnspecified,
+			want: tapsdk.ProofTypeUnspecified,
 		},
 	}
 
@@ -453,40 +453,40 @@ func TestUnmarshalProofType(t *testing.T) {
 func TestMarshalSortDirection(t *testing.T) {
 	// marshalSortDirection is a direct cast, matching
 	// wallet_client.go's approach for consistency.
-	got := marshalSortDirection(entities.SortDescending)
+	got := marshalSortDirection(tapsdk.SortDescending)
 	require.Equal(
-		t, taprpc.SortDirection(entities.SortDescending), got,
+		t, taprpc.SortDirection(tapsdk.SortDescending), got,
 	)
 
-	got = marshalSortDirection(entities.SortAscending)
+	got = marshalSortDirection(tapsdk.SortAscending)
 	require.Equal(
-		t, taprpc.SortDirection(entities.SortAscending), got,
+		t, taprpc.SortDirection(tapsdk.SortAscending), got,
 	)
 }
 
 func TestMarshalAssetStatsQuery(t *testing.T) {
-	assetID := entities.AssetID{}
+	assetID := tapsdk.AssetID{}
 	copy(assetID[:], testAssetID)
 
 	tests := []struct {
 		name     string
-		req      *entities.AssetStatsQuery
+		req      *tapsdk.AssetStatsQuery
 		validate func(*testing.T,
 			*universerpc.AssetStatsQuery)
 	}{
 		{
 			name: "full query",
-			req: &entities.AssetStatsQuery{
+			req: &tapsdk.AssetStatsQuery{
 				AssetNameFilter: "test",
-				AssetRefFilter: func() *entities.AssetRef {
-					ref := entities.AssetRefFromAssetID(assetID)
+				AssetRefFilter: func() *tapsdk.AssetRef {
+					ref := tapsdk.AssetRefFromAssetID(assetID)
 					return &ref
 				}(),
-				AssetTypeFilter: entities.FilterAssetNormal,
-				SortBy:          entities.SortByAssetName,
+				AssetTypeFilter: tapsdk.FilterAssetNormal,
+				SortBy:          tapsdk.SortByAssetName,
 				Offset:          10,
 				Limit:           50,
-				Direction:       entities.SortDescending,
+				Direction:       tapsdk.SortDescending,
 			},
 			validate: func(t *testing.T,
 				rpcReq *universerpc.AssetStatsQuery) {
@@ -519,7 +519,7 @@ func TestMarshalAssetStatsQuery(t *testing.T) {
 		},
 		{
 			name: "minimal query",
-			req:  &entities.AssetStatsQuery{},
+			req:  &tapsdk.AssetStatsQuery{},
 			validate: func(t *testing.T,
 				rpcReq *universerpc.AssetStatsQuery) {
 

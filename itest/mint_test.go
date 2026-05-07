@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/stretchr/testify/require"
 )
 
@@ -23,7 +23,7 @@ func TestMintAsset(t *testing.T) {
 		require.NotNil(t, minted.Asset)
 		require.NotNil(t, minted.Batch)
 		require.True(t, minted.Ref.IsGroupRef())
-		require.Equal(t, entities.BatchStateFinalized,
+		require.Equal(t, tapsdk.BatchStateFinalized,
 			minted.Batch.Batch.State)
 		require.True(t, minted.Asset.AssetRef.IsGroupRef())
 		require.Equal(t, uint64(1000), minted.Asset.Amount)
@@ -38,7 +38,7 @@ func TestMintAsset(t *testing.T) {
 		// ListBatches must expose the finalized batch without a
 		// filter too.
 		batches, err := h.AliceClient.ListBatches(
-			ctx, &entities.ListBatchesRequest{},
+			ctx, &tapsdk.ListBatchesRequest{},
 		)
 		require.NoError(t, err)
 		require.NotEmpty(t, batches)
@@ -63,7 +63,7 @@ func TestMintCollectible(t *testing.T) {
 		require.NotNil(t, minted.Asset)
 		require.NotNil(t, minted.Batch)
 		require.True(t, minted.Ref.IsAssetIDRef())
-		require.Equal(t, entities.BatchStateFinalized,
+		require.Equal(t, tapsdk.BatchStateFinalized,
 			minted.Batch.Batch.State)
 		require.True(t, minted.Asset.AssetRef.IsAssetIDRef())
 		require.Equal(t, uint64(1), minted.Asset.Amount)
@@ -94,9 +94,9 @@ func TestMultiAssetBatchLifecycle(t *testing.T) {
 		)
 
 		firstBatch, err := h.AliceClient.MintAsset(ctx,
-			&entities.MintAssetRequest{
-				Asset: &entities.MintAsset{
-					AssetType:     entities.AssetTypeNormal,
+			&tapsdk.MintAssetRequest{
+				Asset: &tapsdk.MintAsset{
+					AssetType:     tapsdk.AssetTypeNormal,
 					Name:          tokenName,
 					InitialSupply: 700,
 				},
@@ -107,9 +107,9 @@ func TestMultiAssetBatchLifecycle(t *testing.T) {
 		require.NotNil(t, firstBatch)
 
 		secondBatch, err := h.AliceClient.MintAsset(ctx,
-			&entities.MintAssetRequest{
-				Asset: &entities.MintAsset{
-					AssetType:     entities.AssetTypeCollectible,
+			&tapsdk.MintAssetRequest{
+				Asset: &tapsdk.MintAsset{
+					AssetType:     tapsdk.AssetTypeCollectible,
 					Name:          nftName,
 					InitialSupply: 1,
 				},
@@ -120,7 +120,7 @@ func TestMultiAssetBatchLifecycle(t *testing.T) {
 		require.Equal(t, firstBatch.BatchKey, secondBatch.BatchKey)
 
 		pending, err := h.AliceClient.ListBatches(
-			ctx, &entities.ListBatchesRequest{
+			ctx, &tapsdk.ListBatchesRequest{
 				BatchKey: &firstBatch.BatchKey,
 			},
 		)
@@ -128,7 +128,7 @@ func TestMultiAssetBatchLifecycle(t *testing.T) {
 		require.Len(t, pending, 1)
 
 		_, err = h.AliceClient.FinalizeBatch(ctx,
-			&entities.FinalizeBatchRequest{ShortResponse: true},
+			&tapsdk.FinalizeBatchRequest{ShortResponse: true},
 		)
 		require.NoError(t, err)
 
@@ -138,7 +138,7 @@ func TestMultiAssetBatchLifecycle(t *testing.T) {
 
 		finalized, err := h.fetchMintBatch(ctx, firstBatch.BatchKey)
 		require.NoError(t, err)
-		require.Equal(t, entities.BatchStateFinalized,
+		require.Equal(t, tapsdk.BatchStateFinalized,
 			finalized.Batch.State)
 
 		token := h.WaitForAssetByTag(
@@ -152,7 +152,7 @@ func TestMultiAssetBatchLifecycle(t *testing.T) {
 		)
 		require.Equal(t, uint64(1), nft.Amount)
 		require.True(t, nft.AssetRef.IsAssetIDRef())
-		require.Equal(t, entities.AssetTypeCollectible,
+		require.Equal(t, tapsdk.AssetTypeCollectible,
 			nft.Genesis.Type)
 	})
 }
@@ -165,9 +165,9 @@ func TestCancelBatch(t *testing.T) {
 		// Stage a single asset into a fresh batch and cancel it
 		// before finalization.
 		_, err := h.AliceClient.MintAsset(ctx,
-			&entities.MintAssetRequest{
-				Asset: &entities.MintAsset{
-					AssetType:     entities.AssetTypeNormal,
+			&tapsdk.MintAssetRequest{
+				Asset: &tapsdk.MintAsset{
+					AssetType:     tapsdk.AssetTypeNormal,
 					Name:          "cancel-token",
 					InitialSupply: 10,
 				},

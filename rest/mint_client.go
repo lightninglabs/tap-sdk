@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 )
 
@@ -30,11 +30,11 @@ type mintAssetRequest struct {
 
 // mintAsset describes an asset to add to a minting batch.
 type mintAsset struct {
-	entities.PendingMintAsset
+	tapsdk.PendingMintAsset
 
 	groupedAsset            bool
 	decimalDisplay          uint32
-	externalGroupKey        *entities.ExternalKey
+	externalGroupKey        *tapsdk.ExternalKey
 	enableSupplyCommitments bool
 }
 
@@ -47,7 +47,7 @@ type jsonMintAssetRequest struct {
 // mintAssetRPC adds an asset to the pending mint batch using
 // the internal request type.
 func (m *mintClient) mintAssetRPC(ctx context.Context,
-	req *mintAssetRequest) (*entities.MintingBatch, error) {
+	req *mintAssetRequest) (*tapsdk.MintingBatch, error) {
 
 	body := &jsonMintAssetRequest{}
 	if req != nil {
@@ -69,8 +69,8 @@ func (m *mintClient) mintAssetRPC(ctx context.Context,
 
 // MintAsset adds a brand-new asset to the pending mint batch.
 func (m *mintClient) MintAsset(ctx context.Context,
-	req *entities.MintAssetRequest) (
-	*entities.MintingBatch, error) {
+	req *tapsdk.MintAssetRequest) (
+	*tapsdk.MintingBatch, error) {
 
 	return m.mintAssetRPC(
 		ctx, mintAssetRequestFromMintAsset(req),
@@ -80,8 +80,8 @@ func (m *mintClient) MintAsset(ctx context.Context,
 // MintIssuance adds an additional issuance to the pending
 // mint batch.
 func (m *mintClient) MintIssuance(ctx context.Context,
-	req *entities.MintIssuanceRequest) (
-	*entities.MintingBatch, error) {
+	req *tapsdk.MintIssuanceRequest) (
+	*tapsdk.MintingBatch, error) {
 
 	mintReq, err := mintAssetRequestFromMintIssuance(req)
 	if err != nil {
@@ -99,8 +99,8 @@ type jsonFundBatchRequest struct {
 
 // FundBatch funds the current pending mint batch.
 func (m *mintClient) FundBatch(ctx context.Context,
-	req *entities.FundBatchRequest) (
-	*entities.VerboseMintingBatch, error) {
+	req *tapsdk.FundBatchRequest) (
+	*tapsdk.VerboseMintingBatch, error) {
 
 	body := &jsonFundBatchRequest{}
 	if req != nil {
@@ -136,8 +136,8 @@ type jsonGroupWitness struct {
 
 // SealBatch seals a funded batch before finalization.
 func (m *mintClient) SealBatch(ctx context.Context,
-	req *entities.SealBatchRequest) (
-	*entities.MintingBatch, error) {
+	req *tapsdk.SealBatchRequest) (
+	*tapsdk.MintingBatch, error) {
 
 	body := &jsonSealBatchRequest{}
 	if req != nil {
@@ -179,8 +179,8 @@ type jsonFinalizeBatchRequest struct {
 
 // FinalizeBatch finalizes the current pending mint batch.
 func (m *mintClient) FinalizeBatch(ctx context.Context,
-	req *entities.FinalizeBatchRequest) (
-	*entities.MintingBatch, error) {
+	req *tapsdk.FinalizeBatchRequest) (
+	*tapsdk.MintingBatch, error) {
 
 	body := &jsonFinalizeBatchRequest{}
 	if req != nil {
@@ -202,7 +202,7 @@ func (m *mintClient) FinalizeBatch(ctx context.Context,
 
 // CancelBatch cancels the current mint batch.
 func (m *mintClient) CancelBatch(
-	ctx context.Context) (*entities.CancelBatchResponse, error) {
+	ctx context.Context) (*tapsdk.CancelBatchResponse, error) {
 
 	var resp jsonCancelBatchResponse
 	err := m.transport.doPost(
@@ -220,22 +220,22 @@ func (m *mintClient) CancelBatch(
 		)
 	}
 
-	batchKey, err := entities.ParsePubKey(batchKeyBytes)
+	batchKey, err := tapsdk.ParsePubKey(batchKeyBytes)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"invalid batch key: %w", err,
 		)
 	}
 
-	return &entities.CancelBatchResponse{
+	return &tapsdk.CancelBatchResponse{
 		BatchKey: batchKey,
 	}, nil
 }
 
 // ListBatches lists mint batches known to the daemon.
 func (m *mintClient) ListBatches(ctx context.Context,
-	req *entities.ListBatchesRequest) (
-	[]*entities.VerboseMintingBatch, error) {
+	req *tapsdk.ListBatchesRequest) (
+	[]*tapsdk.VerboseMintingBatch, error) {
 
 	params := url.Values{}
 	batchKeyPath := ""
@@ -269,7 +269,7 @@ func (m *mintClient) ListBatches(ctx context.Context,
 	}
 
 	batches := make(
-		[]*entities.VerboseMintingBatch, 0,
+		[]*tapsdk.VerboseMintingBatch, 0,
 		len(resp.Batches),
 	)
 	for _, jsonBatch := range resp.Batches {
@@ -287,7 +287,7 @@ func (m *mintClient) ListBatches(ctx context.Context,
 // unmarshalRESTVerboseBatch converts a JSON verbose batch to the
 // entity type.
 func unmarshalRESTVerboseBatch(
-	b *jsonVerboseBatch) (*entities.VerboseMintingBatch, error) {
+	b *jsonVerboseBatch) (*tapsdk.VerboseMintingBatch, error) {
 
 	if b == nil {
 		return nil, fmt.Errorf("nil verbose batch")
@@ -298,11 +298,11 @@ func unmarshalRESTVerboseBatch(
 		return nil, err
 	}
 
-	return &entities.VerboseMintingBatch{Batch: *batch}, nil
+	return &tapsdk.VerboseMintingBatch{Batch: *batch}, nil
 }
 
 func mintAssetRequestFromMintAsset(
-	req *entities.MintAssetRequest) *mintAssetRequest {
+	req *tapsdk.MintAssetRequest) *mintAssetRequest {
 
 	if req == nil {
 		return nil
@@ -318,7 +318,7 @@ func mintAssetRequestFromMintAsset(
 	return &mintAssetRequest{
 		shortResponse: req.ShortResponse,
 		asset: &mintAsset{
-			PendingMintAsset: entities.PendingMintAsset{
+			PendingMintAsset: tapsdk.PendingMintAsset{
 				AssetVersion:       asset.AssetVersion,
 				AssetType:          asset.AssetType,
 				Name:               asset.Name,
@@ -337,7 +337,7 @@ func mintAssetRequestFromMintAsset(
 }
 
 func mintAssetRequestFromMintIssuance(
-	req *entities.MintIssuanceRequest) (*mintAssetRequest,
+	req *tapsdk.MintIssuanceRequest) (*mintAssetRequest,
 	error) {
 
 	if req == nil {
@@ -360,7 +360,7 @@ func mintAssetRequestFromMintIssuance(
 	return &mintAssetRequest{
 		shortResponse: req.ShortResponse,
 		asset: &mintAsset{
-			PendingMintAsset: entities.PendingMintAsset{
+			PendingMintAsset: tapsdk.PendingMintAsset{
 				AssetVersion: issuance.AssetVersion,
 				AssetType:    issuance.AssetType,
 				Name:         issuance.Name,
@@ -435,9 +435,9 @@ func marshalMintAssetJSON(asset *mintAsset) *jsonMintAsset {
 
 // marshalAssetTypeJSON converts an AssetType to a proto JSON
 // enum string.
-func marshalAssetTypeJSON(t entities.AssetType) string {
+func marshalAssetTypeJSON(t tapsdk.AssetType) string {
 	switch t {
-	case entities.AssetTypeCollectible:
+	case tapsdk.AssetTypeCollectible:
 		return "COLLECTIBLE"
 	default:
 		return "NORMAL"
@@ -446,7 +446,7 @@ func marshalAssetTypeJSON(t entities.AssetType) string {
 
 // marshalAssetMetaJSON converts AssetMeta to JSON.
 func marshalAssetMetaJSON(
-	meta *entities.AssetMeta) *jsonAssetMeta {
+	meta *tapsdk.AssetMeta) *jsonAssetMeta {
 
 	if meta == nil {
 		return nil
@@ -456,14 +456,14 @@ func marshalAssetMetaJSON(
 		Data: hex.EncodeToString(meta.Data),
 	}
 
-	if meta.MetaHash != (entities.Hash{}) {
+	if meta.MetaHash != (tapsdk.Hash{}) {
 		result.MetaHash = hex.EncodeToString(
 			meta.MetaHash[:],
 		)
 	}
 
 	switch meta.Type {
-	case entities.AssetMetaTypeJSON:
+	case tapsdk.AssetMetaTypeJSON:
 		result.Type = "META_TYPE_JSON"
 	default:
 		result.Type = "META_TYPE_OPAQUE"

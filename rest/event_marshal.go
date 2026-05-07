@@ -3,26 +3,26 @@ package rest
 import (
 	"fmt"
 
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 )
 
-// parseParcelType converts the proto enum string to entities.ParcelType.
-func parseParcelType(s string) entities.ParcelType {
+// parseParcelType converts the proto enum string to tapsdk.ParcelType.
+func parseParcelType(s string) tapsdk.ParcelType {
 	switch s {
 	case "PARCEL_TYPE_PRE_SIGNED":
-		return entities.ParcelTypePreSigned
+		return tapsdk.ParcelTypePreSigned
 	case "PARCEL_TYPE_PENDING":
-		return entities.ParcelTypePending
+		return tapsdk.ParcelTypePending
 	case "PARCEL_TYPE_PRE_ANCHORED":
-		return entities.ParcelTypePreAnchored
+		return tapsdk.ParcelTypePreAnchored
 	default:
-		return entities.ParcelTypeAddress
+		return tapsdk.ParcelTypeAddress
 	}
 }
 
 // unmarshalReceiveEvent converts a JSON receive event to the raw SDK record.
 func unmarshalReceiveEvent(
-	e *jsonReceiveEvent) (*entities.ReceiveEventRecord, error) {
+	e *jsonReceiveEvent) (*tapsdk.ReceiveEventRecord, error) {
 
 	if e == nil {
 		return nil, fmt.Errorf("nil receive event")
@@ -33,7 +33,7 @@ func unmarshalReceiveEvent(
 		return nil, fmt.Errorf("invalid timestamp: %w", err)
 	}
 
-	event := &entities.ReceiveEventRecord{
+	event := &tapsdk.ReceiveEventRecord{
 		Timestamp:          ts,
 		Outpoint:           e.Outpoint,
 		Status:             parseAddressEventStatus(e.Status),
@@ -56,7 +56,7 @@ func unmarshalReceiveEvent(
 
 // unmarshalSendEvent converts a JSON send event to the raw SDK record.
 func unmarshalSendEvent(
-	e *jsonSendEvent) (*entities.SendEventRecord, error) {
+	e *jsonSendEvent) (*tapsdk.SendEventRecord, error) {
 
 	if e == nil {
 		return nil, fmt.Errorf("nil send event")
@@ -67,13 +67,13 @@ func unmarshalSendEvent(
 		return nil, fmt.Errorf("invalid timestamp: %w", err)
 	}
 
-	event := &entities.SendEventRecord{
+	event := &tapsdk.SendEventRecord{
 		Timestamp:     ts,
-		SendState:     entities.SendState(e.SendState),
+		SendState:     tapsdk.SendState(e.SendState),
 		ParcelType:    parseParcelType(e.ParcelType),
 		Error:         e.Error,
 		TransferLabel: e.TransferLabel,
-		NextSendState: entities.SendState(e.NextSendState),
+		NextSendState: tapsdk.SendState(e.NextSendState),
 	}
 
 	for _, a := range e.Addresses {
@@ -130,7 +130,7 @@ func unmarshalSendEvent(
 // unmarshalAnchorTransaction converts a JSON AnchorTransaction to the
 // SDK type.
 func unmarshalAnchorTransaction(
-	a *jsonAnchorTransaction) (*entities.AnchorTransaction, error) {
+	a *jsonAnchorTransaction) (*tapsdk.AnchorTransaction, error) {
 
 	if a == nil {
 		return nil, fmt.Errorf("nil anchor transaction")
@@ -151,7 +151,7 @@ func unmarshalAnchorTransaction(
 		return nil, fmt.Errorf("invalid chain_fees_sats: %w", err)
 	}
 
-	tx := &entities.AnchorTransaction{
+	tx := &tapsdk.AnchorTransaction{
 		AnchorPsbt:         anchorPsbt,
 		ChangeOutputIndex:  a.ChangeOutputIndex,
 		ChainFeesSats:      chainFees,
@@ -176,9 +176,9 @@ func unmarshalAnchorTransaction(
 }
 
 // unmarshalAnchorOutpoint converts the binary-txid jsonOutpoint (as
-// used by taprpc.OutPoint) into an entities.Outpoint.
-func unmarshalAnchorOutpoint(op *jsonOutpoint) (entities.Outpoint, error) {
-	var out entities.Outpoint
+// used by taprpc.OutPoint) into an tapsdk.Outpoint.
+func unmarshalAnchorOutpoint(op *jsonOutpoint) (tapsdk.Outpoint, error) {
+	var out tapsdk.Outpoint
 
 	txid, err := parseHexBytes(op.Txid)
 	if err != nil {
@@ -197,7 +197,7 @@ func unmarshalAnchorOutpoint(op *jsonOutpoint) (entities.Outpoint, error) {
 
 // unmarshalMintEvent converts a JSON mint event to the SDK type.
 func unmarshalMintEvent(
-	e *jsonMintEvent) (*entities.MintEvent, error) {
+	e *jsonMintEvent) (*tapsdk.MintEvent, error) {
 
 	if e == nil {
 		return nil, fmt.Errorf("nil mint event")
@@ -208,7 +208,7 @@ func unmarshalMintEvent(
 		return nil, fmt.Errorf("invalid timestamp: %w", err)
 	}
 
-	event := &entities.MintEvent{
+	event := &tapsdk.MintEvent{
 		Timestamp:  ts,
 		BatchState: parseBatchState(e.BatchState),
 		Error:      e.Error,

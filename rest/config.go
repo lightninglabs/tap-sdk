@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 )
 
@@ -28,13 +28,12 @@ var (
 // Config holds configuration for connecting to a tapd REST API.
 type Config struct {
 	// BaseURL is the base URL of the tapd REST API, e.g.
-	// "https://localhost:8089". The scheme must be https unless
-	// the TLS source is TLSInsecure().
+	// "https://localhost:8089". The scheme must be https.
 	BaseURL string
 
 	// Network is the bitcoin network we expect the tapd instance to
 	// operate on. Used for resolving default macaroon paths.
-	Network entities.Network
+	Network tapsdk.Network
 
 	// Macaroon chooses where the SDK reads authentication
 	// macaroons from. Obtain values from macaroon.FromPath,
@@ -49,6 +48,18 @@ type Config struct {
 	// default tls.cert path under ~/.tapd.
 	TLS TLSSource
 
+	// TLSMinVersion sets the minimum TLS version the client will accept.
+	// Defaults to TLS 1.2 when zero. Use crypto/tls constants
+	// (tls.VersionTLS12, tls.VersionTLS13).
+	TLSMinVersion uint16
+
+	// TLSPinnedCertFingerprint is the hex-encoded SHA-256 fingerprint
+	// of the expected server certificate. When set, the client rejects
+	// connections to servers presenting a different leaf certificate.
+	// The fingerprint is compared against the raw DER encoding of the
+	// first certificate in the peer's chain.
+	TLSPinnedCertFingerprint string
+
 	// Timeout is an optional custom timeout for HTTP requests. If
 	// zero, defaults to 30 seconds.
 	Timeout time.Duration
@@ -57,20 +68,20 @@ type Config struct {
 // defaultMacaroonDir returns the path under ~/.tapd where tapd stores
 // its per-network macaroons. Used as a fallback when Config.Macaroon
 // is nil.
-func defaultMacaroonDir(network entities.Network) (string, error) {
+func defaultMacaroonDir(network tapsdk.Network) (string, error) {
 	var subDir string
 	switch network {
-	case entities.NetworkTestnet:
+	case tapsdk.NetworkTestnet:
 		subDir = "testnet"
-	case entities.NetworkTestnet4:
+	case tapsdk.NetworkTestnet4:
 		subDir = "testnet4"
-	case entities.NetworkMainnet:
+	case tapsdk.NetworkMainnet:
 		subDir = "mainnet"
-	case entities.NetworkSimnet:
+	case tapsdk.NetworkSimnet:
 		subDir = "simnet"
-	case entities.NetworkSignet:
+	case tapsdk.NetworkSignet:
 		subDir = "signet"
-	case entities.NetworkRegtest:
+	case tapsdk.NetworkRegtest:
 		subDir = "regtest"
 	default:
 		return "", ErrUnsupportedNetwork

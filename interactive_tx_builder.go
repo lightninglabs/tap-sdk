@@ -5,8 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/lightninglabs/tap-sdk/entities"
-	"github.com/lightninglabs/tap-sdk/vpsbt"
+	"github.com/lightninglabs/tap-sdk/internal/vpsbt"
 )
 
 // InteractiveTxBuilder builds interactive Taproot Asset transfers where the
@@ -22,12 +21,12 @@ type InteractiveTxBuilder struct {
 	coinType   uint32
 
 	// Transfer parameters
-	assetRef         entities.AssetRef
+	assetRef         AssetRef
 	amount           uint64
-	receiverKeys     *entities.DerivedKeys
+	receiverKeys     *DerivedKeys
 	lockTime         uint64
 	relativeLockTime uint64
-	altLeaves        map[entities.PubKey][][]byte
+	altLeaves        map[PubKey][][]byte
 
 	// Internal state
 	vPacketBytes []byte
@@ -40,16 +39,16 @@ type InteractiveTxBuilder struct {
 
 type interactiveAssetResolver interface {
 	ListAssetRecords(ctx context.Context,
-		req *entities.ListAssetsRequest) ([]*entities.AssetRecord, error)
+		req *ListAssetsRequest) ([]*AssetRecord, error)
 }
 
 type interactiveAssetRowResolver interface {
 	listAssetRecords(ctx context.Context,
-		req *entities.ListAssetsRequest) ([]*entities.AssetRecord, error)
+		req *ListAssetsRequest) ([]*AssetRecord, error)
 }
 
 type listInteractiveAssets func(context.Context,
-	*entities.ListAssetsRequest) ([]*entities.AssetRecord, error)
+	*ListAssetsRequest) ([]*AssetRecord, error)
 
 // newInteractiveTxBuilder creates a new InteractiveTxBuilder.
 func newInteractiveTxBuilder(wallet WalletKitClient,
@@ -74,7 +73,7 @@ func newInteractiveTxBuilder(wallet WalletKitClient,
 // directly. Group-key refs are resolved against the wallet's spendable assets
 // during Execute, so callers can keep using the SDK's semantic fungible asset
 // identifier unless no single issuance/tranche can cover the requested amount.
-func (b *InteractiveTxBuilder) SetAsset(ref entities.AssetRef,
+func (b *InteractiveTxBuilder) SetAsset(ref AssetRef,
 	amount uint64) *InteractiveTxBuilder {
 
 	b.mu.Lock()
@@ -88,7 +87,7 @@ func (b *InteractiveTxBuilder) SetAsset(ref entities.AssetRef,
 // SetReceiverKeys sets the keys derived by the receiver.
 // These keys are obtained by the receiver calling Wallet.DeriveKeys().
 func (b *InteractiveTxBuilder) SetReceiverKeys(
-	keys entities.DerivedKeys) *InteractiveTxBuilder {
+	keys DerivedKeys) *InteractiveTxBuilder {
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -122,14 +121,14 @@ func (b *InteractiveTxBuilder) SetRelativeLockTime(
 // WithAltLeaves attaches auxiliary Taproot leaves that should be committed to
 // the receiver's output.
 func (b *InteractiveTxBuilder) WithAltLeaves(
-	scriptKey entities.PubKey,
+	scriptKey PubKey,
 	leaves [][]byte) *InteractiveTxBuilder {
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	if b.altLeaves == nil {
-		b.altLeaves = make(map[entities.PubKey][][]byte)
+		b.altLeaves = make(map[PubKey][][]byte)
 	}
 
 	cloned := make([][]byte, len(leaves))
@@ -144,7 +143,7 @@ func (b *InteractiveTxBuilder) WithAltLeaves(
 // Execute builds and sends the interactive transfer.
 // Returns AssetTransfer with proofs that must be delivered to the receiver.
 func (b *InteractiveTxBuilder) Execute(
-	ctx context.Context) (*entities.AssetTransfer, error) {
+	ctx context.Context) (*AssetTransfer, error) {
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -210,12 +209,12 @@ func (b *InteractiveTxBuilder) validate() error {
 }
 
 func (b *InteractiveTxBuilder) resolveAssetID(
-	ctx context.Context) (entities.AssetID, error) {
+	ctx context.Context) (AssetID, error) {
 
 	if assetID, ok := b.assetRef.AssetID(); ok {
-		var zeroID entities.AssetID
+		var zeroID AssetID
 		if assetID == zeroID {
-			return entities.AssetID{}, &Error{
+			return AssetID{}, &Error{
 				Op:  "Execute",
 				Err: ErrNoAssetRef,
 			}
@@ -225,24 +224,24 @@ func (b *InteractiveTxBuilder) resolveAssetID(
 	}
 
 	if !b.assetRef.IsGroupRef() {
-		return entities.AssetID{}, &Error{
+		return AssetID{}, &Error{
 			Op:  "Execute",
 			Err: ErrNoAssetRef,
 		}
 	}
 
 	if b.listAssets == nil {
-		return entities.AssetID{}, &Error{
+		return AssetID{}, &Error{
 			Op:  "Execute",
 			Err: ErrGroupKeyNotSupported,
 		}
 	}
 
-	assets, err := b.listAssets(ctx, &entities.ListAssetsRequest{
+	assets, err := b.listAssets(ctx, &ListAssetsRequest{
 		AssetRef: &b.assetRef,
 	})
 	if err != nil {
-		return entities.AssetID{}, wrapErr("ResolveAssetRef", err)
+		return AssetID{}, wrapErr("ResolveAssetRef", err)
 	}
 
 	var total uint64
@@ -258,19 +257,19 @@ func (b *InteractiveTxBuilder) resolveAssetID(
 	}
 
 	if total == 0 {
-		return entities.AssetID{}, wrapErr("ResolveAssetRef", fmt.Errorf(
+		return AssetID{}, wrapErr("ResolveAssetRef", fmt.Errorf(
 			"%w: %s", ErrAssetUnknown, b.assetRef,
 		))
 	}
 
-	return entities.AssetID{}, wrapErr("ResolveAssetRef", fmt.Errorf(
+	return AssetID{}, wrapErr("ResolveAssetRef", fmt.Errorf(
 		"%w: requested %d, largest spendable tranche is less than "+
 			"that amount", ErrInsufficientBalance, b.amount,
 	))
 }
 
 // buildVPacket creates the virtual PSBT for the interactive send.
-func (b *InteractiveTxBuilder) buildVPacket(assetID entities.AssetID) error {
+func (b *InteractiveTxBuilder) buildVPacket(assetID AssetID) error {
 	var leaves [][]byte
 	if b.altLeaves != nil && b.receiverKeys != nil {
 		leaves = b.altLeaves[b.receiverKeys.ScriptKey.PubKey]
@@ -281,7 +280,10 @@ func (b *InteractiveTxBuilder) buildVPacket(assetID entities.AssetID) error {
 		Amount:            b.amount,
 		ScriptKey:         b.receiverKeys.ScriptKey.PubKey,
 		AnchorInternalKey: b.receiverKeys.InternalKey.PubKey,
-		AnchorKeyLocator:  b.receiverKeys.InternalKey.KeyLocator,
+		AnchorKeyLocator: vpsbt.KeyLocator{
+			Family: b.receiverKeys.InternalKey.KeyLocator.Family,
+			Index:  b.receiverKeys.InternalKey.KeyLocator.Index,
+		},
 		AltLeaves:         leaves,
 		LockTime:          b.lockTime,
 		RelativeLockTime:  b.relativeLockTime,
@@ -324,7 +326,7 @@ func (b *InteractiveTxBuilder) sign(ctx context.Context) error {
 
 // complete anchors the signed PSBTs and completes the transfer.
 func (b *InteractiveTxBuilder) complete(
-	ctx context.Context) (*entities.AssetTransfer, error) {
+	ctx context.Context) (*AssetTransfer, error) {
 
 	result, err := b.walletKit.AnchorVirtualPsbts(
 		ctx, [][]byte{b.signedPsbt},

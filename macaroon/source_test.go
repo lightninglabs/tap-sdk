@@ -93,3 +93,12 @@ func TestSourceFromHex(t *testing.T) {
 		require.Equal(t, SerializedMacaroon(rawHex), pouch[svc])
 	}
 }
+
+func TestSourceFromHexInvalid(t *testing.T) {
+	t.Parallel()
+
+	for _, hex := range []string{"", "not-hex"} {
+		_, err := FromHex(hex).LoadPouch()
+		require.Error(t, err)
+	}
+}

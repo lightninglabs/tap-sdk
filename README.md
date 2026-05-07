@@ -35,21 +35,20 @@ import (
 	"log"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
-	"github.com/lightninglabs/tap-sdk/entities"
-	"github.com/lightninglabs/tap-sdk/grpc"
+	tapgrpc "github.com/lightninglabs/tap-sdk/grpc"
 )
 
 func main() {
-	client, err := grpc.NewClient(&grpc.Config{
+	client, err := tapgrpc.NewClient(&tapgrpc.Config{
 		Host:    "localhost:10029",
-		Network: entities.NetworkRegtest,
+		Network: tapsdk.NetworkRegtest,
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer client.Close()
 
-	wallet := tapsdk.NewWallet(client, entities.NetworkRegtest)
+	wallet := tapsdk.NewWallet(client, tapsdk.NetworkRegtest)
 
 	ctx := context.Background()
 	info, err := wallet.Client().GetInfo(ctx)
@@ -72,9 +71,9 @@ if err != nil {
 
 fmt.Printf("Anchor tx: %s\n", transfer.AnchorTxid)
 
-batch, err := wallet.SendMulti(ctx, []entities.Recipient{
-	entities.RecipientWithAmount(firstRecipientAddr, 100),
-	entities.RecipientWithEmbeddedAmount(secondRecipientAddr),
+batch, err := wallet.SendMulti(ctx, []tapsdk.Recipient{
+	tapsdk.RecipientWithAmount(firstRecipientAddr, 100),
+	tapsdk.RecipientWithEmbeddedAmount(secondRecipientAddr),
 })
 if err != nil {
 	log.Fatal(err)
@@ -107,7 +106,7 @@ batch control.
 ```go
 issuer := wallet.NewIssuer()
 
-token, err := issuer.CreateFungible(ctx, entities.FungibleAssetSpec{
+token, err := issuer.CreateFungible(ctx, tapsdk.FungibleAssetSpec{
 	Name:   "example-token",
 	Amount: 1_000_000,
 })
@@ -120,14 +119,14 @@ if err != nil {
 	log.Fatal(err)
 }
 
-created, err := issuer.CreateCollection(ctx, entities.NFTSpec{
+created, err := issuer.CreateCollection(ctx, tapsdk.NFTSpec{
 	Name: "example-collection-001",
 })
 if err != nil {
 	log.Fatal(err)
 }
 
-_, err = issuer.MintCollectionItem(ctx, created.Collection.AssetRef, entities.NFTSpec{
+_, err = issuer.MintCollectionItem(ctx, created.Collection.AssetRef, tapsdk.NFTSpec{
 	Name: "example-collection-002",
 })
 if err != nil {

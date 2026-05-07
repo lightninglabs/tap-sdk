@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -19,28 +18,28 @@ type mockClient struct {
 
 // --- WalletClient (TaprootAssets service) ---
 
-func (m *mockClient) GetInfo(ctx context.Context) (*entities.Info, error) {
+func (m *mockClient) GetInfo(ctx context.Context) (*Info, error) {
 	args := m.Called(ctx)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.Info), args.Error(1)
+	return args.Get(0).(*Info), args.Error(1)
 }
 
 func (m *mockClient) ListAssetRecords(ctx context.Context,
-	req *entities.ListAssetsRequest) ([]*entities.AssetRecord, error) {
+	req *ListAssetsRequest) ([]*AssetRecord, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).([]*entities.AssetRecord), args.Error(1)
+	return args.Get(0).([]*AssetRecord), args.Error(1)
 }
 
 func (m *mockClient) ListBalances(ctx context.Context,
-	req *entities.ListBalancesRequest) (*entities.ListBalancesResponse,
+	req *ListBalancesRequest) (*ListBalancesResponse,
 	error) {
 
 	args := m.Called(ctx, req)
@@ -48,66 +47,66 @@ func (m *mockClient) ListBalances(ctx context.Context,
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.ListBalancesResponse), args.Error(1)
+	return args.Get(0).(*ListBalancesResponse), args.Error(1)
 }
 
 func (m *mockClient) ListTransfers(ctx context.Context,
-	req *entities.ListTransfersRequest) ([]*entities.AssetTransfer, error) {
+	req *ListTransfersRequest) ([]*AssetTransfer, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).([]*entities.AssetTransfer), args.Error(1)
+	return args.Get(0).([]*AssetTransfer), args.Error(1)
 }
 
 func (m *mockClient) SendAsset(ctx context.Context,
-	req *entities.SendAssetRequest) (*entities.AssetTransfer, error) {
+	req *SendAssetRequest) (*AssetTransfer, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.AssetTransfer), args.Error(1)
+	return args.Get(0).(*AssetTransfer), args.Error(1)
 }
 
 func (m *mockClient) NewAddr(ctx context.Context,
-	req *entities.NewAddressRequest) (*entities.Address, error) {
+	req *NewAddressRequest) (*Address, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.Address), args.Error(1)
+	return args.Get(0).(*Address), args.Error(1)
 }
 
 func (m *mockClient) DecodeAddr(ctx context.Context,
-	addr string) (*entities.Address, error) {
+	addr string) (*Address, error) {
 
 	args := m.Called(ctx, addr)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.Address), args.Error(1)
+	return args.Get(0).(*Address), args.Error(1)
 }
 
 func (m *mockClient) QueryAddrs(ctx context.Context,
-	query *entities.AddressQuery) ([]*entities.Address, error) {
+	query *AddressQuery) ([]*Address, error) {
 
 	args := m.Called(ctx, query)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).([]*entities.Address), args.Error(1)
+	return args.Get(0).([]*Address), args.Error(1)
 }
 
 func (m *mockClient) AddrReceives(ctx context.Context,
-	query *entities.AddressReceivesQuery) ([]*entities.AddressEvent,
+	query *AddressReceivesQuery) ([]*AddressEvent,
 	error) {
 
 	args := m.Called(ctx, query)
@@ -115,21 +114,21 @@ func (m *mockClient) AddrReceives(ctx context.Context,
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).([]*entities.AddressEvent), args.Error(1)
+	return args.Get(0).([]*AddressEvent), args.Error(1)
 }
 
 // --- ProofClient ---
 
 func (m *mockClient) ExportProof(ctx context.Context,
-	ref entities.AssetRef, scriptKey entities.PubKey,
-	outpoint *entities.Outpoint) (*entities.ProofFile, error) {
+	ref AssetRef, scriptKey PubKey,
+	outpoint *Outpoint) (*ProofFile, error) {
 
 	args := m.Called(ctx, ref, scriptKey, outpoint)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.ProofFile), args.Error(1)
+	return args.Get(0).(*ProofFile), args.Error(1)
 }
 
 func (m *mockClient) UnpackProofFile(ctx context.Context,
@@ -144,73 +143,73 @@ func (m *mockClient) UnpackProofFile(ctx context.Context,
 }
 
 func (m *mockClient) DecodeProof(ctx context.Context,
-	rawProof []byte) (*entities.DecodedProof, error) {
+	rawProof []byte) (*DecodedProof, error) {
 
 	args := m.Called(ctx, rawProof)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.DecodedProof), args.Error(1)
+	return args.Get(0).(*DecodedProof), args.Error(1)
 }
 
 func (m *mockClient) RegisterTransfer(ctx context.Context,
-	assetRef entities.AssetRef, scriptKey entities.PubKey,
-	outpoint entities.Outpoint) (*entities.RegisteredAsset, error) {
+	assetRef AssetRef, scriptKey PubKey,
+	outpoint Outpoint) (*RegisteredAsset, error) {
 
 	args := m.Called(ctx, assetRef, scriptKey, outpoint)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.RegisteredAsset), args.Error(1)
+	return args.Get(0).(*RegisteredAsset), args.Error(1)
 }
 
 // --- WalletKitClient (AssetWallet service) ---
 
 func (m *mockClient) DeriveScriptKey(
-	ctx context.Context) (*entities.ScriptKey, error) {
+	ctx context.Context) (*ScriptKey, error) {
 
 	args := m.Called(ctx)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.ScriptKey), args.Error(1)
+	return args.Get(0).(*ScriptKey), args.Error(1)
 }
 
 func (m *mockClient) DeriveInternalKey(
-	ctx context.Context) (*entities.InternalKey, error) {
+	ctx context.Context) (*InternalKey, error) {
 
 	args := m.Called(ctx)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.InternalKey), args.Error(1)
+	return args.Get(0).(*InternalKey), args.Error(1)
 }
 
 func (m *mockClient) FundTransfer(ctx context.Context,
-	recipients []entities.Recipient,
-	inputs []entities.PrevID) (*entities.FundedTransfer, error) {
+	recipients []Recipient,
+	inputs []PrevID) (*FundedTransfer, error) {
 
 	args := m.Called(ctx, recipients, inputs)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.FundedTransfer), args.Error(1)
+	return args.Get(0).(*FundedTransfer), args.Error(1)
 }
 
 func (m *mockClient) FundInteractivePsbt(ctx context.Context,
-	psbt []byte) (*entities.FundedTransfer, error) {
+	psbt []byte) (*FundedTransfer, error) {
 
 	args := m.Called(ctx, psbt)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.FundedTransfer), args.Error(1)
+	return args.Get(0).(*FundedTransfer), args.Error(1)
 }
 
 func (m *mockClient) SignVirtualPsbt(ctx context.Context,
@@ -226,30 +225,30 @@ func (m *mockClient) SignVirtualPsbt(ctx context.Context,
 
 func (m *mockClient) CommitVirtualPsbts(ctx context.Context,
 	virtualPsbts [][]byte, passivePsbts [][]byte,
-	feeRate uint64) (*entities.CommittedTransfer, error) {
+	feeRate uint64) (*CommittedTransfer, error) {
 
 	args := m.Called(ctx, virtualPsbts, passivePsbts, feeRate)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.CommittedTransfer), args.Error(1)
+	return args.Get(0).(*CommittedTransfer), args.Error(1)
 }
 
 func (m *mockClient) AnchorVirtualPsbts(ctx context.Context,
-	signedPsbts [][]byte) (*entities.AssetTransfer, error) {
+	signedPsbts [][]byte) (*AssetTransfer, error) {
 
 	args := m.Called(ctx, signedPsbts)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.AssetTransfer), args.Error(1)
+	return args.Get(0).(*AssetTransfer), args.Error(1)
 }
 
 func (m *mockClient) PublishAndLogTransfer(ctx context.Context,
 	anchorPsbt []byte, virtualPsbts [][]byte, passivePsbts [][]byte,
-	skipAnchorTxBroadcast bool) (*entities.AssetPacket, error) {
+	skipAnchorTxBroadcast bool) (*AssetPacket, error) {
 
 	args := m.Called(ctx, anchorPsbt, virtualPsbts, passivePsbts,
 		skipAnchorTxBroadcast)
@@ -257,13 +256,13 @@ func (m *mockClient) PublishAndLogTransfer(ctx context.Context,
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.AssetPacket), args.Error(1)
+	return args.Get(0).(*AssetPacket), args.Error(1)
 }
 
 // --- UniverseClient ---
 
 func (m *mockClient) InsertProof(ctx context.Context, rawProof []byte,
-	decoded *entities.DecodedProof) error {
+	decoded *DecodedProof) error {
 
 	args := m.Called(ctx, rawProof, decoded)
 	return args.Error(0)
@@ -272,29 +271,29 @@ func (m *mockClient) InsertProof(ctx context.Context, rawProof []byte,
 // --- MintClient ---
 
 func (m *mockClient) MintAsset(ctx context.Context,
-	req *entities.MintAssetRequest) (*entities.MintingBatch, error) {
+	req *MintAssetRequest) (*MintingBatch, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.MintingBatch), args.Error(1)
+	return args.Get(0).(*MintingBatch), args.Error(1)
 }
 
 func (m *mockClient) MintIssuance(ctx context.Context,
-	req *entities.MintIssuanceRequest) (*entities.MintingBatch, error) {
+	req *MintIssuanceRequest) (*MintingBatch, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.MintingBatch), args.Error(1)
+	return args.Get(0).(*MintingBatch), args.Error(1)
 }
 
 func (m *mockClient) FundBatch(ctx context.Context,
-	req *entities.FundBatchRequest) (*entities.VerboseMintingBatch,
+	req *FundBatchRequest) (*VerboseMintingBatch,
 	error) {
 
 	args := m.Called(ctx, req)
@@ -302,44 +301,44 @@ func (m *mockClient) FundBatch(ctx context.Context,
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.VerboseMintingBatch), args.Error(1)
+	return args.Get(0).(*VerboseMintingBatch), args.Error(1)
 }
 
 func (m *mockClient) SealBatch(ctx context.Context,
-	req *entities.SealBatchRequest) (*entities.MintingBatch, error) {
+	req *SealBatchRequest) (*MintingBatch, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.MintingBatch), args.Error(1)
+	return args.Get(0).(*MintingBatch), args.Error(1)
 }
 
 func (m *mockClient) FinalizeBatch(ctx context.Context,
-	req *entities.FinalizeBatchRequest) (*entities.MintingBatch, error) {
+	req *FinalizeBatchRequest) (*MintingBatch, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.MintingBatch), args.Error(1)
+	return args.Get(0).(*MintingBatch), args.Error(1)
 }
 
 func (m *mockClient) CancelBatch(
-	ctx context.Context) (*entities.CancelBatchResponse, error) {
+	ctx context.Context) (*CancelBatchResponse, error) {
 
 	args := m.Called(ctx)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.CancelBatchResponse), args.Error(1)
+	return args.Get(0).(*CancelBatchResponse), args.Error(1)
 }
 
 func (m *mockClient) ListBatches(ctx context.Context,
-	req *entities.ListBatchesRequest) ([]*entities.VerboseMintingBatch,
+	req *ListBatchesRequest) ([]*VerboseMintingBatch,
 	error) {
 
 	args := m.Called(ctx, req)
@@ -347,152 +346,152 @@ func (m *mockClient) ListBatches(ctx context.Context,
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).([]*entities.VerboseMintingBatch), args.Error(1)
+	return args.Get(0).([]*VerboseMintingBatch), args.Error(1)
 }
 
 // --- WalletClient extras (PR #30 additions) ---
 
 func (m *mockClient) ListUtxos(ctx context.Context,
-	req *entities.ListUtxosRequest) (
-	map[string]*entities.ManagedUtxo, error) {
+	req *ListUtxosRequest) (
+	map[string]*ManagedUtxo, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(map[string]*entities.ManagedUtxo),
+	return args.Get(0).(map[string]*ManagedUtxo),
 		args.Error(1)
 }
 
 func (m *mockClient) ListAssetGroups(
-	ctx context.Context) ([]entities.AssetGroupRecord, error) {
+	ctx context.Context) ([]AssetGroupRecord, error) {
 
 	args := m.Called(ctx)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).([]entities.AssetGroupRecord), args.Error(1)
+	return args.Get(0).([]AssetGroupRecord), args.Error(1)
 }
 
 func (m *mockClient) BurnAsset(ctx context.Context,
-	req *entities.BurnAssetRequest) (
-	*entities.BurnAssetResponse, error) {
+	req *BurnAssetRequest) (
+	*BurnAssetResponse, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.BurnAssetResponse), args.Error(1)
+	return args.Get(0).(*BurnAssetResponse), args.Error(1)
 }
 
 func (m *mockClient) ListBurns(ctx context.Context,
-	req *entities.ListBurnsRequest) ([]*entities.BurnRecord, error) {
+	req *ListBurnsRequest) ([]*BurnRecord, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).([]*entities.BurnRecord), args.Error(1)
+	return args.Get(0).([]*BurnRecord), args.Error(1)
 }
 
 func (m *mockClient) FetchAssetMeta(ctx context.Context,
-	req *entities.FetchAssetMetaRequest) (
-	*entities.AssetMeta, error) {
+	req *FetchAssetMetaRequest) (
+	*AssetMeta, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.AssetMeta), args.Error(1)
+	return args.Get(0).(*AssetMeta), args.Error(1)
 }
 
 func (m *mockClient) VerifyProof(ctx context.Context,
 	rawProofFile []byte) (
-	*entities.VerifyProofResponse, error) {
+	*VerifyProofResponse, error) {
 
 	args := m.Called(ctx, rawProofFile)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.VerifyProofResponse), args.Error(1)
+	return args.Get(0).(*VerifyProofResponse), args.Error(1)
 }
 
 // --- WalletKitClient extras (PR #30 additions) ---
 
 func (m *mockClient) QueryInternalKey(ctx context.Context,
-	internalKey []byte) (*entities.KeyDescriptor, error) {
+	internalKey []byte) (*KeyDescriptor, error) {
 
 	args := m.Called(ctx, internalKey)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.KeyDescriptor), args.Error(1)
+	return args.Get(0).(*KeyDescriptor), args.Error(1)
 }
 
 func (m *mockClient) QueryScriptKey(ctx context.Context,
-	tweakedScriptKey []byte) (*entities.ScriptKey, error) {
+	tweakedScriptKey []byte) (*ScriptKey, error) {
 
 	args := m.Called(ctx, tweakedScriptKey)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.ScriptKey), args.Error(1)
+	return args.Get(0).(*ScriptKey), args.Error(1)
 }
 
 func (m *mockClient) ProveAssetOwnership(ctx context.Context,
-	req *entities.ProveOwnershipRequest) (
-	*entities.OwnershipProof, error) {
+	req *ProveOwnershipRequest) (
+	*OwnershipProof, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.OwnershipProof), args.Error(1)
+	return args.Get(0).(*OwnershipProof), args.Error(1)
 }
 
 func (m *mockClient) VerifyAssetOwnership(ctx context.Context,
-	req *entities.VerifyOwnershipRequest) (
-	*entities.VerifyOwnershipResponse, error) {
+	req *VerifyOwnershipRequest) (
+	*VerifyOwnershipResponse, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.VerifyOwnershipResponse),
+	return args.Get(0).(*VerifyOwnershipResponse),
 		args.Error(1)
 }
 
 func (m *mockClient) RemoveUTXOLease(ctx context.Context,
-	outpoint entities.Outpoint) error {
+	outpoint Outpoint) error {
 
 	args := m.Called(ctx, outpoint)
 	return args.Error(0)
 }
 
 func (m *mockClient) DeclareScriptKey(ctx context.Context,
-	req *entities.DeclareScriptKeyRequest) (
-	*entities.ScriptKey, error) {
+	req *DeclareScriptKeyRequest) (
+	*ScriptKey, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.ScriptKey), args.Error(1)
+	return args.Get(0).(*ScriptKey), args.Error(1)
 }
 
 func (m *mockClient) ExportBackup(ctx context.Context,
-	mode entities.BackupMode) ([]byte, error) {
+	mode BackupMode) ([]byte, error) {
 
 	args := m.Called(ctx, mode)
 	if args.Get(0) == nil {
@@ -512,61 +511,61 @@ func (m *mockClient) ImportBackup(ctx context.Context,
 // --- UniverseClient (PR #31 additions) ---
 
 func (m *mockClient) AssetRoots(ctx context.Context,
-	req *entities.AssetRootRequest) (
-	map[string]*entities.UniverseRoot, error) {
+	req *AssetRootRequest) (
+	map[string]*UniverseRoot, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(map[string]*entities.UniverseRoot),
+	return args.Get(0).(map[string]*UniverseRoot),
 		args.Error(1)
 }
 
 func (m *mockClient) QueryAssetRoots(ctx context.Context,
-	id *entities.UniverseID) (*entities.QueryRootResponse, error) {
+	id *UniverseID) (*QueryRootResponse, error) {
 
 	args := m.Called(ctx, id)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.QueryRootResponse), args.Error(1)
+	return args.Get(0).(*QueryRootResponse), args.Error(1)
 }
 
 func (m *mockClient) DeleteAssetRoot(ctx context.Context,
-	id *entities.UniverseID) error {
+	id *UniverseID) error {
 
 	args := m.Called(ctx, id)
 	return args.Error(0)
 }
 
 func (m *mockClient) AssetLeafKeys(ctx context.Context,
-	req *entities.AssetLeafKeysRequest) (
-	[]entities.AssetLeafKey, error) {
+	req *AssetLeafKeysRequest) (
+	[]AssetLeafKey, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).([]entities.AssetLeafKey), args.Error(1)
+	return args.Get(0).([]AssetLeafKey), args.Error(1)
 }
 
 func (m *mockClient) AssetLeaves(ctx context.Context,
-	id *entities.UniverseID) ([]entities.AssetLeaf, error) {
+	id *UniverseID) ([]AssetLeaf, error) {
 
 	args := m.Called(ctx, id)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).([]entities.AssetLeaf), args.Error(1)
+	return args.Get(0).([]AssetLeaf), args.Error(1)
 }
 
 func (m *mockClient) QueryProof(ctx context.Context,
-	key *entities.UniverseKey) (*entities.AssetProofResponse,
+	key *UniverseKey) (*AssetProofResponse,
 	error) {
 
 	args := m.Called(ctx, key)
@@ -574,80 +573,80 @@ func (m *mockClient) QueryProof(ctx context.Context,
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.AssetProofResponse), args.Error(1)
+	return args.Get(0).(*AssetProofResponse), args.Error(1)
 }
 
 func (m *mockClient) UniverseStats(
-	ctx context.Context) (*entities.UniverseStats, error) {
+	ctx context.Context) (*UniverseStats, error) {
 
 	args := m.Called(ctx)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.UniverseStats), args.Error(1)
+	return args.Get(0).(*UniverseStats), args.Error(1)
 }
 
 func (m *mockClient) QueryAssetStats(ctx context.Context,
-	req *entities.AssetStatsQuery) (
-	[]entities.AssetStatsSnapshot, error) {
+	req *AssetStatsQuery) (
+	[]AssetStatsSnapshot, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).([]entities.AssetStatsSnapshot), args.Error(1)
+	return args.Get(0).([]AssetStatsSnapshot), args.Error(1)
 }
 
 func (m *mockClient) QueryEvents(ctx context.Context,
-	req *entities.QueryEventsRequest) (
-	[]entities.GroupedUniverseEvents, error) {
+	req *QueryEventsRequest) (
+	[]GroupedUniverseEvents, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).([]entities.GroupedUniverseEvents),
+	return args.Get(0).([]GroupedUniverseEvents),
 		args.Error(1)
 }
 
 func (m *mockClient) ListFederationServers(
-	ctx context.Context) ([]entities.FederationServer, error) {
+	ctx context.Context) ([]FederationServer, error) {
 
 	args := m.Called(ctx)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).([]entities.FederationServer), args.Error(1)
+	return args.Get(0).([]FederationServer), args.Error(1)
 }
 
 func (m *mockClient) AddFederationServer(ctx context.Context,
-	servers []entities.FederationServer) error {
+	servers []FederationServer) error {
 
 	args := m.Called(ctx, servers)
 	return args.Error(0)
 }
 
 func (m *mockClient) DeleteFederationServer(ctx context.Context,
-	servers []entities.FederationServer) error {
+	servers []FederationServer) error {
 
 	args := m.Called(ctx, servers)
 	return args.Error(0)
 }
 
 func (m *mockClient) SetFederationSyncConfig(ctx context.Context,
-	global []entities.GlobalFederationSyncConfig,
-	asset []entities.AssetFederationSyncConfig) error {
+	global []GlobalFederationSyncConfig,
+	asset []AssetFederationSyncConfig) error {
 
 	args := m.Called(ctx, global, asset)
 	return args.Error(0)
 }
 
 func (m *mockClient) QueryFederationSyncConfig(ctx context.Context,
-	ids []entities.UniverseID) (*entities.FederationSyncConfig,
+	ids []UniverseID) (*FederationSyncConfig,
 	error) {
 
 	args := m.Called(ctx, ids)
@@ -655,51 +654,51 @@ func (m *mockClient) QueryFederationSyncConfig(ctx context.Context,
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.FederationSyncConfig),
+	return args.Get(0).(*FederationSyncConfig),
 		args.Error(1)
 }
 
 func (m *mockClient) Info(
-	ctx context.Context) (*entities.UniverseInfo, error) {
+	ctx context.Context) (*UniverseInfo, error) {
 
 	args := m.Called(ctx)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.UniverseInfo), args.Error(1)
+	return args.Get(0).(*UniverseInfo), args.Error(1)
 }
 
 func (m *mockClient) SyncUniverse(ctx context.Context,
-	req *entities.SyncRequest) ([]entities.SyncedUniverse, error) {
+	req *SyncRequest) ([]SyncedUniverse, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).([]entities.SyncedUniverse), args.Error(1)
+	return args.Get(0).([]SyncedUniverse), args.Error(1)
 }
 
 // --- EventClient ---
 
 func (m *mockClient) SubscribeReceiveEvents(ctx context.Context,
-	req *entities.SubscribeReceiveEventsRequest) (
-	<-chan *entities.ReceiveEventRecord, <-chan error, error) {
+	req *SubscribeReceiveEventsRequest) (
+	<-chan *ReceiveEventRecord, <-chan error, error) {
 
 	panic("SubscribeReceiveEvents not expected in unit tests")
 }
 
 func (m *mockClient) SubscribeSendEvents(ctx context.Context,
-	req *entities.SubscribeSendEventsRequest) (
-	<-chan *entities.SendEventRecord, <-chan error, error) {
+	req *SubscribeSendEventsRequest) (
+	<-chan *SendEventRecord, <-chan error, error) {
 
 	panic("SubscribeSendEvents not expected in unit tests")
 }
 
 func (m *mockClient) SubscribeMintEvents(ctx context.Context,
-	req *entities.SubscribeMintEventsRequest) (
-	<-chan *entities.MintEvent, <-chan error, error) {
+	req *SubscribeMintEventsRequest) (
+	<-chan *MintEvent, <-chan error, error) {
 
 	panic("SubscribeMintEvents not expected in unit tests")
 }
@@ -713,18 +712,18 @@ func (m *mockClient) Close() error {
 
 // testKey derives a valid compressed secp256k1 public key from a small
 // scalar, so fixture addresses the SDK decodes locally actually parse.
-func testKey(t *testing.T, scalar byte) entities.PubKey {
+func testKey(t *testing.T, scalar byte) PubKey {
 	t.Helper()
 
 	priv, _ := btcec.PrivKeyFromBytes([]byte{scalar})
-	pk, err := entities.ParsePubKey(priv.PubKey().SerializeCompressed())
+	pk, err := ParsePubKey(priv.PubKey().SerializeCompressed())
 	require.NoError(t, err)
 	return pk
 }
 
-// testAssetID returns a deterministic asset ID for fixture addresses.
-func testAssetID() entities.AssetID {
-	var id entities.AssetID
+// sendTestAssetID returns a deterministic asset ID for fixture addresses.
+func sendTestAssetID() AssetID {
+	var id AssetID
 	for i := range id {
 		id[i] = byte(i + 1)
 	}
@@ -743,51 +742,51 @@ func encodeV2NoAmount(t *testing.T, seed ...byte) string {
 		s = seed[0]
 	}
 
-	addr := &entities.Address{
-		AddressVersion:   entities.AddressVersionV2,
-		AssetVersion:     entities.AssetVersionV0,
-		AssetRef:         entities.AssetRefFromGroupKey(testKey(t, s)),
+	addr := &Address{
+		AddressVersion:   AddressVersionV2,
+		AssetVersion:     AssetVersionV0,
+		AssetRef:         AssetRefFromGroupKey(testKey(t, s)),
 		ScriptKey:        testKey(t, 7),
 		InternalKey:      testKey(t, 11),
 		ProofCourierAddr: "authmailbox+universerpc://localhost:10029",
 	}
 
-	encoded, err := entities.EncodeAddress(
-		addr, entities.NetworkRegtest,
+	encoded, err := EncodeAddress(
+		addr, NetworkRegtest,
 	)
 	require.NoError(t, err)
 	return encoded
 }
 
-func encodeV2NoAmountForRef(t *testing.T, ref entities.AssetRef,
+func encodeV2NoAmountForRef(t *testing.T, ref AssetRef,
 	seed byte) string {
 
 	t.Helper()
 
-	addr := &entities.Address{
-		AddressVersion:   entities.AddressVersionV2,
-		AssetVersion:     entities.AssetVersionV0,
+	addr := &Address{
+		AddressVersion:   AddressVersionV2,
+		AssetVersion:     AssetVersionV0,
 		AssetRef:         ref,
 		ScriptKey:        testKey(t, seed),
 		InternalKey:      testKey(t, seed+1),
 		ProofCourierAddr: "authmailbox+universerpc://localhost:10029",
 	}
 
-	encoded, err := entities.EncodeAddress(
-		addr, entities.NetworkRegtest,
+	encoded, err := EncodeAddress(
+		addr, NetworkRegtest,
 	)
 	require.NoError(t, err)
 	return encoded
 }
 
-func encodeV2EmbeddedForRef(t *testing.T, ref entities.AssetRef, amount uint64,
+func encodeV2EmbeddedForRef(t *testing.T, ref AssetRef, amount uint64,
 	seed byte) string {
 
 	t.Helper()
 
-	addr := &entities.Address{
-		AddressVersion:   entities.AddressVersionV2,
-		AssetVersion:     entities.AssetVersionV0,
+	addr := &Address{
+		AddressVersion:   AddressVersionV2,
+		AssetVersion:     AssetVersionV0,
 		AssetRef:         ref,
 		Amount:           amount,
 		ScriptKey:        testKey(t, seed),
@@ -795,19 +794,19 @@ func encodeV2EmbeddedForRef(t *testing.T, ref entities.AssetRef, amount uint64,
 		ProofCourierAddr: "authmailbox+universerpc://localhost:10029",
 	}
 
-	encoded, err := entities.EncodeAddress(
-		addr, entities.NetworkRegtest,
+	encoded, err := EncodeAddress(
+		addr, NetworkRegtest,
 	)
 	require.NoError(t, err)
 	return encoded
 }
 
-func recipientAmountIs(recipient entities.Recipient, amount uint64) bool {
+func recipientAmountIs(recipient Recipient, amount uint64) bool {
 	got, ok := recipient.Amount()
 	return ok && got == amount
 }
 
-func recipientUsesEmbeddedAmount(recipient entities.Recipient) bool {
+func recipientUsesEmbeddedAmount(recipient Recipient) bool {
 	_, ok := recipient.Amount()
 	return !ok
 }
@@ -815,27 +814,27 @@ func recipientUsesEmbeddedAmount(recipient entities.Recipient) bool {
 // encodeEmbedded builds an address carrying an embedded amount so the
 // legacy RecipientsV1 path is exercised.
 func encodeEmbedded(t *testing.T, amount uint64,
-	version entities.AddressVersion) string {
+	version AddressVersion) string {
 
 	t.Helper()
 
 	s := byte(17)
 
-	id := testAssetID()
+	id := sendTestAssetID()
 	// Mutate the first byte so the AssetRef differs between seeds.
 	id[0] = s
 
-	addr := &entities.Address{
+	addr := &Address{
 		AddressVersion: version,
-		AssetVersion:   entities.AssetVersionV0,
-		AssetRef:       entities.AssetRefFromAssetID(id),
+		AssetVersion:   AssetVersionV0,
+		AssetRef:       AssetRefFromAssetID(id),
 		Amount:         amount,
 		ScriptKey:      testKey(t, 7),
 		InternalKey:    testKey(t, 11),
 	}
 
-	encoded, err := entities.EncodeAddress(
-		addr, entities.NetworkRegtest,
+	encoded, err := EncodeAddress(
+		addr, NetworkRegtest,
 	)
 	require.NoError(t, err)
 	return encoded
@@ -843,7 +842,7 @@ func encodeEmbedded(t *testing.T, amount uint64,
 
 func TestSend_WithAmount(t *testing.T) {
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
 	addr := encodeV2NoAmount(t)
@@ -851,13 +850,13 @@ func TestSend_WithAmount(t *testing.T) {
 	feeRate := uint32(25)
 	label := "test-send"
 
-	expectedTransfer := &entities.AssetTransfer{
+	expectedTransfer := &AssetTransfer{
 		AnchorTxid: "abc123",
 		Label:      label,
 	}
 
 	mc.On("SendAsset", ctx, mock.MatchedBy(
-		func(req *entities.SendAssetRequest) bool {
+		func(req *SendAssetRequest) bool {
 			return len(req.Recipients) == 1 &&
 				req.Recipients[0].Address == addr &&
 				recipientAmountIs(req.Recipients[0], amount) &&
@@ -882,15 +881,15 @@ func TestSend_WithAmount(t *testing.T) {
 // correctly when the caller does not pass WithAmount.
 func TestSend_NoAmountOption_UsesAddressEmbedded(t *testing.T) {
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
-	addr := encodeEmbedded(t, 42, entities.AddressVersionV0)
+	addr := encodeEmbedded(t, 42, AddressVersionV0)
 
-	expectedTransfer := &entities.AssetTransfer{AnchorTxid: "def456"}
+	expectedTransfer := &AssetTransfer{AnchorTxid: "def456"}
 
 	mc.On("SendAsset", ctx, mock.MatchedBy(
-		func(req *entities.SendAssetRequest) bool {
+		func(req *SendAssetRequest) bool {
 			return len(req.Recipients) == 1 &&
 				req.Recipients[0].Address == addr &&
 				recipientUsesEmbeddedAmount(req.Recipients[0])
@@ -908,7 +907,7 @@ func TestSend_NoAmountOption_UsesAddressEmbedded(t *testing.T) {
 // amount when the caller does not specify WithAmount.
 func TestSend_V2_AmountRequired(t *testing.T) {
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
 	addr := encodeV2NoAmount(t)
@@ -923,10 +922,10 @@ func TestSend_V2_AmountRequired(t *testing.T) {
 // the address-embedded amount.
 func TestSend_AmountMismatch(t *testing.T) {
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
-	addr := encodeEmbedded(t, 100, entities.AddressVersionV1)
+	addr := encodeEmbedded(t, 100, AddressVersionV1)
 
 	_, err := w.Send(ctx, addr, WithAmount(250))
 	require.ErrorIs(t, err, ErrAmountMismatch)
@@ -940,17 +939,17 @@ func TestSend_AmountMismatch(t *testing.T) {
 // the SDK preserves that on the wire.
 func TestSend_AmountMatchesEmbedded(t *testing.T) {
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
-	addr := encodeEmbedded(t, 100, entities.AddressVersionV1)
+	addr := encodeEmbedded(t, 100, AddressVersionV1)
 	mc.On("SendAsset", ctx, mock.MatchedBy(
-		func(req *entities.SendAssetRequest) bool {
+		func(req *SendAssetRequest) bool {
 			return len(req.Recipients) == 1 &&
 				req.Recipients[0].Address == addr &&
 				recipientAmountIs(req.Recipients[0], 100)
 		}),
-	).Return(&entities.AssetTransfer{AnchorTxid: "match"}, nil)
+	).Return(&AssetTransfer{AnchorTxid: "match"}, nil)
 
 	transfer, err := w.Send(ctx, addr, WithAmount(100))
 	require.NoError(t, err)
@@ -963,7 +962,7 @@ func TestSend_AmountMatchesEmbedded(t *testing.T) {
 // not a valid bech32m Tap address.
 func TestSend_DecodeError(t *testing.T) {
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
 	_, err := w.Send(ctx, "not-a-tap-address", WithAmount(10))
@@ -974,7 +973,7 @@ func TestSend_DecodeError(t *testing.T) {
 
 func TestSend_Error(t *testing.T) {
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
 	addr := encodeV2NoAmount(t)
@@ -991,14 +990,14 @@ func TestSend_Error(t *testing.T) {
 
 func TestSend_WithSkipProofCourierPingCheck(t *testing.T) {
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
 	addr := encodeV2NoAmount(t)
-	expectedTransfer := &entities.AssetTransfer{AnchorTxid: "ghi789"}
+	expectedTransfer := &AssetTransfer{AnchorTxid: "ghi789"}
 
 	mc.On("SendAsset", ctx, mock.MatchedBy(
-		func(req *entities.SendAssetRequest) bool {
+		func(req *SendAssetRequest) bool {
 			return req.SkipProofCourierPingCheck
 		}),
 	).Return(expectedTransfer, nil)
@@ -1016,22 +1015,22 @@ func TestSend_WithSkipProofCourierPingCheck(t *testing.T) {
 
 func TestSendMulti_MultipleRecipients(t *testing.T) {
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
-	ref := entities.AssetRefFromGroupKey(testKey(t, 21))
+	ref := AssetRefFromGroupKey(testKey(t, 21))
 	aliceAddr := encodeV2NoAmountForRef(t, ref, 31)
 	bobAddr := encodeV2NoAmountForRef(t, ref, 41)
 
-	recipients := []entities.Recipient{
-		entities.RecipientWithAmount(aliceAddr, 100),
-		entities.RecipientWithAmount(bobAddr, 200),
+	recipients := []Recipient{
+		RecipientWithAmount(aliceAddr, 100),
+		RecipientWithAmount(bobAddr, 200),
 	}
 
-	expectedTransfer := &entities.AssetTransfer{AnchorTxid: "multi123"}
+	expectedTransfer := &AssetTransfer{AnchorTxid: "multi123"}
 
 	mc.On("SendAsset", ctx, mock.MatchedBy(
-		func(req *entities.SendAssetRequest) bool {
+		func(req *SendAssetRequest) bool {
 			return len(req.Recipients) == 2 &&
 				req.Recipients[0].Address == aliceAddr &&
 				recipientAmountIs(req.Recipients[0], 100) &&
@@ -1049,15 +1048,15 @@ func TestSendMulti_MultipleRecipients(t *testing.T) {
 
 func TestSendMulti_RejectsMixedAssetRefs(t *testing.T) {
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
 	aliceAddr := encodeV2NoAmount(t, 21)
 	bobAddr := encodeV2NoAmount(t, 22)
 
-	recipients := []entities.Recipient{
-		entities.RecipientWithAmount(aliceAddr, 100),
-		entities.RecipientWithAmount(bobAddr, 200),
+	recipients := []Recipient{
+		RecipientWithAmount(aliceAddr, 100),
+		RecipientWithAmount(bobAddr, 200),
 	}
 
 	_, err := w.SendMulti(ctx, recipients)
@@ -1068,35 +1067,35 @@ func TestSendMulti_RejectsMixedAssetRefs(t *testing.T) {
 
 func TestSendMulti_NoRecipients(t *testing.T) {
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
 	_, err := w.SendMulti(ctx, nil)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrNoRecipients)
 
-	_, err = w.SendMulti(ctx, []entities.Recipient{})
+	_, err = w.SendMulti(ctx, []Recipient{})
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrNoRecipients)
 }
 
 func TestSendMulti_WithOptions(t *testing.T) {
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
 	addr := encodeV2NoAmount(t)
-	recipients := []entities.Recipient{
-		entities.RecipientWithAmount(addr, 50),
+	recipients := []Recipient{
+		RecipientWithAmount(addr, 50),
 	}
 
-	expectedTransfer := &entities.AssetTransfer{
+	expectedTransfer := &AssetTransfer{
 		AnchorTxid: "opts123",
 		Label:      "batch-payment",
 	}
 
 	mc.On("SendAsset", ctx, mock.MatchedBy(
-		func(req *entities.SendAssetRequest) bool {
+		func(req *SendAssetRequest) bool {
 			return req.FeeRate == 10 &&
 				req.Label == "batch-payment" &&
 				req.SkipProofCourierPingCheck
@@ -1121,27 +1120,27 @@ func TestSendMulti_WithOptions(t *testing.T) {
 // echoes the embedded value into the embedded-amount slot.
 func TestSendMulti_MixedAmountsNormalised(t *testing.T) {
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
-	ref := entities.AssetRefFromGroupKey(testKey(t, 41))
+	ref := AssetRefFromGroupKey(testKey(t, 41))
 	explicitAddr := encodeV2NoAmountForRef(t, ref, 51)
 	embeddedAddr := encodeV2EmbeddedForRef(t, ref, 75, 61)
 
-	recipients := []entities.Recipient{
-		entities.RecipientWithAmount(explicitAddr, 200),
-		entities.RecipientWithEmbeddedAmount(embeddedAddr),
+	recipients := []Recipient{
+		RecipientWithAmount(explicitAddr, 200),
+		RecipientWithEmbeddedAmount(embeddedAddr),
 	}
 
 	mc.On("SendAsset", ctx, mock.MatchedBy(
-		func(req *entities.SendAssetRequest) bool {
+		func(req *SendAssetRequest) bool {
 			return len(req.Recipients) == 2 &&
 				req.Recipients[0].Address == explicitAddr &&
 				recipientAmountIs(req.Recipients[0], 200) &&
 				req.Recipients[1].Address == embeddedAddr &&
 				recipientAmountIs(req.Recipients[1], 75)
 		}),
-	).Return(&entities.AssetTransfer{AnchorTxid: "mix"}, nil)
+	).Return(&AssetTransfer{AnchorTxid: "mix"}, nil)
 
 	_, err := w.SendMulti(ctx, recipients)
 	require.NoError(t, err)
@@ -1153,12 +1152,12 @@ func TestSendMulti_MixedAmountsNormalised(t *testing.T) {
 // amount disagrees with the address-embedded amount.
 func TestSendMulti_AmountMismatch(t *testing.T) {
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
-	addr := encodeEmbedded(t, 75, entities.AddressVersionV1)
-	_, err := w.SendMulti(ctx, []entities.Recipient{
-		entities.RecipientWithAmount(addr, 200),
+	addr := encodeEmbedded(t, 75, AddressVersionV1)
+	_, err := w.SendMulti(ctx, []Recipient{
+		RecipientWithAmount(addr, 200),
 	})
 	require.ErrorIs(t, err, ErrAmountMismatch)
 
@@ -1169,12 +1168,12 @@ func TestSendMulti_AmountMismatch(t *testing.T) {
 // amount when the caller does not specify one.
 func TestSendMulti_AmountRequired(t *testing.T) {
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
 	addr := encodeV2NoAmount(t)
-	recipients := []entities.Recipient{
-		entities.RecipientWithEmbeddedAmount(addr),
+	recipients := []Recipient{
+		RecipientWithEmbeddedAmount(addr),
 	}
 
 	_, err := w.SendMulti(ctx, recipients)
@@ -1185,12 +1184,12 @@ func TestSendMulti_AmountRequired(t *testing.T) {
 
 func TestSendMulti_ExplicitZeroAmount(t *testing.T) {
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
 	addr := encodeV2NoAmount(t)
-	_, err := w.SendMulti(ctx, []entities.Recipient{
-		entities.RecipientWithAmount(addr, 0),
+	_, err := w.SendMulti(ctx, []Recipient{
+		RecipientWithAmount(addr, 0),
 	})
 	require.ErrorIs(t, err, ErrZeroAmount)
 

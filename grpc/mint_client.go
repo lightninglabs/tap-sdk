@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/mintrpc"
@@ -40,18 +40,18 @@ type mintAssetRequest struct {
 
 // mintAsset describes an asset to add to a minting batch.
 type mintAsset struct {
-	entities.PendingMintAsset
+	tapsdk.PendingMintAsset
 
 	groupedAsset            bool
 	decimalDisplay          uint32
-	externalGroupKey        *entities.ExternalKey
+	externalGroupKey        *tapsdk.ExternalKey
 	enableSupplyCommitments bool
 }
 
 // mintAssetRPC adds an asset to the pending minting batch using the
 // internal request type.
 func (m *mintClient) mintAssetRPC(ctx context.Context,
-	req *mintAssetRequest) (*entities.MintingBatch, error) {
+	req *mintAssetRequest) (*tapsdk.MintingBatch, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, m.timeout)
 	defer cancel()
@@ -69,7 +69,7 @@ func (m *mintClient) mintAssetRPC(ctx context.Context,
 
 // MintAsset adds a brand-new asset to the pending minting batch.
 func (m *mintClient) MintAsset(ctx context.Context,
-	req *entities.MintAssetRequest) (*entities.MintingBatch,
+	req *tapsdk.MintAssetRequest) (*tapsdk.MintingBatch,
 	error) {
 
 	return m.mintAssetRPC(
@@ -80,7 +80,7 @@ func (m *mintClient) MintAsset(ctx context.Context,
 // MintIssuance adds an additional issuance to the pending
 // minting batch.
 func (m *mintClient) MintIssuance(ctx context.Context,
-	req *entities.MintIssuanceRequest) (*entities.MintingBatch,
+	req *tapsdk.MintIssuanceRequest) (*tapsdk.MintingBatch,
 	error) {
 
 	mintReq, err := mintAssetRequestFromMintIssuance(req)
@@ -93,7 +93,7 @@ func (m *mintClient) MintIssuance(ctx context.Context,
 
 // FundBatch funds the current pending minting batch.
 func (m *mintClient) FundBatch(ctx context.Context,
-	req *entities.FundBatchRequest) (*entities.VerboseMintingBatch, error) {
+	req *tapsdk.FundBatchRequest) (*tapsdk.VerboseMintingBatch, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, m.timeout)
 	defer cancel()
@@ -115,7 +115,7 @@ func (m *mintClient) FundBatch(ctx context.Context,
 
 // SealBatch seals the current funded mint batch.
 func (m *mintClient) SealBatch(ctx context.Context,
-	req *entities.SealBatchRequest) (*entities.MintingBatch, error) {
+	req *tapsdk.SealBatchRequest) (*tapsdk.MintingBatch, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, m.timeout)
 	defer cancel()
@@ -137,7 +137,7 @@ func (m *mintClient) SealBatch(ctx context.Context,
 
 // FinalizeBatch finalizes the current pending mint batch.
 func (m *mintClient) FinalizeBatch(ctx context.Context,
-	req *entities.FinalizeBatchRequest) (*entities.MintingBatch, error) {
+	req *tapsdk.FinalizeBatchRequest) (*tapsdk.MintingBatch, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, m.timeout)
 	defer cancel()
@@ -159,7 +159,7 @@ func (m *mintClient) FinalizeBatch(ctx context.Context,
 
 // CancelBatch cancels the current mint batch.
 func (m *mintClient) CancelBatch(ctx context.Context) (
-	*entities.CancelBatchResponse, error) {
+	*tapsdk.CancelBatchResponse, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, m.timeout)
 	defer cancel()
@@ -171,17 +171,17 @@ func (m *mintClient) CancelBatch(ctx context.Context) (
 		return nil, err
 	}
 
-	batchKey, err := entities.ParsePubKey(resp.BatchKey)
+	batchKey, err := tapsdk.ParsePubKey(resp.BatchKey)
 	if err != nil {
 		return nil, fmt.Errorf("invalid batch key: %w", err)
 	}
 
-	return &entities.CancelBatchResponse{BatchKey: batchKey}, nil
+	return &tapsdk.CancelBatchResponse{BatchKey: batchKey}, nil
 }
 
 // ListBatches lists mint batches known to the daemon.
 func (m *mintClient) ListBatches(ctx context.Context,
-	req *entities.ListBatchesRequest) ([]*entities.VerboseMintingBatch, error) {
+	req *tapsdk.ListBatchesRequest) ([]*tapsdk.VerboseMintingBatch, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, m.timeout)
 	defer cancel()
@@ -194,7 +194,7 @@ func (m *mintClient) ListBatches(ctx context.Context,
 		return nil, err
 	}
 
-	batches := make([]*entities.VerboseMintingBatch, 0, len(resp.Batches))
+	batches := make([]*tapsdk.VerboseMintingBatch, 0, len(resp.Batches))
 	for _, rpcBatch := range resp.Batches {
 		batch, err := unmarshalVerboseMintingBatch(rpcBatch)
 		if err != nil {
@@ -208,7 +208,7 @@ func (m *mintClient) ListBatches(ctx context.Context,
 }
 
 func mintAssetRequestFromMintAsset(
-	req *entities.MintAssetRequest) *mintAssetRequest {
+	req *tapsdk.MintAssetRequest) *mintAssetRequest {
 
 	if req == nil {
 		return nil
@@ -224,7 +224,7 @@ func mintAssetRequestFromMintAsset(
 	return &mintAssetRequest{
 		shortResponse: req.ShortResponse,
 		asset: &mintAsset{
-			PendingMintAsset: entities.PendingMintAsset{
+			PendingMintAsset: tapsdk.PendingMintAsset{
 				AssetVersion:       asset.AssetVersion,
 				AssetType:          asset.AssetType,
 				Name:               asset.Name,
@@ -243,7 +243,7 @@ func mintAssetRequestFromMintAsset(
 }
 
 func mintAssetRequestFromMintIssuance(
-	req *entities.MintIssuanceRequest) (*mintAssetRequest,
+	req *tapsdk.MintIssuanceRequest) (*mintAssetRequest,
 	error) {
 
 	if req == nil {
@@ -266,7 +266,7 @@ func mintAssetRequestFromMintIssuance(
 	return &mintAssetRequest{
 		shortResponse: req.ShortResponse,
 		asset: &mintAsset{
-			PendingMintAsset: entities.PendingMintAsset{
+			PendingMintAsset: tapsdk.PendingMintAsset{
 				AssetVersion: issuance.AssetVersion,
 				AssetType:    issuance.AssetType,
 				Name:         issuance.Name,
@@ -329,7 +329,7 @@ func marshalMintAsset(asset *mintAsset) *mintrpc.MintAsset {
 }
 
 func marshalFundBatchRequest(
-	req *entities.FundBatchRequest) (*mintrpc.FundBatchRequest, error) {
+	req *tapsdk.FundBatchRequest) (*mintrpc.FundBatchRequest, error) {
 
 	if req == nil {
 		return &mintrpc.FundBatchRequest{}, nil
@@ -359,7 +359,7 @@ func marshalFundBatchRequest(
 }
 
 func marshalSealBatchRequest(
-	req *entities.SealBatchRequest) (*mintrpc.SealBatchRequest, error) {
+	req *tapsdk.SealBatchRequest) (*mintrpc.SealBatchRequest, error) {
 
 	if req == nil {
 		return &mintrpc.SealBatchRequest{}, nil
@@ -387,7 +387,7 @@ func marshalSealBatchRequest(
 }
 
 func marshalFinalizeBatchRequest(
-	req *entities.FinalizeBatchRequest) (*mintrpc.FinalizeBatchRequest, error) {
+	req *tapsdk.FinalizeBatchRequest) (*mintrpc.FinalizeBatchRequest, error) {
 
 	if req == nil {
 		return &mintrpc.FinalizeBatchRequest{}, nil
@@ -417,7 +417,7 @@ func marshalFinalizeBatchRequest(
 }
 
 func marshalListBatchesRequest(
-	req *entities.ListBatchesRequest) *mintrpc.ListBatchRequest {
+	req *tapsdk.ListBatchesRequest) *mintrpc.ListBatchRequest {
 
 	if req == nil {
 		return &mintrpc.ListBatchRequest{}
@@ -433,7 +433,7 @@ func marshalListBatchesRequest(
 	return rpcReq
 }
 
-func marshalBatchSibling(batchSibling *entities.BatchSibling,
+func marshalBatchSibling(batchSibling *tapsdk.BatchSibling,
 	setFullTree func(*taprpc.TapscriptFullTree),
 	setBranch func(*taprpc.TapBranch)) error {
 
@@ -467,7 +467,7 @@ func marshalBatchSibling(batchSibling *entities.BatchSibling,
 	return nil
 }
 
-func marshalAssetMeta(meta *entities.AssetMeta) *taprpc.AssetMeta {
+func marshalAssetMeta(meta *tapsdk.AssetMeta) *taprpc.AssetMeta {
 	if meta == nil {
 		return nil
 	}
@@ -477,14 +477,14 @@ func marshalAssetMeta(meta *entities.AssetMeta) *taprpc.AssetMeta {
 		Type: taprpc.AssetMetaType(meta.Type),
 	}
 
-	if meta.MetaHash != (entities.Hash{}) {
+	if meta.MetaHash != (tapsdk.Hash{}) {
 		rpcMeta.MetaHash = meta.MetaHash[:]
 	}
 
 	return rpcMeta
 }
 
-func marshalScriptKey(key *entities.ScriptKey) *taprpc.ScriptKey {
+func marshalScriptKey(key *tapsdk.ScriptKey) *taprpc.ScriptKey {
 	if key == nil {
 		return nil
 	}
@@ -494,14 +494,14 @@ func marshalScriptKey(key *entities.ScriptKey) *taprpc.ScriptKey {
 		TapTweak: key.TapTweak,
 	}
 
-	if key.KeyDesc != (entities.KeyDescriptor{}) {
+	if key.KeyDesc != (tapsdk.KeyDescriptor{}) {
 		rpcKey.KeyDesc = marshalKeyDescriptor(&key.KeyDesc)
 	}
 
 	return rpcKey
 }
 
-func marshalKeyDescriptor(desc *entities.KeyDescriptor) *taprpc.KeyDescriptor {
+func marshalKeyDescriptor(desc *tapsdk.KeyDescriptor) *taprpc.KeyDescriptor {
 	if desc == nil {
 		return nil
 	}
@@ -515,7 +515,7 @@ func marshalKeyDescriptor(desc *entities.KeyDescriptor) *taprpc.KeyDescriptor {
 	}
 }
 
-func marshalExternalKey(key *entities.ExternalKey) *taprpc.ExternalKey {
+func marshalExternalKey(key *tapsdk.ExternalKey) *taprpc.ExternalKey {
 	if key == nil {
 		return nil
 	}
@@ -528,7 +528,7 @@ func marshalExternalKey(key *entities.ExternalKey) *taprpc.ExternalKey {
 }
 
 func unmarshalVerboseMintingBatch(
-	rpcBatch *mintrpc.VerboseBatch) (*entities.VerboseMintingBatch, error) {
+	rpcBatch *mintrpc.VerboseBatch) (*tapsdk.VerboseMintingBatch, error) {
 
 	if rpcBatch == nil {
 		return nil, fmt.Errorf("nil verbose minting batch")
@@ -539,9 +539,9 @@ func unmarshalVerboseMintingBatch(
 		return nil, err
 	}
 
-	verboseBatch := &entities.VerboseMintingBatch{Batch: *batch}
+	verboseBatch := &tapsdk.VerboseMintingBatch{Batch: *batch}
 	verboseBatch.UnsealedAssets = make(
-		[]entities.UnsealedMintAsset, 0, len(rpcBatch.UnsealedAssets),
+		[]tapsdk.UnsealedMintAsset, 0, len(rpcBatch.UnsealedAssets),
 	)
 	for _, rpcAsset := range rpcBatch.UnsealedAssets {
 		asset, err := unmarshalUnsealedMintAsset(rpcAsset)
@@ -557,13 +557,13 @@ func unmarshalVerboseMintingBatch(
 }
 
 func unmarshalUnsealedMintAsset(
-	rpcAsset *mintrpc.UnsealedAsset) (*entities.UnsealedMintAsset, error) {
+	rpcAsset *mintrpc.UnsealedAsset) (*tapsdk.UnsealedMintAsset, error) {
 
 	if rpcAsset == nil {
 		return nil, fmt.Errorf("nil unsealed mint asset")
 	}
 
-	asset := &entities.UnsealedMintAsset{
+	asset := &tapsdk.UnsealedMintAsset{
 		GroupVirtualPSBT: rpcAsset.GroupVirtualPsbt,
 	}
 
@@ -602,22 +602,22 @@ func unmarshalUnsealedMintAsset(
 }
 
 func unmarshalMintingBatch(
-	rpcBatch *mintrpc.MintingBatch) (*entities.MintingBatch, error) {
+	rpcBatch *mintrpc.MintingBatch) (*tapsdk.MintingBatch, error) {
 
 	if rpcBatch == nil {
 		return nil, fmt.Errorf("nil minting batch")
 	}
 
-	batch := &entities.MintingBatch{
+	batch := &tapsdk.MintingBatch{
 		BatchTxid:  rpcBatch.BatchTxid,
-		State:      entities.BatchState(rpcBatch.State),
+		State:      tapsdk.BatchState(rpcBatch.State),
 		CreatedAt:  rpcBatch.CreatedAt,
 		HeightHint: rpcBatch.HeightHint,
 		BatchPSBT:  rpcBatch.BatchPsbt,
 	}
 
 	if len(rpcBatch.BatchKey) != 0 {
-		batchKey, err := entities.ParsePubKey(rpcBatch.BatchKey)
+		batchKey, err := tapsdk.ParsePubKey(rpcBatch.BatchKey)
 		if err != nil {
 			return nil, fmt.Errorf("invalid batch key: %w", err)
 		}
@@ -625,7 +625,7 @@ func unmarshalMintingBatch(
 		batch.BatchKey = batchKey
 	}
 
-	batch.Assets = make([]entities.PendingMintAsset, 0, len(rpcBatch.Assets))
+	batch.Assets = make([]tapsdk.PendingMintAsset, 0, len(rpcBatch.Assets))
 	for _, rpcAsset := range rpcBatch.Assets {
 		asset, err := unmarshalPendingMintAsset(rpcAsset)
 		if err != nil {
@@ -639,15 +639,15 @@ func unmarshalMintingBatch(
 }
 
 func unmarshalPendingMintAsset(
-	rpcAsset *mintrpc.PendingAsset) (*entities.PendingMintAsset, error) {
+	rpcAsset *mintrpc.PendingAsset) (*tapsdk.PendingMintAsset, error) {
 
 	if rpcAsset == nil {
 		return nil, fmt.Errorf("nil pending mint asset")
 	}
 
-	asset := &entities.PendingMintAsset{
-		AssetVersion:       entities.AssetVersion(rpcAsset.AssetVersion),
-		AssetType:          entities.AssetType(rpcAsset.AssetType),
+	asset := &tapsdk.PendingMintAsset{
+		AssetVersion:       tapsdk.AssetVersion(rpcAsset.AssetVersion),
+		AssetType:          tapsdk.AssetType(rpcAsset.AssetType),
 		Name:               rpcAsset.Name,
 		Amount:             rpcAsset.Amount,
 		NewGroupedAsset:    rpcAsset.NewGroupedAsset,
@@ -665,7 +665,7 @@ func unmarshalPendingMintAsset(
 	}
 
 	if len(rpcAsset.GroupKey) != 0 {
-		groupKey, err := entities.ParsePubKey(rpcAsset.GroupKey)
+		groupKey, err := tapsdk.ParsePubKey(rpcAsset.GroupKey)
 		if err != nil {
 			return nil, fmt.Errorf("invalid group key: %w", err)
 		}
@@ -697,32 +697,32 @@ func unmarshalPendingMintAsset(
 }
 
 func unmarshalAssetMeta(
-	rpcMeta *taprpc.AssetMeta) (*entities.AssetMeta, error) {
+	rpcMeta *taprpc.AssetMeta) (*tapsdk.AssetMeta, error) {
 
 	if rpcMeta == nil {
 		return nil, fmt.Errorf("nil asset meta")
 	}
 
-	metaHash, err := entities.ParseHash(rpcMeta.MetaHash)
+	metaHash, err := tapsdk.ParseHash(rpcMeta.MetaHash)
 	if err != nil {
 		return nil, fmt.Errorf("invalid asset meta hash: %w", err)
 	}
 
-	return &entities.AssetMeta{
+	return &tapsdk.AssetMeta{
 		Data:     rpcMeta.Data,
-		Type:     entities.AssetMetaType(rpcMeta.Type),
+		Type:     tapsdk.AssetMetaType(rpcMeta.Type),
 		MetaHash: metaHash,
 	}, nil
 }
 
 func unmarshalGroupKeyRequest(
-	rpcRequest *taprpc.GroupKeyRequest) (*entities.GroupKeyRequest, error) {
+	rpcRequest *taprpc.GroupKeyRequest) (*tapsdk.GroupKeyRequest, error) {
 
 	if rpcRequest == nil {
 		return nil, fmt.Errorf("nil group key request")
 	}
 
-	request := &entities.GroupKeyRequest{
+	request := &tapsdk.GroupKeyRequest{
 		TapscriptRoot: rpcRequest.TapscriptRoot,
 		NewAsset:      rpcRequest.NewAsset,
 	}
@@ -746,7 +746,7 @@ func unmarshalGroupKeyRequest(
 	}
 
 	if rpcRequest.ExternalKey != nil {
-		request.ExternalKey = &entities.ExternalKey{
+		request.ExternalKey = &tapsdk.ExternalKey{
 			XPub:           rpcRequest.ExternalKey.Xpub,
 			DerivationPath: rpcRequest.ExternalKey.DerivationPath,
 		}
@@ -758,50 +758,50 @@ func unmarshalGroupKeyRequest(
 }
 
 func unmarshalGenesisInfo(
-	rpcGenesis *taprpc.GenesisInfo) (*entities.GenesisInfo, error) {
+	rpcGenesis *taprpc.GenesisInfo) (*tapsdk.GenesisInfo, error) {
 
 	if rpcGenesis == nil {
 		return nil, fmt.Errorf("nil genesis info")
 	}
 
-	metaHash, err := entities.ParseHash(rpcGenesis.MetaHash)
+	metaHash, err := tapsdk.ParseHash(rpcGenesis.MetaHash)
 	if err != nil {
 		return nil, fmt.Errorf("invalid genesis meta hash: %w", err)
 	}
 
-	assetID, err := entities.ParseAssetID(rpcGenesis.AssetId)
+	assetID, err := tapsdk.ParseAssetID(rpcGenesis.AssetId)
 	if err != nil {
 		return nil, fmt.Errorf("invalid genesis asset ID: %w", err)
 	}
 
-	return &entities.GenesisInfo{
+	return &tapsdk.GenesisInfo{
 		GenesisPoint: rpcGenesis.GenesisPoint,
 		Name:         rpcGenesis.Name,
 		MetaHash:     metaHash,
 		IssuanceID:   assetID,
-		AssetType:    entities.AssetType(rpcGenesis.AssetType),
+		AssetType:    tapsdk.AssetType(rpcGenesis.AssetType),
 		OutputIndex:  rpcGenesis.OutputIndex,
 	}, nil
 }
 
 func unmarshalGroupVirtualTx(
-	rpcTx *taprpc.GroupVirtualTx) (*entities.GroupVirtualTx, error) {
+	rpcTx *taprpc.GroupVirtualTx) (*tapsdk.GroupVirtualTx, error) {
 
 	if rpcTx == nil {
 		return nil, fmt.Errorf("nil group virtual tx")
 	}
 
-	tx := &entities.GroupVirtualTx{Transaction: rpcTx.Transaction}
+	tx := &tapsdk.GroupVirtualTx{Transaction: rpcTx.Transaction}
 
 	if rpcTx.PrevOut != nil {
-		tx.PrevOut = &entities.TxOut{
+		tx.PrevOut = &tapsdk.TxOut{
 			Value:    rpcTx.PrevOut.Value,
 			PkScript: rpcTx.PrevOut.PkScript,
 		}
 	}
 
 	if len(rpcTx.GenesisId) != 0 {
-		genesisID, err := entities.ParseAssetID(rpcTx.GenesisId)
+		genesisID, err := tapsdk.ParseAssetID(rpcTx.GenesisId)
 		if err != nil {
 			return nil, fmt.Errorf("invalid group virtual tx genesis ID: %w",
 				err)
@@ -811,7 +811,7 @@ func unmarshalGroupVirtualTx(
 	}
 
 	if len(rpcTx.TweakedKey) != 0 {
-		tweakedKey, err := entities.ParsePubKey(rpcTx.TweakedKey)
+		tweakedKey, err := tapsdk.ParsePubKey(rpcTx.TweakedKey)
 		if err != nil {
 			return nil, fmt.Errorf("invalid tweaked key: %w", err)
 		}

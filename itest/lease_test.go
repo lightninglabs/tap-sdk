@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,8 +26,8 @@ func TestUTXOLeaseLifecycle(t *testing.T) {
 		amount := uint64(100)
 
 		funded, err := h.AliceClient.FundTransfer(ctx,
-			[]entities.Recipient{
-				entities.RecipientWithAmount(
+			[]tapsdk.Recipient{
+				tapsdk.RecipientWithAmount(
 					addr.Encoded, amount,
 				),
 			},
@@ -48,7 +48,7 @@ func TestUTXOLeaseLifecycle(t *testing.T) {
 
 		require.Eventually(t, func() bool {
 			utxos, err := h.AliceClient.ListUtxos(ctx,
-				&entities.ListUtxosRequest{
+				&tapsdk.ListUtxosRequest{
 					IncludeLeased: true,
 				},
 			)
@@ -69,15 +69,15 @@ func TestUTXOLeaseLifecycle(t *testing.T) {
 
 // WaitForLeasedUTXO returns the leased UTXO that contains the requested asset.
 func (h *TestHarness) WaitForLeasedUTXO(t testing.TB,
-	ctx context.Context, ref entities.AssetRef,
-	timeout time.Duration) *entities.ManagedUtxo {
+	ctx context.Context, ref tapsdk.AssetRef,
+	timeout time.Duration) *tapsdk.ManagedUtxo {
 
 	t.Helper()
 
-	var leased *entities.ManagedUtxo
+	var leased *tapsdk.ManagedUtxo
 	require.Eventually(t, func() bool {
 		utxos, err := h.AliceClient.ListUtxos(ctx,
-			&entities.ListUtxosRequest{
+			&tapsdk.ListUtxosRequest{
 				IncludeLeased: true,
 			},
 		)

@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -62,12 +61,6 @@ func TestTransportDoGetReturnsTypedGatewayError(t *testing.T) {
 	st, ok := status.FromError(err)
 	require.True(t, ok)
 	require.Equal(t, codes.InvalidArgument, st.Code())
-
-	wrapped := &tapsdk.Error{
-		Op:  "ListAssets",
-		Err: err,
-	}
-	require.True(t, wrapped.IsInvalidArgument())
 }
 
 // TestTransportDoGetOpaqueErrorUsesUnknownCode verifies that non-JSON

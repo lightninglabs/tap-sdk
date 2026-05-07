@@ -3,7 +3,7 @@ package grpc
 import (
 	"testing"
 
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/stretchr/testify/require"
 )
@@ -39,7 +39,7 @@ func TestUnmarshalAddr(t *testing.T) {
 	tests := []struct {
 		name    string
 		rpcAddr *taprpc.Addr
-		wantRef func() entities.AssetRef
+		wantRef func() tapsdk.AssetRef
 		wantErr string
 	}{
 		{
@@ -107,10 +107,10 @@ func TestUnmarshalAddr(t *testing.T) {
 				AssetVersion:     taprpc.AssetVersion_ASSET_VERSION_V0,
 				AddressVersion:   taprpc.AddrVersion_ADDR_VERSION_V0,
 			},
-			wantRef: func() entities.AssetRef {
-				var expectedAssetID entities.AssetID
+			wantRef: func() tapsdk.AssetRef {
+				var expectedAssetID tapsdk.AssetID
 				copy(expectedAssetID[:], testAssetID)
-				return entities.AssetRefFromAssetID(expectedAssetID)
+				return tapsdk.AssetRefFromAssetID(expectedAssetID)
 			},
 			wantErr: "",
 		},
@@ -128,10 +128,10 @@ func TestUnmarshalAddr(t *testing.T) {
 				AssetVersion:     taprpc.AssetVersion_ASSET_VERSION_V1,
 				AddressVersion:   taprpc.AddrVersion_ADDR_VERSION_V2,
 			},
-			wantRef: func() entities.AssetRef {
-				var expectedGroupKey entities.PubKey
+			wantRef: func() tapsdk.AssetRef {
+				var expectedGroupKey tapsdk.PubKey
 				copy(expectedGroupKey[:], testPubKey)
-				return entities.AssetRefFromGroupKey(expectedGroupKey)
+				return tapsdk.AssetRefFromGroupKey(expectedGroupKey)
 			},
 			wantErr: "",
 		},
@@ -150,10 +150,10 @@ func TestUnmarshalAddr(t *testing.T) {
 				AssetVersion:     taprpc.AssetVersion_ASSET_VERSION_V1,
 				AddressVersion:   taprpc.AddrVersion_ADDR_VERSION_V2,
 			},
-			wantRef: func() entities.AssetRef {
-				var expectedAssetID entities.AssetID
+			wantRef: func() tapsdk.AssetRef {
+				var expectedAssetID tapsdk.AssetID
 				copy(expectedAssetID[:], testAssetID)
-				return entities.AssetRefFromAssetID(expectedAssetID)
+				return tapsdk.AssetRefFromAssetID(expectedAssetID)
 			},
 			wantErr: "",
 		},
@@ -171,10 +171,10 @@ func TestUnmarshalAddr(t *testing.T) {
 				AssetVersion:     taprpc.AssetVersion_ASSET_VERSION_V1,
 				AddressVersion:   taprpc.AddrVersion_ADDR_VERSION_V2,
 			},
-			wantRef: func() entities.AssetRef {
-				var expectedGroupKey entities.PubKey
+			wantRef: func() tapsdk.AssetRef {
+				var expectedGroupKey tapsdk.PubKey
 				copy(expectedGroupKey[:], testPubKey)
-				return entities.AssetRefFromGroupKey(expectedGroupKey)
+				return tapsdk.AssetRefFromGroupKey(expectedGroupKey)
 			},
 			wantErr: "",
 		},
@@ -224,11 +224,11 @@ func TestUnmarshalAddr(t *testing.T) {
 			require.Equal(t, tc.rpcAddr.Encoded, addr.Encoded)
 			require.Equal(t, tc.rpcAddr.Amount, addr.Amount)
 			require.Equal(t,
-				entities.AssetType(tc.rpcAddr.AssetType),
+				tapsdk.AssetType(tc.rpcAddr.AssetType),
 				addr.AssetType,
 			)
 			require.Equal(t,
-				entities.AddressVersion(tc.rpcAddr.AddressVersion),
+				tapsdk.AddressVersion(tc.rpcAddr.AddressVersion),
 				addr.AddressVersion,
 			)
 
@@ -243,7 +243,7 @@ func TestUnmarshalAddr(t *testing.T) {
 func TestMarshalNewAddrRequest(t *testing.T) {
 	tests := []struct {
 		name     string
-		req      *entities.NewAddressRequest
+		req      *tapsdk.NewAddressRequest
 		validate func(*testing.T, *taprpc.NewAddrRequest)
 	}{
 		{
@@ -257,11 +257,11 @@ func TestMarshalNewAddrRequest(t *testing.T) {
 		},
 		{
 			name: "V0 address with asset ID and amount",
-			req: &entities.NewAddressRequest{
-				AssetRef: func() entities.AssetRef {
-					var id entities.AssetID
+			req: &tapsdk.NewAddressRequest{
+				AssetRef: func() tapsdk.AssetRef {
+					var id tapsdk.AssetID
 					copy(id[:], testAssetID)
-					return entities.AssetRefFromAssetID(id)
+					return tapsdk.AssetRefFromAssetID(id)
 				}(),
 				Amount: 1000,
 			},
@@ -272,14 +272,14 @@ func TestMarshalNewAddrRequest(t *testing.T) {
 		},
 		{
 			name: "V2 address with group key",
-			req: &entities.NewAddressRequest{
-				AssetRef: func() entities.AssetRef {
-					var gk entities.PubKey
+			req: &tapsdk.NewAddressRequest{
+				AssetRef: func() tapsdk.AssetRef {
+					var gk tapsdk.PubKey
 					copy(gk[:], testPubKey)
-					return entities.AssetRefFromGroupKey(gk)
+					return tapsdk.AssetRefFromGroupKey(gk)
 				}(),
-				AddressVersion: func() *entities.AddressVersion {
-					v := entities.AddressVersionV2
+				AddressVersion: func() *tapsdk.AddressVersion {
+					v := tapsdk.AddressVersionV2
 					return &v
 				}(),
 			},
@@ -293,11 +293,11 @@ func TestMarshalNewAddrRequest(t *testing.T) {
 		},
 		{
 			name: "address with proof courier and skip check",
-			req: &entities.NewAddressRequest{
-				AssetRef: func() entities.AssetRef {
-					var id entities.AssetID
+			req: &tapsdk.NewAddressRequest{
+				AssetRef: func() tapsdk.AssetRef {
+					var id tapsdk.AssetID
 					copy(id[:], testAssetID)
-					return entities.AssetRefFromAssetID(id)
+					return tapsdk.AssetRefFromAssetID(id)
 				}(),
 				Amount:                    500,
 				ProofCourierAddr:          "universe://localhost:10029",
@@ -313,37 +313,37 @@ func TestMarshalNewAddrRequest(t *testing.T) {
 		},
 		{
 			name: "address with custom script key and internal key",
-			req: func() *entities.NewAddressRequest {
-				var scriptPubKey entities.PubKey
+			req: func() *tapsdk.NewAddressRequest {
+				var scriptPubKey tapsdk.PubKey
 				copy(scriptPubKey[:], testPubKey)
 
-				var rawKeyBytes entities.PubKey
+				var rawKeyBytes tapsdk.PubKey
 				copy(rawKeyBytes[:], testPubKey)
 
-				var internalRawKey entities.PubKey
+				var internalRawKey tapsdk.PubKey
 				copy(internalRawKey[:], testPubKey)
 
-				return &entities.NewAddressRequest{
-					AssetRef: func() entities.AssetRef {
-						var id entities.AssetID
+				return &tapsdk.NewAddressRequest{
+					AssetRef: func() tapsdk.AssetRef {
+						var id tapsdk.AssetID
 						copy(id[:], testAssetID)
-						return entities.AssetRefFromAssetID(id)
+						return tapsdk.AssetRefFromAssetID(id)
 					}(),
 					Amount: 1000,
-					ScriptKey: &entities.ScriptKey{
+					ScriptKey: &tapsdk.ScriptKey{
 						PubKey: scriptPubKey,
-						KeyDesc: entities.KeyDescriptor{
+						KeyDesc: tapsdk.KeyDescriptor{
 							RawKeyBytes: rawKeyBytes,
-							KeyLocator: entities.KeyLocator{
+							KeyLocator: tapsdk.KeyLocator{
 								Family: 212,
 								Index:  7,
 							},
 						},
 						TapTweak: []byte{0xaa, 0xbb},
 					},
-					InternalKey: &entities.KeyDescriptor{
+					InternalKey: &tapsdk.KeyDescriptor{
 						RawKeyBytes: internalRawKey,
-						KeyLocator: entities.KeyLocator{
+						KeyLocator: tapsdk.KeyLocator{
 							Family: 212,
 							Index:  3,
 						},
@@ -475,7 +475,7 @@ func TestUnmarshalAddrEvent(t *testing.T) {
 				event.CreationTime,
 			)
 			require.Equal(t,
-				entities.AddressEventStatus(tc.rpcEvent.Status),
+				tapsdk.AddressEventStatus(tc.rpcEvent.Status),
 				event.Status,
 			)
 			require.Equal(t, tc.rpcEvent.Outpoint, event.Outpoint)
@@ -503,15 +503,15 @@ func TestAddressVersionConstants(t *testing.T) {
 	// Verify SDK constants match taprpc constants.
 	require.Equal(t,
 		int(taprpc.AddrVersion_ADDR_VERSION_V0),
-		int(entities.AddressVersionV0),
+		int(tapsdk.AddressVersionV0),
 	)
 	require.Equal(t,
 		int(taprpc.AddrVersion_ADDR_VERSION_V1),
-		int(entities.AddressVersionV1),
+		int(tapsdk.AddressVersionV1),
 	)
 	require.Equal(t,
 		int(taprpc.AddrVersion_ADDR_VERSION_V2),
-		int(entities.AddressVersionV2),
+		int(tapsdk.AddressVersionV2),
 	)
 }
 
@@ -519,23 +519,23 @@ func TestAddressEventStatusConstants(t *testing.T) {
 	// Verify SDK constants match taprpc constants.
 	require.Equal(t,
 		int(taprpc.AddrEventStatus_ADDR_EVENT_STATUS_UNKNOWN),
-		int(entities.AddressEventStatusUnknown),
+		int(tapsdk.AddressEventStatusUnknown),
 	)
 	require.Equal(t,
 		int(taprpc.AddrEventStatus_ADDR_EVENT_STATUS_TRANSACTION_DETECTED),
-		int(entities.AddressEventStatusTransactionDetected),
+		int(tapsdk.AddressEventStatusTransactionDetected),
 	)
 	require.Equal(t,
 		int(taprpc.AddrEventStatus_ADDR_EVENT_STATUS_TRANSACTION_CONFIRMED),
-		int(entities.AddressEventStatusTransactionConfirmed),
+		int(tapsdk.AddressEventStatusTransactionConfirmed),
 	)
 	require.Equal(t,
 		int(taprpc.AddrEventStatus_ADDR_EVENT_STATUS_PROOF_RECEIVED),
-		int(entities.AddressEventStatusProofReceived),
+		int(tapsdk.AddressEventStatusProofReceived),
 	)
 	require.Equal(t,
 		int(taprpc.AddrEventStatus_ADDR_EVENT_STATUS_COMPLETED),
-		int(entities.AddressEventStatusCompleted),
+		int(tapsdk.AddressEventStatusCompleted),
 	)
 }
 
@@ -543,10 +543,10 @@ func TestSortDirectionConstants(t *testing.T) {
 	// Verify SDK constants match taprpc constants.
 	require.Equal(t,
 		int(taprpc.SortDirection_SORT_DIRECTION_ASC),
-		int(entities.SortAscending),
+		int(tapsdk.SortAscending),
 	)
 	require.Equal(t,
 		int(taprpc.SortDirection_SORT_DIRECTION_DESC),
-		int(entities.SortDescending),
+		int(tapsdk.SortDescending),
 	)
 }

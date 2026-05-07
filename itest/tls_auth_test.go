@@ -15,9 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	tapgrpc "github.com/lightninglabs/tap-sdk/grpc"
-	"github.com/lightninglabs/tap-sdk/macaroon"
 	taprest "github.com/lightninglabs/tap-sdk/rest"
 	"github.com/stretchr/testify/require"
 )
@@ -36,9 +35,9 @@ func TestTLSAndMacaroonGuards(t *testing.T) {
 	t.Run("grpc good credentials connect", func(t *testing.T) {
 		client, err := tapgrpc.NewClient(&tapgrpc.Config{
 			Host:     defaultAliceHost,
-			Network:  entities.NetworkRegtest,
+			Network:  tapsdk.NetworkRegtest,
 			TLS:      tapgrpc.TLSFromPath(tlsPath),
-			Macaroon: macaroon.FromPath(macPath),
+			Macaroon: tapsdk.MacaroonFromPath(macPath),
 		})
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = client.Close() })
@@ -57,9 +56,9 @@ func TestTLSAndMacaroonGuards(t *testing.T) {
 
 		client, err := tapgrpc.NewClient(&tapgrpc.Config{
 			Host:     defaultAliceHost,
-			Network:  entities.NetworkRegtest,
+			Network:  tapsdk.NetworkRegtest,
 			TLS:      tapgrpc.TLSFromPath(bogusTLS),
-			Macaroon: macaroon.FromPath(macPath),
+			Macaroon: tapsdk.MacaroonFromPath(macPath),
 		})
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = client.Close() })
@@ -72,7 +71,7 @@ func TestTLSAndMacaroonGuards(t *testing.T) {
 	t.Run("grpc missing macaroon rejected", func(t *testing.T) {
 		_, err := tapgrpc.NewClient(&tapgrpc.Config{
 			Host:    defaultAliceHost,
-			Network: entities.NetworkRegtest,
+			Network: tapsdk.NetworkRegtest,
 			TLS:     tapgrpc.TLSFromPath(tlsPath),
 		})
 		require.Error(t, err,
@@ -82,9 +81,9 @@ func TestTLSAndMacaroonGuards(t *testing.T) {
 	t.Run("grpc invalid macaroon rejected", func(t *testing.T) {
 		client, err := tapgrpc.NewClient(&tapgrpc.Config{
 			Host:     defaultAliceHost,
-			Network:  entities.NetworkRegtest,
+			Network:  tapsdk.NetworkRegtest,
 			TLS:      tapgrpc.TLSFromPath(tlsPath),
-			Macaroon: macaroon.FromHex("00"),
+			Macaroon: tapsdk.MacaroonFromHex("00"),
 		})
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = client.Close() })
@@ -97,9 +96,9 @@ func TestTLSAndMacaroonGuards(t *testing.T) {
 	t.Run("rest good credentials connect", func(t *testing.T) {
 		client, err := taprest.NewClient(&taprest.Config{
 			BaseURL:  defaultAliceRestHost,
-			Network:  entities.NetworkRegtest,
+			Network:  tapsdk.NetworkRegtest,
 			TLS:      taprest.TLSFromPath(tlsPath),
-			Macaroon: macaroon.FromPath(macPath),
+			Macaroon: tapsdk.MacaroonFromPath(macPath),
 		})
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = client.Close() })
@@ -116,9 +115,9 @@ func TestTLSAndMacaroonGuards(t *testing.T) {
 
 		client, err := taprest.NewClient(&taprest.Config{
 			BaseURL:  defaultAliceRestHost,
-			Network:  entities.NetworkRegtest,
+			Network:  tapsdk.NetworkRegtest,
 			TLS:      taprest.TLSFromPath(bogusTLS),
-			Macaroon: macaroon.FromPath(macPath),
+			Macaroon: tapsdk.MacaroonFromPath(macPath),
 		})
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = client.Close() })
@@ -131,7 +130,7 @@ func TestTLSAndMacaroonGuards(t *testing.T) {
 	t.Run("rest missing macaroon rejected", func(t *testing.T) {
 		_, err := taprest.NewClient(&taprest.Config{
 			BaseURL: defaultAliceRestHost,
-			Network: entities.NetworkRegtest,
+			Network: tapsdk.NetworkRegtest,
 			TLS:     taprest.TLSFromPath(tlsPath),
 		})
 		require.Error(t, err,
@@ -141,9 +140,9 @@ func TestTLSAndMacaroonGuards(t *testing.T) {
 	t.Run("rest invalid macaroon rejected", func(t *testing.T) {
 		client, err := taprest.NewClient(&taprest.Config{
 			BaseURL:  defaultAliceRestHost,
-			Network:  entities.NetworkRegtest,
+			Network:  tapsdk.NetworkRegtest,
 			TLS:      taprest.TLSFromPath(tlsPath),
-			Macaroon: macaroon.FromHex("00"),
+			Macaroon: tapsdk.MacaroonFromHex("00"),
 		})
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = client.Close() })

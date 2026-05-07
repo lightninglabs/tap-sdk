@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -15,15 +14,15 @@ type MockWalletKitClient struct {
 }
 
 func (m *MockWalletKitClient) FundTransfer(ctx context.Context,
-	recipients []entities.Recipient, inputs []entities.PrevID) (
-	*entities.FundedTransfer, error) {
+	recipients []Recipient, inputs []PrevID) (
+	*FundedTransfer, error) {
 
 	args := m.Called(ctx, recipients, inputs)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.FundedTransfer), args.Error(1)
+	return args.Get(0).(*FundedTransfer), args.Error(1)
 }
 
 func (m *MockWalletKitClient) SignVirtualPsbt(ctx context.Context,
@@ -39,19 +38,19 @@ func (m *MockWalletKitClient) SignVirtualPsbt(ctx context.Context,
 
 func (m *MockWalletKitClient) CommitVirtualPsbts(ctx context.Context,
 	virtualPsbts [][]byte, passivePsbts [][]byte,
-	satPerVByte uint64) (*entities.CommittedTransfer, error) {
+	satPerVByte uint64) (*CommittedTransfer, error) {
 
 	args := m.Called(ctx, virtualPsbts, passivePsbts, satPerVByte)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.CommittedTransfer), args.Error(1)
+	return args.Get(0).(*CommittedTransfer), args.Error(1)
 }
 
 func (m *MockWalletKitClient) PublishAndLogTransfer(ctx context.Context,
 	anchorPsbt []byte, virtualPsbts [][]byte, passivePsbts [][]byte,
-	skipAnchorTxBroadcast bool) (*entities.AssetPacket, error) {
+	skipAnchorTxBroadcast bool) (*AssetPacket, error) {
 
 	args := m.Called(ctx, anchorPsbt, virtualPsbts, passivePsbts,
 		skipAnchorTxBroadcast)
@@ -59,108 +58,108 @@ func (m *MockWalletKitClient) PublishAndLogTransfer(ctx context.Context,
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.AssetPacket), args.Error(1)
+	return args.Get(0).(*AssetPacket), args.Error(1)
 }
 
 func (m *MockWalletKitClient) DeriveScriptKey(ctx context.Context) (
-	*entities.ScriptKey, error) {
+	*ScriptKey, error) {
 
 	args := m.Called(ctx)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.ScriptKey), args.Error(1)
+	return args.Get(0).(*ScriptKey), args.Error(1)
 }
 
 func (m *MockWalletKitClient) DeriveInternalKey(ctx context.Context) (
-	*entities.InternalKey, error) {
+	*InternalKey, error) {
 
 	args := m.Called(ctx)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.InternalKey), args.Error(1)
+	return args.Get(0).(*InternalKey), args.Error(1)
 }
 
 func (m *MockWalletKitClient) FundInteractivePsbt(ctx context.Context,
-	psbt []byte) (*entities.FundedTransfer, error) {
+	psbt []byte) (*FundedTransfer, error) {
 
 	args := m.Called(ctx, psbt)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.FundedTransfer), args.Error(1)
+	return args.Get(0).(*FundedTransfer), args.Error(1)
 }
 
 func (m *MockWalletKitClient) AnchorVirtualPsbts(ctx context.Context,
-	signedPsbts [][]byte) (*entities.AssetTransfer, error) {
+	signedPsbts [][]byte) (*AssetTransfer, error) {
 
 	args := m.Called(ctx, signedPsbts)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.AssetTransfer), args.Error(1)
+	return args.Get(0).(*AssetTransfer), args.Error(1)
 }
 
 func (m *MockWalletKitClient) QueryInternalKey(
 	ctx context.Context,
-	internalKey []byte) (*entities.KeyDescriptor, error) {
+	internalKey []byte) (*KeyDescriptor, error) {
 
 	args := m.Called(ctx, internalKey)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.KeyDescriptor), args.Error(1)
+	return args.Get(0).(*KeyDescriptor), args.Error(1)
 }
 
 func (m *MockWalletKitClient) QueryScriptKey(
 	ctx context.Context,
-	tweakedScriptKey []byte) (*entities.ScriptKey, error) {
+	tweakedScriptKey []byte) (*ScriptKey, error) {
 
 	args := m.Called(ctx, tweakedScriptKey)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.ScriptKey), args.Error(1)
+	return args.Get(0).(*ScriptKey), args.Error(1)
 }
 
 func (m *MockWalletKitClient) ProveAssetOwnership(
 	ctx context.Context,
-	req *entities.ProveOwnershipRequest) (
-	*entities.OwnershipProof, error) {
+	req *ProveOwnershipRequest) (
+	*OwnershipProof, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.OwnershipProof),
+	return args.Get(0).(*OwnershipProof),
 		args.Error(1)
 }
 
 func (m *MockWalletKitClient) VerifyAssetOwnership(
 	ctx context.Context,
-	req *entities.VerifyOwnershipRequest) (
-	*entities.VerifyOwnershipResponse, error) {
+	req *VerifyOwnershipRequest) (
+	*VerifyOwnershipResponse, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.VerifyOwnershipResponse),
+	return args.Get(0).(*VerifyOwnershipResponse),
 		args.Error(1)
 }
 
 func (m *MockWalletKitClient) RemoveUTXOLease(
 	ctx context.Context,
-	outpoint entities.Outpoint) error {
+	outpoint Outpoint) error {
 
 	args := m.Called(ctx, outpoint)
 
@@ -169,19 +168,19 @@ func (m *MockWalletKitClient) RemoveUTXOLease(
 
 func (m *MockWalletKitClient) DeclareScriptKey(
 	ctx context.Context,
-	req *entities.DeclareScriptKeyRequest) (
-	*entities.ScriptKey, error) {
+	req *DeclareScriptKeyRequest) (
+	*ScriptKey, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.ScriptKey), args.Error(1)
+	return args.Get(0).(*ScriptKey), args.Error(1)
 }
 
 func (m *MockWalletKitClient) ExportBackup(ctx context.Context,
-	mode entities.BackupMode) ([]byte, error) {
+	mode BackupMode) ([]byte, error) {
 
 	args := m.Called(ctx, mode)
 	if args.Get(0) == nil {
@@ -213,11 +212,11 @@ func TestTxBuilder_Execute(t *testing.T) {
 
 	// 1. Fund
 	mockWalletKit.On("FundTransfer", ctx, mock.MatchedBy(
-		func(recipients []entities.Recipient) bool {
+		func(recipients []Recipient) bool {
 			return len(recipients) == 1 &&
 				recipients[0].Address == addr &&
 				recipientAmountIs(recipients[0], amount)
-		}), mock.Anything).Return(&entities.FundedTransfer{
+		}), mock.Anything).Return(&FundedTransfer{
 		FundedPsbt: fundedPsbt,
 	}, nil)
 
@@ -228,13 +227,13 @@ func TestTxBuilder_Execute(t *testing.T) {
 	// 3. Commit
 	mockWalletKit.On("CommitVirtualPsbts", ctx, [][]byte{signedPsbt},
 		mock.Anything, feeRate).Return(
-		&entities.CommittedTransfer{
+		&CommittedTransfer{
 			AnchorPsbt:   anchorPsbt,
 			VirtualPsbts: [][]byte{signedPsbt},
 		}, nil)
 
 	// 4. Finish
-	expectedPacket := &entities.AssetPacket{
+	expectedPacket := &AssetPacket{
 		AnchorTransaction:   finalAnchorTx,
 		VirtualTransactions: [][]byte{signedPsbt},
 	}
@@ -290,13 +289,13 @@ func TestTxBuilder_StateInjection(t *testing.T) {
 
 	mockWalletKit.On("CommitVirtualPsbts", ctx, [][]byte{signedPsbt},
 		passivePsbts, uint64(1)).Return(
-		&entities.CommittedTransfer{
+		&CommittedTransfer{
 			AnchorPsbt:        anchorPsbt,
 			VirtualPsbts:      [][]byte{signedPsbt},
 			PassiveAssetPsbts: passivePsbts,
 		}, nil)
 
-	expectedPacket := &entities.AssetPacket{
+	expectedPacket := &AssetPacket{
 		AnchorTransaction:   finalAnchorTx,
 		VirtualTransactions: [][]byte{signedPsbt},
 	}
@@ -326,11 +325,11 @@ func TestTxBuilder_ExecuteWithSkipBroadcast(t *testing.T) {
 	finalAnchorTx := []byte("final_anchor_tx")
 
 	mockWalletKit.On("FundTransfer", ctx, mock.MatchedBy(
-		func(recipients []entities.Recipient) bool {
+		func(recipients []Recipient) bool {
 			return len(recipients) == 1 &&
 				recipients[0].Address == addr &&
 				recipientAmountIs(recipients[0], amount)
-		}), mock.Anything).Return(&entities.FundedTransfer{
+		}), mock.Anything).Return(&FundedTransfer{
 		FundedPsbt: fundedPsbt,
 	}, nil)
 
@@ -339,12 +338,12 @@ func TestTxBuilder_ExecuteWithSkipBroadcast(t *testing.T) {
 
 	mockWalletKit.On("CommitVirtualPsbts", ctx, [][]byte{signedPsbt},
 		mock.Anything, uint64(1)).Return(
-		&entities.CommittedTransfer{
+		&CommittedTransfer{
 			AnchorPsbt:   anchorPsbt,
 			VirtualPsbts: [][]byte{signedPsbt},
 		}, nil)
 
-	expectedPacket := &entities.AssetPacket{
+	expectedPacket := &AssetPacket{
 		AnchorTransaction:   finalAnchorTx,
 		VirtualTransactions: [][]byte{signedPsbt},
 	}
@@ -379,12 +378,12 @@ func TestTxBuilder_AnchorSigning(t *testing.T) {
 
 	mockWalletKit.On("CommitVirtualPsbts", ctx, [][]byte{signedPsbt},
 		mock.Anything, uint64(1)).Return(
-		&entities.CommittedTransfer{
+		&CommittedTransfer{
 			AnchorPsbt:   anchorPsbt,
 			VirtualPsbts: [][]byte{signedPsbt},
 		}, nil)
 
-	expectedPacket := &entities.AssetPacket{
+	expectedPacket := &AssetPacket{
 		AnchorTransaction:   finalAnchorTx,
 		VirtualTransactions: [][]byte{signedPsbt},
 	}
@@ -413,7 +412,7 @@ func TestTxBuilder_AnchorPsbtInjection(t *testing.T) {
 	builder := newTxBuilder(mockWalletKit)
 	builder.SetSignedPsbt(signedPsbt).SetAnchorPsbt(anchorPsbt)
 
-	expectedPacket := &entities.AssetPacket{
+	expectedPacket := &AssetPacket{
 		AnchorTransaction:   finalAnchorTx,
 		VirtualTransactions: [][]byte{signedPsbt},
 	}
@@ -448,15 +447,15 @@ func TestTxBuilder_AddTapAddressUsesEmbeddedAmount(t *testing.T) {
 
 	ctx := context.Background()
 	amount := uint64(42)
-	addr := encodeEmbedded(t, amount, entities.AddressVersionV1)
+	addr := encodeEmbedded(t, amount, AddressVersionV1)
 	fundedPsbt := []byte("funded_psbt")
 
 	mockWalletKit.On("FundTransfer", ctx, mock.MatchedBy(
-		func(recipients []entities.Recipient) bool {
+		func(recipients []Recipient) bool {
 			return len(recipients) == 1 &&
 				recipients[0].Address == addr &&
 				recipientAmountIs(recipients[0], amount)
-		}), mock.Anything).Return(&entities.FundedTransfer{
+		}), mock.Anything).Return(&FundedTransfer{
 		FundedPsbt: fundedPsbt,
 	}, nil)
 

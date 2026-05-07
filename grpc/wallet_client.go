@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"google.golang.org/grpc"
@@ -31,7 +31,7 @@ func NewWalletClient(conn grpc.ClientConnInterface, timeout time.Duration,
 	}
 }
 
-func (s *walletClient) GetInfo(ctx context.Context) (*entities.Info, error) {
+func (s *walletClient) GetInfo(ctx context.Context) (*tapsdk.Info, error) {
 	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
@@ -49,7 +49,7 @@ func (s *walletClient) GetInfo(ctx context.Context) (*entities.Info, error) {
 	var pubKeyArray [33]byte
 	copy(pubKeyArray[:], pubKey)
 
-	return &entities.Info{
+	return &tapsdk.Info{
 		Version:           resp.Version,
 		LndVersion:        resp.LndVersion,
 		Network:           resp.Network,
@@ -61,7 +61,7 @@ func (s *walletClient) GetInfo(ctx context.Context) (*entities.Info, error) {
 }
 
 func (s *walletClient) ListAssetRecords(ctx context.Context,
-	req *entities.ListAssetsRequest) ([]*entities.AssetRecord, error) {
+	req *tapsdk.ListAssetsRequest) ([]*tapsdk.AssetRecord, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
@@ -78,7 +78,7 @@ func (s *walletClient) ListAssetRecords(ctx context.Context,
 		return nil, err
 	}
 
-	assets := make([]*entities.AssetRecord, 0, len(resp.Assets))
+	assets := make([]*tapsdk.AssetRecord, 0, len(resp.Assets))
 	for _, rpcAsset := range resp.Assets {
 		asset, err := unmarshalAsset(rpcAsset)
 		if err != nil {
@@ -98,11 +98,11 @@ func (s *walletClient) ListAssetRecords(ctx context.Context,
 }
 
 func marshalListAssetRecordsRequest(
-	req *entities.ListAssetsRequest) (*taprpc.ListAssetRequest,
-	*entities.AssetRef, error) {
+	req *tapsdk.ListAssetsRequest) (*taprpc.ListAssetRequest,
+	*tapsdk.AssetRef, error) {
 
 	rpcReq := &taprpc.ListAssetRequest{}
-	var assetRefFilter *entities.AssetRef
+	var assetRefFilter *tapsdk.AssetRef
 	if req == nil {
 		return rpcReq, assetRefFilter, nil
 	}
@@ -142,8 +142,8 @@ func marshalListAssetRecordsRequest(
 	return rpcReq, assetRefFilter, nil
 }
 
-func assetRecordMatchesRef(asset *entities.AssetRecord,
-	ref entities.AssetRef) bool {
+func assetRecordMatchesRef(asset *tapsdk.AssetRecord,
+	ref tapsdk.AssetRef) bool {
 
 	if asset == nil {
 		return false
@@ -158,8 +158,8 @@ func assetRecordMatchesRef(asset *entities.AssetRecord,
 }
 
 func (s *walletClient) ListBalances(ctx context.Context,
-	req *entities.ListBalancesRequest) (
-	*entities.ListBalancesResponse, error) {
+	req *tapsdk.ListBalancesRequest) (
+	*tapsdk.ListBalancesResponse, error) {
 
 	// Group refs must round-trip through tapd's group-by-group_key
 	// mode — the server only honors group_key_filter in that mode,
@@ -183,9 +183,9 @@ func (s *walletClient) ListBalances(ctx context.Context,
 		return nil, err
 	}
 
-	result := &entities.ListBalancesResponse{
+	result := &tapsdk.ListBalancesResponse{
 		Balances: make(
-			map[string]*entities.Balance,
+			map[string]*tapsdk.Balance,
 		),
 		UnconfirmedTransfers: rawResp.UnconfirmedTransfers,
 	}
@@ -212,7 +212,7 @@ func (s *walletClient) ListBalances(ctx context.Context,
 // listGroupBalance queries a single-group balance via tapd's group-by-group_key
 // mode.
 func (s *walletClient) listGroupBalance(ctx context.Context,
-	req *entities.ListBalancesRequest) (*entities.ListBalancesResponse,
+	req *tapsdk.ListBalancesRequest) (*tapsdk.ListBalancesResponse,
 	error) {
 
 	groupKey, ok := req.AssetRef.GroupKey()
@@ -243,8 +243,8 @@ func (s *walletClient) listGroupBalance(ctx context.Context,
 		return nil, err
 	}
 
-	result := &entities.ListBalancesResponse{
-		Balances:             map[string]*entities.Balance{},
+	result := &tapsdk.ListBalancesResponse{
+		Balances:             map[string]*tapsdk.Balance{},
 		UnconfirmedTransfers: rawResp.UnconfirmedTransfers,
 	}
 
@@ -253,7 +253,7 @@ func (s *walletClient) listGroupBalance(ctx context.Context,
 		return result, nil
 	}
 
-	result.Balances[req.AssetRef.String()] = &entities.Balance{
+	result.Balances[req.AssetRef.String()] = &tapsdk.Balance{
 		AssetRef: *req.AssetRef,
 		Balance:  groupBalance.Balance,
 	}
@@ -262,7 +262,7 @@ func (s *walletClient) listGroupBalance(ctx context.Context,
 }
 
 func (s *walletClient) ListTransfers(ctx context.Context,
-	req *entities.ListTransfersRequest) ([]*entities.AssetTransfer, error) {
+	req *tapsdk.ListTransfersRequest) ([]*tapsdk.AssetTransfer, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
@@ -279,7 +279,7 @@ func (s *walletClient) ListTransfers(ctx context.Context,
 		return nil, err
 	}
 
-	transfers := make([]*entities.AssetTransfer, 0, len(resp.Transfers))
+	transfers := make([]*tapsdk.AssetTransfer, 0, len(resp.Transfers))
 	for _, rpcTransfer := range resp.Transfers {
 		transfer, err := unmarshalAssetTransfer(rpcTransfer)
 		if err != nil {
@@ -294,7 +294,7 @@ func (s *walletClient) ListTransfers(ctx context.Context,
 
 // SendAsset performs a one-shot address-based send.
 func (s *walletClient) SendAsset(ctx context.Context,
-	req *entities.SendAssetRequest) (*entities.AssetTransfer, error) {
+	req *tapsdk.SendAssetRequest) (*tapsdk.AssetTransfer, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
@@ -314,7 +314,7 @@ func (s *walletClient) SendAsset(ctx context.Context,
 	return unmarshalAssetTransfer(resp.Transfer)
 }
 
-func unmarshalAsset(rpcAsset *taprpc.Asset) (*entities.AssetRecord, error) {
+func unmarshalAsset(rpcAsset *taprpc.Asset) (*tapsdk.AssetRecord, error) {
 	if rpcAsset == nil {
 		return nil, fmt.Errorf("nil asset")
 	}
@@ -334,14 +334,14 @@ func unmarshalAsset(rpcAsset *taprpc.Asset) (*entities.AssetRecord, error) {
 	var scriptKeyPub [33]byte
 	copy(scriptKeyPub[:], rpcAsset.ScriptKey)
 
-	asset := &entities.AssetRecord{
+	asset := &tapsdk.AssetRecord{
 		Version:          uint8(rpcAsset.Version),
 		Genesis:          *genesis,
 		Amount:           rpcAsset.Amount,
 		LockTime:         uint64(rpcAsset.LockTime),
 		RelativeLockTime: uint64(rpcAsset.RelativeLockTime),
 		ScriptVersion:    uint16(rpcAsset.ScriptVersion),
-		ScriptKey: entities.ScriptKey{
+		ScriptKey: tapsdk.ScriptKey{
 			PubKey: scriptKeyPub,
 		},
 	}
@@ -349,16 +349,16 @@ func unmarshalAsset(rpcAsset *taprpc.Asset) (*entities.AssetRecord, error) {
 	// tapd keys every queryable map (ListBalances, ListAssetGroups,
 	// ListAssets filters) by the tweaked group key, so that's what
 	// AssetRef must encode.
-	var tweakedGroupKey *entities.PubKey
+	var tweakedGroupKey *tapsdk.PubKey
 	if rpcAsset.AssetGroup != nil &&
 		len(rpcAsset.AssetGroup.TweakedGroupKey) == 33 {
 
-		var gk entities.PubKey
+		var gk tapsdk.PubKey
 		copy(gk[:], rpcAsset.AssetGroup.TweakedGroupKey)
 		tweakedGroupKey = &gk
 	}
 
-	asset.AssetRef = entities.AssetRefFromAsset(
+	asset.AssetRef = tapsdk.AssetRefFromAsset(
 		asset.Genesis.IssuanceID, tweakedGroupKey,
 	)
 
@@ -368,7 +368,7 @@ func unmarshalAsset(rpcAsset *taprpc.Asset) (*entities.AssetRecord, error) {
 // unmarshalIssuanceGenesis converts tapd's GenesisInfo into the SDK's concrete
 // issuance genesis type.
 func unmarshalIssuanceGenesis(rpcGenesis *taprpc.GenesisInfo) (
-	*entities.IssuanceGenesis, error) {
+	*tapsdk.IssuanceGenesis, error) {
 
 	if rpcGenesis == nil {
 		return nil, fmt.Errorf("nil asset genesis")
@@ -385,7 +385,7 @@ func unmarshalIssuanceGenesis(rpcGenesis *taprpc.GenesisInfo) (
 			len(rpcGenesis.MetaHash))
 	}
 
-	firstPrevOut, err := entities.NewOutpointFromStr(rpcGenesis.GenesisPoint)
+	firstPrevOut, err := tapsdk.NewOutpointFromStr(rpcGenesis.GenesisPoint)
 	if err != nil {
 		return nil, fmt.Errorf("invalid genesis point: %w",
 			err)
@@ -404,7 +404,7 @@ func unmarshalIssuanceGenesis(rpcGenesis *taprpc.GenesisInfo) (
 		return nil, err
 	}
 
-	return &entities.IssuanceGenesis{
+	return &tapsdk.IssuanceGenesis{
 		FirstPrevOut: firstPrevOut,
 		Tag:          rpcGenesis.Name,
 		MetaHash:     metaHash,
@@ -414,15 +414,15 @@ func unmarshalIssuanceGenesis(rpcGenesis *taprpc.GenesisInfo) (
 	}, nil
 }
 
-func unmarshalAssetType(assetType taprpc.AssetType) (entities.AssetType,
+func unmarshalAssetType(assetType taprpc.AssetType) (tapsdk.AssetType,
 	error) {
 
 	switch assetType {
 	case taprpc.AssetType_NORMAL:
-		return entities.AssetTypeFungible, nil
+		return tapsdk.AssetTypeFungible, nil
 
 	case taprpc.AssetType_COLLECTIBLE:
-		return entities.AssetTypeNFT, nil
+		return tapsdk.AssetTypeNFT, nil
 
 	default:
 		return 0, fmt.Errorf("unknown asset type: %v", assetType)
@@ -430,7 +430,7 @@ func unmarshalAssetType(assetType taprpc.AssetType) (entities.AssetType,
 }
 
 func unmarshalAssetTransfer(rpcTransfer *taprpc.AssetTransfer) (
-	*entities.AssetTransfer, error) {
+	*tapsdk.AssetTransfer, error) {
 
 	if rpcTransfer == nil {
 		return nil, fmt.Errorf("nil transfer")
@@ -448,7 +448,7 @@ func unmarshalAssetTransfer(rpcTransfer *taprpc.AssetTransfer) (
 	}
 
 	// Unmarshal outputs
-	outputs := make([]entities.TransferOutput, 0, len(rpcTransfer.Outputs))
+	outputs := make([]tapsdk.TransferOutput, 0, len(rpcTransfer.Outputs))
 	for _, out := range rpcTransfer.Outputs {
 		assetType, err := unmarshalAssetType(out.AssetType)
 		if err != nil {
@@ -456,7 +456,7 @@ func unmarshalAssetTransfer(rpcTransfer *taprpc.AssetTransfer) (
 				err)
 		}
 
-		output := entities.TransferOutput{
+		output := tapsdk.TransferOutput{
 			Amount:    out.Amount,
 			AssetType: assetType,
 			ProofBlob: out.NewProofBlob,
@@ -479,7 +479,7 @@ func unmarshalAssetTransfer(rpcTransfer *taprpc.AssetTransfer) (
 
 		// Copy the outpoint from anchor.
 		if out.Anchor != nil {
-			op, err := entities.NewOutpointFromStr(out.Anchor.Outpoint)
+			op, err := tapsdk.NewOutpointFromStr(out.Anchor.Outpoint)
 			if err != nil {
 				return nil, fmt.Errorf("invalid anchor outpoint: %w", err)
 			}
@@ -492,7 +492,7 @@ func unmarshalAssetTransfer(rpcTransfer *taprpc.AssetTransfer) (
 		// from older daemons; the SDK treats either as "no group" and
 		// falls back to the asset-id ref.
 		if len(out.GroupKey) > 0 {
-			groupKey, err := entities.ParsePubKey(out.GroupKey)
+			groupKey, err := tapsdk.ParsePubKey(out.GroupKey)
 			if err != nil {
 				return nil, fmt.Errorf(
 					"invalid output group key: %w", err,
@@ -505,7 +505,7 @@ func unmarshalAssetTransfer(rpcTransfer *taprpc.AssetTransfer) (
 	}
 
 	// Unmarshal inputs
-	inputs := make([]entities.TransferInput, 0, len(rpcTransfer.Inputs))
+	inputs := make([]tapsdk.TransferInput, 0, len(rpcTransfer.Inputs))
 	for _, in := range rpcTransfer.Inputs {
 		if in == nil {
 			return nil, fmt.Errorf("nil transfer input")
@@ -534,12 +534,12 @@ func unmarshalAssetTransfer(rpcTransfer *taprpc.AssetTransfer) (
 				err)
 		}
 
-		anchorPoint, err := entities.NewOutpointFromStr(in.AnchorPoint)
+		anchorPoint, err := tapsdk.NewOutpointFromStr(in.AnchorPoint)
 		if err != nil {
 			return nil, fmt.Errorf("invalid anchor point: %w", err)
 		}
 
-		input := entities.TransferInput{
+		input := tapsdk.TransferInput{
 			AnchorPoint: anchorPoint,
 			IssuanceID:  assetID,
 			AssetType:   assetType,
@@ -551,7 +551,7 @@ func unmarshalAssetTransfer(rpcTransfer *taprpc.AssetTransfer) (
 		// from older daemons; the SDK treats either as "no group" and
 		// falls back to the asset-id ref.
 		if len(in.GroupKey) > 0 {
-			groupKey, err := entities.ParsePubKey(in.GroupKey)
+			groupKey, err := tapsdk.ParsePubKey(in.GroupKey)
 			if err != nil {
 				return nil, fmt.Errorf(
 					"invalid input group key: %w", err,
@@ -572,7 +572,7 @@ func unmarshalAssetTransfer(rpcTransfer *taprpc.AssetTransfer) (
 		}
 	}
 
-	return &entities.AssetTransfer{
+	return &tapsdk.AssetTransfer{
 		TransferTimestamp:    rpcTransfer.TransferTimestamp,
 		TransferTxid:         transferTxid,
 		AnchorTxid:           anchorTxid,
@@ -590,7 +590,7 @@ func unmarshalAssetTransfer(rpcTransfer *taprpc.AssetTransfer) (
 
 // NewAddr creates a new Taproot Asset address for receiving assets.
 func (s *walletClient) NewAddr(ctx context.Context,
-	req *entities.NewAddressRequest) (*entities.Address, error) {
+	req *tapsdk.NewAddressRequest) (*tapsdk.Address, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
@@ -613,7 +613,7 @@ func (s *walletClient) NewAddr(ctx context.Context,
 // DecodeAddr decodes a bech32m Taproot Asset address string into its
 // components.
 func (s *walletClient) DecodeAddr(ctx context.Context,
-	addr string) (*entities.Address, error) {
+	addr string) (*tapsdk.Address, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
@@ -633,7 +633,7 @@ func (s *walletClient) DecodeAddr(ctx context.Context,
 // QueryAddrs returns addresses that were previously created by this tapd
 // instance.
 func (s *walletClient) QueryAddrs(ctx context.Context,
-	query *entities.AddressQuery) ([]*entities.Address, error) {
+	query *tapsdk.AddressQuery) ([]*tapsdk.Address, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
@@ -653,7 +653,7 @@ func (s *walletClient) QueryAddrs(ctx context.Context,
 		return nil, err
 	}
 
-	addrs := make([]*entities.Address, 0, len(resp.Addrs))
+	addrs := make([]*tapsdk.Address, 0, len(resp.Addrs))
 	for _, rpcAddr := range resp.Addrs {
 		addr, err := unmarshalAddr(rpcAddr)
 		if err != nil {
@@ -668,7 +668,7 @@ func (s *walletClient) QueryAddrs(ctx context.Context,
 // AddrReceives returns incoming transfer events for addresses created by this
 // tapd instance.
 func (s *walletClient) AddrReceives(ctx context.Context,
-	query *entities.AddressReceivesQuery) ([]*entities.AddressEvent, error) {
+	query *tapsdk.AddressReceivesQuery) ([]*tapsdk.AddressEvent, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
@@ -691,7 +691,7 @@ func (s *walletClient) AddrReceives(ctx context.Context,
 		return nil, err
 	}
 
-	events := make([]*entities.AddressEvent, 0, len(resp.Events))
+	events := make([]*tapsdk.AddressEvent, 0, len(resp.Events))
 	for _, rpcEvent := range resp.Events {
 		event, err := unmarshalAddrEvent(rpcEvent)
 		if err != nil {
@@ -704,7 +704,7 @@ func (s *walletClient) AddrReceives(ctx context.Context,
 }
 
 func marshalListBalancesRequest(
-	req *entities.ListBalancesRequest) (*taprpc.ListBalancesRequest, error) {
+	req *tapsdk.ListBalancesRequest) (*taprpc.ListBalancesRequest, error) {
 
 	// Group by asset_id so we get per-tranche balances with genesis info
 	// and group keys. Group-ref lookups take a separate code path.
@@ -734,7 +734,7 @@ func marshalListBalancesRequest(
 }
 
 func marshalScriptKeyTypeQuery(
-	query *entities.ScriptKeyTypeQuery) (*taprpc.ScriptKeyTypeQuery, error) {
+	query *tapsdk.ScriptKeyTypeQuery) (*taprpc.ScriptKeyTypeQuery, error) {
 
 	if err := query.Validate(); err != nil {
 		return nil, err
@@ -764,13 +764,13 @@ func marshalScriptKeyTypeQuery(
 }
 
 func unmarshalBalance(
-	rpcBalance *taprpc.AssetBalance) (*entities.Balance, error) {
+	rpcBalance *taprpc.AssetBalance) (*tapsdk.Balance, error) {
 
 	if rpcBalance == nil {
 		return nil, fmt.Errorf("nil asset balance")
 	}
 
-	var genesis *entities.IssuanceGenesis
+	var genesis *tapsdk.IssuanceGenesis
 	if rpcBalance.AssetGenesis != nil {
 		var err error
 		genesis, err = unmarshalIssuanceGenesis(rpcBalance.AssetGenesis)
@@ -779,21 +779,21 @@ func unmarshalBalance(
 		}
 	}
 
-	balance := &entities.Balance{
+	balance := &tapsdk.Balance{
 		Balance: rpcBalance.Balance,
 	}
 
 	if len(rpcBalance.GroupKey) != 0 &&
-		(genesis == nil || genesis.Type != entities.AssetTypeCollectible) {
+		(genesis == nil || genesis.Type != tapsdk.AssetTypeCollectible) {
 
 		if len(rpcBalance.GroupKey) != 33 {
 			return nil, fmt.Errorf("invalid group key length: %d",
 				len(rpcBalance.GroupKey))
 		}
 
-		var groupKey entities.PubKey
+		var groupKey tapsdk.PubKey
 		copy(groupKey[:], rpcBalance.GroupKey)
-		balance.AssetRef = entities.AssetRefFromGroupKey(groupKey)
+		balance.AssetRef = tapsdk.AssetRefFromGroupKey(groupKey)
 		return balance, nil
 	}
 
@@ -801,13 +801,13 @@ func unmarshalBalance(
 		return nil, fmt.Errorf("missing asset genesis")
 	}
 
-	balance.AssetRef = entities.AssetRefFromAsset(genesis.IssuanceID, nil)
+	balance.AssetRef = tapsdk.AssetRefFromAsset(genesis.IssuanceID, nil)
 
 	return balance, nil
 }
 
 func marshalSendAssetRequest(
-	req *entities.SendAssetRequest) (*taprpc.SendAssetRequest, error) {
+	req *tapsdk.SendAssetRequest) (*taprpc.SendAssetRequest, error) {
 
 	if req == nil {
 		return &taprpc.SendAssetRequest{}, nil
@@ -838,7 +838,7 @@ func marshalSendAssetRequest(
 		}
 	}
 	if !allEmbedded && anyEmbedded {
-		return nil, entities.ErrMixedRecipientAmounts
+		return nil, tapsdk.ErrMixedRecipientAmounts
 	}
 
 	if allEmbedded {
@@ -867,7 +867,7 @@ func marshalSendAssetRequest(
 }
 
 func marshalNewAddrRequest(
-	req *entities.NewAddressRequest) (*taprpc.NewAddrRequest, error) {
+	req *tapsdk.NewAddressRequest) (*taprpc.NewAddrRequest, error) {
 
 	if req == nil {
 		return &taprpc.NewAddrRequest{}, nil
@@ -899,7 +899,7 @@ func marshalNewAddrRequest(
 			PubKey:   req.ScriptKey.PubKey[:],
 			TapTweak: req.ScriptKey.TapTweak,
 		}
-		if req.ScriptKey.KeyDesc.RawKeyBytes != (entities.PubKey{}) {
+		if req.ScriptKey.KeyDesc.RawKeyBytes != (tapsdk.PubKey{}) {
 			rpcReq.ScriptKey.KeyDesc = &taprpc.KeyDescriptor{
 				RawKeyBytes: req.ScriptKey.KeyDesc.RawKeyBytes[:],
 				KeyLoc: &taprpc.KeyLocator{
@@ -931,7 +931,7 @@ func marshalNewAddrRequest(
 	return rpcReq, nil
 }
 
-func unmarshalAddr(rpcAddr *taprpc.Addr) (*entities.Address, error) {
+func unmarshalAddr(rpcAddr *taprpc.Addr) (*tapsdk.Address, error) {
 	if rpcAddr == nil {
 		return nil, fmt.Errorf("nil address")
 	}
@@ -941,19 +941,19 @@ func unmarshalAddr(rpcAddr *taprpc.Addr) (*entities.Address, error) {
 		return nil, err
 	}
 
-	addr := &entities.Address{
+	addr := &tapsdk.Address{
 		Encoded:          rpcAddr.Encoded,
 		AssetType:        assetType,
 		Amount:           rpcAddr.Amount,
 		TapscriptSibling: rpcAddr.TapscriptSibling,
 		ProofCourierAddr: rpcAddr.ProofCourierAddr,
-		AssetVersion:     entities.AssetVersion(rpcAddr.AssetVersion),
-		AddressVersion:   entities.AddressVersion(rpcAddr.AddressVersion),
+		AssetVersion:     tapsdk.AssetVersion(rpcAddr.AssetVersion),
+		AddressVersion:   tapsdk.AddressVersion(rpcAddr.AddressVersion),
 	}
 
-	var assetID *entities.AssetID
+	var assetID *tapsdk.AssetID
 	if len(rpcAddr.AssetId) == 32 {
-		parsedAssetID, err := entities.ParseAssetID(rpcAddr.AssetId)
+		parsedAssetID, err := tapsdk.ParseAssetID(rpcAddr.AssetId)
 		if err != nil {
 			return nil, fmt.Errorf("invalid asset ID: %w", err)
 		}
@@ -961,9 +961,9 @@ func unmarshalAddr(rpcAddr *taprpc.Addr) (*entities.Address, error) {
 		assetID = &parsedAssetID
 	}
 
-	var groupKey *entities.PubKey
+	var groupKey *tapsdk.PubKey
 	if len(rpcAddr.GroupKey) == 33 {
-		parsedGroupKey, err := entities.ParsePubKey(rpcAddr.GroupKey)
+		parsedGroupKey, err := tapsdk.ParsePubKey(rpcAddr.GroupKey)
 		if err != nil {
 			return nil, fmt.Errorf("invalid group key: %w", err)
 		}
@@ -973,19 +973,19 @@ func unmarshalAddr(rpcAddr *taprpc.Addr) (*entities.Address, error) {
 
 	switch {
 	case assetID != nil && assetID.IsZero() && groupKey != nil:
-		addr.AssetRef = entities.AssetRefFromGroupKey(*groupKey)
+		addr.AssetRef = tapsdk.AssetRefFromGroupKey(*groupKey)
 
 	case assetID != nil && assetID.IsZero():
 		return nil, fmt.Errorf("address asset ID is zero with no " +
 			"group key")
 
 	case assetID != nil:
-		addr.AssetRef = entities.AssetRefFromTypedAsset(
+		addr.AssetRef = tapsdk.AssetRefFromTypedAsset(
 			*assetID, groupKey, addr.AssetType,
 		)
 
 	case groupKey != nil:
-		addr.AssetRef = entities.AssetRefFromGroupKey(*groupKey)
+		addr.AssetRef = tapsdk.AssetRefFromGroupKey(*groupKey)
 
 	default:
 		return nil, fmt.Errorf("address missing asset ID or group key")
@@ -1015,16 +1015,16 @@ func unmarshalAddr(rpcAddr *taprpc.Addr) (*entities.Address, error) {
 	return addr, nil
 }
 
-func unmarshalAddrEvent(rpcEvent *taprpc.AddrEvent) (*entities.AddressEvent,
+func unmarshalAddrEvent(rpcEvent *taprpc.AddrEvent) (*tapsdk.AddressEvent,
 	error) {
 
 	if rpcEvent == nil {
 		return nil, fmt.Errorf("nil address event")
 	}
 
-	event := &entities.AddressEvent{
+	event := &tapsdk.AddressEvent{
 		CreationTime:       rpcEvent.CreationTimeUnixSeconds,
-		Status:             entities.AddressEventStatus(rpcEvent.Status),
+		Status:             tapsdk.AddressEventStatus(rpcEvent.Status),
 		Outpoint:           rpcEvent.Outpoint,
 		UTXOAmountSat:      rpcEvent.UtxoAmtSat,
 		TaprootSibling:     rpcEvent.TaprootSibling,
@@ -1046,7 +1046,7 @@ func unmarshalAddrEvent(rpcEvent *taprpc.AddrEvent) (*entities.AddressEvent,
 
 // ListUtxos lists managed UTXOs with optional filtering.
 func (s *walletClient) ListUtxos(ctx context.Context,
-	req *entities.ListUtxosRequest) (map[string]*entities.ManagedUtxo,
+	req *tapsdk.ListUtxosRequest) (map[string]*tapsdk.ManagedUtxo,
 	error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
@@ -1072,7 +1072,7 @@ func (s *walletClient) ListUtxos(ctx context.Context,
 	}
 
 	result := make(
-		map[string]*entities.ManagedUtxo, len(resp.ManagedUtxos),
+		map[string]*tapsdk.ManagedUtxo, len(resp.ManagedUtxos),
 	)
 
 	for key, rpcUtxo := range resp.ManagedUtxos {
@@ -1090,7 +1090,7 @@ func (s *walletClient) ListUtxos(ctx context.Context,
 
 // ListAssetGroups lists all known asset groups.
 func (s *walletClient) ListAssetGroups(
-	ctx context.Context) ([]entities.AssetGroupRecord, error) {
+	ctx context.Context) ([]tapsdk.AssetGroupRecord, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
@@ -1104,7 +1104,7 @@ func (s *walletClient) ListAssetGroups(
 		return nil, err
 	}
 
-	result := make([]entities.AssetGroupRecord, 0, len(resp.Groups))
+	result := make([]tapsdk.AssetGroupRecord, 0, len(resp.Groups))
 
 	for key, rpcGroup := range resp.Groups {
 		group, err := unmarshalAssetGroupRecord(key, rpcGroup)
@@ -1122,7 +1122,7 @@ func (s *walletClient) ListAssetGroups(
 // BurnAsset burns asset units. The confirmation text must be set to
 // "assets will be destroyed" for the burn to succeed.
 func (s *walletClient) BurnAsset(ctx context.Context,
-	req *entities.BurnAssetRequest) (*entities.BurnAssetResponse,
+	req *tapsdk.BurnAssetRequest) (*tapsdk.BurnAssetResponse,
 	error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
@@ -1140,7 +1140,7 @@ func (s *walletClient) BurnAsset(ctx context.Context,
 		return nil, err
 	}
 
-	result := &entities.BurnAssetResponse{}
+	result := &tapsdk.BurnAssetResponse{}
 
 	if resp.BurnTransfer != nil {
 		transfer, err := unmarshalAssetTransfer(resp.BurnTransfer)
@@ -1167,7 +1167,7 @@ func (s *walletClient) BurnAsset(ctx context.Context,
 
 // ListBurns lists asset burns with optional filtering.
 func (s *walletClient) ListBurns(ctx context.Context,
-	req *entities.ListBurnsRequest) ([]*entities.BurnRecord, error) {
+	req *tapsdk.ListBurnsRequest) ([]*tapsdk.BurnRecord, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
@@ -1199,7 +1199,7 @@ func (s *walletClient) ListBurns(ctx context.Context,
 		return nil, err
 	}
 
-	burns := make([]*entities.BurnRecord, 0, len(resp.Burns))
+	burns := make([]*tapsdk.BurnRecord, 0, len(resp.Burns))
 	for _, rpcBurn := range resp.Burns {
 		burn, err := unmarshalBurnRecord(rpcBurn)
 		if err != nil {
@@ -1214,7 +1214,7 @@ func (s *walletClient) ListBurns(ctx context.Context,
 
 // FetchAssetMeta fetches the metadata for an asset by ID or meta hash.
 func (s *walletClient) FetchAssetMeta(ctx context.Context,
-	req *entities.FetchAssetMetaRequest) (*entities.AssetMeta, error) {
+	req *tapsdk.FetchAssetMetaRequest) (*tapsdk.AssetMeta, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
@@ -1237,7 +1237,7 @@ func (s *walletClient) FetchAssetMeta(ctx context.Context,
 // VerifyProof verifies a proof file and returns the decoded last proof
 // if valid.
 func (s *walletClient) VerifyProof(ctx context.Context,
-	rawProofFile []byte) (*entities.VerifyProofResponse, error) {
+	rawProofFile []byte) (*tapsdk.VerifyProofResponse, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
@@ -1251,7 +1251,7 @@ func (s *walletClient) VerifyProof(ctx context.Context,
 		return nil, err
 	}
 
-	result := &entities.VerifyProofResponse{
+	result := &tapsdk.VerifyProofResponse{
 		Valid: resp.Valid,
 	}
 
@@ -1269,25 +1269,25 @@ func (s *walletClient) VerifyProof(ctx context.Context,
 }
 
 // unmarshalManagedUtxo converts an RPC ManagedUtxo to an
-// entities.ManagedUtxo.
+// tapsdk.ManagedUtxo.
 func unmarshalManagedUtxo(
-	rpcUtxo *taprpc.ManagedUtxo) (*entities.ManagedUtxo, error) {
+	rpcUtxo *taprpc.ManagedUtxo) (*tapsdk.ManagedUtxo, error) {
 
 	if rpcUtxo == nil {
 		return nil, fmt.Errorf("nil managed utxo")
 	}
 
-	outPoint, err := entities.NewOutpointFromStr(rpcUtxo.OutPoint)
+	outPoint, err := tapsdk.NewOutpointFromStr(rpcUtxo.OutPoint)
 	if err != nil {
 		return nil, fmt.Errorf("invalid outpoint: %w", err)
 	}
 
-	internalKey, err := entities.ParsePubKey(rpcUtxo.InternalKey)
+	internalKey, err := tapsdk.ParsePubKey(rpcUtxo.InternalKey)
 	if err != nil {
 		return nil, fmt.Errorf("invalid internal key: %w", err)
 	}
 
-	taprootAssetRoot, err := entities.ParseHash(
+	taprootAssetRoot, err := tapsdk.ParseHash(
 		rpcUtxo.TaprootAssetRoot,
 	)
 	if err != nil {
@@ -1295,12 +1295,12 @@ func unmarshalManagedUtxo(
 			err)
 	}
 
-	merkleRoot, err := entities.ParseHash(rpcUtxo.MerkleRoot)
+	merkleRoot, err := tapsdk.ParseHash(rpcUtxo.MerkleRoot)
 	if err != nil {
 		return nil, fmt.Errorf("invalid merkle root: %w", err)
 	}
 
-	assets := make([]*entities.AssetRecord, 0, len(rpcUtxo.Assets))
+	assets := make([]*tapsdk.AssetRecord, 0, len(rpcUtxo.Assets))
 	for _, rpcAsset := range rpcUtxo.Assets {
 		asset, err := unmarshalAsset(rpcAsset)
 		if err != nil {
@@ -1313,7 +1313,7 @@ func unmarshalManagedUtxo(
 
 	leaseExpiry := max(rpcUtxo.LeaseExpiryUnix, int64(0))
 
-	return &entities.ManagedUtxo{
+	return &tapsdk.ManagedUtxo{
 		OutPoint:         outPoint,
 		AmtSat:           rpcUtxo.AmtSat,
 		InternalKey:      internalKey,
@@ -1326,23 +1326,23 @@ func unmarshalManagedUtxo(
 }
 
 // unmarshalAssetGroupRecord converts an RPC GroupedAssets to an
-// entities.AssetGroupRecord. The groupKeyHex is the map key tapd returns,
+// tapsdk.AssetGroupRecord. The groupKeyHex is the map key tapd returns,
 // which may be either 33-byte compressed or 32-byte x-only hex.
 func unmarshalAssetGroupRecord(groupKeyHex string,
-	rpcGroup *taprpc.GroupedAssets) (*entities.AssetGroupRecord, error) {
+	rpcGroup *taprpc.GroupedAssets) (*tapsdk.AssetGroupRecord, error) {
 
 	if rpcGroup == nil {
 		return nil, fmt.Errorf("nil grouped assets")
 	}
 
-	groupKey, err := entities.ParseGroupRefKey(groupKeyHex)
+	groupKey, err := tapsdk.ParseGroupRefKey(groupKeyHex)
 	if err != nil {
 		return nil, fmt.Errorf("invalid group key: %w", err)
 	}
-	groupRef := entities.AssetRefFromGroupKey(groupKey)
+	groupRef := tapsdk.AssetRefFromGroupKey(groupKey)
 
 	members := make(
-		[]*entities.AssetGroupMember, 0, len(rpcGroup.Assets),
+		[]*tapsdk.AssetGroupMember, 0, len(rpcGroup.Assets),
 	)
 
 	for _, rpcAsset := range rpcGroup.Assets {
@@ -1350,13 +1350,13 @@ func unmarshalAssetGroupRecord(groupKeyHex string,
 			return nil, fmt.Errorf("nil asset in group")
 		}
 
-		assetID, err := entities.ParseAssetID(rpcAsset.Id)
+		assetID, err := tapsdk.ParseAssetID(rpcAsset.Id)
 		if err != nil {
 			return nil, fmt.Errorf("invalid asset ID: %w",
 				err)
 		}
 
-		metaHash, err := entities.ParseHash(rpcAsset.MetaHash)
+		metaHash, err := tapsdk.ParseHash(rpcAsset.MetaHash)
 		if err != nil {
 			return nil, fmt.Errorf("invalid meta hash: %w",
 				err)
@@ -1367,7 +1367,7 @@ func unmarshalAssetGroupRecord(groupKeyHex string,
 			return nil, err
 		}
 
-		members = append(members, &entities.AssetGroupMember{
+		members = append(members, &tapsdk.AssetGroupMember{
 			AssetRef:         groupRef,
 			IssuanceID:       assetID,
 			Amount:           rpcAsset.Amount,
@@ -1380,26 +1380,26 @@ func unmarshalAssetGroupRecord(groupKeyHex string,
 		})
 	}
 
-	return &entities.AssetGroupRecord{
+	return &tapsdk.AssetGroupRecord{
 		AssetRef: groupRef,
 		Members:  members,
 	}, nil
 }
 
-// unmarshalBurnRecord converts an RPC AssetBurn to an entities.BurnRecord.
+// unmarshalBurnRecord converts an RPC AssetBurn to an tapsdk.BurnRecord.
 func unmarshalBurnRecord(
-	rpcBurn *taprpc.AssetBurn) (*entities.BurnRecord, error) {
+	rpcBurn *taprpc.AssetBurn) (*tapsdk.BurnRecord, error) {
 
 	if rpcBurn == nil {
 		return nil, fmt.Errorf("nil asset burn")
 	}
 
-	assetID, err := entities.ParseAssetID(rpcBurn.AssetId)
+	assetID, err := tapsdk.ParseAssetID(rpcBurn.AssetId)
 	if err != nil {
 		return nil, fmt.Errorf("invalid asset ID: %w", err)
 	}
 
-	anchorTxid, err := entities.ParseHash(rpcBurn.AnchorTxid)
+	anchorTxid, err := tapsdk.ParseHash(rpcBurn.AnchorTxid)
 	if err != nil {
 		return nil, fmt.Errorf("invalid anchor txid: %w", err)
 	}
@@ -1408,14 +1408,14 @@ func unmarshalBurnRecord(
 	if err != nil {
 		return nil, err
 	}
-	if assetType == entities.AssetTypeCollectible && rpcBurn.Amount != 1 {
+	if assetType == tapsdk.AssetTypeCollectible && rpcBurn.Amount != 1 {
 		return nil, fmt.Errorf("invalid collectible burn amount: %d",
 			rpcBurn.Amount)
 	}
 
-	var groupKey *entities.PubKey
+	var groupKey *tapsdk.PubKey
 	if len(rpcBurn.TweakedGroupKey) > 0 {
-		parsedGroupKey, err := entities.ParsePubKey(
+		parsedGroupKey, err := tapsdk.ParsePubKey(
 			rpcBurn.TweakedGroupKey,
 		)
 		if err != nil {
@@ -1426,15 +1426,15 @@ func unmarshalBurnRecord(
 		groupKey = &parsedGroupKey
 	}
 
-	var collectionRef *entities.AssetRef
-	if assetType == entities.AssetTypeCollectible && groupKey != nil {
-		ref := entities.AssetRefFromGroupKey(*groupKey)
+	var collectionRef *tapsdk.AssetRef
+	if assetType == tapsdk.AssetTypeCollectible && groupKey != nil {
+		ref := tapsdk.AssetRefFromGroupKey(*groupKey)
 		collectionRef = &ref
 	}
 
-	burn := &entities.BurnRecord{
+	burn := &tapsdk.BurnRecord{
 		Note:          rpcBurn.Note,
-		AssetRef:      entities.AssetRefFromTypedAsset(assetID, groupKey, assetType),
+		AssetRef:      tapsdk.AssetRefFromTypedAsset(assetID, groupKey, assetType),
 		CollectionRef: collectionRef,
 		Type:          assetType,
 		IssuanceID:    assetID,
@@ -1448,15 +1448,15 @@ func unmarshalBurnRecord(
 // unmarshalBurnAssetType converts the tapd burn asset type enum to the SDK
 // type. Burn history rejects unknown values because the type determines how
 // the row is keyed by AssetRef.
-func unmarshalBurnAssetType(assetType taprpc.AssetType) (entities.AssetType,
+func unmarshalBurnAssetType(assetType taprpc.AssetType) (tapsdk.AssetType,
 	error) {
 
 	switch assetType {
 	case taprpc.AssetType_NORMAL:
-		return entities.AssetTypeFungible, nil
+		return tapsdk.AssetTypeFungible, nil
 
 	case taprpc.AssetType_COLLECTIBLE:
-		return entities.AssetTypeNFT, nil
+		return tapsdk.AssetTypeNFT, nil
 
 	default:
 		return 0, fmt.Errorf("unknown burn asset type: %v", assetType)
@@ -1465,7 +1465,7 @@ func unmarshalBurnAssetType(assetType taprpc.AssetType) (entities.AssetType,
 
 // marshalBurnAssetRequest converts a BurnAssetRequest to an RPC request.
 func marshalBurnAssetRequest(
-	req *entities.BurnAssetRequest) (*taprpc.BurnAssetRequest, error) {
+	req *tapsdk.BurnAssetRequest) (*taprpc.BurnAssetRequest, error) {
 
 	spec, err := marshalAssetSpecifier(req.AssetRef)
 	if err != nil {
@@ -1482,7 +1482,7 @@ func marshalBurnAssetRequest(
 
 // marshalAssetSpecifier converts an AssetRef to a taprpc AssetSpecifier.
 func marshalAssetSpecifier(
-	ref entities.AssetRef) (*taprpc.AssetSpecifier, error) {
+	ref tapsdk.AssetRef) (*taprpc.AssetSpecifier, error) {
 
 	if ref.IsZero() {
 		return nil, fmt.Errorf("asset ref is required")
@@ -1515,7 +1515,7 @@ func marshalAssetSpecifier(
 // marshalFetchAssetMetaRequest converts a FetchAssetMetaRequest to an
 // RPC request.
 func marshalFetchAssetMetaRequest(
-	req *entities.FetchAssetMetaRequest) (*taprpc.FetchAssetMetaRequest,
+	req *tapsdk.FetchAssetMetaRequest) (*taprpc.FetchAssetMetaRequest,
 	error) {
 
 	rpcReq := &taprpc.FetchAssetMetaRequest{}
@@ -1549,15 +1549,15 @@ func marshalFetchAssetMetaRequest(
 }
 
 // unmarshalFetchAssetMetaResponse converts an RPC FetchAssetMetaResponse
-// to an entities.AssetMeta.
+// to an tapsdk.AssetMeta.
 func unmarshalFetchAssetMetaResponse(
-	resp *taprpc.FetchAssetMetaResponse) (*entities.AssetMeta, error) {
+	resp *taprpc.FetchAssetMetaResponse) (*tapsdk.AssetMeta, error) {
 
 	if resp == nil {
 		return nil, fmt.Errorf("nil asset meta response")
 	}
 
-	metaHash, err := entities.ParseHash(resp.MetaHash)
+	metaHash, err := tapsdk.ParseHash(resp.MetaHash)
 	if err != nil {
 		return nil, fmt.Errorf("invalid meta hash: %w", err)
 	}
@@ -1567,9 +1567,9 @@ func unmarshalFetchAssetMetaResponse(
 	)
 	maps.Copy(unknownOddTypes, resp.UnknownOddTypes)
 
-	return &entities.AssetMeta{
+	return &tapsdk.AssetMeta{
 		Data:                  resp.Data,
-		Type:                  entities.AssetMetaType(resp.Type),
+		Type:                  tapsdk.AssetMetaType(resp.Type),
 		MetaHash:              metaHash,
 		UnknownOddTypes:       unknownOddTypes,
 		DecimalDisplay:        resp.DecimalDisplay,
@@ -1580,10 +1580,10 @@ func unmarshalFetchAssetMetaResponse(
 }
 
 // unmarshalDecodedProof converts an RPC DecodedProof to an
-// entities.DecodedProof. This is extracted from proof_client.go for
+// tapsdk.DecodedProof. This is extracted from proof_client.go for
 // reuse in BurnAsset and VerifyProof.
 func unmarshalDecodedProof(
-	rpcProof *taprpc.DecodedProof) (*entities.DecodedProof, error) {
+	rpcProof *taprpc.DecodedProof) (*tapsdk.DecodedProof, error) {
 
 	if rpcProof == nil {
 		return nil, fmt.Errorf("nil decoded proof")
@@ -1593,31 +1593,31 @@ func unmarshalDecodedProof(
 		return nil, fmt.Errorf("nil proof asset")
 	}
 
-	assetID, err := entities.ParseAssetID(
+	assetID, err := tapsdk.ParseAssetID(
 		rpcProof.Asset.AssetGenesis.AssetId,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("invalid asset ID: %w", err)
 	}
 
-	scriptKey, err := entities.ParseTaprootPubKey(
+	scriptKey, err := tapsdk.ParseTaprootPubKey(
 		rpcProof.Asset.ScriptKey,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("invalid script key: %w", err)
 	}
 
-	proof := &entities.DecodedProof{
+	proof := &tapsdk.DecodedProof{
 		ProofAtDepth:   rpcProof.ProofAtDepth,
 		NumberOfProofs: rpcProof.NumberOfProofs,
-		AssetRef:       entities.AssetRefFromAsset(assetID, nil),
+		AssetRef:       tapsdk.AssetRefFromAsset(assetID, nil),
 		IssuanceID:     assetID,
 		ScriptKey:      scriptKey,
 		Amount:         rpcProof.Asset.Amount,
 	}
 
 	if rpcProof.Asset.ChainAnchor != nil {
-		op, err := entities.NewOutpointFromStr(
+		op, err := tapsdk.NewOutpointFromStr(
 			rpcProof.Asset.ChainAnchor.AnchorOutpoint,
 		)
 		if err != nil {
@@ -1631,7 +1631,7 @@ func unmarshalDecodedProof(
 	if rpcProof.Asset.AssetGroup != nil &&
 		len(rpcProof.Asset.AssetGroup.TweakedGroupKey) > 0 {
 
-		groupKey, err := entities.ParsePubKey(
+		groupKey, err := tapsdk.ParsePubKey(
 			rpcProof.Asset.AssetGroup.TweakedGroupKey,
 		)
 		if err != nil {
@@ -1639,7 +1639,7 @@ func unmarshalDecodedProof(
 				err)
 		}
 
-		proof.AssetRef = entities.AssetRefFromGroupKey(groupKey)
+		proof.AssetRef = tapsdk.AssetRefFromGroupKey(groupKey)
 	}
 
 	return proof, nil

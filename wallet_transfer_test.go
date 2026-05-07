@@ -4,35 +4,34 @@ import (
 	"context"
 	"testing"
 
-	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/require"
 )
 
 func TestListTransfersUsesGroupKeyForAssetRef(t *testing.T) {
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
 	issuanceID := testAssetID()
 	groupKey := testKey(t, 91)
-	groupRef := entities.AssetRefFromGroupKey(groupKey)
-	req := &entities.ListTransfersRequest{AnchorTxid: "abc"}
-	raw := []*entities.AssetTransfer{{
+	groupRef := AssetRefFromGroupKey(groupKey)
+	req := &ListTransfersRequest{AnchorTxid: "abc"}
+	raw := []*AssetTransfer{{
 		TransferTimestamp:   123,
 		AnchorTxid:          "abc",
 		AnchorTxBlockHeight: 42,
 		AnchorTxChainFees:   250,
 		Label:               "label",
-		Inputs: []entities.TransferInput{{
+		Inputs: []TransferInput{{
 			IssuanceID: issuanceID,
-			AssetType:  entities.AssetTypeNormal,
+			AssetType:  AssetTypeNormal,
 			Amount:     300,
 			ScriptKey:  testKey(t, 11),
 			GroupKey:   &groupKey,
 		}},
-		Outputs: []entities.TransferOutput{{
+		Outputs: []TransferOutput{{
 			IssuanceID: issuanceID,
-			AssetType:  entities.AssetTypeNormal,
+			AssetType:  AssetTypeNormal,
 			Amount:     200,
 			ScriptKey:  testKey(t, 12),
 			GroupKey:   &groupKey,
@@ -70,18 +69,18 @@ func TestListTransfersUsesGroupKeyForAssetRef(t *testing.T) {
 
 func TestListTransfersUsesAssetIDRefWhenNoGroup(t *testing.T) {
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
 	issuanceID := testAssetID()
-	raw := []*entities.AssetTransfer{{
-		Inputs: []entities.TransferInput{{
+	raw := []*AssetTransfer{{
+		Inputs: []TransferInput{{
 			IssuanceID: issuanceID,
 			Amount:     1,
 		}},
 	}}
 
-	mc.On("ListTransfers", ctx, (*entities.ListTransfersRequest)(nil)).
+	mc.On("ListTransfers", ctx, (*ListTransfersRequest)(nil)).
 		Return(raw, nil)
 
 	transfers, err := w.ListTransfers(ctx, nil)
@@ -90,7 +89,7 @@ func TestListTransfersUsesAssetIDRefWhenNoGroup(t *testing.T) {
 	require.Len(t, transfers[0].Inputs, 1)
 	require.True(t, transfers[0].Inputs[0].AssetRef.IsAssetIDRef())
 	require.True(t, transfers[0].Inputs[0].AssetRef.Equivalent(
-		entities.AssetRefFromAssetID(issuanceID),
+		AssetRefFromAssetID(issuanceID),
 	))
 
 	mc.AssertExpectations(t)
@@ -98,28 +97,28 @@ func TestListTransfersUsesAssetIDRefWhenNoGroup(t *testing.T) {
 
 func TestListTransfersUsesAssetIDRefForCollectionItem(t *testing.T) {
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
 	issuanceID := testAssetID()
 	groupKey := testKey(t, 97)
-	itemRef := entities.AssetRefFromAssetID(issuanceID)
-	raw := []*entities.AssetTransfer{{
-		Inputs: []entities.TransferInput{{
+	itemRef := AssetRefFromAssetID(issuanceID)
+	raw := []*AssetTransfer{{
+		Inputs: []TransferInput{{
 			IssuanceID: issuanceID,
-			AssetType:  entities.AssetTypeCollectible,
+			AssetType:  AssetTypeCollectible,
 			Amount:     1,
 			GroupKey:   &groupKey,
 		}},
-		Outputs: []entities.TransferOutput{{
+		Outputs: []TransferOutput{{
 			IssuanceID: issuanceID,
-			AssetType:  entities.AssetTypeCollectible,
+			AssetType:  AssetTypeCollectible,
 			Amount:     1,
 			GroupKey:   &groupKey,
 		}},
 	}}
 
-	mc.On("ListTransfers", ctx, (*entities.ListTransfersRequest)(nil)).
+	mc.On("ListTransfers", ctx, (*ListTransfersRequest)(nil)).
 		Return(raw, nil)
 
 	transfers, err := w.ListTransfers(ctx, nil)
@@ -130,14 +129,14 @@ func TestListTransfersUsesAssetIDRefForCollectionItem(t *testing.T) {
 	require.True(t, transfers[0].Inputs[0].AssetRef.Equivalent(
 		itemRef,
 	))
-	require.Equal(t, entities.AssetTypeCollectible,
+	require.Equal(t, AssetTypeCollectible,
 		transfers[0].Inputs[0].Type)
 
 	require.Len(t, transfers[0].Outputs, 1)
 	require.True(t, transfers[0].Outputs[0].AssetRef.Equivalent(
 		itemRef,
 	))
-	require.Equal(t, entities.AssetTypeCollectible,
+	require.Equal(t, AssetTypeCollectible,
 		transfers[0].Outputs[0].Type)
 
 	mc.AssertExpectations(t)
@@ -151,18 +150,18 @@ func TestListTransfersUsesAssetIDRefForCollectionItem(t *testing.T) {
 func TestNewSendEvent(t *testing.T) {
 	issuanceID := testAssetID()
 	groupKey := testKey(t, 93)
-	ref := entities.AssetRefFromGroupKey(groupKey)
-	record := &entities.SendEventRecord{
+	ref := AssetRefFromGroupKey(groupKey)
+	record := &SendEventRecord{
 		Timestamp:     456,
-		SendState:     entities.SendStateComplete,
-		NextSendState: entities.SendStateComplete,
+		SendState:     SendStateComplete,
+		NextSendState: SendStateComplete,
 		TransferLabel: "send-label",
-		Addresses: []*entities.Address{
+		Addresses: []*Address{
 			{AssetRef: ref},
 			{AssetRef: ref},
 		},
-		Transfer: &entities.AssetTransfer{
-			Outputs: []entities.TransferOutput{{
+		Transfer: &AssetTransfer{
+			Outputs: []TransferOutput{{
 				IssuanceID: issuanceID,
 				Amount:     10,
 				GroupKey:   &groupKey,
@@ -170,7 +169,7 @@ func TestNewSendEvent(t *testing.T) {
 		},
 	}
 
-	event := entities.NewSendEvent(record)
+	event := NewSendEvent(record)
 	require.NotNil(t, event)
 	require.Equal(t, record.Timestamp, event.Timestamp)
 	require.Equal(t, record.SendState, event.SendState)
@@ -185,23 +184,23 @@ func TestNewSendEvent(t *testing.T) {
 func TestNewSendEventPrefersTransferAssetRefs(t *testing.T) {
 	issuanceID := testAssetID()
 	groupKey := testKey(t, 95)
-	collectionRef := entities.AssetRefFromGroupKey(groupKey)
-	itemRef := entities.AssetRefFromAssetID(issuanceID)
-	record := &entities.SendEventRecord{
-		Addresses: []*entities.Address{{
+	collectionRef := AssetRefFromGroupKey(groupKey)
+	itemRef := AssetRefFromAssetID(issuanceID)
+	record := &SendEventRecord{
+		Addresses: []*Address{{
 			AssetRef: collectionRef,
 		}},
-		Transfer: &entities.AssetTransfer{
-			Outputs: []entities.TransferOutput{{
+		Transfer: &AssetTransfer{
+			Outputs: []TransferOutput{{
 				IssuanceID: issuanceID,
-				AssetType:  entities.AssetTypeCollectible,
+				AssetType:  AssetTypeCollectible,
 				Amount:     1,
 				GroupKey:   &groupKey,
 			}},
 		},
 	}
 
-	event := entities.NewSendEvent(record)
+	event := NewSendEvent(record)
 	require.NotNil(t, event)
 	require.Len(t, event.AssetRefs, 1)
 	require.True(t, event.AssetRefs[0].Equivalent(itemRef))
@@ -212,15 +211,15 @@ func TestNewSendEventPrefersTransferAssetRefs(t *testing.T) {
 }
 
 func TestNewSendEventFallsBackToAddressesForEmptyTransfer(t *testing.T) {
-	ref := entities.AssetRefFromAssetID(testAssetID())
-	record := &entities.SendEventRecord{
-		Addresses: []*entities.Address{{
+	ref := AssetRefFromAssetID(testAssetID())
+	record := &SendEventRecord{
+		Addresses: []*Address{{
 			AssetRef: ref,
 		}},
-		Transfer: &entities.AssetTransfer{},
+		Transfer: &AssetTransfer{},
 	}
 
-	event := entities.NewSendEvent(record)
+	event := NewSendEvent(record)
 	require.NotNil(t, event)
 	require.NotNil(t, event.Transfer)
 	require.Len(t, event.AssetRefs, 1)
@@ -230,19 +229,19 @@ func TestNewSendEventFallsBackToAddressesForEmptyTransfer(t *testing.T) {
 // TestNewReceiveEvent verifies that the entities-level projection of a raw
 // receive event record copies AssetRef and Amount from the embedded address.
 func TestNewReceiveEvent(t *testing.T) {
-	ref := entities.AssetRefFromAssetID(testAssetID())
-	record := &entities.ReceiveEventRecord{
+	ref := AssetRefFromAssetID(testAssetID())
+	record := &ReceiveEventRecord{
 		Timestamp:          789,
-		Status:             entities.AddressEventStatusCompleted,
+		Status:             AddressEventStatusCompleted,
 		Outpoint:           "abc:0",
 		ConfirmationHeight: 100,
-		Address: &entities.Address{
+		Address: &Address{
 			AssetRef: ref,
 			Amount:   25,
 		},
 	}
 
-	event := entities.NewReceiveEvent(record)
+	event := NewReceiveEvent(record)
 	require.NotNil(t, event)
 	require.Equal(t, record.Timestamp, event.Timestamp)
 	require.True(t, event.AssetRef.Equivalent(ref))

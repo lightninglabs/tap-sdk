@@ -22,11 +22,10 @@ func TestWebsocketURL(t *testing.T) {
 		want: "wss://localhost:8089/v1/taproot-assets/events/" +
 			"asset-receive?method=POST",
 	}, {
-		name: "http becomes ws",
-		base: "http://host:8089",
-		path: "/v1/taproot-assets/events/asset-send",
-		want: "ws://host:8089/v1/taproot-assets/events/" +
-			"asset-send?method=POST",
+		name:    "http is rejected",
+		base:    "http://host:8089",
+		path:    "/v1/taproot-assets/events/asset-send",
+		wantErr: "unsupported base URL scheme",
 	}, {
 		name: "trailing slash on base url is trimmed",
 		base: "https://host/",

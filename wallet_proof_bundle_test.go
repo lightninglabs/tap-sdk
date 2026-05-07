@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -12,23 +11,23 @@ import (
 func TestExportProof_GroupRefEnumeratesIssuances(t *testing.T) {
 	ctx := context.Background()
 	mc := new(mockClient)
-	wallet := NewWallet(mc, entities.NetworkRegtest)
+	wallet := NewWallet(mc, NetworkRegtest)
 
-	groupRef := entities.AssetRefFromGroupKey(testKey(t, 31))
+	groupRef := AssetRefFromGroupKey(testKey(t, 31))
 	firstID := bundleAssetID(1)
 	secondID := bundleAssetID(2)
 	firstKey := testKey(t, 32)
 	secondKey := testKey(t, 33)
 
-	assets := []*entities.AssetRecord{
+	assets := []*AssetRecord{
 		bundleAsset(groupRef, firstID, firstKey, 100,
-			entities.AssetTypeNormal),
+			AssetTypeNormal),
 		bundleAsset(groupRef, secondID, secondKey, 250,
-			entities.AssetTypeNormal),
+			AssetTypeNormal),
 	}
 
 	mc.On("ListAssetRecords", ctx, mock.MatchedBy(
-		func(req *entities.ListAssetsRequest) bool {
+		func(req *ListAssetsRequest) bool {
 			return req != nil && req.AssetRef != nil &&
 				req.AssetRef.Equivalent(groupRef)
 		}),
@@ -36,13 +35,13 @@ func TestExportProof_GroupRefEnumeratesIssuances(t *testing.T) {
 
 	firstProof := []byte{0x01, 0x02}
 	secondProof := []byte{0x03, 0x04}
-	mc.On("ExportProof", ctx, entities.AssetRefFromAssetID(firstID),
-		firstKey, (*entities.Outpoint)(nil)).Return(
-		&entities.ProofFile{RawProofFile: firstProof}, nil,
+	mc.On("ExportProof", ctx, AssetRefFromAssetID(firstID),
+		firstKey, (*Outpoint)(nil)).Return(
+		&ProofFile{RawProofFile: firstProof}, nil,
 	).Once()
-	mc.On("ExportProof", ctx, entities.AssetRefFromAssetID(secondID),
-		secondKey, (*entities.Outpoint)(nil)).Return(
-		&entities.ProofFile{RawProofFile: secondProof}, nil,
+	mc.On("ExportProof", ctx, AssetRefFromAssetID(secondID),
+		secondKey, (*Outpoint)(nil)).Return(
+		&ProofFile{RawProofFile: secondProof}, nil,
 	).Once()
 
 	bundle, err := wallet.ExportProof(ctx, groupRef)
@@ -68,26 +67,26 @@ func TestExportProof_GroupRefEnumeratesIssuances(t *testing.T) {
 func TestExportProof_CollectibleEntryUsesAssetIDRef(t *testing.T) {
 	ctx := context.Background()
 	mc := new(mockClient)
-	wallet := NewWallet(mc, entities.NetworkRegtest)
+	wallet := NewWallet(mc, NetworkRegtest)
 
 	assetID := bundleAssetID(3)
-	assetRef := entities.AssetRefFromAssetID(assetID)
+	assetRef := AssetRefFromAssetID(assetID)
 	scriptKey := testKey(t, 34)
 	proofBytes := []byte{0x09}
 
 	mc.On("ListAssetRecords", ctx, mock.MatchedBy(
-		func(req *entities.ListAssetsRequest) bool {
+		func(req *ListAssetsRequest) bool {
 			return req != nil && req.AssetRef != nil &&
 				req.AssetRef.Equivalent(assetRef)
 		}),
-	).Return([]*entities.AssetRecord{
+	).Return([]*AssetRecord{
 		bundleAsset(assetRef, assetID, scriptKey, 1,
-			entities.AssetTypeCollectible),
+			AssetTypeCollectible),
 	}, nil).Once()
 
 	mc.On("ExportProof", ctx, assetRef, scriptKey,
-		(*entities.Outpoint)(nil)).Return(
-		&entities.ProofFile{RawProofFile: proofBytes}, nil,
+		(*Outpoint)(nil)).Return(
+		&ProofFile{RawProofFile: proofBytes}, nil,
 	).Once()
 
 	bundle, err := wallet.ExportProof(ctx, assetRef)
@@ -104,35 +103,35 @@ func TestExportProof_CollectibleEntryUsesAssetIDRef(t *testing.T) {
 func TestExportProof_CollectionGroupEntriesUseAssetIDRefs(t *testing.T) {
 	ctx := context.Background()
 	mc := new(mockClient)
-	wallet := NewWallet(mc, entities.NetworkRegtest)
+	wallet := NewWallet(mc, NetworkRegtest)
 
-	groupRef := entities.AssetRefFromGroupKey(testKey(t, 37))
+	groupRef := AssetRefFromGroupKey(testKey(t, 37))
 	firstID := bundleAssetID(7)
 	secondID := bundleAssetID(8)
 	firstKey := testKey(t, 38)
 	secondKey := testKey(t, 39)
 
 	mc.On("ListAssetRecords", ctx, mock.MatchedBy(
-		func(req *entities.ListAssetsRequest) bool {
+		func(req *ListAssetsRequest) bool {
 			return req != nil && req.AssetRef != nil &&
 				req.AssetRef.Equivalent(groupRef)
 		}),
-	).Return([]*entities.AssetRecord{
+	).Return([]*AssetRecord{
 		bundleAsset(groupRef, firstID, firstKey, 1,
-			entities.AssetTypeCollectible),
+			AssetTypeCollectible),
 		bundleAsset(groupRef, secondID, secondKey, 1,
-			entities.AssetTypeCollectible),
+			AssetTypeCollectible),
 	}, nil).Once()
 
 	firstProof := []byte{0x01}
 	secondProof := []byte{0x02}
-	mc.On("ExportProof", ctx, entities.AssetRefFromAssetID(firstID),
-		firstKey, (*entities.Outpoint)(nil)).Return(
-		&entities.ProofFile{RawProofFile: firstProof}, nil,
+	mc.On("ExportProof", ctx, AssetRefFromAssetID(firstID),
+		firstKey, (*Outpoint)(nil)).Return(
+		&ProofFile{RawProofFile: firstProof}, nil,
 	).Once()
-	mc.On("ExportProof", ctx, entities.AssetRefFromAssetID(secondID),
-		secondKey, (*entities.Outpoint)(nil)).Return(
-		&entities.ProofFile{RawProofFile: secondProof}, nil,
+	mc.On("ExportProof", ctx, AssetRefFromAssetID(secondID),
+		secondKey, (*Outpoint)(nil)).Return(
+		&ProofFile{RawProofFile: secondProof}, nil,
 	).Once()
 
 	bundle, err := wallet.ExportProof(ctx, groupRef)
@@ -140,12 +139,12 @@ func TestExportProof_CollectionGroupEntriesUseAssetIDRefs(t *testing.T) {
 	require.Equal(t, groupRef, bundle.AssetRef)
 	require.Len(t, bundle.Entries, 2)
 
-	require.Equal(t, entities.AssetRefFromAssetID(firstID),
+	require.Equal(t, AssetRefFromAssetID(firstID),
 		bundle.Entries[0].AssetRef)
 	require.Equal(t, firstID, bundle.Entries[0].IssuanceID)
 	require.Equal(t, firstProof, bundle.Entries[0].ProofFile)
 
-	require.Equal(t, entities.AssetRefFromAssetID(secondID),
+	require.Equal(t, AssetRefFromAssetID(secondID),
 		bundle.Entries[1].AssetRef)
 	require.Equal(t, secondID, bundle.Entries[1].IssuanceID)
 	require.Equal(t, secondProof, bundle.Entries[1].ProofFile)
@@ -156,11 +155,11 @@ func TestExportProof_CollectionGroupEntriesUseAssetIDRefs(t *testing.T) {
 func TestExportProof_UnknownAsset(t *testing.T) {
 	ctx := context.Background()
 	mc := new(mockClient)
-	wallet := NewWallet(mc, entities.NetworkRegtest)
+	wallet := NewWallet(mc, NetworkRegtest)
 
-	ref := entities.AssetRefFromAssetID(bundleAssetID(4))
+	ref := AssetRefFromAssetID(bundleAssetID(4))
 	mc.On("ListAssetRecords", ctx, mock.Anything).Return(
-		[]*entities.AssetRecord{}, nil,
+		[]*AssetRecord{}, nil,
 	).Once()
 
 	_, err := wallet.ExportProof(ctx, ref)
@@ -172,7 +171,7 @@ func TestExportProof_UnknownAsset(t *testing.T) {
 func TestImportProof_ImportsEntries(t *testing.T) {
 	ctx := context.Background()
 	mc := new(mockClient)
-	wallet := NewWallet(mc, entities.NetworkRegtest)
+	wallet := NewWallet(mc, NetworkRegtest)
 
 	firstRawProof := []byte{0x01}
 	secondRawProof := []byte{0x02}
@@ -182,18 +181,18 @@ func TestImportProof_ImportsEntries(t *testing.T) {
 	secondID := bundleAssetID(6)
 	firstKey := testKey(t, 35)
 	secondKey := testKey(t, 36)
-	firstOutpoint := entities.Outpoint{Index: 1}
-	secondOutpoint := entities.Outpoint{Index: 2}
-	firstRef := entities.AssetRefFromAssetID(firstID)
-	secondRef := entities.AssetRefFromAssetID(secondID)
+	firstOutpoint := Outpoint{Index: 1}
+	secondOutpoint := Outpoint{Index: 2}
+	firstRef := AssetRefFromAssetID(firstID)
+	secondRef := AssetRefFromAssetID(secondID)
 
-	firstDecoded := &entities.DecodedProof{
+	firstDecoded := &DecodedProof{
 		AssetRef:   firstRef,
 		IssuanceID: firstID,
 		ScriptKey:  firstKey,
 		Outpoint:   firstOutpoint,
 	}
-	secondDecoded := &entities.DecodedProof{
+	secondDecoded := &DecodedProof{
 		AssetRef:   secondRef,
 		IssuanceID: secondID,
 		ScriptKey:  secondKey,
@@ -209,7 +208,7 @@ func TestImportProof_ImportsEntries(t *testing.T) {
 	mc.On("InsertProof", ctx, firstRawProof, firstDecoded).Return(nil).Once()
 	mc.On("RegisterTransfer", ctx, firstRef, firstKey,
 		firstOutpoint).Return(
-		&entities.RegisteredAsset{
+		&RegisteredAsset{
 			AssetRef:   firstRef,
 			IssuanceID: firstID,
 			ScriptKey:  firstKey,
@@ -227,7 +226,7 @@ func TestImportProof_ImportsEntries(t *testing.T) {
 		Once()
 	mc.On("RegisterTransfer", ctx, secondRef, secondKey,
 		secondOutpoint).Return(
-		&entities.RegisteredAsset{
+		&RegisteredAsset{
 			AssetRef:   secondRef,
 			IssuanceID: secondID,
 			ScriptKey:  secondKey,
@@ -235,9 +234,9 @@ func TestImportProof_ImportsEntries(t *testing.T) {
 		}, nil,
 	).Once()
 
-	registered, err := wallet.ImportProof(ctx, &entities.ProofBundle{
+	registered, err := wallet.ImportProof(ctx, &ProofBundle{
 		AssetRef: firstRef,
-		Entries: []entities.ProofEntry{
+		Entries: []ProofEntry{
 			{ProofFile: firstProofFile},
 			{ProofFile: secondProofFile},
 		},
@@ -252,24 +251,24 @@ func TestImportProof_ImportsEntries(t *testing.T) {
 
 func TestImportProof_RejectsIncompleteBundle(t *testing.T) {
 	mc := new(mockClient)
-	wallet := NewWallet(mc, entities.NetworkRegtest)
+	wallet := NewWallet(mc, NetworkRegtest)
 
 	_, err := wallet.ImportProof(context.Background(), nil)
 	require.ErrorIs(t, err, ErrIncompleteProofBundle)
 
 	_, err = wallet.ImportProof(context.Background(),
-		&entities.ProofBundle{})
+		&ProofBundle{})
 	require.ErrorIs(t, err, ErrIncompleteProofBundle)
 
 	_, err = wallet.ImportProof(context.Background(),
-		&entities.ProofBundle{
-			Entries: []entities.ProofEntry{{}},
+		&ProofBundle{
+			Entries: []ProofEntry{{}},
 		})
 	require.ErrorIs(t, err, ErrIncompleteProofBundle)
 
 	_, err = wallet.ImportProof(context.Background(),
-		&entities.ProofBundle{
-			Entries: []entities.ProofEntry{
+		&ProofBundle{
+			Entries: []ProofEntry{
 				{ProofFile: []byte{0x01}},
 				{},
 			},
@@ -279,25 +278,25 @@ func TestImportProof_RejectsIncompleteBundle(t *testing.T) {
 	mc.AssertExpectations(t)
 }
 
-func bundleAsset(ref entities.AssetRef, issuanceID entities.AssetID,
-	scriptKey entities.PubKey, amount uint64,
-	assetType entities.AssetType) *entities.AssetRecord {
+func bundleAsset(ref AssetRef, issuanceID AssetID,
+	scriptKey PubKey, amount uint64,
+	assetType AssetType) *AssetRecord {
 
-	return &entities.AssetRecord{
+	return &AssetRecord{
 		AssetRef: ref,
-		Genesis: entities.IssuanceGenesis{
+		Genesis: IssuanceGenesis{
 			IssuanceID: issuanceID,
 			Type:       assetType,
 		},
 		Amount: amount,
-		ScriptKey: entities.ScriptKey{
+		ScriptKey: ScriptKey{
 			PubKey: scriptKey,
 		},
 	}
 }
 
-func bundleAssetID(seed byte) entities.AssetID {
-	var id entities.AssetID
+func bundleAssetID(seed byte) AssetID {
+	var id AssetID
 	for idx := range id {
 		id[idx] = seed + byte(idx)
 	}

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -20,25 +19,25 @@ type refMockClient struct {
 
 // --- WalletClient ---
 
-func (m *refMockClient) GetInfo(ctx context.Context) (*entities.Info,
+func (m *refMockClient) GetInfo(ctx context.Context) (*Info,
 	error) {
 
 	panic("GetInfo: unexpected call")
 }
 
 func (m *refMockClient) ListAssetRecords(ctx context.Context,
-	req *entities.ListAssetsRequest) ([]*entities.AssetRecord, error) {
+	req *ListAssetsRequest) ([]*AssetRecord, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).([]*entities.AssetRecord), args.Error(1)
+	return args.Get(0).([]*AssetRecord), args.Error(1)
 }
 
 func (m *refMockClient) ListBalances(ctx context.Context,
-	req *entities.ListBalancesRequest) (*entities.ListBalancesResponse,
+	req *ListBalancesRequest) (*ListBalancesResponse,
 	error) {
 
 	args := m.Called(ctx, req)
@@ -46,47 +45,47 @@ func (m *refMockClient) ListBalances(ctx context.Context,
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.ListBalancesResponse), args.Error(1)
+	return args.Get(0).(*ListBalancesResponse), args.Error(1)
 }
 
 func (m *refMockClient) ListTransfers(ctx context.Context,
-	req *entities.ListTransfersRequest) ([]*entities.AssetTransfer,
+	req *ListTransfersRequest) ([]*AssetTransfer,
 	error) {
 
 	panic("ListTransfers: unexpected call")
 }
 
 func (m *refMockClient) SendAsset(ctx context.Context,
-	req *entities.SendAssetRequest) (*entities.AssetTransfer, error) {
+	req *SendAssetRequest) (*AssetTransfer, error) {
 
 	panic("SendAsset: unexpected call")
 }
 
 func (m *refMockClient) NewAddr(ctx context.Context,
-	req *entities.NewAddressRequest) (*entities.Address, error) {
+	req *NewAddressRequest) (*Address, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.Address), args.Error(1)
+	return args.Get(0).(*Address), args.Error(1)
 }
 
 func (m *refMockClient) DecodeAddr(ctx context.Context,
-	addr string) (*entities.Address, error) {
+	addr string) (*Address, error) {
 
 	panic("DecodeAddr: unexpected call")
 }
 
 func (m *refMockClient) QueryAddrs(ctx context.Context,
-	query *entities.AddressQuery) ([]*entities.Address, error) {
+	query *AddressQuery) ([]*Address, error) {
 
 	panic("QueryAddrs: unexpected call")
 }
 
 func (m *refMockClient) AddrReceives(ctx context.Context,
-	query *entities.AddressReceivesQuery) ([]*entities.AddressEvent,
+	query *AddressReceivesQuery) ([]*AddressEvent,
 	error) {
 
 	panic("AddrReceives: unexpected call")
@@ -95,8 +94,8 @@ func (m *refMockClient) AddrReceives(ctx context.Context,
 // --- ProofClient ---
 
 func (m *refMockClient) ExportProof(ctx context.Context,
-	ref entities.AssetRef, scriptKey entities.PubKey,
-	outpoint *entities.Outpoint) (*entities.ProofFile, error) {
+	ref AssetRef, scriptKey PubKey,
+	outpoint *Outpoint) (*ProofFile, error) {
 
 	panic("ExportProof: unexpected call")
 }
@@ -108,14 +107,14 @@ func (m *refMockClient) UnpackProofFile(ctx context.Context,
 }
 
 func (m *refMockClient) DecodeProof(ctx context.Context,
-	rawProof []byte) (*entities.DecodedProof, error) {
+	rawProof []byte) (*DecodedProof, error) {
 
 	panic("DecodeProof: unexpected call")
 }
 
 func (m *refMockClient) RegisterTransfer(ctx context.Context,
-	assetRef entities.AssetRef, scriptKey entities.PubKey,
-	outpoint entities.Outpoint) (*entities.RegisteredAsset, error) {
+	assetRef AssetRef, scriptKey PubKey,
+	outpoint Outpoint) (*RegisteredAsset, error) {
 
 	panic("RegisterTransfer: unexpected call")
 }
@@ -123,26 +122,26 @@ func (m *refMockClient) RegisterTransfer(ctx context.Context,
 // --- WalletKitClient ---
 
 func (m *refMockClient) DeriveScriptKey(
-	ctx context.Context) (*entities.ScriptKey, error) {
+	ctx context.Context) (*ScriptKey, error) {
 
 	panic("DeriveScriptKey: unexpected call")
 }
 
 func (m *refMockClient) DeriveInternalKey(
-	ctx context.Context) (*entities.InternalKey, error) {
+	ctx context.Context) (*InternalKey, error) {
 
 	panic("DeriveInternalKey: unexpected call")
 }
 
 func (m *refMockClient) FundTransfer(ctx context.Context,
-	recipients []entities.Recipient,
-	inputs []entities.PrevID) (*entities.FundedTransfer, error) {
+	recipients []Recipient,
+	inputs []PrevID) (*FundedTransfer, error) {
 
 	panic("FundTransfer: unexpected call")
 }
 
 func (m *refMockClient) FundInteractivePsbt(ctx context.Context,
-	psbt []byte) (*entities.FundedTransfer, error) {
+	psbt []byte) (*FundedTransfer, error) {
 
 	panic("FundInteractivePsbt: unexpected call")
 }
@@ -155,20 +154,20 @@ func (m *refMockClient) SignVirtualPsbt(ctx context.Context,
 
 func (m *refMockClient) CommitVirtualPsbts(ctx context.Context,
 	virtualPsbts [][]byte, passivePsbts [][]byte,
-	feeRate uint64) (*entities.CommittedTransfer, error) {
+	feeRate uint64) (*CommittedTransfer, error) {
 
 	panic("CommitVirtualPsbts: unexpected call")
 }
 
 func (m *refMockClient) AnchorVirtualPsbts(ctx context.Context,
-	signedPsbts [][]byte) (*entities.AssetTransfer, error) {
+	signedPsbts [][]byte) (*AssetTransfer, error) {
 
 	panic("AnchorVirtualPsbts: unexpected call")
 }
 
 func (m *refMockClient) PublishAndLogTransfer(ctx context.Context,
 	anchorPsbt []byte, virtualPsbts [][]byte, passivePsbts [][]byte,
-	skipAnchorTxBroadcast bool) (*entities.AssetPacket, error) {
+	skipAnchorTxBroadcast bool) (*AssetPacket, error) {
 
 	panic("PublishAndLogTransfer: unexpected call")
 }
@@ -176,7 +175,7 @@ func (m *refMockClient) PublishAndLogTransfer(ctx context.Context,
 // --- UniverseClient ---
 
 func (m *refMockClient) InsertProof(ctx context.Context,
-	rawProof []byte, decoded *entities.DecodedProof) error {
+	rawProof []byte, decoded *DecodedProof) error {
 
 	panic("InsertProof: unexpected call")
 }
@@ -184,44 +183,44 @@ func (m *refMockClient) InsertProof(ctx context.Context,
 // --- MintClient ---
 
 func (m *refMockClient) MintAsset(ctx context.Context,
-	req *entities.MintAssetRequest) (*entities.MintingBatch, error) {
+	req *MintAssetRequest) (*MintingBatch, error) {
 
 	panic("MintAsset: unexpected call")
 }
 
 func (m *refMockClient) MintIssuance(ctx context.Context,
-	req *entities.MintIssuanceRequest) (*entities.MintingBatch, error) {
+	req *MintIssuanceRequest) (*MintingBatch, error) {
 
 	panic("MintIssuance: unexpected call")
 }
 
 func (m *refMockClient) FundBatch(ctx context.Context,
-	req *entities.FundBatchRequest) (*entities.VerboseMintingBatch,
+	req *FundBatchRequest) (*VerboseMintingBatch,
 	error) {
 
 	panic("FundBatch: unexpected call")
 }
 
 func (m *refMockClient) SealBatch(ctx context.Context,
-	req *entities.SealBatchRequest) (*entities.MintingBatch, error) {
+	req *SealBatchRequest) (*MintingBatch, error) {
 
 	panic("SealBatch: unexpected call")
 }
 
 func (m *refMockClient) FinalizeBatch(ctx context.Context,
-	req *entities.FinalizeBatchRequest) (*entities.MintingBatch, error) {
+	req *FinalizeBatchRequest) (*MintingBatch, error) {
 
 	panic("FinalizeBatch: unexpected call")
 }
 
 func (m *refMockClient) CancelBatch(
-	ctx context.Context) (*entities.CancelBatchResponse, error) {
+	ctx context.Context) (*CancelBatchResponse, error) {
 
 	panic("CancelBatch: unexpected call")
 }
 
 func (m *refMockClient) ListBatches(ctx context.Context,
-	req *entities.ListBatchesRequest) ([]*entities.VerboseMintingBatch,
+	req *ListBatchesRequest) ([]*VerboseMintingBatch,
 	error) {
 
 	panic("ListBatches: unexpected call")
@@ -230,40 +229,40 @@ func (m *refMockClient) ListBatches(ctx context.Context,
 // --- WalletClient extras (PR #30 additions) ---
 
 func (m *refMockClient) ListUtxos(_ context.Context,
-	_ *entities.ListUtxosRequest) (
-	map[string]*entities.ManagedUtxo, error) {
+	_ *ListUtxosRequest) (
+	map[string]*ManagedUtxo, error) {
 
 	return nil, nil
 }
 
 func (m *refMockClient) ListAssetGroups(
-	_ context.Context) ([]entities.AssetGroupRecord, error) {
+	_ context.Context) ([]AssetGroupRecord, error) {
 
 	return nil, nil
 }
 
 func (m *refMockClient) BurnAsset(_ context.Context,
-	_ *entities.BurnAssetRequest) (
-	*entities.BurnAssetResponse, error) {
+	_ *BurnAssetRequest) (
+	*BurnAssetResponse, error) {
 
 	return nil, nil
 }
 
 func (m *refMockClient) ListBurns(_ context.Context,
-	_ *entities.ListBurnsRequest) ([]*entities.BurnRecord, error) {
+	_ *ListBurnsRequest) ([]*BurnRecord, error) {
 
 	return nil, nil
 }
 
 func (m *refMockClient) FetchAssetMeta(_ context.Context,
-	_ *entities.FetchAssetMetaRequest) (
-	*entities.AssetMeta, error) {
+	_ *FetchAssetMetaRequest) (
+	*AssetMeta, error) {
 
 	return nil, nil
 }
 
 func (m *refMockClient) VerifyProof(_ context.Context,
-	_ []byte) (*entities.VerifyProofResponse, error) {
+	_ []byte) (*VerifyProofResponse, error) {
 
 	return nil, nil
 }
@@ -271,46 +270,46 @@ func (m *refMockClient) VerifyProof(_ context.Context,
 // --- WalletKitClient extras (PR #30 additions) ---
 
 func (m *refMockClient) QueryInternalKey(_ context.Context,
-	_ []byte) (*entities.KeyDescriptor, error) {
+	_ []byte) (*KeyDescriptor, error) {
 
 	return nil, nil
 }
 
 func (m *refMockClient) QueryScriptKey(_ context.Context,
-	_ []byte) (*entities.ScriptKey, error) {
+	_ []byte) (*ScriptKey, error) {
 
 	return nil, nil
 }
 
 func (m *refMockClient) ProveAssetOwnership(_ context.Context,
-	_ *entities.ProveOwnershipRequest) (
-	*entities.OwnershipProof, error) {
+	_ *ProveOwnershipRequest) (
+	*OwnershipProof, error) {
 
 	return nil, nil
 }
 
 func (m *refMockClient) VerifyAssetOwnership(_ context.Context,
-	_ *entities.VerifyOwnershipRequest) (
-	*entities.VerifyOwnershipResponse, error) {
+	_ *VerifyOwnershipRequest) (
+	*VerifyOwnershipResponse, error) {
 
 	return nil, nil
 }
 
 func (m *refMockClient) RemoveUTXOLease(_ context.Context,
-	_ entities.Outpoint) error {
+	_ Outpoint) error {
 
 	return nil
 }
 
 func (m *refMockClient) DeclareScriptKey(_ context.Context,
-	_ *entities.DeclareScriptKeyRequest) (
-	*entities.ScriptKey, error) {
+	_ *DeclareScriptKeyRequest) (
+	*ScriptKey, error) {
 
 	return nil, nil
 }
 
 func (m *refMockClient) ExportBackup(_ context.Context,
-	_ entities.BackupMode) ([]byte, error) {
+	_ BackupMode) ([]byte, error) {
 
 	return nil, nil
 }
@@ -324,130 +323,130 @@ func (m *refMockClient) ImportBackup(_ context.Context,
 // --- UniverseClient (PR #31 additions) ---
 
 func (m *refMockClient) AssetRoots(_ context.Context,
-	_ *entities.AssetRootRequest) (
-	map[string]*entities.UniverseRoot, error) {
+	_ *AssetRootRequest) (
+	map[string]*UniverseRoot, error) {
 
 	return nil, nil
 }
 
 func (m *refMockClient) QueryAssetRoots(ctx context.Context,
-	id *entities.UniverseID) (*entities.QueryRootResponse, error) {
+	id *UniverseID) (*QueryRootResponse, error) {
 
 	args := m.Called(ctx, id)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*entities.QueryRootResponse), args.Error(1)
+	return args.Get(0).(*QueryRootResponse), args.Error(1)
 }
 
 func (m *refMockClient) DeleteAssetRoot(_ context.Context,
-	_ *entities.UniverseID) error {
+	_ *UniverseID) error {
 
 	return nil
 }
 
 func (m *refMockClient) AssetLeafKeys(_ context.Context,
-	_ *entities.AssetLeafKeysRequest) (
-	[]entities.AssetLeafKey, error) {
+	_ *AssetLeafKeysRequest) (
+	[]AssetLeafKey, error) {
 
 	return nil, nil
 }
 
 func (m *refMockClient) AssetLeaves(_ context.Context,
-	_ *entities.UniverseID) ([]entities.AssetLeaf, error) {
+	_ *UniverseID) ([]AssetLeaf, error) {
 
 	return nil, nil
 }
 
 func (m *refMockClient) QueryProof(_ context.Context,
-	_ *entities.UniverseKey) (*entities.AssetProofResponse,
+	_ *UniverseKey) (*AssetProofResponse,
 	error) {
 
 	return nil, nil
 }
 
 func (m *refMockClient) UniverseStats(
-	_ context.Context) (*entities.UniverseStats, error) {
+	_ context.Context) (*UniverseStats, error) {
 
 	return nil, nil
 }
 
 func (m *refMockClient) QueryAssetStats(_ context.Context,
-	_ *entities.AssetStatsQuery) (
-	[]entities.AssetStatsSnapshot, error) {
+	_ *AssetStatsQuery) (
+	[]AssetStatsSnapshot, error) {
 
 	return nil, nil
 }
 
 func (m *refMockClient) QueryEvents(_ context.Context,
-	_ *entities.QueryEventsRequest) (
-	[]entities.GroupedUniverseEvents, error) {
+	_ *QueryEventsRequest) (
+	[]GroupedUniverseEvents, error) {
 
 	return nil, nil
 }
 
 func (m *refMockClient) ListFederationServers(
-	_ context.Context) ([]entities.FederationServer, error) {
+	_ context.Context) ([]FederationServer, error) {
 
 	return nil, nil
 }
 
 func (m *refMockClient) AddFederationServer(_ context.Context,
-	_ []entities.FederationServer) error {
+	_ []FederationServer) error {
 
 	return nil
 }
 
 func (m *refMockClient) DeleteFederationServer(_ context.Context,
-	_ []entities.FederationServer) error {
+	_ []FederationServer) error {
 
 	return nil
 }
 
 func (m *refMockClient) SetFederationSyncConfig(_ context.Context,
-	_ []entities.GlobalFederationSyncConfig,
-	_ []entities.AssetFederationSyncConfig) error {
+	_ []GlobalFederationSyncConfig,
+	_ []AssetFederationSyncConfig) error {
 
 	return nil
 }
 
 func (m *refMockClient) QueryFederationSyncConfig(_ context.Context,
-	_ []entities.UniverseID) (*entities.FederationSyncConfig,
+	_ []UniverseID) (*FederationSyncConfig,
 	error) {
 
 	return nil, nil
 }
 
 func (m *refMockClient) Info(
-	_ context.Context) (*entities.UniverseInfo, error) {
+	_ context.Context) (*UniverseInfo, error) {
 
 	return nil, nil
 }
 
 func (m *refMockClient) SyncUniverse(_ context.Context,
-	_ *entities.SyncRequest) ([]entities.SyncedUniverse, error) {
+	_ *SyncRequest) ([]SyncedUniverse, error) {
 
 	return nil, nil
 }
 
 func (m *refMockClient) SubscribeReceiveEvents(_ context.Context,
-	_ *entities.SubscribeReceiveEventsRequest) (
-	<-chan *entities.ReceiveEventRecord, <-chan error, error) {
+	_ *SubscribeReceiveEventsRequest) (
+	<-chan *ReceiveEventRecord, <-chan error, error) {
 
 	panic("SubscribeReceiveEvents: unexpected call")
 }
 
 func (m *refMockClient) SubscribeSendEvents(_ context.Context,
-	_ *entities.SubscribeSendEventsRequest) (
-	<-chan *entities.SendEventRecord, <-chan error, error) {
+	_ *SubscribeSendEventsRequest) (
+	<-chan *SendEventRecord, <-chan error, error) {
 
 	panic("SubscribeSendEvents: unexpected call")
 }
 
 func (m *refMockClient) SubscribeMintEvents(_ context.Context,
-	_ *entities.SubscribeMintEventsRequest) (
-	<-chan *entities.MintEvent, <-chan error, error) {
+	_ *SubscribeMintEventsRequest) (
+	<-chan *MintEvent, <-chan error, error) {
 
 	panic("SubscribeMintEvents: unexpected call")
 }
@@ -458,7 +457,7 @@ func (m *refMockClient) Close() error {
 
 // --- Test helpers ---
 
-func testRefGroupKey(t *testing.T) entities.PubKey {
+func testRefGroupKey(t *testing.T) PubKey {
 	t.Helper()
 
 	b, err := hex.DecodeString(
@@ -467,14 +466,14 @@ func testRefGroupKey(t *testing.T) entities.PubKey {
 	)
 	require.NoError(t, err)
 
-	key, err := entities.ParsePubKey(b)
+	key, err := ParsePubKey(b)
 	require.NoError(t, err)
 
 	return key
 }
 
-func testRefAssetID() entities.AssetID {
-	var id entities.AssetID
+func testRefAssetID() AssetID {
+	var id AssetID
 	for i := range id {
 		id[i] = byte(i)
 	}
@@ -486,20 +485,20 @@ func testRefAssetID() entities.AssetID {
 
 func TestNewReceiveAddress_Fungible(t *testing.T) {
 	mc := new(refMockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
 	groupKey := testRefGroupKey(t)
-	ref := entities.AssetRefFromGroupKey(groupKey)
+	ref := AssetRefFromGroupKey(groupKey)
 
-	expectedAddr := &entities.Address{
+	expectedAddr := &Address{
 		Encoded:        "taprt1q_fungible_test",
 		AssetRef:       ref,
-		AddressVersion: entities.AddressVersionV2,
+		AddressVersion: AddressVersionV2,
 	}
 
-	v2 := entities.AddressVersionV2
-	mc.On("NewAddr", ctx, &entities.NewAddressRequest{
+	v2 := AddressVersionV2
+	mc.On("NewAddr", ctx, &NewAddressRequest{
 		AssetRef:       ref,
 		AddressVersion: &v2,
 	}).Return(expectedAddr, nil)
@@ -513,20 +512,20 @@ func TestNewReceiveAddress_Fungible(t *testing.T) {
 
 func TestNewReceiveAddress_Collectible(t *testing.T) {
 	mc := new(refMockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
 	assetID := testRefAssetID()
-	ref := entities.AssetRefFromAssetID(assetID)
+	ref := AssetRefFromAssetID(assetID)
 
-	expectedAddr := &entities.Address{
+	expectedAddr := &Address{
 		Encoded:        "taprt1q_collectible_test",
 		AssetRef:       ref,
-		AddressVersion: entities.AddressVersionV2,
+		AddressVersion: AddressVersionV2,
 	}
 
-	v2 := entities.AddressVersionV2
-	mc.On("NewAddr", ctx, &entities.NewAddressRequest{
+	v2 := AddressVersionV2
+	mc.On("NewAddr", ctx, &NewAddressRequest{
 		AssetRef:       ref,
 		AddressVersion: &v2,
 	}).Return(expectedAddr, nil)
@@ -540,10 +539,10 @@ func TestNewReceiveAddress_Collectible(t *testing.T) {
 
 func TestNewReceiveAddress_Error(t *testing.T) {
 	mc := new(refMockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
-	ref := entities.AssetRefFromGroupKey(testRefGroupKey(t))
+	ref := AssetRefFromGroupKey(testRefGroupKey(t))
 
 	mc.On("NewAddr", ctx, mock.Anything).Return(
 		nil, fmt.Errorf("connection refused"),
@@ -560,16 +559,16 @@ func TestNewReceiveAddress_Error(t *testing.T) {
 
 func TestGetBalance_Fungible(t *testing.T) {
 	mc := new(refMockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
 	groupKey := testRefGroupKey(t)
-	ref := entities.AssetRefFromGroupKey(groupKey)
+	ref := AssetRefFromGroupKey(groupKey)
 
-	mc.On("ListBalances", ctx, &entities.ListBalancesRequest{
+	mc.On("ListBalances", ctx, &ListBalancesRequest{
 		AssetRef: &ref,
-	}).Return(&entities.ListBalancesResponse{
-		Balances: map[string]*entities.Balance{
+	}).Return(&ListBalancesResponse{
+		Balances: map[string]*Balance{
 			ref.String(): {
 				AssetRef: ref,
 				Balance:  42000,
@@ -586,16 +585,16 @@ func TestGetBalance_Fungible(t *testing.T) {
 
 func TestGetBalance_Collectible(t *testing.T) {
 	mc := new(refMockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
 	assetID := testRefAssetID()
-	ref := entities.AssetRefFromAssetID(assetID)
+	ref := AssetRefFromAssetID(assetID)
 
-	mc.On("ListBalances", ctx, &entities.ListBalancesRequest{
+	mc.On("ListBalances", ctx, &ListBalancesRequest{
 		AssetRef: &ref,
-	}).Return(&entities.ListBalancesResponse{
-		Balances: map[string]*entities.Balance{
+	}).Return(&ListBalancesResponse{
+		Balances: map[string]*Balance{
 			ref.String(): {
 				AssetRef: ref,
 				Balance:  1,
@@ -613,26 +612,26 @@ func TestGetBalance_Collectible(t *testing.T) {
 // expectEmptyBalances stubs a ListBalances call that returns no entries
 // for the given ref — the cold path all subsequent probes are keyed off.
 func expectEmptyBalances(mc *refMockClient, ctx context.Context,
-	ref entities.AssetRef) {
+	ref AssetRef) {
 
-	mc.On("ListBalances", ctx, &entities.ListBalancesRequest{
+	mc.On("ListBalances", ctx, &ListBalancesRequest{
 		AssetRef: &ref,
-	}).Return(&entities.ListBalancesResponse{
-		Balances: map[string]*entities.Balance{},
+	}).Return(&ListBalancesResponse{
+		Balances: map[string]*Balance{},
 	}, nil)
 }
 
 func TestListBalances_ReturnsAllBalances(t *testing.T) {
 	mc := new(refMockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
-	first := entities.AssetRefFromGroupKey(testRefGroupKey(t))
-	second := entities.AssetRefFromAssetID(testRefAssetID())
+	first := AssetRefFromGroupKey(testRefGroupKey(t))
+	second := AssetRefFromAssetID(testRefAssetID())
 
-	mc.On("ListBalances", ctx, (*entities.ListBalancesRequest)(nil)).Return(
-		&entities.ListBalancesResponse{
-			Balances: map[string]*entities.Balance{
+	mc.On("ListBalances", ctx, (*ListBalancesRequest)(nil)).Return(
+		&ListBalancesResponse{
+			Balances: map[string]*Balance{
 				first.String(): {
 					AssetRef: first,
 					Balance:  21,
@@ -658,11 +657,11 @@ func TestListBalances_ReturnsAllBalances(t *testing.T) {
 
 func TestListBalances_NormalizesEmptyResponse(t *testing.T) {
 	mc := new(refMockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
-	mc.On("ListBalances", ctx, (*entities.ListBalancesRequest)(nil)).Return(
-		&entities.ListBalancesResponse{}, nil,
+	mc.On("ListBalances", ctx, (*ListBalancesRequest)(nil)).Return(
+		&ListBalancesResponse{}, nil,
 	)
 
 	resp, err := w.ListBalances(ctx, nil)
@@ -676,14 +675,14 @@ func TestListBalances_NormalizesEmptyResponse(t *testing.T) {
 
 func TestListBalances_FilterKnownBalance(t *testing.T) {
 	mc := new(refMockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
-	ref := entities.AssetRefFromGroupKey(testRefGroupKey(t))
-	req := &entities.ListBalancesRequest{AssetRef: &ref}
+	ref := AssetRefFromGroupKey(testRefGroupKey(t))
+	req := &ListBalancesRequest{AssetRef: &ref}
 
-	mc.On("ListBalances", ctx, req).Return(&entities.ListBalancesResponse{
-		Balances: map[string]*entities.Balance{
+	mc.On("ListBalances", ctx, req).Return(&ListBalancesResponse{
+		Balances: map[string]*Balance{
 			ref.String(): {
 				AssetRef: ref,
 				Balance:  42000,
@@ -701,16 +700,16 @@ func TestListBalances_FilterKnownBalance(t *testing.T) {
 
 func TestListBalances_FilterKnownZero(t *testing.T) {
 	mc := new(refMockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
-	ref := entities.AssetRefFromGroupKey(testRefGroupKey(t))
-	req := &entities.ListBalancesRequest{AssetRef: &ref}
+	ref := AssetRefFromGroupKey(testRefGroupKey(t))
+	req := &ListBalancesRequest{AssetRef: &ref}
 
 	expectEmptyBalances(mc, ctx, ref)
 	mc.On("QueryAssetRoots", ctx, issuanceRootID(ref)).Return(
-		&entities.QueryRootResponse{
-			IssuanceRoot: &entities.UniverseRoot{
+		&QueryRootResponse{
+			IssuanceRoot: &UniverseRoot{
 				ID:        *issuanceRootID(ref),
 				AssetName: "known-zero",
 			},
@@ -728,15 +727,15 @@ func TestListBalances_FilterKnownZero(t *testing.T) {
 
 func TestListBalances_UnknownAsset(t *testing.T) {
 	mc := new(refMockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
-	ref := entities.AssetRefFromGroupKey(testRefGroupKey(t))
-	req := &entities.ListBalancesRequest{AssetRef: &ref}
+	ref := AssetRefFromGroupKey(testRefGroupKey(t))
+	req := &ListBalancesRequest{AssetRef: &ref}
 
 	expectEmptyBalances(mc, ctx, ref)
 	mc.On("QueryAssetRoots", ctx, issuanceRootID(ref)).Return(
-		&entities.QueryRootResponse{}, nil,
+		&QueryRootResponse{}, nil,
 	)
 
 	resp, err := w.ListBalances(ctx, req)
@@ -749,10 +748,10 @@ func TestListBalances_UnknownAsset(t *testing.T) {
 }
 
 // issuanceRootID is the UniverseID the cold-path probe consults.
-func issuanceRootID(ref entities.AssetRef) *entities.UniverseID {
-	return &entities.UniverseID{
+func issuanceRootID(ref AssetRef) *UniverseID {
+	return &UniverseID{
 		AssetRef:  ref,
-		ProofType: entities.ProofTypeIssuance,
+		ProofType: ProofTypeIssuance,
 	}
 }
 
@@ -761,15 +760,15 @@ func issuanceRootID(ref entities.AssetRef) *entities.UniverseID {
 // received units yet. The issuance root resolves the ref as "known".
 func TestGetBalance_ZeroWhenUniverseKnown(t *testing.T) {
 	mc := new(refMockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
-	ref := entities.AssetRefFromGroupKey(testRefGroupKey(t))
+	ref := AssetRefFromGroupKey(testRefGroupKey(t))
 
 	expectEmptyBalances(mc, ctx, ref)
 	mc.On("QueryAssetRoots", ctx, issuanceRootID(ref)).Return(
-		&entities.QueryRootResponse{
-			IssuanceRoot: &entities.UniverseRoot{
+		&QueryRootResponse{
+			IssuanceRoot: &UniverseRoot{
 				ID:        *issuanceRootID(ref),
 				AssetName: "bootstrapped",
 			},
@@ -788,15 +787,15 @@ func TestGetBalance_ZeroWhenUniverseKnown(t *testing.T) {
 // issuance root is locally available.
 func TestGetBalance_ZeroWhenUniverseKnowsViaTransfer(t *testing.T) {
 	mc := new(refMockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
-	ref := entities.AssetRefFromAssetID(testRefAssetID())
+	ref := AssetRefFromAssetID(testRefAssetID())
 
 	expectEmptyBalances(mc, ctx, ref)
 	mc.On("QueryAssetRoots", ctx, issuanceRootID(ref)).Return(
-		&entities.QueryRootResponse{
-			TransferRoot: &entities.UniverseRoot{
+		&QueryRootResponse{
+			TransferRoot: &UniverseRoot{
 				ID:        *issuanceRootID(ref),
 				AssetName: "transfer-only",
 			},
@@ -815,14 +814,14 @@ func TestGetBalance_ZeroWhenUniverseKnowsViaTransfer(t *testing.T) {
 // the ref for debugging.
 func TestGetBalance_UnknownAsset(t *testing.T) {
 	mc := new(refMockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
-	ref := entities.AssetRefFromGroupKey(testRefGroupKey(t))
+	ref := AssetRefFromGroupKey(testRefGroupKey(t))
 
 	expectEmptyBalances(mc, ctx, ref)
 	mc.On("QueryAssetRoots", ctx, issuanceRootID(ref)).Return(
-		&entities.QueryRootResponse{}, nil,
+		&QueryRootResponse{}, nil,
 	)
 
 	balance, err := w.GetBalance(ctx, ref)
@@ -836,10 +835,10 @@ func TestGetBalance_UnknownAsset(t *testing.T) {
 
 func TestGetBalance_ListBalancesError(t *testing.T) {
 	mc := new(refMockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
-	ref := entities.AssetRefFromAssetID(testRefAssetID())
+	ref := AssetRefFromAssetID(testRefAssetID())
 
 	mc.On("ListBalances", ctx, mock.Anything).Return(
 		nil, context.DeadlineExceeded,
@@ -854,10 +853,10 @@ func TestGetBalance_ListBalancesError(t *testing.T) {
 
 func TestGetBalance_QueryAssetRootsError(t *testing.T) {
 	mc := new(refMockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
-	ref := entities.AssetRefFromAssetID(testRefAssetID())
+	ref := AssetRefFromAssetID(testRefAssetID())
 
 	expectEmptyBalances(mc, ctx, ref)
 	mc.On("QueryAssetRoots", ctx, issuanceRootID(ref)).Return(

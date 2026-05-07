@@ -4,29 +4,28 @@ import (
 	"context"
 	"testing"
 
-	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
 func TestBurn(t *testing.T) {
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
-	ref := entities.AssetRefFromAssetID(testAssetID())
-	expected := &entities.BurnAssetResponse{
-		BurnTransfer: &entities.AssetTransfer{
+	ref := AssetRefFromAssetID(testAssetID())
+	expected := &BurnAssetResponse{
+		BurnTransfer: &AssetTransfer{
 			AnchorTxid: "burn-anchor",
 		},
-		BurnProof: &entities.DecodedProof{
+		BurnProof: &DecodedProof{
 			AssetRef: ref,
 			Amount:   100,
 		},
 	}
 
 	mc.On("BurnAsset", ctx, mock.MatchedBy(
-		func(req *entities.BurnAssetRequest) bool {
+		func(req *BurnAssetRequest) bool {
 			return req.AssetRef == ref &&
 				req.AmountToBurn == 100 &&
 				req.ConfirmationText == burnConfirmationText &&
@@ -49,10 +48,10 @@ func TestBurn(t *testing.T) {
 
 func TestBurnRejectsZeroAmount(t *testing.T) {
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
-	_, err := w.Burn(ctx, entities.AssetRefFromAssetID(testAssetID()), 0)
+	_, err := w.Burn(ctx, AssetRefFromAssetID(testAssetID()), 0)
 	require.ErrorIs(t, err, ErrZeroAmount)
 
 	mc.AssertExpectations(t)
@@ -60,12 +59,12 @@ func TestBurnRejectsZeroAmount(t *testing.T) {
 
 func TestListBurns(t *testing.T) {
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
-	ref := entities.AssetRefFromAssetID(testAssetID())
-	req := &entities.ListBurnsRequest{AssetRef: &ref}
-	expected := []*entities.BurnRecord{{
+	ref := AssetRefFromAssetID(testAssetID())
+	req := &ListBurnsRequest{AssetRef: &ref}
+	expected := []*BurnRecord{{
 		AssetRef:   ref,
 		IssuanceID: testAssetID(),
 		Amount:     42,
@@ -83,10 +82,10 @@ func TestListBurns(t *testing.T) {
 
 func TestListBurnsWrapsError(t *testing.T) {
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
-	mc.On("ListBurns", ctx, (*entities.ListBurnsRequest)(nil)).Return(
+	mc.On("ListBurns", ctx, (*ListBurnsRequest)(nil)).Return(
 		nil, context.DeadlineExceeded,
 	)
 

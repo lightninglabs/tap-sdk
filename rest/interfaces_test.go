@@ -1,19 +1,14 @@
-package rest
+package rest_test
 
 import (
 	"testing"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
+	"github.com/lightninglabs/tap-sdk/rest"
 )
 
 // TestClientSatisfiesInterfaces verifies at compile time that
 // rest.Client satisfies all tap-sdk client interfaces.
 func TestClientSatisfiesInterfaces(t *testing.T) {
-	var _ tapsdk.Client = (*Client)(nil)
-	var _ tapsdk.WalletClient = (*walletClient)(nil)
-	var _ tapsdk.ProofClient = (*proofClient)(nil)
-	var _ tapsdk.WalletKitClient = (*walletKitClient)(nil)
-	var _ tapsdk.UniverseClient = (*universeClient)(nil)
-	var _ tapsdk.MintClient = (*mintClient)(nil)
-	var _ tapsdk.EventClient = (*eventClient)(nil)
+	var _ tapsdk.Client = (*rest.Client)(nil)
 }

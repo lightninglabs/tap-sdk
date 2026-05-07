@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,8 +25,8 @@ func TestBackupRestore(t *testing.T) {
 			fmt.Sprintf("backup-token-%s", transport),
 		)
 		minted, err := h.MintAssetAndConfirm(t, ctx,
-			&entities.MintAsset{
-				AssetType:     entities.AssetTypeNormal,
+			&tapsdk.MintAsset{
+				AssetType:     tapsdk.AssetTypeNormal,
 				Name:          tokenName,
 				InitialSupply: 321,
 			},
@@ -51,7 +51,7 @@ func TestBackupRestore(t *testing.T) {
 		h.SyncAliceGroupsForBackupImport(t, ctx)
 
 		backup, err := h.AliceClient.ExportBackup(
-			ctx, entities.BackupModeCompact,
+			ctx, tapsdk.BackupModeCompact,
 		)
 		require.NoError(t, err)
 		require.NotEmpty(t, backup)

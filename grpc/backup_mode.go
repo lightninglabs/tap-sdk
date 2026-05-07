@@ -1,16 +1,16 @@
 package grpc
 
 import (
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/taprpc/assetwalletrpc"
 )
 
-func marshalBackupMode(mode entities.BackupMode) assetwalletrpc.BackupMode {
+func marshalBackupMode(mode tapsdk.BackupMode) assetwalletrpc.BackupMode {
 	switch mode {
-	case entities.BackupModeCompact:
+	case tapsdk.BackupModeCompact:
 		return assetwalletrpc.BackupMode_COMPACT
 
-	case entities.BackupModeOptimistic:
+	case tapsdk.BackupModeOptimistic:
 		return assetwalletrpc.BackupMode_OPTIMISTIC
 
 	default:

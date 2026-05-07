@@ -6,7 +6,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -14,9 +13,9 @@ import (
 func TestProveOwnership_GroupedFungibleAmount(t *testing.T) {
 	ctx := context.Background()
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 
-	groupRef := entities.AssetRefFromGroupKey(testKey(t, 21))
+	groupRef := AssetRefFromGroupKey(testKey(t, 21))
 	firstID := ownershipAssetID(1)
 	secondID := ownershipAssetID(2)
 	firstKey := testKey(t, 31)
@@ -26,24 +25,24 @@ func TestProveOwnership_GroupedFungibleAmount(t *testing.T) {
 	challenge := ownershipChallenge()
 
 	mc.On("ListUtxos", ctx, mock.MatchedBy(
-		func(req *entities.ListUtxosRequest) bool {
+		func(req *ListUtxosRequest) bool {
 			return req != nil && req.IncludeLeased
 		}),
-	).Return(map[string]*entities.ManagedUtxo{
+	).Return(map[string]*ManagedUtxo{
 		"second": {
 			OutPoint: secondOutpoint,
-			Assets: []*entities.AssetRecord{
+			Assets: []*AssetRecord{
 				ownershipAssetRecord(
-					groupRef, secondID, entities.AssetTypeFungible,
+					groupRef, secondID, AssetTypeFungible,
 					75, secondKey,
 				),
 			},
 		},
 		"first": {
 			OutPoint: firstOutpoint,
-			Assets: []*entities.AssetRecord{
+			Assets: []*AssetRecord{
 				ownershipAssetRecord(
-					groupRef, firstID, entities.AssetTypeFungible,
+					groupRef, firstID, AssetTypeFungible,
 					50, firstKey,
 				),
 			},
@@ -81,8 +80,8 @@ func TestProveOwnership_GroupedFungibleAmount(t *testing.T) {
 }
 
 func TestProveOwnership_InvalidChallenge(t *testing.T) {
-	w := NewWallet(new(mockClient), entities.NetworkRegtest)
-	ref := entities.AssetRefFromGroupKey(testKey(t, 37))
+	w := NewWallet(new(mockClient), NetworkRegtest)
+	ref := AssetRefFromGroupKey(testKey(t, 37))
 
 	tests := []struct {
 		name      string
@@ -116,9 +115,9 @@ func TestProveOwnership_InvalidChallenge(t *testing.T) {
 func TestProveOwnership_CollectionRef(t *testing.T) {
 	ctx := context.Background()
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 
-	collectionRef := entities.AssetRefFromGroupKey(testKey(t, 41))
+	collectionRef := AssetRefFromGroupKey(testKey(t, 41))
 	firstID := ownershipAssetID(41)
 	secondID := ownershipAssetID(42)
 	firstKey := testKey(t, 51)
@@ -126,21 +125,21 @@ func TestProveOwnership_CollectionRef(t *testing.T) {
 	firstOutpoint := ownershipOutpoint(21)
 	secondOutpoint := ownershipOutpoint(22)
 
-	utxos := map[string]*entities.ManagedUtxo{
+	utxos := map[string]*ManagedUtxo{
 		"first": {
 			OutPoint: firstOutpoint,
-			Assets: []*entities.AssetRecord{
+			Assets: []*AssetRecord{
 				ownershipAssetRecord(
-					collectionRef, firstID, entities.AssetTypeNFT,
+					collectionRef, firstID, AssetTypeNFT,
 					1, firstKey,
 				),
 			},
 		},
 		"second": {
 			OutPoint: secondOutpoint,
-			Assets: []*entities.AssetRecord{
+			Assets: []*AssetRecord{
 				ownershipAssetRecord(
-					collectionRef, secondID, entities.AssetTypeNFT,
+					collectionRef, secondID, AssetTypeNFT,
 					1, secondKey,
 				),
 			},
@@ -156,7 +155,7 @@ func TestProveOwnership_CollectionRef(t *testing.T) {
 	proofs, err := w.ProveOwnership(ctx, collectionRef)
 	require.NoError(t, err)
 	require.Len(t, proofs.Proofs, 1)
-	require.Equal(t, entities.AssetRefFromAssetID(firstID),
+	require.Equal(t, AssetRefFromAssetID(firstID),
 		proofs.Proofs[0].AssetRef)
 
 	mc.On("ListUtxos", ctx, mock.Anything).Return(utxos, nil).Once()
@@ -174,33 +173,33 @@ func TestProveOwnership_CollectionRef(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Len(t, proofs.Proofs, 2)
-	require.Equal(t, entities.AssetRefFromAssetID(firstID),
+	require.Equal(t, AssetRefFromAssetID(firstID),
 		proofs.Proofs[0].AssetRef)
-	require.Equal(t, entities.AssetRefFromAssetID(secondID),
+	require.Equal(t, AssetRefFromAssetID(secondID),
 		proofs.Proofs[1].AssetRef)
 	mc.AssertExpectations(t)
 }
 
 func TestProveOwnership_UnknownAndInsufficient(t *testing.T) {
 	ctx := context.Background()
-	ref := entities.AssetRefFromAssetID(ownershipAssetID(99))
+	ref := AssetRefFromAssetID(ownershipAssetID(99))
 
 	t.Run("unknown", func(t *testing.T) {
 		mc := new(mockClient)
-		w := NewWallet(mc, entities.NetworkRegtest)
+		w := NewWallet(mc, NetworkRegtest)
 
 		mc.On("ListUtxos", ctx, mock.Anything).Return(
-			map[string]*entities.ManagedUtxo{}, nil,
+			map[string]*ManagedUtxo{}, nil,
 		).Once()
 		mc.On("ListAssetRecords", ctx, mock.MatchedBy(
-			func(req *entities.ListAssetsRequest) bool {
+			func(req *ListAssetsRequest) bool {
 				return req != nil && req.AssetRef != nil &&
 					req.AssetRef.Equivalent(ref) &&
 					req.IncludeSpent && !req.IncludeLeased &&
 					req.ScriptKeyType != nil &&
 					req.ScriptKeyType.AllTypes
 			}),
-		).Return([]*entities.AssetRecord{}, nil).Once()
+		).Return([]*AssetRecord{}, nil).Once()
 
 		_, err := w.ProveOwnership(ctx, ref)
 		require.ErrorIs(t, err, ErrAssetUnknown)
@@ -209,19 +208,19 @@ func TestProveOwnership_UnknownAndInsufficient(t *testing.T) {
 
 	t.Run("insufficient", func(t *testing.T) {
 		mc := new(mockClient)
-		w := NewWallet(mc, entities.NetworkRegtest)
+		w := NewWallet(mc, NetworkRegtest)
 
 		id, ok := ref.AssetID()
 		require.True(t, ok)
 		scriptKey := testKey(t, 61)
 		outpoint := ownershipOutpoint(31)
 		mc.On("ListUtxos", ctx, mock.Anything).Return(
-			map[string]*entities.ManagedUtxo{
+			map[string]*ManagedUtxo{
 				"owned": {
 					OutPoint: outpoint,
-					Assets: []*entities.AssetRecord{
+					Assets: []*AssetRecord{
 						ownershipAssetRecord(
-							ref, id, entities.AssetTypeFungible,
+							ref, id, AssetTypeFungible,
 							10, scriptKey,
 						),
 					},
@@ -239,24 +238,24 @@ func TestProveOwnership_UnknownAndInsufficient(t *testing.T) {
 
 func TestProveOwnership_SelectionErrors(t *testing.T) {
 	ctx := context.Background()
-	groupRef := entities.AssetRefFromGroupKey(testKey(t, 81))
+	groupRef := AssetRefFromGroupKey(testKey(t, 81))
 	fungibleID := ownershipAssetID(81)
 	nftID := ownershipAssetID(82)
 
 	tests := []struct {
 		name    string
-		ref     entities.AssetRef
+		ref     AssetRef
 		opts    []OwnershipOption
-		assets  []*entities.AssetRecord
+		assets  []*AssetRecord
 		wantErr error
 	}{
 		{
 			name: "fungible amount required",
 			ref:  groupRef,
-			assets: []*entities.AssetRecord{
+			assets: []*AssetRecord{
 				ownershipAssetRecord(
 					groupRef, fungibleID,
-					entities.AssetTypeFungible, 10,
+					AssetTypeFungible, 10,
 					testKey(t, 82),
 				),
 			},
@@ -266,14 +265,14 @@ func TestProveOwnership_SelectionErrors(t *testing.T) {
 			name: "mixed asset types",
 			ref:  groupRef,
 			opts: []OwnershipOption{WithOwnershipAmount(1)},
-			assets: []*entities.AssetRecord{
+			assets: []*AssetRecord{
 				ownershipAssetRecord(
 					groupRef, fungibleID,
-					entities.AssetTypeFungible, 10,
+					AssetTypeFungible, 10,
 					testKey(t, 83),
 				),
 				ownershipAssetRecord(
-					groupRef, nftID, entities.AssetTypeNFT, 1,
+					groupRef, nftID, AssetTypeNFT, 1,
 					testKey(t, 84),
 				),
 			},
@@ -283,10 +282,10 @@ func TestProveOwnership_SelectionErrors(t *testing.T) {
 			name: "all collection items on fungible",
 			ref:  groupRef,
 			opts: []OwnershipOption{WithAllOwnedCollectionItems()},
-			assets: []*entities.AssetRecord{
+			assets: []*AssetRecord{
 				ownershipAssetRecord(
 					groupRef, fungibleID,
-					entities.AssetTypeFungible, 10,
+					AssetTypeFungible, 10,
 					testKey(t, 85),
 				),
 			},
@@ -294,12 +293,12 @@ func TestProveOwnership_SelectionErrors(t *testing.T) {
 		},
 		{
 			name: "nft amount above one",
-			ref:  entities.AssetRefFromAssetID(nftID),
+			ref:  AssetRefFromAssetID(nftID),
 			opts: []OwnershipOption{WithOwnershipAmount(2)},
-			assets: []*entities.AssetRecord{
+			assets: []*AssetRecord{
 				ownershipAssetRecord(
-					entities.AssetRefFromAssetID(nftID), nftID,
-					entities.AssetTypeNFT, 1, testKey(t, 86),
+					AssetRefFromAssetID(nftID), nftID,
+					AssetTypeNFT, 1, testKey(t, 86),
 				),
 			},
 			wantErr: ErrInsufficientBalance,
@@ -309,10 +308,10 @@ func TestProveOwnership_SelectionErrors(t *testing.T) {
 	for idx, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			mc := new(mockClient)
-			w := NewWallet(mc, entities.NetworkRegtest)
+			w := NewWallet(mc, NetworkRegtest)
 
 			mc.On("ListUtxos", ctx, mock.Anything).Return(
-				map[string]*entities.ManagedUtxo{
+				map[string]*ManagedUtxo{
 					"owned": {
 						OutPoint: ownershipOutpoint(
 							byte(90 + idx),
@@ -331,19 +330,19 @@ func TestProveOwnership_SelectionErrors(t *testing.T) {
 
 func TestProveOwnership_RPCAndProofErrors(t *testing.T) {
 	ctx := context.Background()
-	ref := entities.AssetRefFromGroupKey(testKey(t, 91))
+	ref := AssetRefFromGroupKey(testKey(t, 91))
 	id := ownershipAssetID(91)
 	scriptKey := testKey(t, 92)
 	outpoint := ownershipOutpoint(91)
 
 	setup := func(mc *mockClient) {
 		mc.On("ListUtxos", ctx, mock.Anything).Return(
-			map[string]*entities.ManagedUtxo{
+			map[string]*ManagedUtxo{
 				"owned": {
 					OutPoint: outpoint,
-					Assets: []*entities.AssetRecord{
+					Assets: []*AssetRecord{
 						ownershipAssetRecord(
-							ref, id, entities.AssetTypeFungible,
+							ref, id, AssetTypeFungible,
 							10, scriptKey,
 						),
 					},
@@ -354,7 +353,7 @@ func TestProveOwnership_RPCAndProofErrors(t *testing.T) {
 
 	t.Run("rpc error", func(t *testing.T) {
 		mc := new(mockClient)
-		w := NewWallet(mc, entities.NetworkRegtest)
+		w := NewWallet(mc, NetworkRegtest)
 		setup(mc)
 		mc.On("ProveAssetOwnership", ctx, mock.Anything).Return(
 			nil, errors.New("boom"),
@@ -369,10 +368,10 @@ func TestProveOwnership_RPCAndProofErrors(t *testing.T) {
 
 	t.Run("empty proof", func(t *testing.T) {
 		mc := new(mockClient)
-		w := NewWallet(mc, entities.NetworkRegtest)
+		w := NewWallet(mc, NetworkRegtest)
 		setup(mc)
 		mc.On("ProveAssetOwnership", ctx, mock.Anything).Return(
-			&entities.OwnershipProof{}, nil,
+			&OwnershipProof{}, nil,
 		).Once()
 
 		_, err := w.ProveOwnership(
@@ -386,16 +385,16 @@ func TestProveOwnership_RPCAndProofErrors(t *testing.T) {
 func TestVerifyOwnership(t *testing.T) {
 	ctx := context.Background()
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 
 	proof := []byte("proof-with-witness")
 	challenge := ownershipChallenge()
-	expected := &entities.VerifyOwnershipResponse{
+	expected := &VerifyOwnershipResponse{
 		Valid: true,
 	}
 
 	mc.On("VerifyAssetOwnership", ctx, mock.MatchedBy(
-		func(req *entities.VerifyOwnershipRequest) bool {
+		func(req *VerifyOwnershipRequest) bool {
 			return bytes.Equal(req.ProofWithWitness, proof) &&
 				bytes.Equal(req.Challenge, challenge)
 		}),
@@ -424,7 +423,7 @@ func TestVerifyOwnership(t *testing.T) {
 	require.ErrorIs(t, err, ErrWrongAssetType)
 
 	mc.On("VerifyAssetOwnership", ctx, mock.Anything).Return(
-		&entities.VerifyOwnershipResponse{}, nil,
+		&VerifyOwnershipResponse{}, nil,
 	).Once()
 	_, err = w.VerifyOwnership(ctx, proof)
 	require.ErrorIs(t, err, ErrOwnershipProofInvalid)
@@ -440,17 +439,17 @@ func TestVerifyOwnership(t *testing.T) {
 func TestProveOwnership_CollectionAmountRejected(t *testing.T) {
 	ctx := context.Background()
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 
-	collectionRef := entities.AssetRefFromGroupKey(testKey(t, 71))
+	collectionRef := AssetRefFromGroupKey(testKey(t, 71))
 	id := ownershipAssetID(71)
 	mc.On("ListUtxos", ctx, mock.Anything).Return(
-		map[string]*entities.ManagedUtxo{
+		map[string]*ManagedUtxo{
 			"item": {
 				OutPoint: ownershipOutpoint(41),
-				Assets: []*entities.AssetRecord{
+				Assets: []*AssetRecord{
 					ownershipAssetRecord(
-						collectionRef, id, entities.AssetTypeNFT,
+						collectionRef, id, AssetTypeNFT,
 						1, testKey(t, 72),
 					),
 				},
@@ -465,43 +464,43 @@ func TestProveOwnership_CollectionAmountRejected(t *testing.T) {
 	mc.AssertExpectations(t)
 }
 
-func ownershipAssetRecord(ref entities.AssetRef, id entities.AssetID,
-	assetType entities.AssetType, amount uint64,
-	scriptKey entities.PubKey) *entities.AssetRecord {
+func ownershipAssetRecord(ref AssetRef, id AssetID,
+	assetType AssetType, amount uint64,
+	scriptKey PubKey) *AssetRecord {
 
-	return &entities.AssetRecord{
+	return &AssetRecord{
 		AssetRef: ref,
-		Genesis: entities.IssuanceGenesis{
+		Genesis: IssuanceGenesis{
 			IssuanceID: id,
 			Type:       assetType,
 			Tag:        "owned",
 		},
 		Amount: amount,
-		ScriptKey: entities.ScriptKey{
+		ScriptKey: ScriptKey{
 			PubKey: scriptKey,
 		},
 	}
 }
 
 func expectOwnershipProof(mc *mockClient, ctx context.Context,
-	id entities.AssetID, scriptKey entities.PubKey, outpoint entities.Outpoint,
+	id AssetID, scriptKey PubKey, outpoint Outpoint,
 	challenge []byte, proof []byte) {
 
 	mc.On("ProveAssetOwnership", ctx, mock.MatchedBy(
-		func(req *entities.ProveOwnershipRequest) bool {
+		func(req *ProveOwnershipRequest) bool {
 			reqID, ok := req.AssetRef.AssetID()
 			return ok && reqID == id &&
 				req.ScriptKey == scriptKey &&
 				req.Outpoint == outpoint &&
 				bytes.Equal(req.Challenge, challenge)
 		}),
-	).Return(&entities.OwnershipProof{
+	).Return(&OwnershipProof{
 		ProofWithWitness: proof,
 	}, nil).Once()
 }
 
-func ownershipAssetID(seed byte) entities.AssetID {
-	var id entities.AssetID
+func ownershipAssetID(seed byte) AssetID {
+	var id AssetID
 	for i := range id {
 		id[i] = seed + byte(i)
 	}
@@ -509,8 +508,8 @@ func ownershipAssetID(seed byte) entities.AssetID {
 	return id
 }
 
-func ownershipOutpoint(seed byte) entities.Outpoint {
-	var outpoint entities.Outpoint
+func ownershipOutpoint(seed byte) Outpoint {
+	var outpoint Outpoint
 	for i := range outpoint.Txid {
 		outpoint.Txid[i] = seed + byte(i)
 	}

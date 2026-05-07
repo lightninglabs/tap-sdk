@@ -1,6 +1,11 @@
 package macaroon
 
-import "path/filepath"
+import (
+	"encoding/hex"
+	"fmt"
+	"path/filepath"
+	"strings"
+)
 
 // Source describes where the SDK should obtain authentication
 // macaroons. Exactly one source is held by the caller's Config, so
@@ -72,7 +77,15 @@ type hexSource struct {
 
 // LoadPouch implements Source.
 func (s hexSource) LoadPouch() (Pouch, error) {
-	return pouchForAllServices(SerializedMacaroon(s.hex)), nil
+	trimmed := strings.TrimSpace(s.hex)
+	if trimmed == "" {
+		return nil, fmt.Errorf("macaroon hex must not be empty")
+	}
+	if _, err := hex.DecodeString(trimmed); err != nil {
+		return nil, fmt.Errorf("invalid macaroon hex: %w", err)
+	}
+
+	return pouchForAllServices(SerializedMacaroon(trimmed)), nil
 }
 
 // pouchForAllServices returns a Pouch where every service entry

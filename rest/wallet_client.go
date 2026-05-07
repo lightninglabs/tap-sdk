@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 )
 
@@ -23,7 +23,7 @@ func newWalletClient(tp *transport) *walletClient {
 
 // GetInfo returns general information about the tapd instance.
 func (w *walletClient) GetInfo(
-	ctx context.Context) (*entities.Info, error) {
+	ctx context.Context) (*tapsdk.Info, error) {
 
 	var resp jsonGetInfoResponse
 	err := w.transport.doGet(
@@ -39,7 +39,7 @@ func (w *walletClient) GetInfo(
 
 // ListAssetRecords lists wallet asset records with optional filtering.
 func (w *walletClient) ListAssetRecords(ctx context.Context,
-	req *entities.ListAssetsRequest) ([]*entities.AssetRecord, error) {
+	req *tapsdk.ListAssetsRequest) ([]*tapsdk.AssetRecord, error) {
 
 	params, assetRefFilter, err := listAssetRecordsQueryParams(req)
 	if err != nil {
@@ -59,7 +59,7 @@ func (w *walletClient) ListAssetRecords(ctx context.Context,
 		return nil, err
 	}
 
-	assets := make([]*entities.AssetRecord, 0, len(resp.Assets))
+	assets := make([]*tapsdk.AssetRecord, 0, len(resp.Assets))
 	for _, jsonAsset := range resp.Assets {
 		asset, err := unmarshalAsset(jsonAsset)
 		if err != nil {
@@ -79,10 +79,10 @@ func (w *walletClient) ListAssetRecords(ctx context.Context,
 }
 
 func listAssetRecordsQueryParams(
-	req *entities.ListAssetsRequest) (url.Values, *entities.AssetRef, error) {
+	req *tapsdk.ListAssetsRequest) (url.Values, *tapsdk.AssetRef, error) {
 
 	params := url.Values{}
-	var assetRefFilter *entities.AssetRef
+	var assetRefFilter *tapsdk.AssetRef
 	if req == nil {
 		return params, assetRefFilter, nil
 	}
@@ -145,7 +145,7 @@ func listAssetRecordsQueryParams(
 }
 
 func marshalScriptKeyTypeQueryParams(params url.Values,
-	query *entities.ScriptKeyTypeQuery) error {
+	query *tapsdk.ScriptKeyTypeQuery) error {
 
 	if err := query.Validate(); err != nil {
 		return err
@@ -170,29 +170,29 @@ func marshalScriptKeyTypeQueryParams(params url.Values,
 	return nil
 }
 
-func marshalScriptKeyType(scriptKeyType entities.ScriptKeyType) string {
+func marshalScriptKeyType(scriptKeyType tapsdk.ScriptKeyType) string {
 	switch scriptKeyType {
-	case entities.ScriptKeyTypeUnknown:
+	case tapsdk.ScriptKeyTypeUnknown:
 		return "SCRIPT_KEY_UNKNOWN"
-	case entities.ScriptKeyTypeBIP86:
+	case tapsdk.ScriptKeyTypeBIP86:
 		return "SCRIPT_KEY_BIP86"
-	case entities.ScriptKeyTypeScriptPathExternal:
+	case tapsdk.ScriptKeyTypeScriptPathExternal:
 		return "SCRIPT_KEY_SCRIPT_PATH_EXTERNAL"
-	case entities.ScriptKeyTypeBurn:
+	case tapsdk.ScriptKeyTypeBurn:
 		return "SCRIPT_KEY_BURN"
-	case entities.ScriptKeyTypeTombstone:
+	case tapsdk.ScriptKeyTypeTombstone:
 		return "SCRIPT_KEY_TOMBSTONE"
-	case entities.ScriptKeyTypeChannel:
+	case tapsdk.ScriptKeyTypeChannel:
 		return "SCRIPT_KEY_CHANNEL"
-	case entities.ScriptKeyTypeUniquePedersen:
+	case tapsdk.ScriptKeyTypeUniquePedersen:
 		return "SCRIPT_KEY_UNIQUE_PEDERSEN"
 	default:
 		return ""
 	}
 }
 
-func assetRecordMatchesRef(asset *entities.AssetRecord,
-	ref entities.AssetRef) bool {
+func assetRecordMatchesRef(asset *tapsdk.AssetRecord,
+	ref tapsdk.AssetRef) bool {
 
 	if asset == nil {
 		return false
@@ -208,8 +208,8 @@ func assetRecordMatchesRef(asset *entities.AssetRecord,
 
 // ListBalances returns asset balances keyed by AssetRef.
 func (w *walletClient) ListBalances(ctx context.Context,
-	req *entities.ListBalancesRequest) (
-	*entities.ListBalancesResponse, error) {
+	req *tapsdk.ListBalancesRequest) (
+	*tapsdk.ListBalancesResponse, error) {
 
 	// Group refs must round-trip through tapd's group-by-group_key
 	// mode — the server only honors group_key_filter in that mode,
@@ -260,15 +260,15 @@ func (w *walletClient) ListBalances(ctx context.Context,
 		return nil, fmt.Errorf("unconfirmed_transfers: %w", err)
 	}
 
-	result := &entities.ListBalancesResponse{
+	result := &tapsdk.ListBalancesResponse{
 		Balances: make(
-			map[string]*entities.Balance,
+			map[string]*tapsdk.Balance,
 		),
 		UnconfirmedTransfers: unconfirmed,
 	}
 
 	for _, ab := range resp.AssetBalances {
-		var genesis *entities.IssuanceGenesis
+		var genesis *tapsdk.IssuanceGenesis
 		if ab.AssetGenesis != nil {
 			genesis, err = unmarshalIssuanceGenesis(
 				ab.AssetGenesis,
@@ -279,11 +279,11 @@ func (w *walletClient) ListBalances(ctx context.Context,
 			}
 		}
 
-		var ref entities.AssetRef
+		var ref tapsdk.AssetRef
 
 		if ab.GroupKey != "" &&
 			(genesis == nil ||
-				genesis.Type != entities.AssetTypeCollectible) {
+				genesis.Type != tapsdk.AssetTypeCollectible) {
 
 			gkBytes, err := parseHexBytes(
 				ab.GroupKey,
@@ -293,20 +293,20 @@ func (w *walletClient) ListBalances(ctx context.Context,
 					"group key: %w", err)
 			}
 
-			gk, err := entities.ParsePubKey(gkBytes)
+			gk, err := tapsdk.ParsePubKey(gkBytes)
 			if err != nil {
 				return nil, fmt.Errorf("balance "+
 					"group key: %w", err)
 			}
 
-			ref = entities.AssetRefFromGroupKey(gk)
+			ref = tapsdk.AssetRefFromGroupKey(gk)
 		} else {
 			if genesis == nil {
 				return nil, fmt.Errorf("balance genesis: " +
 					"missing asset genesis")
 			}
 
-			ref = entities.AssetRefFromAssetID(
+			ref = tapsdk.AssetRefFromAssetID(
 				genesis.IssuanceID,
 			)
 		}
@@ -320,7 +320,7 @@ func (w *walletClient) ListBalances(ctx context.Context,
 		key := ref.String()
 		balance, ok := result.Balances[key]
 		if !ok {
-			balance = &entities.Balance{
+			balance = &tapsdk.Balance{
 				AssetRef: ref,
 			}
 
@@ -336,7 +336,7 @@ func (w *walletClient) ListBalances(ctx context.Context,
 // listGroupBalance queries a single-group balance via tapd's group-by-group_key
 // mode.
 func (w *walletClient) listGroupBalance(ctx context.Context,
-	req *entities.ListBalancesRequest) (*entities.ListBalancesResponse,
+	req *tapsdk.ListBalancesRequest) (*tapsdk.ListBalancesResponse,
 	error) {
 
 	groupKey, ok := req.AssetRef.GroupKey()
@@ -371,8 +371,8 @@ func (w *walletClient) listGroupBalance(ctx context.Context,
 		return nil, fmt.Errorf("unconfirmed_transfers: %w", err)
 	}
 
-	result := &entities.ListBalancesResponse{
-		Balances:             map[string]*entities.Balance{},
+	result := &tapsdk.ListBalancesResponse{
+		Balances:             map[string]*tapsdk.Balance{},
 		UnconfirmedTransfers: unconfirmed,
 	}
 
@@ -389,7 +389,7 @@ func (w *walletClient) listGroupBalance(ctx context.Context,
 		return result, nil
 	}
 
-	result.Balances[req.AssetRef.String()] = &entities.Balance{
+	result.Balances[req.AssetRef.String()] = &tapsdk.Balance{
 		AssetRef: *req.AssetRef,
 		Balance:  amount,
 	}
@@ -399,8 +399,8 @@ func (w *walletClient) listGroupBalance(ctx context.Context,
 
 // ListTransfers lists outgoing transfers with optional filtering.
 func (w *walletClient) ListTransfers(ctx context.Context,
-	req *entities.ListTransfersRequest) (
-	[]*entities.AssetTransfer, error) {
+	req *tapsdk.ListTransfersRequest) (
+	[]*tapsdk.AssetTransfer, error) {
 
 	params := url.Values{}
 	if req != nil && req.AnchorTxid != "" {
@@ -421,7 +421,7 @@ func (w *walletClient) ListTransfers(ctx context.Context,
 	}
 
 	transfers := make(
-		[]*entities.AssetTransfer, 0, len(resp.Transfers),
+		[]*tapsdk.AssetTransfer, 0, len(resp.Transfers),
 	)
 	for _, jsonTransfer := range resp.Transfers {
 		transfer, err := unmarshalAssetTransfer(jsonTransfer)
@@ -454,8 +454,8 @@ type jsonAddressWithAmount struct {
 
 // SendAsset performs a one-shot address-based send.
 func (w *walletClient) SendAsset(ctx context.Context,
-	req *entities.SendAssetRequest) (
-	*entities.AssetTransfer, error) {
+	req *tapsdk.SendAssetRequest) (
+	*tapsdk.AssetTransfer, error) {
 
 	body := &jsonSendAssetRequest{}
 	if req != nil {
@@ -489,8 +489,8 @@ func (w *walletClient) SendAsset(ctx context.Context,
 // the embedded-amount path (TapAddrs) when every recipient uses its address
 // amount and the explicit-amount path (AddressesWithAmounts) when every
 // recipient has an explicit amount. Mixed inputs violate the low-level contract
-// and produce entities.ErrMixedRecipientAmounts.
-func marshalSendRecipients(recipients []entities.Recipient,
+// and produce tapsdk.ErrMixedRecipientAmounts.
+func marshalSendRecipients(recipients []tapsdk.Recipient,
 	body *jsonSendAssetRequest) error {
 
 	if len(recipients) == 0 {
@@ -507,7 +507,7 @@ func marshalSendRecipients(recipients []entities.Recipient,
 		}
 	}
 	if !allEmbedded && anyEmbedded {
-		return entities.ErrMixedRecipientAmounts
+		return tapsdk.ErrMixedRecipientAmounts
 	}
 
 	if allEmbedded {
@@ -553,7 +553,7 @@ type jsonNewAddrRequest struct {
 
 // NewAddr creates a new Taproot Asset address.
 func (w *walletClient) NewAddr(ctx context.Context,
-	req *entities.NewAddressRequest) (*entities.Address, error) {
+	req *tapsdk.NewAddressRequest) (*tapsdk.Address, error) {
 
 	body := &jsonNewAddrRequest{}
 	if req != nil {
@@ -614,7 +614,7 @@ func (w *walletClient) NewAddr(ctx context.Context,
 
 // DecodeAddr decodes a bech32m Taproot Asset address string.
 func (w *walletClient) DecodeAddr(ctx context.Context,
-	addr string) (*entities.Address, error) {
+	addr string) (*tapsdk.Address, error) {
 
 	body := map[string]string{"addr": addr}
 
@@ -633,7 +633,7 @@ func (w *walletClient) DecodeAddr(ctx context.Context,
 // QueryAddrs returns addresses previously created by this tapd
 // instance.
 func (w *walletClient) QueryAddrs(ctx context.Context,
-	query *entities.AddressQuery) ([]*entities.Address, error) {
+	query *tapsdk.AddressQuery) ([]*tapsdk.Address, error) {
 
 	params := url.Values{}
 	if query != nil {
@@ -672,7 +672,7 @@ func (w *walletClient) QueryAddrs(ctx context.Context,
 		return nil, err
 	}
 
-	addrs := make([]*entities.Address, 0, len(resp.Addrs))
+	addrs := make([]*tapsdk.Address, 0, len(resp.Addrs))
 	for _, jsonAddr := range resp.Addrs {
 		addr, err := unmarshalAddr(jsonAddr)
 		if err != nil {
@@ -698,8 +698,8 @@ type jsonAddrReceivesRequest struct {
 
 // AddrReceives returns incoming transfer events for addresses.
 func (w *walletClient) AddrReceives(ctx context.Context,
-	query *entities.AddressReceivesQuery) (
-	[]*entities.AddressEvent, error) {
+	query *tapsdk.AddressReceivesQuery) (
+	[]*tapsdk.AddressEvent, error) {
 
 	body := &jsonAddrReceivesRequest{}
 	if query != nil {
@@ -722,7 +722,7 @@ func (w *walletClient) AddrReceives(ctx context.Context,
 		return nil, err
 	}
 
-	events := make([]*entities.AddressEvent, 0, len(resp.Events))
+	events := make([]*tapsdk.AddressEvent, 0, len(resp.Events))
 	for _, jsonEvent := range resp.Events {
 		event, err := unmarshalAddrEvent(jsonEvent)
 		if err != nil {
@@ -737,8 +737,8 @@ func (w *walletClient) AddrReceives(ctx context.Context,
 
 // ListUtxos lists managed UTXOs with optional filtering.
 func (w *walletClient) ListUtxos(ctx context.Context,
-	req *entities.ListUtxosRequest) (
-	map[string]*entities.ManagedUtxo, error) {
+	req *tapsdk.ListUtxosRequest) (
+	map[string]*tapsdk.ManagedUtxo, error) {
 
 	params := url.Values{}
 	if req != nil && req.IncludeLeased {
@@ -759,7 +759,7 @@ func (w *walletClient) ListUtxos(ctx context.Context,
 	}
 
 	result := make(
-		map[string]*entities.ManagedUtxo, len(resp.ManagedUtxos),
+		map[string]*tapsdk.ManagedUtxo, len(resp.ManagedUtxos),
 	)
 	for k, v := range resp.ManagedUtxos {
 		utxo, err := unmarshalManagedUtxo(v)
@@ -775,7 +775,7 @@ func (w *walletClient) ListUtxos(ctx context.Context,
 
 // ListAssetGroups lists all known asset groups.
 func (w *walletClient) ListAssetGroups(
-	ctx context.Context) ([]entities.AssetGroupRecord, error) {
+	ctx context.Context) ([]tapsdk.AssetGroupRecord, error) {
 
 	var resp jsonListGroupsResponse
 	err := w.transport.doGet(
@@ -786,7 +786,7 @@ func (w *walletClient) ListAssetGroups(
 		return nil, err
 	}
 
-	result := make([]entities.AssetGroupRecord, 0, len(resp.Groups))
+	result := make([]tapsdk.AssetGroupRecord, 0, len(resp.Groups))
 	for k, v := range resp.Groups {
 		group, err := unmarshalAssetGroupRecord(k, v)
 		if err != nil {
@@ -801,8 +801,8 @@ func (w *walletClient) ListAssetGroups(
 
 // BurnAsset burns asset units.
 func (w *walletClient) BurnAsset(ctx context.Context,
-	req *entities.BurnAssetRequest) (
-	*entities.BurnAssetResponse, error) {
+	req *tapsdk.BurnAssetRequest) (
+	*tapsdk.BurnAssetResponse, error) {
 
 	body, err := burnAssetRequestBody(req)
 	if err != nil {
@@ -821,7 +821,7 @@ func (w *walletClient) BurnAsset(ctx context.Context,
 	return unmarshalBurnAssetResponse(&resp)
 }
 
-func burnAssetRequestBody(req *entities.BurnAssetRequest) (map[string]any,
+func burnAssetRequestBody(req *tapsdk.BurnAssetRequest) (map[string]any,
 	error) {
 
 	if req.AssetRef.IsZero() {
@@ -859,7 +859,7 @@ func burnAssetRequestBody(req *entities.BurnAssetRequest) (map[string]any,
 
 // ListBurns lists asset burns with optional filtering.
 func (w *walletClient) ListBurns(ctx context.Context,
-	req *entities.ListBurnsRequest) ([]*entities.BurnRecord,
+	req *tapsdk.ListBurnsRequest) ([]*tapsdk.BurnRecord,
 	error) {
 
 	// grpc-gateway decodes query-string `bytes` fields as URL-safe
@@ -906,7 +906,7 @@ func (w *walletClient) ListBurns(ctx context.Context,
 		return nil, err
 	}
 
-	burns := make([]*entities.BurnRecord, 0, len(resp.Burns))
+	burns := make([]*tapsdk.BurnRecord, 0, len(resp.Burns))
 	for _, b := range resp.Burns {
 		burn, err := unmarshalBurnRecord(b)
 		if err != nil {
@@ -920,8 +920,8 @@ func (w *walletClient) ListBurns(ctx context.Context,
 
 // FetchAssetMeta fetches the metadata for an asset.
 func (w *walletClient) FetchAssetMeta(ctx context.Context,
-	req *entities.FetchAssetMetaRequest) (
-	*entities.AssetMeta, error) {
+	req *tapsdk.FetchAssetMetaRequest) (
+	*tapsdk.AssetMeta, error) {
 
 	var path string
 	switch {
@@ -967,7 +967,7 @@ func (w *walletClient) FetchAssetMeta(ctx context.Context,
 // VerifyProof verifies a proof file.
 func (w *walletClient) VerifyProof(ctx context.Context,
 	rawProofFile []byte) (
-	*entities.VerifyProofResponse, error) {
+	*tapsdk.VerifyProofResponse, error) {
 
 	body := map[string]any{
 		"raw_proof_file": hex.EncodeToString(
@@ -989,9 +989,9 @@ func (w *walletClient) VerifyProof(ctx context.Context,
 
 // marshalAssetVersionJSON converts an AssetVersion to a proto JSON
 // enum string.
-func marshalAssetVersionJSON(v entities.AssetVersion) string {
+func marshalAssetVersionJSON(v tapsdk.AssetVersion) string {
 	switch v {
-	case entities.AssetVersionV1:
+	case tapsdk.AssetVersionV1:
 		return "ASSET_VERSION_V1"
 	default:
 		return "ASSET_VERSION_V0"
@@ -1000,11 +1000,11 @@ func marshalAssetVersionJSON(v entities.AssetVersion) string {
 
 // marshalAddressVersionJSON converts an AddressVersion to a proto
 // JSON enum string.
-func marshalAddressVersionJSON(v entities.AddressVersion) string {
+func marshalAddressVersionJSON(v tapsdk.AddressVersion) string {
 	switch v {
-	case entities.AddressVersionV1:
+	case tapsdk.AddressVersionV1:
 		return "ADDR_VERSION_V1"
-	case entities.AddressVersionV2:
+	case tapsdk.AddressVersionV2:
 		return "ADDR_VERSION_V2"
 	default:
 		return "ADDR_VERSION_V0"
@@ -1014,16 +1014,16 @@ func marshalAddressVersionJSON(v entities.AddressVersion) string {
 // marshalAddrEventStatusJSON converts an AddressEventStatus to a
 // proto JSON enum string.
 func marshalAddrEventStatusJSON(
-	s entities.AddressEventStatus) string {
+	s tapsdk.AddressEventStatus) string {
 
 	switch s {
-	case entities.AddressEventStatusTransactionDetected:
+	case tapsdk.AddressEventStatusTransactionDetected:
 		return "ADDR_EVENT_STATUS_TRANSACTION_DETECTED"
-	case entities.AddressEventStatusTransactionConfirmed:
+	case tapsdk.AddressEventStatusTransactionConfirmed:
 		return "ADDR_EVENT_STATUS_TRANSACTION_CONFIRMED"
-	case entities.AddressEventStatusProofReceived:
+	case tapsdk.AddressEventStatusProofReceived:
 		return "ADDR_EVENT_STATUS_PROOF_RECEIVED"
-	case entities.AddressEventStatusCompleted:
+	case tapsdk.AddressEventStatusCompleted:
 		return "ADDR_EVENT_STATUS_COMPLETED"
 	default:
 		return "ADDR_EVENT_STATUS_UNKNOWN"
@@ -1033,7 +1033,7 @@ func marshalAddrEventStatusJSON(
 // marshalScriptKeyJSON converts a ScriptKey to its JSON
 // representation.
 func marshalScriptKeyJSON(
-	key *entities.ScriptKey) *jsonScriptKey {
+	key *tapsdk.ScriptKey) *jsonScriptKey {
 
 	if key == nil {
 		return nil
@@ -1044,7 +1044,7 @@ func marshalScriptKeyJSON(
 		TapTweak: hex.EncodeToString(key.TapTweak),
 	}
 
-	if key.KeyDesc != (entities.KeyDescriptor{}) {
+	if key.KeyDesc != (tapsdk.KeyDescriptor{}) {
 		result.KeyDesc = marshalKeyDescriptorJSON(&key.KeyDesc)
 	}
 
@@ -1054,7 +1054,7 @@ func marshalScriptKeyJSON(
 // marshalKeyDescriptorJSON converts a KeyDescriptor to its JSON
 // representation.
 func marshalKeyDescriptorJSON(
-	desc *entities.KeyDescriptor) *jsonKeyDescriptor {
+	desc *tapsdk.KeyDescriptor) *jsonKeyDescriptor {
 
 	if desc == nil {
 		return nil

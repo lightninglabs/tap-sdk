@@ -3,7 +3,7 @@ package grpc
 import (
 	"testing"
 
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/assetwalletrpc"
 	"github.com/stretchr/testify/require"
@@ -12,27 +12,27 @@ import (
 func TestMarshalBackupMode(t *testing.T) {
 	tests := []struct {
 		name string
-		mode entities.BackupMode
+		mode tapsdk.BackupMode
 		want assetwalletrpc.BackupMode
 	}{
 		{
 			name: "raw",
-			mode: entities.BackupModeRaw,
+			mode: tapsdk.BackupModeRaw,
 			want: assetwalletrpc.BackupMode_RAW,
 		},
 		{
 			name: "compact",
-			mode: entities.BackupModeCompact,
+			mode: tapsdk.BackupModeCompact,
 			want: assetwalletrpc.BackupMode_COMPACT,
 		},
 		{
 			name: "optimistic",
-			mode: entities.BackupModeOptimistic,
+			mode: tapsdk.BackupModeOptimistic,
 			want: assetwalletrpc.BackupMode_OPTIMISTIC,
 		},
 		{
 			name: "unknown defaults to raw",
-			mode: entities.BackupMode(99),
+			mode: tapsdk.BackupMode(99),
 			want: assetwalletrpc.BackupMode_RAW,
 		},
 	}
@@ -50,7 +50,7 @@ func TestVerifyOwnershipResponseUnmarshal(t *testing.T) {
 		resp     *assetwalletrpc.VerifyAssetOwnershipResponse
 		wantErr  string
 		validate func(*testing.T,
-			*entities.VerifyOwnershipResponse)
+			*tapsdk.VerifyOwnershipResponse)
 	}{
 		{
 			name: "valid proof",
@@ -64,7 +64,7 @@ func TestVerifyOwnershipResponseUnmarshal(t *testing.T) {
 				BlockHeight: 800000,
 			},
 			validate: func(t *testing.T,
-				result *entities.VerifyOwnershipResponse) {
+				result *tapsdk.VerifyOwnershipResponse) {
 
 				require.True(t, result.Valid)
 				require.Equal(
@@ -83,7 +83,7 @@ func TestVerifyOwnershipResponseUnmarshal(t *testing.T) {
 				ValidProof: false,
 			},
 			validate: func(t *testing.T,
-				result *entities.VerifyOwnershipResponse) {
+				result *tapsdk.VerifyOwnershipResponse) {
 
 				require.False(t, result.Valid)
 			},

@@ -8,8 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/lightninglabs/tap-sdk/entities"
-	"github.com/lightninglabs/tap-sdk/vpsbt"
+	"github.com/lightninglabs/tap-sdk/internal/vpsbt"
 )
 
 // Wallet constitutes the high level service giving access to
@@ -31,9 +30,9 @@ const burnConfirmationText = "assets will be destroyed"
 
 type transferRegistrarWithIssuance interface {
 	RegisterTransferWithIssuance(ctx context.Context,
-		assetRef entities.AssetRef, issuanceID entities.AssetID,
-		scriptKey entities.PubKey, outpoint entities.Outpoint) (
-		*entities.RegisteredAsset, error)
+		assetRef AssetRef, issuanceID AssetID,
+		scriptKey PubKey, outpoint Outpoint) (
+		*RegisteredAsset, error)
 }
 
 // WithDefaultProofCourierAddr sets the default proof courier address used by
@@ -54,10 +53,13 @@ func WithAuthMailboxCourier(host string) WalletOption {
 }
 
 // NewWallet creates a new Wallet instance.
-func NewWallet(client Client, network entities.Network,
+func NewWallet(client Client, network Network,
 	opts ...WalletOption) *Wallet {
-	// Get network parameters for vPacket encoding.
-	networkHRP, coinType := getNetworkParams(network)
+
+	networkHRP, coinType, err := getNetworkParams(network)
+	if err != nil {
+		panic(err)
+	}
 
 	wallet := &Wallet{
 		client:     client,
@@ -109,10 +111,10 @@ func (s *Wallet) Close() error {
 // addresses, configure the wallet with WithAuthMailboxCourier or
 // WithDefaultProofCourierAddr.
 func (s *Wallet) NewReceiveAddress(ctx context.Context,
-	ref entities.AssetRef) (*entities.Address, error) {
+	ref AssetRef) (*Address, error) {
 
-	v2 := entities.AddressVersionV2
-	req := &entities.NewAddressRequest{
+	v2 := AddressVersionV2
+	req := &NewAddressRequest{
 		AssetRef:         ref,
 		ProofCourierAddr: s.defaultProofCourierAddr,
 		AddressVersion:   &v2,
@@ -149,7 +151,7 @@ func (s *Wallet) NewReceiveAddress(ctx context.Context,
 	return addr, nil
 }
 
-func shouldRetryCollectibleAmount(ref entities.AssetRef, err error) bool {
+func shouldRetryCollectibleAmount(ref AssetRef, err error) bool {
 	if ref.IsZero() || err == nil {
 		return false
 	}
@@ -157,7 +159,7 @@ func shouldRetryCollectibleAmount(ref entities.AssetRef, err error) bool {
 	return strings.Contains(err.Error(), "collectible asset amount not one")
 }
 
-func shouldRetryExactGroupRef(ref entities.AssetRef, err error) bool {
+func shouldRetryExactGroupRef(ref AssetRef, err error) bool {
 	if !ref.IsGroupRef() || err == nil {
 		return false
 	}
@@ -168,7 +170,7 @@ func shouldRetryExactGroupRef(ref entities.AssetRef, err error) bool {
 }
 
 func (s *Wallet) resolveExactGroupRef(ctx context.Context,
-	ref entities.AssetRef) entities.AssetRef {
+	ref AssetRef) AssetRef {
 
 	if !ref.IsGroupRef() {
 		return ref
@@ -203,9 +205,9 @@ func (s *Wallet) resolveExactGroupRef(ctx context.Context,
 // returns an empty map, so the common "have I been paid?" poll still
 // costs a single RPC.
 func (s *Wallet) GetBalance(ctx context.Context,
-	ref entities.AssetRef) (uint64, error) {
+	ref AssetRef) (uint64, error) {
 
-	resp, err := s.ListBalances(ctx, &entities.ListBalancesRequest{
+	resp, err := s.ListBalances(ctx, &ListBalancesRequest{
 		AssetRef: &ref,
 	})
 	if err != nil {
@@ -228,7 +230,7 @@ func (s *Wallet) GetBalance(ctx context.Context,
 // from an unknown asset ref. Known zero balances are returned as an entry with
 // Balance set to zero. Unknown refs return an error wrapping ErrAssetUnknown.
 func (s *Wallet) ListBalances(ctx context.Context,
-	req *entities.ListBalancesRequest) (*entities.ListBalancesResponse, error) {
+	req *ListBalancesRequest) (*ListBalancesResponse, error) {
 
 	resp, err := s.client.ListBalances(ctx, req)
 	if err != nil {
@@ -236,10 +238,10 @@ func (s *Wallet) ListBalances(ctx context.Context,
 	}
 
 	if resp == nil {
-		resp = &entities.ListBalancesResponse{}
+		resp = &ListBalancesResponse{}
 	}
 	if resp.Balances == nil {
-		resp.Balances = make(map[string]*entities.Balance)
+		resp.Balances = make(map[string]*Balance)
 	}
 
 	if req == nil || req.AssetRef == nil {
@@ -256,7 +258,7 @@ func (s *Wallet) ListBalances(ctx context.Context,
 		return nil, wrapErr("ListBalances", err)
 	}
 	if known {
-		resp.Balances[ref.String()] = &entities.Balance{
+		resp.Balances[ref.String()] = &Balance{
 			AssetRef: ref,
 		}
 
@@ -269,11 +271,11 @@ func (s *Wallet) ListBalances(ctx context.Context,
 }
 
 func (s *Wallet) assetKnown(ctx context.Context,
-	ref entities.AssetRef) (bool, error) {
+	ref AssetRef) (bool, error) {
 
-	roots, err := s.client.QueryAssetRoots(ctx, &entities.UniverseID{
+	roots, err := s.client.QueryAssetRoots(ctx, &UniverseID{
 		AssetRef:  ref,
-		ProofType: entities.ProofTypeIssuance,
+		ProofType: ProofTypeIssuance,
 	})
 	if err != nil {
 		return false, err
@@ -293,7 +295,7 @@ func (s *Wallet) assetKnown(ctx context.Context,
 //
 // This is a convenience method that combines DeriveScriptKey and
 // DeriveInternalKey into a single call.
-func (s *Wallet) DeriveKeys(ctx context.Context) (*entities.DerivedKeys,
+func (s *Wallet) DeriveKeys(ctx context.Context) (*DerivedKeys,
 	error) {
 
 	scriptKey, err := s.client.DeriveScriptKey(ctx)
@@ -306,7 +308,7 @@ func (s *Wallet) DeriveKeys(ctx context.Context) (*entities.DerivedKeys,
 		return nil, wrapErr("DeriveKeys", err)
 	}
 
-	return &entities.DerivedKeys{
+	return &DerivedKeys{
 		ScriptKey:   *scriptKey,
 		InternalKey: *internalKey,
 	}, nil
@@ -320,7 +322,7 @@ func (s *Wallet) DeriveKeys(ctx context.Context) (*entities.DerivedKeys,
 // CollectionRef; use ListCollections for collection-level rows. Amount filters
 // are applied after this high-level aggregation.
 func (s *Wallet) ListAssets(ctx context.Context,
-	req *entities.ListAssetsRequest) ([]*entities.Asset, error) {
+	req *ListAssetsRequest) ([]*Asset, error) {
 
 	records, err := s.listAssetRecords(ctx, listAssetsToRecordsReq(req))
 	if err != nil {
@@ -335,7 +337,7 @@ func (s *Wallet) ListAssets(ctx context.Context,
 // A collection is a group of NFT assets. It is not returned by ListAssets as an
 // Asset because it is not itself transferable or spendable.
 func (s *Wallet) ListCollections(ctx context.Context,
-	req *entities.ListCollectionsRequest) ([]*entities.Collection, error) {
+	req *ListCollectionsRequest) ([]*Collection, error) {
 
 	records, err := s.listAssetRecords(ctx, listCollectionsToRecordsReq(req))
 	if err != nil {
@@ -350,7 +352,7 @@ func (s *Wallet) ListCollections(ctx context.Context,
 // This is the issuer/admin/debug companion to ListAssets. It intentionally
 // excludes NFTs and collections.
 func (s *Wallet) ListIssuances(ctx context.Context,
-	req *entities.ListIssuancesRequest) ([]*entities.Issuance, error) {
+	req *ListIssuancesRequest) ([]*Issuance, error) {
 
 	records, err := s.listAssetRecords(ctx, listIssuancesToRecordsReq(req))
 	if err != nil {
@@ -366,16 +368,16 @@ func (s *Wallet) ListIssuances(ctx context.Context,
 // Each returned Asset uses the concrete NFT asset-ID AssetRef and has
 // CollectionRef set to the collection AssetRef.
 func (s *Wallet) ListCollectionItems(ctx context.Context,
-	req *entities.ListCollectionItemsRequest) ([]*entities.Asset, error) {
+	req *ListCollectionItemsRequest) ([]*Asset, error) {
 
 	records, err := s.listAssetRecords(ctx, listCollectionItemsToRecordsReq(req))
 	if err != nil {
 		return nil, wrapErr("ListCollectionItems", err)
 	}
 
-	items := make([]*entities.Asset, 0, len(records))
+	items := make([]*Asset, 0, len(records))
 	for _, asset := range assetsFromRecords(records) {
-		if asset.Type != entities.AssetTypeCollectible ||
+		if asset.Type != AssetTypeCollectible ||
 			asset.CollectionRef == nil {
 
 			continue
@@ -389,33 +391,33 @@ func (s *Wallet) ListCollectionItems(ctx context.Context,
 
 // ListTransfers returns high-level wallet transfers keyed by AssetRef.
 func (s *Wallet) ListTransfers(ctx context.Context,
-	req *entities.ListTransfersRequest) ([]*entities.Transfer, error) {
+	req *ListTransfersRequest) ([]*Transfer, error) {
 
 	rawTransfers, err := s.client.ListTransfers(ctx, req)
 	if err != nil {
 		return nil, wrapErr("ListTransfers", err)
 	}
 
-	transfers := make([]*entities.Transfer, 0, len(rawTransfers))
+	transfers := make([]*Transfer, 0, len(rawTransfers))
 	for _, raw := range rawTransfers {
 		if raw == nil {
 			continue
 		}
 
-		transfers = append(transfers, entities.NewTransfer(raw))
+		transfers = append(transfers, NewTransfer(raw))
 	}
 
 	return transfers, nil
 }
 
 func (s *Wallet) listAssetRecords(ctx context.Context,
-	req *entities.ListAssetsRequest) ([]*entities.AssetRecord, error) {
+	req *ListAssetsRequest) ([]*AssetRecord, error) {
 
 	return s.client.ListAssetRecords(ctx, req)
 }
 
 func listAssetsToRecordsReq(
-	req *entities.ListAssetsRequest) *entities.ListAssetsRequest {
+	req *ListAssetsRequest) *ListAssetsRequest {
 
 	if req == nil {
 		return nil
@@ -429,37 +431,37 @@ func listAssetsToRecordsReq(
 }
 
 func listIssuancesToRecordsReq(
-	req *entities.ListIssuancesRequest) *entities.ListAssetsRequest {
+	req *ListIssuancesRequest) *ListAssetsRequest {
 
 	if req == nil {
 		return nil
 	}
 
-	return &entities.ListAssetsRequest{
+	return &ListAssetsRequest{
 		AssetRef: req.AssetRef,
 	}
 }
 
 func listCollectionsToRecordsReq(
-	req *entities.ListCollectionsRequest) *entities.ListAssetsRequest {
+	req *ListCollectionsRequest) *ListAssetsRequest {
 
 	if req == nil {
 		return nil
 	}
 
-	return &entities.ListAssetsRequest{
+	return &ListAssetsRequest{
 		AssetRef: req.AssetRef,
 	}
 }
 
 func listCollectionItemsToRecordsReq(
-	req *entities.ListCollectionItemsRequest) *entities.ListAssetsRequest {
+	req *ListCollectionItemsRequest) *ListAssetsRequest {
 
 	if req == nil {
 		return nil
 	}
 
-	recordReq := &entities.ListAssetsRequest{}
+	recordReq := &ListAssetsRequest{}
 	switch {
 	case req.CollectionRef != nil:
 		recordReq.AssetRef = req.CollectionRef
@@ -471,11 +473,11 @@ func listCollectionItemsToRecordsReq(
 }
 
 type assetAccumulator struct {
-	asset      *entities.Asset
-	seenNFTIDs map[entities.AssetID]struct{}
+	asset      *Asset
+	seenNFTIDs map[AssetID]struct{}
 }
 
-func assetsFromRecords(records []*entities.AssetRecord) []*entities.Asset {
+func assetsFromRecords(records []*AssetRecord) []*Asset {
 	accs := make(map[string]*assetAccumulator)
 	order := make([]string, 0, len(records))
 
@@ -496,9 +498,9 @@ func assetsFromRecords(records []*entities.AssetRecord) []*entities.Asset {
 			order = append(order, key)
 		}
 
-		if record.Genesis.Type == entities.AssetTypeCollectible {
+		if record.Genesis.Type == AssetTypeCollectible {
 			if acc.seenNFTIDs == nil {
-				acc.seenNFTIDs = make(map[entities.AssetID]struct{})
+				acc.seenNFTIDs = make(map[AssetID]struct{})
 			}
 
 			if _, ok := acc.seenNFTIDs[record.Genesis.IssuanceID]; ok {
@@ -513,7 +515,7 @@ func assetsFromRecords(records []*entities.AssetRecord) []*entities.Asset {
 		)
 	}
 
-	assets := make([]*entities.Asset, 0, len(order))
+	assets := make([]*Asset, 0, len(order))
 	for _, key := range order {
 		assets = append(assets, accs[key].asset)
 	}
@@ -521,14 +523,14 @@ func assetsFromRecords(records []*entities.AssetRecord) []*entities.Asset {
 	return assets
 }
 
-func filterAssetsByAmount(assets []*entities.Asset,
-	req *entities.ListAssetsRequest) []*entities.Asset {
+func filterAssetsByAmount(assets []*Asset,
+	req *ListAssetsRequest) []*Asset {
 
 	if req == nil || (req.MinAmount == 0 && req.MaxAmount == 0) {
 		return assets
 	}
 
-	filtered := make([]*entities.Asset, 0, len(assets))
+	filtered := make([]*Asset, 0, len(assets))
 	for _, asset := range assets {
 		if asset == nil {
 			continue
@@ -547,16 +549,16 @@ func filterAssetsByAmount(assets []*entities.Asset,
 	return filtered
 }
 
-func assetFromRecord(record *entities.AssetRecord) *entities.Asset {
+func assetFromRecord(record *AssetRecord) *Asset {
 	ref := record.AssetRef
-	var collectionRef *entities.AssetRef
-	if record.Genesis.Type == entities.AssetTypeCollectible && ref.IsGroupRef() {
+	var collectionRef *AssetRef
+	if record.Genesis.Type == AssetTypeCollectible && ref.IsGroupRef() {
 		collRef := ref
 		collectionRef = &collRef
-		ref = entities.AssetRefFromAssetID(record.Genesis.IssuanceID)
+		ref = AssetRefFromAssetID(record.Genesis.IssuanceID)
 	}
 
-	return &entities.Asset{
+	return &Asset{
 		AssetRef:      ref,
 		Type:          record.Genesis.Type,
 		Name:          record.Genesis.Tag,
@@ -566,19 +568,19 @@ func assetFromRecord(record *entities.AssetRecord) *entities.Asset {
 }
 
 type collectionAccumulator struct {
-	collection *entities.Collection
-	itemIDs    map[entities.AssetID]struct{}
+	collection *Collection
+	itemIDs    map[AssetID]struct{}
 }
 
 func collectionsFromRecords(
-	records []*entities.AssetRecord) []*entities.Collection {
+	records []*AssetRecord) []*Collection {
 
 	accs := make(map[string]*collectionAccumulator)
 	order := make([]string, 0, len(records))
 
 	for _, record := range records {
 		if record == nil ||
-			record.Genesis.Type != entities.AssetTypeCollectible ||
+			record.Genesis.Type != AssetTypeCollectible ||
 			!record.AssetRef.IsGroupRef() {
 
 			continue
@@ -588,10 +590,10 @@ func collectionsFromRecords(
 		acc, ok := accs[key]
 		if !ok {
 			acc = &collectionAccumulator{
-				collection: &entities.Collection{
+				collection: &Collection{
 					AssetRef: record.AssetRef,
 				},
-				itemIDs: make(map[entities.AssetID]struct{}),
+				itemIDs: make(map[AssetID]struct{}),
 			}
 			accs[key] = acc
 			order = append(order, key)
@@ -601,7 +603,7 @@ func collectionsFromRecords(
 		acc.collection.ItemCount = uint64(len(acc.itemIDs))
 	}
 
-	collections := make([]*entities.Collection, 0, len(order))
+	collections := make([]*Collection, 0, len(order))
 	for _, key := range order {
 		collections = append(collections, accs[key].collection)
 	}
@@ -610,18 +612,18 @@ func collectionsFromRecords(
 }
 
 type issuanceAccumulator struct {
-	issuance *entities.Issuance
+	issuance *Issuance
 }
 
 func issuancesFromRecords(
-	records []*entities.AssetRecord) []*entities.Issuance {
+	records []*AssetRecord) []*Issuance {
 
 	accs := make(map[string]*issuanceAccumulator)
 	order := make([]string, 0, len(records))
 
 	for _, record := range records {
 		if record == nil ||
-			record.Genesis.Type != entities.AssetTypeNormal {
+			record.Genesis.Type != AssetTypeNormal {
 
 			continue
 		}
@@ -631,7 +633,7 @@ func issuancesFromRecords(
 		acc, ok := accs[key]
 		if !ok {
 			acc = &issuanceAccumulator{
-				issuance: &entities.Issuance{
+				issuance: &Issuance{
 					AssetRef:   record.AssetRef,
 					IssuanceID: record.Genesis.IssuanceID,
 					Name:       record.Genesis.Tag,
@@ -647,7 +649,7 @@ func issuancesFromRecords(
 		)
 	}
 
-	issuances := make([]*entities.Issuance, 0, len(order))
+	issuances := make([]*Issuance, 0, len(order))
 	for _, key := range order {
 		issuances = append(issuances, accs[key].issuance)
 	}
@@ -671,13 +673,13 @@ func addSaturatingUint64(a, b uint64) uint64 {
 // issuance/tranche and exports one proof entry per asset output. For a single
 // NFT/collectible or ungrouped asset-ID ref this normally returns one entry.
 func (s *Wallet) ExportProof(ctx context.Context,
-	ref entities.AssetRef) (*entities.ProofBundle, error) {
+	ref AssetRef) (*ProofBundle, error) {
 
 	if err := ref.Validate(); err != nil {
 		return nil, wrapErr("ExportProof", err)
 	}
 
-	assets, err := s.listAssetRecords(ctx, &entities.ListAssetsRequest{
+	assets, err := s.listAssetRecords(ctx, &ListAssetsRequest{
 		AssetRef: &ref,
 	})
 	if err != nil {
@@ -690,9 +692,9 @@ func (s *Wallet) ExportProof(ctx context.Context,
 		))
 	}
 
-	bundle := &entities.ProofBundle{
+	bundle := &ProofBundle{
 		AssetRef: ref,
-		Entries:  make([]entities.ProofEntry, 0, len(assets)),
+		Entries:  make([]ProofEntry, 0, len(assets)),
 	}
 
 	for _, asset := range assets {
@@ -701,7 +703,7 @@ func (s *Wallet) ExportProof(ctx context.Context,
 		}
 
 		issuanceID := asset.Genesis.IssuanceID
-		proofRef := entities.AssetRefFromAssetID(issuanceID)
+		proofRef := AssetRefFromAssetID(issuanceID)
 		proof, err := s.exportProofFile(
 			ctx, proofRef, asset.ScriptKey.PubKey, nil,
 			"ExportProof",
@@ -716,7 +718,7 @@ func (s *Wallet) ExportProof(ctx context.Context,
 			))
 		}
 
-		bundle.Entries = append(bundle.Entries, entities.ProofEntry{
+		bundle.Entries = append(bundle.Entries, ProofEntry{
 			AssetRef:   proofBundleEntryRef(ref, asset),
 			IssuanceID: issuanceID,
 			ScriptKey:  asset.ScriptKey.PubKey,
@@ -739,8 +741,8 @@ func (s *Wallet) ExportProof(ctx context.Context,
 // This is the advanced/legacy escape hatch that maps closely to tapd's proof
 // RPC. Most application code should use ExportProof with an AssetRef instead.
 func (s *Wallet) ExportProofFile(ctx context.Context,
-	ref entities.AssetRef, scriptKey entities.PubKey,
-	outpoint *entities.Outpoint) (*entities.ProofFile, error) {
+	ref AssetRef, scriptKey PubKey,
+	outpoint *Outpoint) (*ProofFile, error) {
 
 	return s.exportProofFile(
 		ctx, ref, scriptKey, outpoint, "ExportProofFile",
@@ -748,8 +750,8 @@ func (s *Wallet) ExportProofFile(ctx context.Context,
 }
 
 func (s *Wallet) exportProofFile(ctx context.Context,
-	ref entities.AssetRef, scriptKey entities.PubKey,
-	outpoint *entities.Outpoint, op string) (*entities.ProofFile, error) {
+	ref AssetRef, scriptKey PubKey,
+	outpoint *Outpoint, op string) (*ProofFile, error) {
 
 	proof, err := s.client.ExportProof(ctx, ref, scriptKey, outpoint)
 	if err != nil {
@@ -763,7 +765,7 @@ func (s *Wallet) exportProofFile(ctx context.Context,
 // resulting wallet transfers. The caller only supplies the bundle; concrete
 // issuance IDs needed by tapd are decoded and registered internally.
 func (s *Wallet) ImportProof(ctx context.Context,
-	bundle *entities.ProofBundle) ([]*entities.RegisteredAsset, error) {
+	bundle *ProofBundle) ([]*RegisteredAsset, error) {
 
 	if bundle == nil || len(bundle.Entries) == 0 {
 		return nil, wrapErr("ImportProof", ErrIncompleteProofBundle)
@@ -779,10 +781,10 @@ func (s *Wallet) ImportProof(ctx context.Context,
 		}
 	}
 
-	registered := make([]*entities.RegisteredAsset, 0, len(bundle.Entries))
+	registered := make([]*RegisteredAsset, 0, len(bundle.Entries))
 	for idx := range bundle.Entries {
 		entry := bundle.Entries[idx]
-		reg, err := s.importProofFile(ctx, &entities.ProofFile{
+		reg, err := s.importProofFile(ctx, &ProofFile{
 			RawProofFile: entry.ProofFile,
 		}, "ImportProof")
 		if err != nil {
@@ -803,13 +805,13 @@ func (s *Wallet) ImportProof(ctx context.Context,
 //
 // Returns the registered asset details.
 func (s *Wallet) ImportProofFile(ctx context.Context,
-	proofFile *entities.ProofFile) (*entities.RegisteredAsset, error) {
+	proofFile *ProofFile) (*RegisteredAsset, error) {
 
 	return s.importProofFile(ctx, proofFile, "ImportProofFile")
 }
 
 func (s *Wallet) importProofFile(ctx context.Context,
-	proofFile *entities.ProofFile, op string) (*entities.RegisteredAsset,
+	proofFile *ProofFile, op string) (*RegisteredAsset,
 	error) {
 
 	if proofFile == nil || len(proofFile.RawProofFile) == 0 {
@@ -828,7 +830,7 @@ func (s *Wallet) importProofFile(ctx context.Context,
 	}
 
 	// Step 2: Decode and insert each proof into the universe.
-	var lastDecoded *entities.DecodedProof
+	var lastDecoded *DecodedProof
 	for _, rawProof := range rawProofs {
 		// TODO: Decode the proof locally without using the RPC client.
 		decoded, err := s.client.DecodeProof(ctx, rawProof)
@@ -869,15 +871,15 @@ func (s *Wallet) importProofFile(ctx context.Context,
 	return registered, nil
 }
 
-func proofBundleEntryRef(ref entities.AssetRef,
-	asset *entities.AssetRecord) entities.AssetRef {
+func proofBundleEntryRef(ref AssetRef,
+	asset *AssetRecord) AssetRef {
 
 	if asset == nil {
 		return ref
 	}
 
-	if ref.IsGroupRef() && asset.Genesis.Type == entities.AssetTypeCollectible {
-		return entities.AssetRefFromAssetID(asset.Genesis.IssuanceID)
+	if ref.IsGroupRef() && asset.Genesis.Type == AssetTypeCollectible {
+		return AssetRefFromAssetID(asset.Genesis.IssuanceID)
 	}
 
 	return ref
@@ -887,8 +889,8 @@ func proofBundleEntryRef(ref entities.AssetRef,
 //
 // The SDK supplies tapd's confirmation text internally so normal callers do
 // not need to carry the daemon's safety phrase through application code.
-func (s *Wallet) Burn(ctx context.Context, ref entities.AssetRef,
-	amount uint64, opts ...BurnOption) (*entities.Burn, error) {
+func (s *Wallet) Burn(ctx context.Context, ref AssetRef,
+	amount uint64, opts ...BurnOption) (*Burn, error) {
 
 	if amount == 0 {
 		return nil, wrapErr("Burn", ErrZeroAmount)
@@ -898,7 +900,7 @@ func (s *Wallet) Burn(ctx context.Context, ref entities.AssetRef,
 	}
 
 	o := applyBurnOptions(opts)
-	resp, err := s.client.BurnAsset(ctx, &entities.BurnAssetRequest{
+	resp, err := s.client.BurnAsset(ctx, &BurnAssetRequest{
 		AssetRef:         ref,
 		AmountToBurn:     amount,
 		ConfirmationText: burnConfirmationText,
@@ -908,10 +910,10 @@ func (s *Wallet) Burn(ctx context.Context, ref entities.AssetRef,
 		return nil, wrapErr("Burn", err)
 	}
 	if resp == nil {
-		resp = &entities.BurnAssetResponse{}
+		resp = &BurnAssetResponse{}
 	}
 
-	return &entities.Burn{
+	return &Burn{
 		AssetRef: ref,
 		Amount:   amount,
 		Note:     o.note,
@@ -929,7 +931,7 @@ func (s *Wallet) Burn(ctx context.Context, ref entities.AssetRef,
 // returned BurnRecord rows are already keyed by AssetRef, so application
 // code stays on the same logical handle it uses everywhere else.
 func (s *Wallet) ListBurns(ctx context.Context,
-	req *entities.ListBurnsRequest) ([]*entities.BurnRecord, error) {
+	req *ListBurnsRequest) ([]*BurnRecord, error) {
 
 	burns, err := s.client.ListBurns(ctx, req)
 	if err != nil {
@@ -955,12 +957,12 @@ func (s *Wallet) ListBurns(ctx context.Context,
 // SendMulti. For fine-grained control over the Fund → Sign → Commit →
 // Publish pipeline, use NewTxBuilder.
 func (s *Wallet) Send(ctx context.Context, addr string,
-	opts ...SendOption) (*entities.AssetTransfer, error) {
+	opts ...SendOption) (*AssetTransfer, error) {
 
 	// Decode locally: the SDK can read a bech32m Tap address from the
 	// string alone, so Send does not spend an RPC round-trip just to
 	// learn the embedded amount or address version.
-	decoded, err := entities.DecodeAddress(addr)
+	decoded, err := DecodeAddress(addr)
 	if err != nil {
 		return nil, wrapErr("Send", err)
 	}
@@ -974,13 +976,13 @@ func (s *Wallet) Send(ctx context.Context, addr string,
 	// WithAmount set: route through the explicit-amount path to
 	// preserve caller intent on the wire. Otherwise rely on the
 	// amount embedded in the address.
-	recipient := entities.RecipientWithEmbeddedAmount(addr)
+	recipient := RecipientWithEmbeddedAmount(addr)
 	if o.amount != 0 {
-		recipient = entities.RecipientWithAmount(addr, o.amount)
+		recipient = RecipientWithAmount(addr, o.amount)
 	}
 
-	req := &entities.SendAssetRequest{
-		Recipients:                []entities.Recipient{recipient},
+	req := &SendAssetRequest{
+		Recipients:                []Recipient{recipient},
 		FeeRate:                   o.feeRate,
 		Label:                     o.label,
 		SkipProofCourierPingCheck: o.skipProofCourierPingCheck,
@@ -997,7 +999,7 @@ func (s *Wallet) Send(ctx context.Context, addr string,
 // validateSendAmount enforces the amount vs. address-embedded-amount
 // invariant used by Send. The caller passes the decoded destination
 // address and the amount argument they intend to send.
-func validateSendAmount(addr *entities.Address, amount uint64) error {
+func validateSendAmount(addr *Address, amount uint64) error {
 	switch {
 	case addr.Amount == 0 && amount == 0:
 		return ErrAmountRequired
@@ -1016,16 +1018,16 @@ func validateSendAmount(addr *entities.Address, amount uint64) error {
 // transaction. Every recipient address must resolve to the same AssetRef.
 // Mixed-asset payout batches must be split by the caller.
 //
-// Use entities.RecipientWithAmount for explicit sender-chosen amounts and
-// entities.RecipientWithEmbeddedAmount for addresses that encode their amount.
+// Use RecipientWithAmount for explicit sender-chosen amounts and
+// RecipientWithEmbeddedAmount for addresses that encode their amount.
 // Mixing the two recipient forms is supported: SendMulti decodes each address
 // and echoes embedded values into the wire request so tapd sees a uniform
 // shape.
 //
 // For single-recipient sends, prefer Send for simplicity.
 func (s *Wallet) SendMulti(ctx context.Context,
-	recipients []entities.Recipient,
-	opts ...SendOption) (*entities.AssetTransfer, error) {
+	recipients []Recipient,
+	opts ...SendOption) (*AssetTransfer, error) {
 
 	if len(recipients) == 0 {
 		return nil, wrapErr("SendMulti", ErrNoRecipients)
@@ -1037,7 +1039,7 @@ func (s *Wallet) SendMulti(ctx context.Context,
 	}
 
 	o := applySendOptions(opts)
-	req := &entities.SendAssetRequest{
+	req := &SendAssetRequest{
 		Recipients:                normalised,
 		FeeRate:                   o.feeRate,
 		Label:                     o.label,
@@ -1052,8 +1054,8 @@ func (s *Wallet) SendMulti(ctx context.Context,
 	return transfer, nil
 }
 
-func validateSingleAssetSendBatch(addrs []*entities.Address) error {
-	var batchRef entities.AssetRef
+func validateSingleAssetSendBatch(addrs []*Address) error {
+	var batchRef AssetRef
 	for idx, addr := range addrs {
 		if addr == nil || addr.AssetRef.IsZero() {
 			return fmt.Errorf("%w: recipient %d has no asset ref",
@@ -1080,21 +1082,21 @@ func validateSingleAssetSendBatch(addrs []*entities.Address) error {
 }
 
 // getNetworkParams returns the HRP and coin type for a given network.
-func getNetworkParams(network entities.Network) (string, uint32) {
+func getNetworkParams(network Network) (string, uint32, error) {
 	switch network {
-	case entities.NetworkMainnet:
-		return vpsbt.MainnetHRP, 0 // BIP-44 coin type 0 for mainnet
-	case entities.NetworkTestnet:
-		return vpsbt.TestnetHRP, 1 // BIP-44 coin type 1 for testnet
-	case entities.NetworkTestnet4:
-		return vpsbt.Testnet4HRP, 1
-	case entities.NetworkSignet:
-		return vpsbt.SigNetHRP, 1
-	case entities.NetworkSimnet:
-		return vpsbt.SimNetHRP, 1
-	case entities.NetworkRegtest:
-		return vpsbt.RegTestHRP, 1
+	case NetworkMainnet:
+		return vpsbt.MainnetHRP, 0, nil
+	case NetworkTestnet:
+		return vpsbt.TestnetHRP, 1, nil
+	case NetworkTestnet4:
+		return vpsbt.Testnet4HRP, 1, nil
+	case NetworkSignet:
+		return vpsbt.SigNetHRP, 1, nil
+	case NetworkSimnet:
+		return vpsbt.SimNetHRP, 1, nil
+	case NetworkRegtest:
+		return vpsbt.RegTestHRP, 1, nil
 	default:
-		return vpsbt.RegTestHRP, 1 // Default to regtest
+		return "", 0, fmt.Errorf("unsupported network: %s", network)
 	}
 }

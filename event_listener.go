@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lightninglabs/tap-sdk/entities"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -36,13 +35,13 @@ const (
 // have no handler registered.
 type EventHandler struct {
 	// OnReceive is called for each incoming asset transfer event.
-	OnReceive func(ctx context.Context, event *entities.ReceiveEvent)
+	OnReceive func(ctx context.Context, event *ReceiveEvent)
 
 	// OnSend is called for each outgoing asset transfer event.
-	OnSend func(ctx context.Context, event *entities.SendEvent)
+	OnSend func(ctx context.Context, event *SendEvent)
 
 	// OnMint is called for each minting batch lifecycle event.
-	OnMint func(ctx context.Context, event *entities.MintEvent)
+	OnMint func(ctx context.Context, event *MintEvent)
 
 	// OnError is called when a stream encounters a non-recoverable
 	// error after all retry attempts are exhausted, or when a fatal
@@ -82,13 +81,13 @@ type EventListenerConfig struct {
 	BackoffMultiplier float64
 
 	// ReceiveFilter optionally restricts receive events.
-	ReceiveFilter *entities.SubscribeReceiveEventsRequest
+	ReceiveFilter *SubscribeReceiveEventsRequest
 
 	// SendFilter optionally restricts send events.
-	SendFilter *entities.SubscribeSendEventsRequest
+	SendFilter *SubscribeSendEventsRequest
 
 	// MintFilter optionally restricts mint events.
-	MintFilter *entities.SubscribeMintEventsRequest
+	MintFilter *SubscribeMintEventsRequest
 }
 
 // EventListenerOption is a functional option for configuring
@@ -125,7 +124,7 @@ func WithBackoffMultiplier(m float64) EventListenerOption {
 
 // WithReceiveFilter sets the receive event subscription filter.
 func WithReceiveFilter(
-	f *entities.SubscribeReceiveEventsRequest) EventListenerOption {
+	f *SubscribeReceiveEventsRequest) EventListenerOption {
 
 	return func(c *EventListenerConfig) {
 		c.ReceiveFilter = f
@@ -134,7 +133,7 @@ func WithReceiveFilter(
 
 // WithSendFilter sets the send event subscription filter.
 func WithSendFilter(
-	f *entities.SubscribeSendEventsRequest) EventListenerOption {
+	f *SubscribeSendEventsRequest) EventListenerOption {
 
 	return func(c *EventListenerConfig) {
 		c.SendFilter = f
@@ -143,7 +142,7 @@ func WithSendFilter(
 
 // WithMintFilter sets the mint event subscription filter.
 func WithMintFilter(
-	f *entities.SubscribeMintEventsRequest) EventListenerOption {
+	f *SubscribeMintEventsRequest) EventListenerOption {
 
 	return func(c *EventListenerConfig) {
 		c.MintFilter = f
@@ -343,7 +342,7 @@ func (l *EventListener) subscribeReceive(
 
 	filter := l.config.ReceiveFilter
 	if filter == nil {
-		filter = &entities.SubscribeReceiveEventsRequest{}
+		filter = &SubscribeReceiveEventsRequest{}
 	}
 
 	eventCh, errCh, err := l.client.SubscribeReceiveEvents(
@@ -354,8 +353,8 @@ func (l *EventListener) subscribeReceive(
 	}
 
 	return drainEvents(ctx, eventCh, errCh,
-		func(record *entities.ReceiveEventRecord) {
-			l.handler.OnReceive(ctx, entities.NewReceiveEvent(
+		func(record *ReceiveEventRecord) {
+			l.handler.OnReceive(ctx, NewReceiveEvent(
 				record,
 			))
 		},
@@ -370,7 +369,7 @@ func (l *EventListener) subscribeSend(
 
 	filter := l.config.SendFilter
 	if filter == nil {
-		filter = &entities.SubscribeSendEventsRequest{}
+		filter = &SubscribeSendEventsRequest{}
 	}
 
 	eventCh, errCh, err := l.client.SubscribeSendEvents(
@@ -381,8 +380,8 @@ func (l *EventListener) subscribeSend(
 	}
 
 	return drainEvents(ctx, eventCh, errCh,
-		func(record *entities.SendEventRecord) {
-			l.handler.OnSend(ctx, entities.NewSendEvent(record))
+		func(record *SendEventRecord) {
+			l.handler.OnSend(ctx, NewSendEvent(record))
 		},
 	)
 }
@@ -393,7 +392,7 @@ func (l *EventListener) subscribeMint(
 
 	filter := l.config.MintFilter
 	if filter == nil {
-		filter = &entities.SubscribeMintEventsRequest{}
+		filter = &SubscribeMintEventsRequest{}
 	}
 
 	eventCh, errCh, err := l.client.SubscribeMintEvents(
@@ -404,7 +403,7 @@ func (l *EventListener) subscribeMint(
 	}
 
 	return drainEvents(ctx, eventCh, errCh,
-		func(e *entities.MintEvent) {
+		func(e *MintEvent) {
 			l.handler.OnMint(ctx, e)
 		},
 	)

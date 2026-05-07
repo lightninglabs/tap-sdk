@@ -12,9 +12,7 @@ import (
 	"time"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
-	"github.com/lightninglabs/tap-sdk/entities"
 	tapgrpc "github.com/lightninglabs/tap-sdk/grpc"
-	"github.com/lightninglabs/tap-sdk/macaroon"
 	taprest "github.com/lightninglabs/tap-sdk/rest"
 	"github.com/stretchr/testify/require"
 )
@@ -158,10 +156,10 @@ func NewTestHarnessWithTransport(t testing.TB,
 		)
 	}
 
-	aliceWallet := tapsdk.NewWallet(aliceClient, entities.NetworkRegtest)
+	aliceWallet := tapsdk.NewWallet(aliceClient, tapsdk.NetworkRegtest)
 	bobWallet := tapsdk.NewWallet(
 		bobClient,
-		entities.NetworkRegtest,
+		tapsdk.NetworkRegtest,
 		bobWalletOpt,
 	)
 
@@ -198,9 +196,9 @@ func newTapdClient(t testing.TB, transport Transport,
 	case TransportGRPC:
 		cfg := &tapgrpc.Config{
 			Host:     envOr(spec.grpcHostEnv, spec.defaultGRPCHost),
-			Network:  entities.NetworkRegtest,
+			Network:  tapsdk.NetworkRegtest,
 			TLS:      tapgrpc.TLSFromPath(tlsPath),
-			Macaroon: macaroon.FromPath(macaroonPath),
+			Macaroon: tapsdk.MacaroonFromPath(macaroonPath),
 		}
 
 		client, err := tapgrpc.NewClient(cfg)
@@ -212,9 +210,9 @@ func newTapdClient(t testing.TB, transport Transport,
 	case TransportREST:
 		cfg := &taprest.Config{
 			BaseURL:  envOr(spec.restHostEnv, spec.defaultRESTHost),
-			Network:  entities.NetworkRegtest,
+			Network:  tapsdk.NetworkRegtest,
 			TLS:      taprest.TLSFromPath(tlsPath),
-			Macaroon: macaroon.FromPath(macaroonPath),
+			Macaroon: tapsdk.MacaroonFromPath(macaroonPath),
 			Timeout:  defaultRESTTimeout,
 		}
 
@@ -250,14 +248,14 @@ func (h *TestHarness) WaitForSync(t testing.TB, ctx context.Context,
 // event yet (#81 item 1).
 func (h *TestHarness) WaitForAssetByTag(t testing.TB, ctx context.Context,
 	client tapsdk.Client, tag string,
-	timeout time.Duration) *entities.AssetRecord {
+	timeout time.Duration) *tapsdk.AssetRecord {
 
 	t.Helper()
 
-	var found *entities.AssetRecord
+	var found *tapsdk.AssetRecord
 	require.Eventually(t, func() bool {
 		assets, err := client.ListAssetRecords(ctx,
-			&entities.ListAssetsRequest{},
+			&tapsdk.ListAssetsRequest{},
 		)
 		if err != nil {
 			return false
@@ -279,7 +277,7 @@ func (h *TestHarness) WaitForAssetByTag(t testing.TB, ctx context.Context,
 // WaitForBalance polls Wallet.GetBalance until the given asset reaches the
 // expected amount.
 func (h *TestHarness) WaitForBalance(t testing.TB, ctx context.Context,
-	wallet *tapsdk.Wallet, ref entities.AssetRef, amount uint64,
+	wallet *tapsdk.Wallet, ref tapsdk.AssetRef, amount uint64,
 	timeout time.Duration) uint64 {
 
 	t.Helper()
@@ -324,7 +322,7 @@ func (h *TestHarness) WaitForNoActiveMintBatch(t testing.TB,
 	var lastStatus string
 	require.Eventuallyf(t, func() bool {
 		batches, err := client.ListBatches(ctx,
-			&entities.ListBatchesRequest{},
+			&tapsdk.ListBatchesRequest{},
 		)
 		if err != nil {
 			lastStatus = fmt.Sprintf(
@@ -354,12 +352,12 @@ func (h *TestHarness) WaitForNoActiveMintBatch(t testing.TB,
 	)
 }
 
-func mintBatchActive(state entities.BatchState) bool {
+func mintBatchActive(state tapsdk.BatchState) bool {
 	switch state {
-	case entities.BatchStatePending,
-		entities.BatchStateFrozen,
-		entities.BatchStateCommitted,
-		entities.BatchStateBroadcast:
+	case tapsdk.BatchStatePending,
+		tapsdk.BatchStateFrozen,
+		tapsdk.BatchStateCommitted,
+		tapsdk.BatchStateBroadcast:
 
 		return true
 
@@ -372,12 +370,12 @@ func mintBatchActive(state entities.BatchState) bool {
 // ready to bootstrap the requested asset.
 func (h *TestHarness) WaitForReceiveAddress(
 	t testing.TB, ctx context.Context, wallet *tapsdk.Wallet,
-	ref entities.AssetRef, timeout time.Duration,
-) *entities.Address {
+	ref tapsdk.AssetRef, timeout time.Duration,
+) *tapsdk.Address {
 
 	t.Helper()
 
-	var addr *entities.Address
+	var addr *tapsdk.Address
 	var lastStatus string
 	require.Eventuallyf(t, func() bool {
 		candidate, err := wallet.NewReceiveAddress(ctx, ref)
@@ -407,14 +405,14 @@ func (h *TestHarness) EnableUniverseBootstrap(t testing.TB,
 	ctx context.Context) {
 	t.Helper()
 
-	globalSync := []entities.GlobalFederationSyncConfig{
+	globalSync := []tapsdk.GlobalFederationSyncConfig{
 		{
-			ProofType:       entities.ProofTypeIssuance,
+			ProofType:       tapsdk.ProofTypeIssuance,
 			AllowSyncInsert: true,
 			AllowSyncExport: true,
 		},
 		{
-			ProofType:       entities.ProofTypeTransfer,
+			ProofType:       tapsdk.ProofTypeTransfer,
 			AllowSyncInsert: true,
 			AllowSyncExport: true,
 		},
@@ -432,7 +430,7 @@ func (h *TestHarness) EnableUniverseBootstrap(t testing.TB,
 		defaultAliceUniverseHost,
 	)
 	err := h.BobClient.AddFederationServer(ctx,
-		[]entities.FederationServer{{Host: aliceUniverseHost}},
+		[]tapsdk.FederationServer{{Host: aliceUniverseHost}},
 	)
 	// AddFederationServer is not idempotent: a stack kept alive
 	// across tests (as compose does) will have Alice already
@@ -446,12 +444,12 @@ func (h *TestHarness) EnableUniverseBootstrap(t testing.TB,
 }
 
 func (h *TestHarness) syncUniverseAsset(ctx context.Context,
-	ref entities.AssetRef) error {
+	ref tapsdk.AssetRef) error {
 
 	_, err := h.BobWallet.NewUniverse().SyncAsset(
 		ctx, ref,
 		envOr("TAPD_ALICE_UNIVERSE_HOST", defaultAliceUniverseHost),
-		tapsdk.WithUniverseSyncMode(entities.SyncIssuanceOnly),
+		tapsdk.WithUniverseSyncMode(tapsdk.SyncIssuanceOnly),
 	)
 	return err
 }
@@ -463,7 +461,7 @@ func (h *TestHarness) syncUniverseAsset(ctx context.Context,
 // edge-triggered signal that tells Bob "you can now build addresses for
 // this group".
 func (h *TestHarness) CreateGroupedReceiveAddress(t testing.TB,
-	ctx context.Context, ref entities.AssetRef) *entities.Address {
+	ctx context.Context, ref tapsdk.AssetRef) *tapsdk.Address {
 
 	t.Helper()
 	require.True(t, ref.IsGroupRef(),
@@ -476,13 +474,13 @@ func (h *TestHarness) CreateGroupedReceiveAddress(t testing.TB,
 // once the actual receive address can be created. Fungible assets use a group
 // ref, while collectibles use an asset-ID ref.
 func (h *TestHarness) CreateReceiveAddress(t testing.TB,
-	ctx context.Context, ref entities.AssetRef) *entities.Address {
+	ctx context.Context, ref tapsdk.AssetRef) *tapsdk.Address {
 
 	t.Helper()
 
 	h.EnableUniverseBootstrap(t, ctx)
 
-	var addr *entities.Address
+	var addr *tapsdk.Address
 	var lastStatus string
 	require.Eventuallyf(t, func() bool {
 		err := h.syncUniverseAsset(ctx, ref)
@@ -523,8 +521,8 @@ func (h *TestHarness) CreateReceiveAddress(t testing.TB,
 // CreateGroupedReceiveAddress, this polls because tapd lacks a
 // universe-sync-completion event (#81 item 3).
 func (h *TestHarness) CreateV2EmbeddedReceiveAddress(t testing.TB,
-	ctx context.Context, ref entities.AssetRef,
-	amount uint64) *entities.Address {
+	ctx context.Context, ref tapsdk.AssetRef,
+	amount uint64) *tapsdk.Address {
 
 	t.Helper()
 	require.True(t, ref.IsGroupRef(),
@@ -541,15 +539,15 @@ func (h *TestHarness) CreateV2EmbeddedReceiveAddress(t testing.TB,
 		"authmailbox+universerpc://"+defaultBobProofCourierHost,
 	)
 
-	v2 := entities.AddressVersionV2
-	req := &entities.NewAddressRequest{
+	v2 := tapsdk.AddressVersionV2
+	req := &tapsdk.NewAddressRequest{
 		AssetRef:         ref,
 		Amount:           amount,
 		AddressVersion:   &v2,
 		ProofCourierAddr: courier,
 	}
 
-	var addr *entities.Address
+	var addr *tapsdk.Address
 	var lastStatus string
 	require.Eventuallyf(t, func() bool {
 		if err := h.syncUniverseAsset(ctx, ref); err != nil {
@@ -579,7 +577,7 @@ func (h *TestHarness) CreateV2EmbeddedReceiveAddress(t testing.TB,
 		ref, lastObservation(lastStatus),
 	)
 
-	require.Equal(t, entities.AddressVersionV2, addr.AddressVersion)
+	require.Equal(t, tapsdk.AddressVersionV2, addr.AddressVersion)
 	require.Equal(t, amount, addr.Amount)
 
 	return addr
@@ -588,13 +586,13 @@ func (h *TestHarness) CreateV2EmbeddedReceiveAddress(t testing.TB,
 // WaitForProofFile waits until tapd exposes a proof file for a concrete asset
 // output.
 func (h *TestHarness) WaitForProofFile(t testing.TB, ctx context.Context,
-	wallet *tapsdk.Wallet, ref entities.AssetRef,
-	scriptKey entities.PubKey,
-	outpoint *entities.Outpoint) *entities.ProofFile {
+	wallet *tapsdk.Wallet, ref tapsdk.AssetRef,
+	scriptKey tapsdk.PubKey,
+	outpoint *tapsdk.Outpoint) *tapsdk.ProofFile {
 
 	t.Helper()
 
-	var proof *entities.ProofFile
+	var proof *tapsdk.ProofFile
 	var lastErr error
 	require.Eventuallyf(t, func() bool {
 		proof, lastErr = wallet.ExportProofFile(
@@ -673,7 +671,7 @@ func extractDockerFile(t testing.TB, container,
 
 // balanceTimeoutFor returns the timeout we use when waiting for a confirmed
 // wallet balance after minting.
-func balanceTimeoutFor(ref entities.AssetRef) time.Duration {
+func balanceTimeoutFor(ref tapsdk.AssetRef) time.Duration {
 	if ref.IsGroupRef() {
 		return defaultGroupBalanceTimeout
 	}

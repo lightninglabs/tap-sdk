@@ -1,13 +1,26 @@
 package tapsdk
 
 import (
+	"fmt"
 	"testing"
 
-	"github.com/lightninglabs/tap-sdk/rest"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+type statusError struct {
+	code codes.Code
+	msg  string
+}
+
+func (e statusError) Error() string {
+	return fmt.Sprintf("%s: %s", e.code, e.msg)
+}
+
+func (e statusError) GRPCStatus() *status.Status {
+	return status.New(e.code, e.msg)
+}
 
 func TestWrapErrNormalizesGRPCStatus(t *testing.T) {
 	tests := []struct {
@@ -66,10 +79,9 @@ func TestWrapErrNormalizesGRPCStatus(t *testing.T) {
 }
 
 func TestWrapErrNormalizesRESTStatus(t *testing.T) {
-	restErr := &rest.APIError{
-		StatusCode: 403,
-		GRPCCode:   codes.PermissionDenied,
-		Message:    "permission denied",
+	restErr := statusError{
+		code: codes.PermissionDenied,
+		msg:  "permission denied",
 	}
 
 	err := wrapErr("GetInfo", restErr)
@@ -115,4 +127,35 @@ func TestWrapErrNormalizesTapdUnknownMessages(t *testing.T) {
 			require.ErrorIs(t, err, tc.target)
 		})
 	}
+}
+
+func TestErrorStatusHelpers(t *testing.T) {
+	t.Parallel()
+
+	notFound := &Error{
+		Op:  "GetBalance",
+		Err: status.Error(codes.NotFound, "unknown asset"),
+	}
+	require.True(t, notFound.IsNotFound())
+	require.False(t, notFound.IsUnavailable())
+	require.False(t, notFound.IsInvalidArgument())
+	require.Equal(t, codes.NotFound, notFound.GRPCCode())
+
+	unavailable := &Error{
+		Err: status.Error(codes.Unavailable, "down"),
+	}
+	require.True(t, unavailable.IsUnavailable())
+	require.Equal(t, codes.Unavailable, unavailable.GRPCCode())
+
+	invalid := &Error{
+		Err: status.Error(codes.InvalidArgument, "bad request"),
+	}
+	require.True(t, invalid.IsInvalidArgument())
+	require.Equal(t, codes.InvalidArgument, invalid.GRPCCode())
+
+	plain := &Error{Err: ErrAssetUnknown}
+	require.False(t, plain.IsNotFound())
+	require.False(t, plain.IsUnavailable())
+	require.False(t, plain.IsInvalidArgument())
+	require.Equal(t, codes.Unknown, plain.GRPCCode())
 }

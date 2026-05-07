@@ -3,23 +3,23 @@ package grpc
 import (
 	"fmt"
 
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/mintrpc"
 )
 
 // unmarshalReceiveEvent converts an RPC ReceiveEvent to the raw SDK record.
 func unmarshalReceiveEvent(
-	rpcEvent *taprpc.ReceiveEvent) (*entities.ReceiveEventRecord, error) {
+	rpcEvent *taprpc.ReceiveEvent) (*tapsdk.ReceiveEventRecord, error) {
 
 	if rpcEvent == nil {
 		return nil, fmt.Errorf("nil receive event")
 	}
 
-	event := &entities.ReceiveEventRecord{
+	event := &tapsdk.ReceiveEventRecord{
 		Timestamp:          rpcEvent.Timestamp,
 		Outpoint:           rpcEvent.Outpoint,
-		Status:             entities.AddressEventStatus(rpcEvent.Status),
+		Status:             tapsdk.AddressEventStatus(rpcEvent.Status),
 		ConfirmationHeight: rpcEvent.ConfirmationHeight,
 		Error:              rpcEvent.Error,
 	}
@@ -38,19 +38,19 @@ func unmarshalReceiveEvent(
 
 // unmarshalSendEvent converts an RPC SendEvent to the raw SDK record.
 func unmarshalSendEvent(
-	rpcEvent *taprpc.SendEvent) (*entities.SendEventRecord, error) {
+	rpcEvent *taprpc.SendEvent) (*tapsdk.SendEventRecord, error) {
 
 	if rpcEvent == nil {
 		return nil, fmt.Errorf("nil send event")
 	}
 
-	event := &entities.SendEventRecord{
+	event := &tapsdk.SendEventRecord{
 		Timestamp:     rpcEvent.Timestamp,
-		SendState:     entities.SendState(rpcEvent.SendState),
-		ParcelType:    entities.ParcelType(rpcEvent.ParcelType),
+		SendState:     tapsdk.SendState(rpcEvent.SendState),
+		ParcelType:    tapsdk.ParcelType(rpcEvent.ParcelType),
 		Error:         rpcEvent.Error,
 		TransferLabel: rpcEvent.TransferLabel,
-		NextSendState: entities.SendState(rpcEvent.NextSendState),
+		NextSendState: tapsdk.SendState(rpcEvent.NextSendState),
 	}
 
 	// Unmarshal recipient addresses.
@@ -109,14 +109,14 @@ func unmarshalSendEvent(
 // unmarshalAnchorTransaction converts an RPC AnchorTransaction to the
 // SDK type.
 func unmarshalAnchorTransaction(
-	rpcTx *taprpc.AnchorTransaction) (*entities.AnchorTransaction,
+	rpcTx *taprpc.AnchorTransaction) (*tapsdk.AnchorTransaction,
 	error) {
 
 	if rpcTx == nil {
 		return nil, fmt.Errorf("nil anchor transaction")
 	}
 
-	tx := &entities.AnchorTransaction{
+	tx := &tapsdk.AnchorTransaction{
 		AnchorPsbt:         rpcTx.AnchorPsbt,
 		ChangeOutputIndex:  rpcTx.ChangeOutputIndex,
 		ChainFeesSats:      rpcTx.ChainFeesSats,
@@ -141,13 +141,13 @@ func unmarshalAnchorTransaction(
 
 // unmarshalOutPoint converts an RPC OutPoint to an SDK Outpoint.
 func unmarshalOutPoint(
-	rpcOp *taprpc.OutPoint) (entities.Outpoint, error) {
+	rpcOp *taprpc.OutPoint) (tapsdk.Outpoint, error) {
 
 	if rpcOp == nil {
-		return entities.Outpoint{}, fmt.Errorf("nil outpoint")
+		return tapsdk.Outpoint{}, fmt.Errorf("nil outpoint")
 	}
 
-	var op entities.Outpoint
+	var op tapsdk.Outpoint
 	if len(rpcOp.Txid) != 32 {
 		return op, fmt.Errorf("invalid txid length: %d",
 			len(rpcOp.Txid))
@@ -160,15 +160,15 @@ func unmarshalOutPoint(
 
 // unmarshalMintEvent converts an RPC MintEvent to the SDK type.
 func unmarshalMintEvent(
-	rpcEvent *mintrpc.MintEvent) (*entities.MintEvent, error) {
+	rpcEvent *mintrpc.MintEvent) (*tapsdk.MintEvent, error) {
 
 	if rpcEvent == nil {
 		return nil, fmt.Errorf("nil mint event")
 	}
 
-	event := &entities.MintEvent{
+	event := &tapsdk.MintEvent{
 		Timestamp:  rpcEvent.Timestamp,
-		BatchState: entities.BatchState(rpcEvent.BatchState),
+		BatchState: tapsdk.BatchState(rpcEvent.BatchState),
 		Error:      rpcEvent.Error,
 	}
 

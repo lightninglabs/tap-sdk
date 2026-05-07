@@ -5,12 +5,12 @@ package itest
 import (
 	"testing"
 
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/stretchr/testify/require"
 )
 
-func requireAssetRefsContain(t testing.TB, refs []entities.AssetRef,
-	want entities.AssetRef) {
+func requireAssetRefsContain(t testing.TB, refs []tapsdk.AssetRef,
+	want tapsdk.AssetRef) {
 
 	t.Helper()
 
@@ -25,7 +25,7 @@ func requireAssetRefsContain(t testing.TB, refs []entities.AssetRef,
 }
 
 func requireTransferUsesAssetRef(t testing.TB,
-	transfer *entities.Transfer, want entities.AssetRef) {
+	transfer *tapsdk.Transfer, want tapsdk.AssetRef) {
 
 	t.Helper()
 
@@ -46,7 +46,7 @@ func requireTransferUsesAssetRef(t testing.TB,
 }
 
 func requireRawTransferUsesGroupRef(t testing.TB,
-	transfer *entities.AssetTransfer, want entities.AssetRef) {
+	transfer *tapsdk.AssetTransfer, want tapsdk.AssetRef) {
 
 	t.Helper()
 
@@ -72,15 +72,15 @@ func requireRawTransferUsesGroupRef(t testing.TB,
 }
 
 func requireRawTransferUsesTypedAssetRef(t testing.TB,
-	transfer *entities.AssetTransfer, want entities.AssetRef,
-	wantType entities.AssetType) {
+	transfer *tapsdk.AssetTransfer, want tapsdk.AssetRef,
+	wantType tapsdk.AssetType) {
 
 	t.Helper()
 
 	require.NotNil(t, transfer)
 	require.NotEmpty(t, transfer.Inputs)
 	for idx, input := range transfer.Inputs {
-		ref := entities.AssetRefFromTypedAsset(
+		ref := tapsdk.AssetRefFromTypedAsset(
 			input.IssuanceID, input.GroupKey, input.AssetType,
 		)
 		require.Truef(t, ref.Equivalent(want),
@@ -91,7 +91,7 @@ func requireRawTransferUsesTypedAssetRef(t testing.TB,
 
 	require.NotEmpty(t, transfer.Outputs)
 	for idx, output := range transfer.Outputs {
-		ref := entities.AssetRefFromTypedAsset(
+		ref := tapsdk.AssetRefFromTypedAsset(
 			output.IssuanceID, output.GroupKey, output.AssetType,
 		)
 		require.Truef(t, ref.Equivalent(want),

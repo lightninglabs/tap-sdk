@@ -3,12 +3,18 @@ package rest
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/lightninglabs/tap-sdk/macaroon"
@@ -19,6 +25,10 @@ const (
 	// macaroonHeader is the canonical HTTP header name used to pass
 	// the macaroon to the gRPC-gateway REST proxy.
 	macaroonHeader = "Grpc-Metadata-Macaroon"
+
+	// defaultTLSMinVersion is the minimum TLS version the client will
+	// accept when no explicit version is configured.
+	defaultTLSMinVersion = tls.VersionTLS12
 )
 
 // transport handles HTTP request execution with TLS and macaroon auth.
@@ -38,6 +48,10 @@ type transport struct {
 // newTransport creates a configured HTTP transport from the given config
 // and macaroon pouch.
 func newTransport(cfg *Config, macaroons macaroon.Pouch) (*transport, error) {
+	if err := validateBaseURL(cfg.BaseURL); err != nil {
+		return nil, err
+	}
+
 	tlsCfg, err := buildTLSConfig(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build TLS config: %w", err)
@@ -56,6 +70,21 @@ func newTransport(cfg *Config, macaroons macaroon.Pouch) (*transport, error) {
 		tlsCfg:    tlsCfg,
 		macaroons: macaroons,
 	}, nil
+}
+
+func validateBaseURL(baseURL string) error {
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return fmt.Errorf("invalid base URL: %w", err)
+	}
+	if u.Scheme != "https" {
+		return fmt.Errorf("unsupported base URL scheme: %s", u.Scheme)
+	}
+	if u.Host == "" {
+		return errors.New("base URL must include a host")
+	}
+
+	return nil
 }
 
 // apiError is the JSON structure returned by gRPC-gateway on error.
@@ -194,6 +223,11 @@ func grpcCodeFromGateway(code int) codes.Code {
 // buildTLSConfig creates a *tls.Config from the rest.Config's TLS
 // source, falling back to tapd's default tls.cert path when unset.
 func buildTLSConfig(cfg *Config) (*tls.Config, error) {
+	minVersion := cfg.TLSMinVersion
+	if minVersion == 0 {
+		minVersion = defaultTLSMinVersion
+	}
+
 	source := cfg.TLS
 	if source == nil {
 		if _, err := os.Stat(defaultTLSCertPath); err != nil {
@@ -205,5 +239,45 @@ func buildTLSConfig(cfg *Config) (*tls.Config, error) {
 		source = TLSFromPath(defaultTLSCertPath)
 	}
 
-	return source.tlsConfig()
+	tlsCfg, err := source.tlsConfig(minVersion)
+	if err != nil {
+		return nil, err
+	}
+
+	if cfg.TLSPinnedCertFingerprint != "" {
+		expected := strings.ToLower(strings.ReplaceAll(
+			cfg.TLSPinnedCertFingerprint, ":", "",
+		))
+
+		if _, err := hex.DecodeString(expected); err != nil ||
+			len(expected) != 64 {
+
+			return nil, fmt.Errorf("TLSPinnedCertFingerprint "+
+				"must be a 64-char hex SHA-256 digest, "+
+				"got %q", cfg.TLSPinnedCertFingerprint)
+		}
+
+		tlsCfg.VerifyPeerCertificate = func(
+			rawCerts [][]byte,
+			_ [][]*x509.Certificate) error {
+
+			if len(rawCerts) == 0 {
+				return errors.New("server presented " +
+					"no certificates")
+			}
+
+			digest := sha256.Sum256(rawCerts[0])
+			actual := hex.EncodeToString(digest[:])
+
+			if actual != expected {
+				return fmt.Errorf("certificate "+
+					"fingerprint mismatch: "+
+					"got %s, want %s", actual, expected)
+			}
+
+			return nil
+		}
+	}
+
+	return tlsCfg, nil
 }

@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
-	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,7 +17,7 @@ func TestGetInfo(t *testing.T) {
 
 		assertNode := func(
 			name string, client tapsdk.Client,
-		) *entities.Info {
+		) *tapsdk.Info {
 
 			t.Helper()
 

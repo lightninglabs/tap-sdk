@@ -7,7 +7,6 @@ import (
 	"time"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
-	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,13 +17,13 @@ func TestProtocolRecordSurface(t *testing.T) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
 		minted, err := h.MintAssetAndConfirm(t, ctx,
-			&entities.MintAsset{
-				AssetType:     entities.AssetTypeNormal,
+			&tapsdk.MintAsset{
+				AssetType:     tapsdk.AssetTypeNormal,
 				Name:          "surface-token",
 				InitialSupply: 100,
-				AssetMeta: &entities.AssetMeta{
+				AssetMeta: &tapsdk.AssetMeta{
 					Data: []byte(`{"sku":"SURFACE-1"}`),
-					Type: entities.AssetMetaTypeJSON,
+					Type: tapsdk.AssetMetaTypeJSON,
 				},
 			},
 		)
@@ -33,7 +32,7 @@ func TestProtocolRecordSurface(t *testing.T) {
 
 		// --- ListAssetRecords honors the AssetRef filter. -----------
 		assets, err := h.AliceClient.ListAssetRecords(ctx,
-			&entities.ListAssetsRequest{
+			&tapsdk.ListAssetsRequest{
 				AssetRef: &minted.Asset.AssetRef,
 			},
 		)
@@ -44,7 +43,7 @@ func TestProtocolRecordSurface(t *testing.T) {
 		}
 
 		filtered, err := h.AliceClient.ListAssetRecords(ctx,
-			&entities.ListAssetsRequest{
+			&tapsdk.ListAssetsRequest{
 				AssetRef:  &minted.Asset.AssetRef,
 				MinAmount: minted.Asset.Amount,
 				MaxAmount: minted.Asset.Amount,
@@ -54,7 +53,7 @@ func TestProtocolRecordSurface(t *testing.T) {
 		require.NotEmpty(t, filtered)
 
 		filtered, err = h.AliceClient.ListAssetRecords(ctx,
-			&entities.ListAssetsRequest{
+			&tapsdk.ListAssetsRequest{
 				AssetRef:  &minted.Asset.AssetRef,
 				MinAmount: minted.Asset.Amount + 1,
 			},
@@ -63,7 +62,7 @@ func TestProtocolRecordSurface(t *testing.T) {
 		require.Empty(t, filtered)
 
 		filtered, err = h.AliceClient.ListAssetRecords(ctx,
-			&entities.ListAssetsRequest{
+			&tapsdk.ListAssetsRequest{
 				AssetRef:  &minted.Asset.AssetRef,
 				MaxAmount: minted.Asset.Amount - 1,
 			},
@@ -73,7 +72,7 @@ func TestProtocolRecordSurface(t *testing.T) {
 
 		// --- ListUtxos surfaces managed UTXOs. ----------------------
 		utxos, err := h.AliceClient.ListUtxos(ctx,
-			&entities.ListUtxosRequest{},
+			&tapsdk.ListUtxosRequest{},
 		)
 		require.NoError(t, err)
 		require.NotEmpty(t, utxos)
@@ -85,12 +84,12 @@ func TestProtocolRecordSurface(t *testing.T) {
 
 		// --- FetchAssetMeta round-trips the JSON payload. -----------
 		meta, err := h.AliceClient.FetchAssetMeta(ctx,
-			&entities.FetchAssetMetaRequest{
+			&tapsdk.FetchAssetMetaRequest{
 				AssetRef: &minted.Asset.AssetRef,
 			},
 		)
 		require.NoError(t, err)
-		require.Equal(t, entities.AssetMetaTypeJSON, meta.Type)
+		require.Equal(t, tapsdk.AssetMetaTypeJSON, meta.Type)
 		require.JSONEq(t, `{"sku":"SURFACE-1"}`, string(meta.Data))
 	})
 }
@@ -101,8 +100,8 @@ func TestBurnAsset(t *testing.T) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
 		minted, err := h.MintAssetAndConfirm(t, ctx,
-			&entities.MintAsset{
-				AssetType: entities.AssetTypeNormal,
+			&tapsdk.MintAsset{
+				AssetType: tapsdk.AssetTypeNormal,
 				Name: uniqueEventLabel(
 					"burn-token-" + string(transport),
 				),
@@ -113,7 +112,7 @@ func TestBurnAsset(t *testing.T) {
 		require.True(t, minted.Asset.AssetRef.IsAssetIDRef())
 
 		resp, err := h.AliceClient.BurnAsset(ctx,
-			&entities.BurnAssetRequest{
+			&tapsdk.BurnAssetRequest{
 				AssetRef:         minted.Asset.AssetRef,
 				AmountToBurn:     100,
 				ConfirmationText: "assets will be destroyed",
@@ -130,7 +129,7 @@ func TestBurnAsset(t *testing.T) {
 		var burned uint64
 		require.Eventually(t, func() bool {
 			burns, err := h.AliceClient.ListBurns(ctx,
-				&entities.ListBurnsRequest{
+				&tapsdk.ListBurnsRequest{
 					AssetRef: &minted.Asset.AssetRef,
 				},
 			)
@@ -181,14 +180,14 @@ func TestBurnAssetByGroupKey(t *testing.T) {
 		require.Equal(t, uint64(400), remaining)
 
 		burns, err := h.AliceClient.ListBurns(ctx,
-			&entities.ListBurnsRequest{
+			&tapsdk.ListBurnsRequest{
 				AssetRef: &minted.Ref,
 			},
 		)
 		require.NoError(t, err)
 		require.NotEmpty(t, burns)
 		require.Equal(t, minted.Ref, burns[0].AssetRef)
-		require.Equal(t, entities.AssetTypeFungible, burns[0].Type)
+		require.Equal(t, tapsdk.AssetTypeFungible, burns[0].Type)
 	})
 }
 
@@ -205,7 +204,7 @@ func TestBurnCollectionItemUsesItemAssetRef(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, collection.Ref.IsGroupRef())
 
-		itemRef := entities.AssetRefFromAssetID(
+		itemRef := tapsdk.AssetRefFromAssetID(
 			collection.Asset.Genesis.IssuanceID,
 		)
 
@@ -220,10 +219,10 @@ func TestBurnCollectionItemUsesItemAssetRef(t *testing.T) {
 		h.MineBlocks(t, defaultMineBlocks)
 		h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
 
-		var burns []*entities.BurnRecord
+		var burns []*tapsdk.BurnRecord
 		require.Eventually(t, func() bool {
 			burns, err = h.AliceWallet.ListBurns(
-				ctx, &entities.ListBurnsRequest{
+				ctx, &tapsdk.ListBurnsRequest{
 					AssetRef: &collection.Ref,
 				},
 			)
@@ -234,7 +233,7 @@ func TestBurnCollectionItemUsesItemAssetRef(t *testing.T) {
 		require.NotEqual(t, collection.Ref, burns[0].AssetRef)
 		require.NotNil(t, burns[0].CollectionRef)
 		require.Equal(t, collection.Ref, *burns[0].CollectionRef)
-		require.Equal(t, entities.AssetTypeNFT, burns[0].Type)
+		require.Equal(t, tapsdk.AssetTypeNFT, burns[0].Type)
 		require.Equal(t, collection.Asset.Genesis.IssuanceID,
 			burns[0].IssuanceID)
 	})

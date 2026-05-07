@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -15,11 +14,11 @@ func TestNewReceiveAddress_DefaultsToV2GroupKey(t *testing.T) {
 	mc := new(mockClient)
 
 	groupKey := testKey(t, 21)
-	ref := entities.AssetRefFromGroupKey(groupKey)
+	ref := AssetRefFromGroupKey(groupKey)
 
-	expectedAddr := &entities.Address{Encoded: "tap1example"}
+	expectedAddr := &Address{Encoded: "tap1example"}
 	mc.On("NewAddr", ctx, mock.MatchedBy(func(
-		req *entities.NewAddressRequest) bool {
+		req *NewAddressRequest) bool {
 
 		if req == nil || req.AddressVersion == nil {
 			return false
@@ -27,11 +26,11 @@ func TestNewReceiveAddress_DefaultsToV2GroupKey(t *testing.T) {
 
 		return req.AssetRef == ref &&
 			*req.AddressVersion ==
-				entities.AddressVersionV2 &&
+				AddressVersionV2 &&
 			req.ProofCourierAddr == ""
 	})).Return(expectedAddr, nil)
 
-	wallet := NewWallet(mc, entities.NetworkRegtest)
+	wallet := NewWallet(mc, NetworkRegtest)
 
 	addr, err := wallet.NewReceiveAddress(ctx, ref)
 	require.NoError(t, err)
@@ -41,22 +40,22 @@ func TestNewReceiveAddress_DefaultsToV2GroupKey(t *testing.T) {
 }
 
 func TestNewReceiveAddress_CollectibleRetriesWithAmountOne(t *testing.T) {
-	var assetID entities.AssetID
+	var assetID AssetID
 	copy(assetID[:], []byte("collectible_asset_id_32_bytes_now"))
 
 	groupKey := testKey(t, 22)
 
 	tests := []struct {
 		name string
-		ref  entities.AssetRef
+		ref  AssetRef
 	}{
 		{
 			name: "item asset ID ref",
-			ref:  entities.AssetRefFromAssetID(assetID),
+			ref:  AssetRefFromAssetID(assetID),
 		},
 		{
 			name: "collection group ref",
-			ref:  entities.AssetRefFromGroupKey(groupKey),
+			ref:  AssetRefFromGroupKey(groupKey),
 		},
 	}
 
@@ -66,7 +65,7 @@ func TestNewReceiveAddress_CollectibleRetriesWithAmountOne(t *testing.T) {
 			mc := new(mockClient)
 
 			mc.On("NewAddr", ctx, mock.MatchedBy(func(
-				req *entities.NewAddressRequest) bool {
+				req *NewAddressRequest) bool {
 
 				if req == nil || req.AddressVersion == nil {
 					return false
@@ -74,18 +73,18 @@ func TestNewReceiveAddress_CollectibleRetriesWithAmountOne(t *testing.T) {
 
 				return req.AssetRef == tc.ref && req.Amount == 0 &&
 					*req.AddressVersion ==
-						entities.AddressVersionV2
-			})).Return((*entities.Address)(nil), errors.New(
+						AddressVersionV2
+			})).Return((*Address)(nil), errors.New(
 				"unable to make new addr: address: "+
 					"collectible asset amount not one",
 			)).Once()
 
-			expectedAddr := &entities.Address{
+			expectedAddr := &Address{
 				Encoded: "tap1collectible",
 				Amount:  1,
 			}
 			mc.On("NewAddr", ctx, mock.MatchedBy(func(
-				req *entities.NewAddressRequest) bool {
+				req *NewAddressRequest) bool {
 
 				if req == nil || req.AddressVersion == nil {
 					return false
@@ -93,10 +92,10 @@ func TestNewReceiveAddress_CollectibleRetriesWithAmountOne(t *testing.T) {
 
 				return req.AssetRef == tc.ref && req.Amount == 1 &&
 					*req.AddressVersion ==
-						entities.AddressVersionV2
+						AddressVersionV2
 			})).Return(expectedAddr, nil).Once()
 
-			wallet := NewWallet(mc, entities.NetworkRegtest)
+			wallet := NewWallet(mc, NetworkRegtest)
 
 			addr, err := wallet.NewReceiveAddress(ctx, tc.ref)
 			require.NoError(t, err)
@@ -112,12 +111,12 @@ func TestNewReceiveAddress_UsesDefaultProofCourierAddr(t *testing.T) {
 	mc := new(mockClient)
 
 	groupKey := testKey(t, 23)
-	ref := entities.AssetRefFromGroupKey(groupKey)
+	ref := AssetRefFromGroupKey(groupKey)
 
 	courierAddr := "authmailbox+universerpc://tapd.example:10029"
-	expectedAddr := &entities.Address{Encoded: "tap1example"}
+	expectedAddr := &Address{Encoded: "tap1example"}
 	mc.On("NewAddr", ctx, mock.MatchedBy(func(
-		req *entities.NewAddressRequest) bool {
+		req *NewAddressRequest) bool {
 
 		if req == nil || req.AddressVersion == nil {
 			return false
@@ -125,12 +124,12 @@ func TestNewReceiveAddress_UsesDefaultProofCourierAddr(t *testing.T) {
 
 		return req.AssetRef == ref &&
 			*req.AddressVersion ==
-				entities.AddressVersionV2 &&
+				AddressVersionV2 &&
 			req.ProofCourierAddr == courierAddr
 	})).Return(expectedAddr, nil)
 
 	wallet := NewWallet(
-		mc, entities.NetworkRegtest,
+		mc, NetworkRegtest,
 		WithDefaultProofCourierAddr(courierAddr),
 	)
 
@@ -146,13 +145,13 @@ func TestNewReceiveAddress_UsesAuthMailboxCourier(t *testing.T) {
 	mc := new(mockClient)
 
 	groupKey := testKey(t, 24)
-	ref := entities.AssetRefFromGroupKey(groupKey)
+	ref := AssetRefFromGroupKey(groupKey)
 
 	host := "tapd.example:10029"
 	proofCourierAddr := "authmailbox+universerpc://" + host
-	expectedAddr := &entities.Address{Encoded: "tap1example"}
+	expectedAddr := &Address{Encoded: "tap1example"}
 	mc.On("NewAddr", ctx, mock.MatchedBy(func(
-		req *entities.NewAddressRequest) bool {
+		req *NewAddressRequest) bool {
 
 		if req == nil || req.AddressVersion == nil {
 			return false
@@ -160,12 +159,12 @@ func TestNewReceiveAddress_UsesAuthMailboxCourier(t *testing.T) {
 
 		return req.AssetRef == ref &&
 			*req.AddressVersion ==
-				entities.AddressVersionV2 &&
+				AddressVersionV2 &&
 			req.ProofCourierAddr == proofCourierAddr
 	})).Return(expectedAddr, nil)
 
 	wallet := NewWallet(
-		mc, entities.NetworkRegtest,
+		mc, NetworkRegtest,
 		WithAuthMailboxCourier(host),
 	)
 

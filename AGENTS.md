@@ -19,12 +19,13 @@ tap-sdk/
 │   ├── wallet.go              — High-level Wallet entrypoint
 │   ├── tx_builder.go          — Address-based transfer builder
 │   ├── interactive_tx_builder.go — Interactive (keyless) transfer builder
+│   ├── asset.go              — Public asset, collection, and issuance types
 │   ├── clients.go             — Client interface definitions
 │   └── errors.go              — SDK error types and sentinels
-├── entities/                  — Domain types (pure Go, no proto deps)
-├── grpc/                      — gRPC client implementations (internal)
-├── vpsbt/                     — Virtual PSBT encoding
-├── codec/                     — Cryptographic utilities (alt-leaves, STXO)
+├── grpc/                      — gRPC client implementation
+├── rest/                      — REST client implementation
+├── internal/vpsbt/            — Virtual PSBT encoding
+├── internal/codec/            — Cryptographic utilities (alt-leaves, STXO)
 ├── macaroon/                  — Authentication helpers
 └── docs/                      — Design documents
     └── design/                — Architecture decision records
@@ -34,12 +35,12 @@ tap-sdk/
 
 1. **SDK types are the only public surface.** Users never import `taprpc`
    or other `taproot-assets` packages.
-2. **gRPC is an implementation detail.** All proto conversions happen at the
-   `grpc/` package boundary.
+2. **Transports are implementation details.** All proto conversions happen at
+   the `grpc/` and `rest/` package boundaries.
 3. **Wallet is the entrypoint.** High-level operations go through `Wallet`,
    low-level through the `Client` interface.
-4. **Entities are thin wrappers.** Fixed-size byte arrays with helper methods,
-   not heavy objects.
+4. **Public types live at the root.** Fixed-size byte arrays and business
+   structs are discoverable from the main `tapsdk` import.
 5. **The SDK is opinionated.** The public surface should not blindly mirror
    raw `taprpc` semantics when a cleaner Taproot Assets model exists.
 
@@ -117,7 +118,7 @@ not in every commit. A reader running `git log --oneline` should be
 able to skim the change set without drowning.
 
 Examples:
-- `entities: add FetchAsset request and response types`
+- `wallet: add FetchAsset request and response types`
 - `grpc: wrap ListBalances RPC`
 - `wallet: add high-level balance query method`
 - `multi: fix lint issues across packages`
@@ -137,7 +138,7 @@ Examples:
 
 When wrapping a new `tapd` RPC:
 
-1. Define SDK types in `entities/` (request, response, domain objects)
+1. Define SDK types in the root package (request, response, domain objects)
 2. Implement the gRPC call in the appropriate `grpc/` client
 3. Add marshal/unmarshal functions at the `grpc/` boundary
 4. Add the method to the appropriate interface in `clients.go`
@@ -153,13 +154,14 @@ When wrapping a new `tapd` RPC:
 
 ### Dependency Boundary
 
-`taprpc` types must never appear in exported signatures outside `grpc/`.
-The `grpc/` sub-client structs are unexported, and their internal helpers
-(macaroon auth, raw client access) must remain unexported to prevent
-`taprpc` types from leaking through embedding into `grpc.Client`.
+`taprpc` types must never appear in exported signatures outside transport
+packages. The `grpc/` and `rest/` sub-client structs are unexported, and their
+internal helpers must remain unexported to prevent `taprpc` types from leaking
+through embedding into transport clients.
 
-When adding new gRPC wrappers, ensure all proto-to-entity conversion happens
-inside `grpc/` and that test files outside `grpc/` only use `entities/` types.
+When adding new wrappers, ensure all proto-to-SDK conversion happens inside
+transport packages and that tests outside transport packages only use root SDK
+types.
 
 ## Success Metrics
 
