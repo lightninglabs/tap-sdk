@@ -26,10 +26,11 @@ func TestUTXOLeaseLifecycle(t *testing.T) {
 		amount := uint64(100)
 
 		funded, err := h.AliceClient.FundTransfer(ctx,
-			[]entities.Recipient{{
-				Address: addr.Encoded,
-				Amount:  amount,
-			}},
+			[]entities.Recipient{
+				entities.RecipientWithAmount(
+					addr.Encoded, amount,
+				),
+			},
 			nil,
 		)
 		require.NoError(t, err)

@@ -43,12 +43,12 @@ func TestTxBuilderEndToEnd(t *testing.T) {
 		require.NotEmpty(t, committed.AnchorPsbt)
 		require.NotEmpty(t, committed.VirtualPsbts)
 
-		packet, err := builder.Finish(ctx, false)
+		packet, err := builder.Finish(ctx)
 		require.NoError(t, err)
 		require.NotEmpty(t, packet.AnchorTransaction)
 		require.NotEmpty(t, packet.VirtualTransactions)
 
-		_, err = builder.Finish(ctx, false)
+		_, err = builder.Finish(ctx)
 		require.ErrorIs(t, err, tapsdk.ErrBuilderFinished)
 
 		h.MineBlocks(t, defaultMineBlocks)

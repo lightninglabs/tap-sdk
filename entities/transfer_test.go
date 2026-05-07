@@ -74,3 +74,17 @@ func TestNewTransferAssetRefsUseAssetType(t *testing.T) {
 		})
 	}
 }
+
+func TestRecipientAmount(t *testing.T) {
+	explicit := RecipientWithAmount("tap1explicit", 42)
+	amount, ok := explicit.Amount()
+	require.True(t, ok)
+	require.Equal(t, uint64(42), amount)
+	require.Equal(t, "tap1explicit", explicit.Address)
+
+	embedded := RecipientWithEmbeddedAmount("tap1embedded")
+	amount, ok = embedded.Amount()
+	require.False(t, ok)
+	require.Zero(t, amount)
+	require.Equal(t, "tap1embedded", embedded.Address)
+}

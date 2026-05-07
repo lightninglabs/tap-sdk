@@ -159,14 +159,15 @@ func (w *walletKitClient) FundTransfer(ctx context.Context,
 		[]*jsonAddressWithAmount, 0, len(recipients),
 	)
 	for _, r := range recipients {
-		if r.Amount == 0 {
+		amount, ok := r.Amount()
+		if !ok || amount == 0 {
 			return nil, fmt.Errorf("FundTransfer recipient "+
-				"%q requires an explicit Amount", r.Address)
+				"%q requires an explicit amount", r.Address)
 		}
 		rpcRecipients = append(rpcRecipients,
 			&jsonAddressWithAmount{
 				TapAddr: r.Address,
-				Amount:  fmt.Sprintf("%d", r.Amount),
+				Amount:  fmt.Sprintf("%d", amount),
 			},
 		)
 	}

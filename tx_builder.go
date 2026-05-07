@@ -12,6 +12,29 @@ import (
 // extract and broadcast.
 type AnchorSigner func(ctx context.Context, anchorPsbt []byte) ([]byte, error)
 
+type txBuilderOptions struct {
+	skipBroadcast bool
+}
+
+// TxBuilderOption configures TxBuilder finish/execute behavior.
+type TxBuilderOption func(*txBuilderOptions)
+
+// WithSkipBroadcast leaves the finalized anchor transaction unbroadcast.
+func WithSkipBroadcast() TxBuilderOption {
+	return func(o *txBuilderOptions) {
+		o.skipBroadcast = true
+	}
+}
+
+func applyTxBuilderOptions(opts []TxBuilderOption) *txBuilderOptions {
+	o := &txBuilderOptions{}
+	for _, opt := range opts {
+		opt(o)
+	}
+
+	return o
+}
+
 // TxBuilder builds address-based Taproot Asset transfers.
 //
 // Address-based transfers use Taproot Asset addresses, which include
@@ -44,14 +67,19 @@ func newTxBuilder(wallet WalletKitClient) *TxBuilder {
 	}
 }
 
-// AddRecipient adds a recipient to the transaction. amount must be
-// positive; TxBuilder wraps FundVirtualPsbt, which only accepts
-// explicit amounts.
+// AddRecipient adds a recipient with an explicit send amount.
 func (b *TxBuilder) AddRecipient(address string, amount uint64) *TxBuilder {
-	b.recipients = append(b.recipients, entities.Recipient{
-		Address: address,
-		Amount:  amount,
-	})
+	b.recipients = append(
+		b.recipients, entities.RecipientWithAmount(address, amount),
+	)
+	return b
+}
+
+// AddTapAddress adds a recipient that uses the amount embedded in the address.
+func (b *TxBuilder) AddTapAddress(address string) *TxBuilder {
+	b.recipients = append(
+		b.recipients, entities.RecipientWithEmbeddedAmount(address),
+	)
 	return b
 }
 
@@ -134,7 +162,12 @@ func (b *TxBuilder) Fund(ctx context.Context) (*entities.FundedTransfer,
 		return nil, ErrNoRecipients
 	}
 
-	resp, err := b.walletKit.FundTransfer(ctx, b.recipients, b.inputs)
+	recipients, err := normaliseSendRecipients(b.recipients, true)
+	if err != nil {
+		return nil, wrapErr("Fund", err)
+	}
+
+	resp, err := b.walletKit.FundTransfer(ctx, recipients, b.inputs)
 	if err != nil {
 		return nil, wrapErr("Fund", err)
 	}
@@ -201,8 +234,7 @@ func (b *TxBuilder) Commit(ctx context.Context) (
 }
 
 // Finish publishes the transaction and returns the finalized packet.
-// If skipBroadcast is true, the anchor transaction is not broadcast.
-func (b *TxBuilder) Finish(ctx context.Context, skipBroadcast bool) (
+func (b *TxBuilder) Finish(ctx context.Context, opts ...TxBuilderOption) (
 	*entities.AssetPacket, error) {
 
 	b.mu.Lock()
@@ -219,9 +251,10 @@ func (b *TxBuilder) Finish(ctx context.Context, skipBroadcast bool) (
 		return nil, wrapErr("Finish", err)
 	}
 
+	o := applyTxBuilderOptions(opts)
 	resp, err := b.walletKit.PublishAndLogTransfer(
 		ctx, b.anchorPsbt, [][]byte{b.signedPsbt}, b.passivePsbts,
-		skipBroadcast,
+		o.skipBroadcast,
 	)
 	if err != nil {
 		return nil, wrapErr("Finish", err)
@@ -233,8 +266,7 @@ func (b *TxBuilder) Finish(ctx context.Context, skipBroadcast bool) (
 }
 
 // Execute funds, signs, commits, and publishes the transaction.
-// If skipBroadcast is true, the anchor transaction is not broadcast.
-func (b *TxBuilder) Execute(ctx context.Context, skipBroadcast bool) (
+func (b *TxBuilder) Execute(ctx context.Context, opts ...TxBuilderOption) (
 	*entities.AssetPacket, error) {
 
 	b.mu.Lock()
@@ -250,8 +282,13 @@ func (b *TxBuilder) Execute(ctx context.Context, skipBroadcast bool) (
 			return nil, ErrNoRecipients
 		}
 
+		recipients, err := normaliseSendRecipients(b.recipients, true)
+		if err != nil {
+			return nil, wrapErr("Fund", err)
+		}
+
 		resp, err := b.walletKit.FundTransfer(
-			ctx, b.recipients, b.inputs,
+			ctx, recipients, b.inputs,
 		)
 		if err != nil {
 			return nil, wrapErr("Fund", err)
@@ -289,9 +326,10 @@ func (b *TxBuilder) Execute(ctx context.Context, skipBroadcast bool) (
 	}
 
 	// Finish.
+	o := applyTxBuilderOptions(opts)
 	resp, err := b.walletKit.PublishAndLogTransfer(
 		ctx, b.anchorPsbt, [][]byte{b.signedPsbt}, b.passivePsbts,
-		skipBroadcast,
+		o.skipBroadcast,
 	)
 	if err != nil {
 		return nil, wrapErr("Finish", err)

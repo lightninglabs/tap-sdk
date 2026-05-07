@@ -823,14 +823,15 @@ func marshalSendAssetRequest(
 		return rpcReq, nil
 	}
 
-	// tapd exposes two mutually exclusive wire paths: TapAddrs for
-	// addresses that already encode their amount (zero Recipient.Amount),
-	// and AddressesWithAmounts for the explicit-amount path (non-zero).
-	// Mixed inputs are a caller contract violation — Wallet.SendMulti
-	// is responsible for normalising them before reaching this layer.
+	// tapd exposes two mutually exclusive wire paths: TapAddrs for addresses
+	// that already encode their amount, and AddressesWithAmounts for the
+	// explicit-amount path. Mixed inputs are a caller contract violation;
+	// Wallet.SendMulti is responsible for normalising them before reaching
+	// this layer.
 	allEmbedded, anyEmbedded := true, false
 	for _, r := range req.Recipients {
-		if r.Amount == 0 {
+		_, hasAmount := r.Amount()
+		if !hasAmount {
 			anyEmbedded = true
 		} else {
 			allEmbedded = false
@@ -852,11 +853,12 @@ func marshalSendAssetRequest(
 		[]*taprpc.AddressWithAmount, 0, len(req.Recipients),
 	)
 	for _, r := range req.Recipients {
+		amount, _ := r.Amount()
 		rpcReq.AddressesWithAmounts = append(
 			rpcReq.AddressesWithAmounts,
 			&taprpc.AddressWithAmount{
 				TapAddr: r.Address,
-				Amount:  r.Amount,
+				Amount:  amount,
 			},
 		)
 	}

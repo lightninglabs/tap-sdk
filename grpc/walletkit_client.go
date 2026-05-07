@@ -61,13 +61,14 @@ func (m *walletKitClient) FundTransfer(ctx context.Context,
 	// embedded-amount wire path at this level.
 	rpcRecipients := make([]*taprpc.AddressWithAmount, len(recipients))
 	for i, r := range recipients {
-		if r.Amount == 0 {
+		amount, ok := r.Amount()
+		if !ok || amount == 0 {
 			return nil, fmt.Errorf("FundTransfer recipient "+
-				"%q requires an explicit Amount", r.Address)
+				"%q requires an explicit amount", r.Address)
 		}
 		rpcRecipients[i] = &taprpc.AddressWithAmount{
 			TapAddr: r.Address,
-			Amount:  r.Amount,
+			Amount:  amount,
 		}
 	}
 

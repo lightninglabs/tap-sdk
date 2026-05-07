@@ -72,6 +72,16 @@ if err != nil {
 
 fmt.Printf("Anchor tx: %s\n", transfer.AnchorTxid)
 
+batch, err := wallet.SendMulti(ctx, []entities.Recipient{
+	entities.RecipientWithAmount(firstRecipientAddr, 100),
+	entities.RecipientWithEmbeddedAmount(secondRecipientAddr),
+})
+if err != nil {
+	log.Fatal(err)
+}
+
+fmt.Printf("Batch anchor tx: %s\n", batch.AnchorTxid)
+
 burn, err := wallet.Burn(ctx, assetRef, 10, tapsdk.WithBurnNote("cleanup"))
 if err != nil {
 	log.Fatal(err)

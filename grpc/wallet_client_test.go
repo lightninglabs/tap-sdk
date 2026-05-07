@@ -326,11 +326,15 @@ func TestMarshalSendAssetRequest(t *testing.T) {
 			},
 		},
 		{
-			name: "all-zero Amount routes via TapAddrs",
+			name: "embedded amount routes via TapAddrs",
 			req: &entities.SendAssetRequest{
 				Recipients: []entities.Recipient{
-					{Address: "tap1first"},
-					{Address: "tap1second"},
+					entities.RecipientWithEmbeddedAmount(
+						"tap1first",
+					),
+					entities.RecipientWithEmbeddedAmount(
+						"tap1second",
+					),
 				},
 				FeeRate: 250,
 				Label:   "batch-send",
@@ -350,14 +354,12 @@ func TestMarshalSendAssetRequest(t *testing.T) {
 			name: "explicit Amount routes via AddressesWithAmounts",
 			req: &entities.SendAssetRequest{
 				Recipients: []entities.Recipient{
-					{
-						Address: "tap1amountless",
-						Amount:  150,
-					},
-					{
-						Address: "tap1fixed",
-						Amount:  42,
-					},
+					entities.RecipientWithAmount(
+						"tap1amountless", 150,
+					),
+					entities.RecipientWithAmount(
+						"tap1fixed", 42,
+					),
 				},
 				SkipProofCourierPingCheck: true,
 			},
@@ -391,8 +393,12 @@ func TestMarshalSendAssetRequest(t *testing.T) {
 			name: "mixed Amount rejected",
 			req: &entities.SendAssetRequest{
 				Recipients: []entities.Recipient{
-					{Address: "tap1explicit", Amount: 50},
-					{Address: "tap1embedded"},
+					entities.RecipientWithAmount(
+						"tap1explicit", 50,
+					),
+					entities.RecipientWithEmbeddedAmount(
+						"tap1embedded",
+					),
 				},
 			},
 			wantErr: entities.ErrMixedRecipientAmounts,
