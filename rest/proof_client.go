@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 )
 
@@ -33,8 +33,8 @@ type jsonOutpointReq struct {
 
 // ExportProof exports a proof file for a specific asset output.
 func (p *proofClient) ExportProof(ctx context.Context,
-	ref entities.AssetRef, scriptKey entities.PubKey,
-	outpoint *entities.Outpoint) (*entities.ProofFile, error) {
+	ref tapsdk.AssetRef, scriptKey tapsdk.PubKey,
+	outpoint *tapsdk.Outpoint) (*tapsdk.ProofFile, error) {
 
 	if err := ref.Validate(); err != nil {
 		return nil, err
@@ -79,9 +79,9 @@ func (p *proofClient) ExportProof(ctx context.Context,
 		return nil, fmt.Errorf("invalid raw_proof_file: %w", err)
 	}
 
-	proofFile := &entities.ProofFile{RawProofFile: rawProof}
+	proofFile := &tapsdk.ProofFile{RawProofFile: rawProof}
 	if resp.GenesisPoint != "" {
-		genesisPoint, err := entities.NewOutpointFromStr(
+		genesisPoint, err := tapsdk.NewOutpointFromStr(
 			resp.GenesisPoint,
 		)
 		if err != nil {
@@ -145,7 +145,7 @@ type jsonDecodeProofRequest struct {
 
 // DecodeProof decodes a raw proof and returns details about it.
 func (p *proofClient) DecodeProof(ctx context.Context,
-	rawProof []byte) (*entities.DecodedProof, error) {
+	rawProof []byte) (*tapsdk.DecodedProof, error) {
 
 	body := &jsonDecodeProofRequest{
 		RawProof: hex.EncodeToString(
@@ -183,11 +183,11 @@ type jsonRegisterTransferRequest struct {
 // RegisterTransfer registers an inbound transfer for an
 // interactive send.
 func (p *proofClient) RegisterTransfer(ctx context.Context,
-	assetRef entities.AssetRef, scriptKey entities.PubKey,
-	outpoint entities.Outpoint) (*entities.RegisteredAsset, error) {
+	assetRef tapsdk.AssetRef, scriptKey tapsdk.PubKey,
+	outpoint tapsdk.Outpoint) (*tapsdk.RegisteredAsset, error) {
 
 	return p.registerTransfer(
-		ctx, assetRef, entities.AssetID{}, scriptKey, outpoint,
+		ctx, assetRef, tapsdk.AssetID{}, scriptKey, outpoint,
 	)
 }
 
@@ -195,17 +195,17 @@ func (p *proofClient) RegisterTransfer(ctx context.Context,
 // facing asset ref is a group key and tapd still needs the concrete issuance
 // ID from the imported proof.
 func (p *proofClient) RegisterTransferWithIssuance(ctx context.Context,
-	assetRef entities.AssetRef, issuanceID entities.AssetID,
-	scriptKey entities.PubKey,
-	outpoint entities.Outpoint) (*entities.RegisteredAsset, error) {
+	assetRef tapsdk.AssetRef, issuanceID tapsdk.AssetID,
+	scriptKey tapsdk.PubKey,
+	outpoint tapsdk.Outpoint) (*tapsdk.RegisteredAsset, error) {
 
 	return p.registerTransfer(ctx, assetRef, issuanceID, scriptKey, outpoint)
 }
 
 func (p *proofClient) registerTransfer(ctx context.Context,
-	assetRef entities.AssetRef, issuanceID entities.AssetID,
-	scriptKey entities.PubKey,
-	outpoint entities.Outpoint) (*entities.RegisteredAsset, error) {
+	assetRef tapsdk.AssetRef, issuanceID tapsdk.AssetID,
+	scriptKey tapsdk.PubKey,
+	outpoint tapsdk.Outpoint) (*tapsdk.RegisteredAsset, error) {
 
 	if err := assetRef.Validate(); err != nil {
 		return nil, err
@@ -227,7 +227,7 @@ func (p *proofClient) registerTransfer(ctx context.Context,
 		body.AssetID = hex.EncodeToString(assetID[:])
 	}
 
-	if assetRef.IsGroupRef() && issuanceID != (entities.AssetID{}) {
+	if assetRef.IsGroupRef() && issuanceID != (tapsdk.AssetID{}) {
 		body.AssetID = hex.EncodeToString(issuanceID[:])
 	}
 
@@ -263,13 +263,13 @@ func (p *proofClient) registerTransfer(ctx context.Context,
 // unmarshalDecodedProof converts a JSON decoded proof to the entity
 // type.
 func unmarshalDecodedProof(
-	d *jsonDecodedProof) (*entities.DecodedProof, error) {
+	d *jsonDecodedProof) (*tapsdk.DecodedProof, error) {
 
 	if d == nil {
 		return nil, fmt.Errorf("nil decoded proof")
 	}
 
-	result := &entities.DecodedProof{
+	result := &tapsdk.DecodedProof{
 		ProofAtDepth:   d.ProofAtDepth,
 		NumberOfProofs: d.NumberOfProofs,
 		IsIssuance:     d.GenesisReveal != nil,
@@ -314,7 +314,7 @@ func unmarshalDecodedProof(
 	result.Amount = amount
 
 	if asset.ChainAnchor != nil {
-		op, err := entities.NewOutpointFromStr(
+		op, err := tapsdk.NewOutpointFromStr(
 			asset.ChainAnchor.AnchorOutpoint,
 		)
 		if err != nil {
@@ -338,18 +338,18 @@ func unmarshalDecodedProof(
 			)
 		}
 
-		groupKey, err := entities.ParsePubKey(groupKeyBytes)
+		groupKey, err := tapsdk.ParsePubKey(groupKeyBytes)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"invalid group key: %w", err,
 			)
 		}
 
-		result.AssetRef = entities.AssetRefFromGroupKey(groupKey)
+		result.AssetRef = tapsdk.AssetRefFromGroupKey(groupKey)
 	}
 
 	if result.AssetRef.IsZero() {
-		result.AssetRef = entities.AssetRefFromAssetID(
+		result.AssetRef = tapsdk.AssetRefFromAssetID(
 			result.IssuanceID,
 		)
 	}
@@ -357,7 +357,7 @@ func unmarshalDecodedProof(
 	// Populate prev IDs.
 	if len(asset.PrevWitnesses) > 0 {
 		prevIDs := make(
-			[]entities.PrevID, 0,
+			[]tapsdk.PrevID, 0,
 			len(asset.PrevWitnesses),
 		)
 		for idx, witness := range asset.PrevWitnesses {
@@ -369,7 +369,7 @@ func unmarshalDecodedProof(
 			}
 
 			prev := witness.PrevID
-			prevOutpoint, err := entities.NewOutpointFromStr(
+			prevOutpoint, err := tapsdk.NewOutpointFromStr(
 				prev.AnchorPoint,
 			)
 			if err != nil {
@@ -418,7 +418,7 @@ func unmarshalDecodedProof(
 				)
 			}
 
-			var decodedPrev entities.PrevID
+			var decodedPrev tapsdk.PrevID
 			decodedPrev.Outpoint = prevOutpoint
 			copy(
 				decodedPrev.IssuanceID[:],
@@ -441,7 +441,7 @@ func unmarshalDecodedProof(
 // unmarshalRegisteredAsset converts a JSON registered asset to the
 // entity type.
 func unmarshalRegisteredAsset(
-	a *jsonRegisteredAsset) (*entities.RegisteredAsset, error) {
+	a *jsonRegisteredAsset) (*tapsdk.RegisteredAsset, error) {
 
 	if a == nil {
 		return nil, fmt.Errorf("nil registered asset")
@@ -452,7 +452,7 @@ func unmarshalRegisteredAsset(
 		return nil, fmt.Errorf("invalid amount: %w", err)
 	}
 
-	result := &entities.RegisteredAsset{Amount: amount}
+	result := &tapsdk.RegisteredAsset{Amount: amount}
 
 	if a.AssetGenesis != nil {
 		assetIDBytes, err := parseHexBytes(
@@ -466,7 +466,7 @@ func unmarshalRegisteredAsset(
 
 		if len(assetIDBytes) == 32 {
 			copy(result.IssuanceID[:], assetIDBytes)
-			result.AssetRef = entities.AssetRefFromAssetID(
+			result.AssetRef = tapsdk.AssetRefFromAssetID(
 				result.IssuanceID,
 			)
 		}
@@ -484,7 +484,7 @@ func unmarshalRegisteredAsset(
 	}
 
 	if a.ChainAnchor != nil {
-		op, err := entities.NewOutpointFromStr(
+		op, err := tapsdk.NewOutpointFromStr(
 			a.ChainAnchor.AnchorOutpoint,
 		)
 		if err != nil {

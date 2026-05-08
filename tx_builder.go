@@ -3,8 +3,6 @@ package tapsdk
 import (
 	"context"
 	"sync"
-
-	"github.com/lightninglabs/tap-sdk/entities"
 )
 
 // AnchorSigner signs and finalizes the BTC anchor PSBT returned by tapd after
@@ -45,8 +43,8 @@ func applyTxBuilderOptions(opts []TxBuilderOption) *txBuilderOptions {
 type TxBuilder struct {
 	walletKit WalletKitClient
 
-	recipients []entities.Recipient
-	inputs     []entities.PrevID
+	recipients []Recipient
+	inputs     []PrevID
 	feeRate    uint64
 
 	fundedPsbt   []byte
@@ -70,7 +68,7 @@ func newTxBuilder(wallet WalletKitClient) *TxBuilder {
 // AddRecipient adds a recipient with an explicit send amount.
 func (b *TxBuilder) AddRecipient(address string, amount uint64) *TxBuilder {
 	b.recipients = append(
-		b.recipients, entities.RecipientWithAmount(address, amount),
+		b.recipients, RecipientWithAmount(address, amount),
 	)
 	return b
 }
@@ -78,19 +76,19 @@ func (b *TxBuilder) AddRecipient(address string, amount uint64) *TxBuilder {
 // AddTapAddress adds a recipient that uses the amount embedded in the address.
 func (b *TxBuilder) AddTapAddress(address string) *TxBuilder {
 	b.recipients = append(
-		b.recipients, entities.RecipientWithEmbeddedAmount(address),
+		b.recipients, RecipientWithEmbeddedAmount(address),
 	)
 	return b
 }
 
 // SetRecipients sets the recipients for the transaction.
-func (b *TxBuilder) SetRecipients(recipients []entities.Recipient) *TxBuilder {
+func (b *TxBuilder) SetRecipients(recipients []Recipient) *TxBuilder {
 	b.recipients = recipients
 	return b
 }
 
 // AddInput adds a specific input to the transaction.
-func (b *TxBuilder) AddInput(input entities.PrevID) *TxBuilder {
+func (b *TxBuilder) AddInput(input PrevID) *TxBuilder {
 	b.inputs = append(b.inputs, input)
 	return b
 }
@@ -148,7 +146,7 @@ func (b *TxBuilder) SetAnchorSigner(signer AnchorSigner) *TxBuilder {
 }
 
 // Fund funds the transaction and returns the funded transfer details.
-func (b *TxBuilder) Fund(ctx context.Context) (*entities.FundedTransfer,
+func (b *TxBuilder) Fund(ctx context.Context) (*FundedTransfer,
 	error) {
 
 	b.mu.Lock()
@@ -201,7 +199,7 @@ func (b *TxBuilder) Sign(ctx context.Context) ([]byte, error) {
 
 // Commit commits the signed transaction and returns the committed transfer.
 func (b *TxBuilder) Commit(ctx context.Context) (
-	*entities.CommittedTransfer, error) {
+	*CommittedTransfer, error) {
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -235,7 +233,7 @@ func (b *TxBuilder) Commit(ctx context.Context) (
 
 // Finish publishes the transaction and returns the finalized packet.
 func (b *TxBuilder) Finish(ctx context.Context, opts ...TxBuilderOption) (
-	*entities.AssetPacket, error) {
+	*AssetPacket, error) {
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -267,7 +265,7 @@ func (b *TxBuilder) Finish(ctx context.Context, opts ...TxBuilderOption) (
 
 // Execute funds, signs, commits, and publishes the transaction.
 func (b *TxBuilder) Execute(ctx context.Context, opts ...TxBuilderOption) (
-	*entities.AssetPacket, error) {
+	*AssetPacket, error) {
 
 	b.mu.Lock()
 	defer b.mu.Unlock()

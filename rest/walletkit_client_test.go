@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 	"github.com/stretchr/testify/require"
 )
@@ -65,7 +65,7 @@ func TestVerifyAssetOwnershipSendsChallenge(t *testing.T) {
 
 	resp, err := client.VerifyAssetOwnership(
 		context.Background(),
-		&entities.VerifyOwnershipRequest{
+		&tapsdk.VerifyOwnershipRequest{
 			ProofWithWitness: proof,
 			Challenge:        challenge,
 		},
@@ -76,9 +76,9 @@ func TestVerifyAssetOwnershipSendsChallenge(t *testing.T) {
 
 func TestProveAssetOwnershipPreservesRequestMetadata(t *testing.T) {
 	proof := []byte("proof")
-	var assetID entities.AssetID
-	var scriptKey entities.PubKey
-	var outpoint entities.Outpoint
+	var assetID tapsdk.AssetID
+	var scriptKey tapsdk.PubKey
+	var outpoint tapsdk.Outpoint
 	for i := range assetID {
 		assetID[i] = byte(i + 1)
 		scriptKey[i] = byte(i + 2)
@@ -86,7 +86,7 @@ func TestProveAssetOwnershipPreservesRequestMetadata(t *testing.T) {
 	}
 	scriptKey[32] = 99
 	outpoint.Index = 7
-	ref := entities.AssetRefFromAssetID(assetID)
+	ref := tapsdk.AssetRefFromAssetID(assetID)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,
 		r *http.Request) {
@@ -142,7 +142,7 @@ func TestProveAssetOwnershipPreservesRequestMetadata(t *testing.T) {
 
 	resp, err := client.ProveAssetOwnership(
 		context.Background(),
-		&entities.ProveOwnershipRequest{
+		&tapsdk.ProveOwnershipRequest{
 			AssetRef:  ref,
 			ScriptKey: scriptKey,
 			Outpoint:  outpoint,
@@ -166,7 +166,7 @@ func TestVerifyAssetOwnershipRejectsInvalidChallenge(t *testing.T) {
 
 	_, err := client.VerifyAssetOwnership(
 		context.Background(),
-		&entities.VerifyOwnershipRequest{
+		&tapsdk.VerifyOwnershipRequest{
 			ProofWithWitness: []byte("proof"),
 			Challenge:        make([]byte, 32),
 		},

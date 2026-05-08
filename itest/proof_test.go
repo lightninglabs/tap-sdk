@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
-	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,8 +19,8 @@ func TestProofOperations(t *testing.T) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
 		minted, err := h.MintAssetAndConfirm(t, ctx,
-			&entities.MintAsset{
-				AssetType:     entities.AssetTypeNormal,
+			&tapsdk.MintAsset{
+				AssetType:     tapsdk.AssetTypeNormal,
 				Name:          "proof-token",
 				InitialSupply: 100,
 			},
@@ -30,7 +29,7 @@ func TestProofOperations(t *testing.T) {
 		require.True(t, minted.Asset.AssetRef.IsAssetIDRef())
 
 		proof, err := h.AliceClient.ExportProof(ctx,
-			entities.AssetRefFromAssetID(
+			tapsdk.AssetRefFromAssetID(
 				minted.Asset.Genesis.IssuanceID,
 			),
 			minted.Asset.ScriptKey.PubKey, nil)
@@ -137,7 +136,7 @@ func TestWalletOwnershipProofSurface(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		firstItemRef := entities.AssetRefFromAssetID(
+		firstItemRef := tapsdk.AssetRefFromAssetID(
 			collection.Asset.Genesis.IssuanceID,
 		)
 		itemProofs, err := h.AliceWallet.ProveOwnership(
@@ -162,7 +161,7 @@ func TestWalletOwnershipProofSurface(t *testing.T) {
 		requireOwnershipProofForRef(t, allCollectionProofs, firstItemRef)
 		requireOwnershipProofForRef(t, allCollectionProofs, secondItem.Ref)
 
-		unknownRef := entities.AssetRefFromAssetID(
+		unknownRef := tapsdk.AssetRefFromAssetID(
 			ownershipITestAssetID(240),
 		)
 		_, err = h.AliceWallet.ProveOwnership(ctx, unknownRef)
@@ -191,7 +190,7 @@ func TestGroupedProofExportRequiresIssuanceEnumeration(t *testing.T) {
 		require.Equal(t, first.Ref, bundle.AssetRef)
 		require.GreaterOrEqual(t, len(bundle.Entries), 2)
 
-		expected := map[entities.AssetID]bool{
+		expected := map[tapsdk.AssetID]bool{
 			first.Asset.Genesis.IssuanceID:  false,
 			second.Asset.Genesis.IssuanceID: false,
 		}
@@ -221,20 +220,20 @@ func TestGroupedProofExportRequiresIssuanceEnumeration(t *testing.T) {
 		group := h.RequireGroup(t, ctx, first.Ref)
 		require.GreaterOrEqual(t, len(group.Members), 2)
 
-		expected = map[entities.AssetID]bool{
+		expected = map[tapsdk.AssetID]bool{
 			first.Asset.Genesis.IssuanceID:  false,
 			second.Asset.Genesis.IssuanceID: false,
 		}
 
 		walletAssets, err := h.AliceClient.ListAssetRecords(ctx,
-			&entities.ListAssetsRequest{
+			&tapsdk.ListAssetsRequest{
 				AssetRef: &first.Ref,
 			},
 		)
 		require.NoError(t, err)
 
 		assetsByIssuance := make(
-			map[entities.AssetID]*entities.AssetRecord, len(walletAssets),
+			map[tapsdk.AssetID]*tapsdk.AssetRecord, len(walletAssets),
 		)
 		for _, asset := range walletAssets {
 			if asset == nil {
@@ -265,7 +264,7 @@ func TestGroupedProofExportRequiresIssuanceEnumeration(t *testing.T) {
 
 			proof, err := h.AliceClient.ExportProof(
 				ctx,
-				entities.AssetRefFromAssetID(groupedAsset.IssuanceID),
+				tapsdk.AssetRefFromAssetID(groupedAsset.IssuanceID),
 				asset.ScriptKey.PubKey, nil,
 			)
 			require.NoError(t, err)
@@ -361,15 +360,15 @@ func TestProofImportInteractive(t *testing.T) {
 
 		proof := h.WaitForProofFile(
 			t, ctx, h.AliceWallet,
-			entities.AssetRefFromAssetID(output.IssuanceID),
+			tapsdk.AssetRefFromAssetID(output.IssuanceID),
 			output.ScriptKey, &output.AnchorOutpoint,
 		)
 
 		h.EnableUniverseBootstrap(t, ctx)
 		registered, err := h.BobWallet.ImportProof(
-			ctx, &entities.ProofBundle{
+			ctx, &tapsdk.ProofBundle{
 				AssetRef: minted.Ref,
-				Entries: []entities.ProofEntry{{
+				Entries: []tapsdk.ProofEntry{{
 					AssetRef:   minted.Ref,
 					IssuanceID: output.IssuanceID,
 					ScriptKey:  output.ScriptKey,
@@ -390,7 +389,7 @@ func TestProofImportInteractive(t *testing.T) {
 }
 
 func requireOwnershipProofValid(t testing.TB, ctx context.Context,
-	wallet *tapsdk.Wallet, proof entities.OwnershipProof,
+	wallet *tapsdk.Wallet, proof tapsdk.OwnershipProof,
 	challenge []byte) {
 
 	t.Helper()
@@ -410,7 +409,7 @@ func requireOwnershipProofValid(t testing.TB, ctx context.Context,
 }
 
 func requireOwnershipTotalAtLeast(t testing.TB,
-	proofs *entities.OwnershipProofSet, amount uint64) {
+	proofs *tapsdk.OwnershipProofSet, amount uint64) {
 
 	t.Helper()
 
@@ -422,7 +421,7 @@ func requireOwnershipTotalAtLeast(t testing.TB,
 }
 
 func requireOwnershipProofForRef(t testing.TB,
-	proofs *entities.OwnershipProofSet, ref entities.AssetRef) {
+	proofs *tapsdk.OwnershipProofSet, ref tapsdk.AssetRef) {
 
 	t.Helper()
 
@@ -445,8 +444,8 @@ func ownershipITestChallenge() []byte {
 	return challenge
 }
 
-func ownershipITestAssetID(seed byte) entities.AssetID {
-	var id entities.AssetID
+func ownershipITestAssetID(seed byte) tapsdk.AssetID {
+	var id tapsdk.AssetID
 	for i := range id {
 		id[i] = seed + byte(i)
 	}

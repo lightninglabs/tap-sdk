@@ -4,15 +4,15 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/mintrpc"
 	"github.com/stretchr/testify/require"
 )
 
 func TestMarshalMintAssetRequest(t *testing.T) {
-	assetMetaHash := func() entities.Hash {
-		var hash entities.Hash
+	assetMetaHash := func() tapsdk.Hash {
+		var hash tapsdk.Hash
 		copy(hash[:], testAssetID)
 		return hash
 	}()
@@ -36,38 +36,38 @@ func TestMarshalMintAssetRequest(t *testing.T) {
 			req: &mintAssetRequest{
 				shortResponse: true,
 				asset: &mintAsset{
-					PendingMintAsset: entities.PendingMintAsset{
-						AssetVersion:    entities.AssetVersionV1,
-						AssetType:       entities.AssetTypeNormal,
+					PendingMintAsset: tapsdk.PendingMintAsset{
+						AssetVersion:    tapsdk.AssetVersionV1,
+						AssetType:       tapsdk.AssetTypeNormal,
 						Name:            "usd-test",
 						Amount:          42,
 						NewGroupedAsset: true,
-						AssetMeta: &entities.AssetMeta{
+						AssetMeta: &tapsdk.AssetMeta{
 							Data:     []byte(`{"ticker":"USDt"}`),
-							Type:     entities.AssetMetaTypeJSON,
+							Type:     tapsdk.AssetMetaTypeJSON,
 							MetaHash: assetMetaHash,
 						},
-						GroupKey: func() *entities.PubKey {
-							var key entities.PubKey
+						GroupKey: func() *tapsdk.PubKey {
+							var key tapsdk.PubKey
 							copy(key[:], testPubKey)
 							return &key
 						}(),
 						GroupAnchor: "anchor-asset",
-						GroupInternalKey: &entities.KeyDescriptor{
-							RawKeyBytes: func() entities.PubKey {
-								var key entities.PubKey
+						GroupInternalKey: &tapsdk.KeyDescriptor{
+							RawKeyBytes: func() tapsdk.PubKey {
+								var key tapsdk.PubKey
 								copy(key[:], testPubKey)
 								return key
 							}(),
-							KeyLocator: entities.KeyLocator{
+							KeyLocator: tapsdk.KeyLocator{
 								Family: 7,
 								Index:  9,
 							},
 						},
 						GroupTapscriptRoot: []byte{0xaa, 0xbb},
-						ScriptKey: &entities.ScriptKey{
-							PubKey: func() entities.PubKey {
-								var key entities.PubKey
+						ScriptKey: &tapsdk.ScriptKey{
+							PubKey: func() tapsdk.PubKey {
+								var key tapsdk.PubKey
 								copy(key[:], testPubKey)
 								return key
 							}(),
@@ -76,7 +76,7 @@ func TestMarshalMintAssetRequest(t *testing.T) {
 					},
 					groupedAsset:   true,
 					decimalDisplay: 2,
-					externalGroupKey: &entities.ExternalKey{
+					externalGroupKey: &tapsdk.ExternalKey{
 						XPub:           "xpub-test",
 						DerivationPath: "m/86'/0'/0'/0/7",
 						MasterFingerprint: [4]byte{
@@ -143,20 +143,20 @@ func TestMarshalMintAssetRequest(t *testing.T) {
 }
 
 func TestMarshalFinalizeBatchRequest(t *testing.T) {
-	leftHash := func() entities.Hash {
-		var hash entities.Hash
+	leftHash := func() tapsdk.Hash {
+		var hash tapsdk.Hash
 		copy(hash[:], testAssetID)
 		return hash
 	}()
-	rightHash := func() entities.Hash {
-		var hash entities.Hash
+	rightHash := func() tapsdk.Hash {
+		var hash tapsdk.Hash
 		copy(hash[:], testXOnlyPubKey)
 		return hash
 	}()
 
 	tests := []struct {
 		name     string
-		req      *entities.FinalizeBatchRequest
+		req      *tapsdk.FinalizeBatchRequest
 		wantErr  string
 		validate func(*testing.T, *mintrpc.FinalizeBatchRequest)
 	}{
@@ -173,12 +173,12 @@ func TestMarshalFinalizeBatchRequest(t *testing.T) {
 		},
 		{
 			name: "full tree sibling",
-			req: &entities.FinalizeBatchRequest{
+			req: &tapsdk.FinalizeBatchRequest{
 				ShortResponse: true,
 				FeeRate:       321,
-				BatchSibling: &entities.BatchSibling{
-					FullTree: &entities.TapscriptFullTree{
-						Leaves: []entities.TapLeaf{
+				BatchSibling: &tapsdk.BatchSibling{
+					FullTree: &tapsdk.TapscriptFullTree{
+						Leaves: []tapsdk.TapLeaf{
 							{Script: []byte{0x51}},
 							{Script: []byte{0x52}},
 						},
@@ -198,9 +198,9 @@ func TestMarshalFinalizeBatchRequest(t *testing.T) {
 		},
 		{
 			name: "branch sibling",
-			req: &entities.FinalizeBatchRequest{
-				BatchSibling: &entities.BatchSibling{
-					Branch: &entities.TapBranch{
+			req: &tapsdk.FinalizeBatchRequest{
+				BatchSibling: &tapsdk.BatchSibling{
+					Branch: &tapsdk.TapBranch{
 						LeftTapHash:  leftHash,
 						RightTapHash: rightHash,
 					},
@@ -218,10 +218,10 @@ func TestMarshalFinalizeBatchRequest(t *testing.T) {
 		},
 		{
 			name: "reject both sibling variants",
-			req: &entities.FinalizeBatchRequest{
-				BatchSibling: &entities.BatchSibling{
-					FullTree: &entities.TapscriptFullTree{},
-					Branch:   &entities.TapBranch{},
+			req: &tapsdk.FinalizeBatchRequest{
+				BatchSibling: &tapsdk.BatchSibling{
+					FullTree: &tapsdk.TapscriptFullTree{},
+					Branch:   &tapsdk.TapBranch{},
 				},
 			},
 			wantErr: "batch sibling must set exactly one variant",
@@ -248,14 +248,14 @@ func TestUnmarshalMintingBatch(t *testing.T) {
 	metaHash := append([]byte(nil), testAssetID...)
 	_, pubKey := btcec.PrivKeyFromBytes(testAssetID)
 	validPubKey := pubKey.SerializeCompressed()
-	expectedScriptKey, err := entities.ParseTaprootPubKey(validPubKey)
+	expectedScriptKey, err := tapsdk.ParseTaprootPubKey(validPubKey)
 	require.NoError(t, err)
 
 	tests := []struct {
 		name     string
 		rpcBatch *mintrpc.MintingBatch
 		wantErr  string
-		validate func(*testing.T, *entities.MintingBatch)
+		validate func(*testing.T, *tapsdk.MintingBatch)
 	}{
 		{
 			name:     "nil batch",
@@ -319,10 +319,10 @@ func TestUnmarshalMintingBatch(t *testing.T) {
 					},
 				},
 			},
-			validate: func(t *testing.T, batch *entities.MintingBatch) {
+			validate: func(t *testing.T, batch *tapsdk.MintingBatch) {
 				require.Equal(t, "abc123", batch.BatchTxid)
 				require.Equal(t,
-					entities.BatchStatePending, batch.State)
+					tapsdk.BatchStatePending, batch.State)
 				require.Equal(t, int64(1234), batch.CreatedAt)
 				require.Equal(t, uint32(99), batch.HeightHint)
 				require.Equal(t, []byte{0xaa, 0xbb}, batch.BatchPSBT)
@@ -331,15 +331,15 @@ func TestUnmarshalMintingBatch(t *testing.T) {
 				asset := batch.Assets[0]
 				require.Equal(t, "usd-test", asset.Name)
 				require.Equal(t,
-					entities.AssetVersionV1, asset.AssetVersion)
+					tapsdk.AssetVersionV1, asset.AssetVersion)
 				require.Equal(t,
-					entities.AssetTypeNormal, asset.AssetType)
+					tapsdk.AssetTypeNormal, asset.AssetType)
 				require.Equal(t, uint64(123), asset.Amount)
 				require.True(t, asset.NewGroupedAsset)
 				require.Equal(t, "anchor-asset", asset.GroupAnchor)
 				require.NotNil(t, asset.AssetMeta)
 				require.Equal(t,
-					entities.AssetMetaTypeJSON, asset.AssetMeta.Type)
+					tapsdk.AssetMetaTypeJSON, asset.AssetMeta.Type)
 				require.NotNil(t, asset.GroupKey)
 				require.Equal(t, validPubKey, (*asset.GroupKey)[:])
 				require.NotNil(t, asset.GroupInternalKey)
@@ -369,20 +369,20 @@ func TestUnmarshalMintingBatch(t *testing.T) {
 }
 
 func TestMarshalFundBatchRequest(t *testing.T) {
-	leftHash := func() entities.Hash {
-		var hash entities.Hash
+	leftHash := func() tapsdk.Hash {
+		var hash tapsdk.Hash
 		copy(hash[:], testAssetID)
 		return hash
 	}()
-	rightHash := func() entities.Hash {
-		var hash entities.Hash
+	rightHash := func() tapsdk.Hash {
+		var hash tapsdk.Hash
 		copy(hash[:], testXOnlyPubKey)
 		return hash
 	}()
 
 	tests := []struct {
 		name     string
-		req      *entities.FundBatchRequest
+		req      *tapsdk.FundBatchRequest
 		wantErr  string
 		validate func(*testing.T, *mintrpc.FundBatchRequest)
 	}{
@@ -399,12 +399,12 @@ func TestMarshalFundBatchRequest(t *testing.T) {
 		},
 		{
 			name: "full tree sibling",
-			req: &entities.FundBatchRequest{
+			req: &tapsdk.FundBatchRequest{
 				ShortResponse: true,
 				FeeRate:       321,
-				BatchSibling: &entities.BatchSibling{
-					FullTree: &entities.TapscriptFullTree{
-						Leaves: []entities.TapLeaf{{Script: []byte{0x51}}},
+				BatchSibling: &tapsdk.BatchSibling{
+					FullTree: &tapsdk.TapscriptFullTree{
+						Leaves: []tapsdk.TapLeaf{{Script: []byte{0x51}}},
 					},
 				},
 			},
@@ -419,9 +419,9 @@ func TestMarshalFundBatchRequest(t *testing.T) {
 		},
 		{
 			name: "branch sibling",
-			req: &entities.FundBatchRequest{
-				BatchSibling: &entities.BatchSibling{
-					Branch: &entities.TapBranch{
+			req: &tapsdk.FundBatchRequest{
+				BatchSibling: &tapsdk.BatchSibling{
+					Branch: &tapsdk.TapBranch{
 						LeftTapHash:  leftHash,
 						RightTapHash: rightHash,
 					},
@@ -439,10 +439,10 @@ func TestMarshalFundBatchRequest(t *testing.T) {
 		},
 		{
 			name: "reject both sibling variants",
-			req: &entities.FundBatchRequest{
-				BatchSibling: &entities.BatchSibling{
-					FullTree: &entities.TapscriptFullTree{},
-					Branch:   &entities.TapBranch{},
+			req: &tapsdk.FundBatchRequest{
+				BatchSibling: &tapsdk.BatchSibling{
+					FullTree: &tapsdk.TapscriptFullTree{},
+					Branch:   &tapsdk.TapBranch{},
 				},
 			},
 			wantErr: "batch sibling must set exactly one variant",
@@ -466,15 +466,15 @@ func TestMarshalFundBatchRequest(t *testing.T) {
 }
 
 func TestMarshalSealBatchRequest(t *testing.T) {
-	genesisID := func() entities.AssetID {
-		var id entities.AssetID
+	genesisID := func() tapsdk.AssetID {
+		var id tapsdk.AssetID
 		copy(id[:], testAssetID)
 		return id
 	}()
 
 	tests := []struct {
 		name     string
-		req      *entities.SealBatchRequest
+		req      *tapsdk.SealBatchRequest
 		wantErr  string
 		validate func(*testing.T, *mintrpc.SealBatchRequest)
 	}{
@@ -490,9 +490,9 @@ func TestMarshalSealBatchRequest(t *testing.T) {
 		},
 		{
 			name: "group witnesses",
-			req: &entities.SealBatchRequest{
+			req: &tapsdk.SealBatchRequest{
 				ShortResponse: true,
-				GroupWitnesses: []entities.GroupWitness{{
+				GroupWitnesses: []tapsdk.GroupWitness{{
 					GenesisID: genesisID,
 					Witness:   [][]byte{{0x01}, {0x02}},
 				}},
@@ -509,7 +509,7 @@ func TestMarshalSealBatchRequest(t *testing.T) {
 		},
 		{
 			name: "signed virtual psbts",
-			req: &entities.SealBatchRequest{
+			req: &tapsdk.SealBatchRequest{
 				SignedGroupVirtualPSBTs: []string{"psbt-a", "psbt-b"},
 			},
 			validate: func(t *testing.T,
@@ -521,8 +521,8 @@ func TestMarshalSealBatchRequest(t *testing.T) {
 		},
 		{
 			name: "reject both witness inputs",
-			req: &entities.SealBatchRequest{
-				GroupWitnesses:          []entities.GroupWitness{{GenesisID: genesisID}},
+			req: &tapsdk.SealBatchRequest{
+				GroupWitnesses:          []tapsdk.GroupWitness{{GenesisID: genesisID}},
 				SignedGroupVirtualPSBTs: []string{"psbt-a"},
 			},
 			wantErr: "seal batch request must choose one witness input",
@@ -546,15 +546,15 @@ func TestMarshalSealBatchRequest(t *testing.T) {
 }
 
 func TestMarshalListBatchesRequest(t *testing.T) {
-	batchKey := func() entities.PubKey {
-		var key entities.PubKey
+	batchKey := func() tapsdk.PubKey {
+		var key tapsdk.PubKey
 		copy(key[:], testPubKey)
 		return key
 	}()
 
 	tests := []struct {
 		name     string
-		req      *entities.ListBatchesRequest
+		req      *tapsdk.ListBatchesRequest
 		validate func(*testing.T, *mintrpc.ListBatchRequest)
 	}{
 		{
@@ -570,7 +570,7 @@ func TestMarshalListBatchesRequest(t *testing.T) {
 		},
 		{
 			name: "full request",
-			req: &entities.ListBatchesRequest{
+			req: &tapsdk.ListBatchesRequest{
 				BatchKey: &batchKey,
 				Verbose:  true,
 			},
@@ -652,7 +652,7 @@ func TestUnmarshalVerboseMintingBatch(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, batch)
 	require.Equal(t, "funded-batch", batch.Batch.BatchTxid)
-	require.Equal(t, entities.BatchStateCommitted, batch.Batch.State)
+	require.Equal(t, tapsdk.BatchStateCommitted, batch.Batch.State)
 	require.Len(t, batch.UnsealedAssets, 1)
 	require.Equal(t, "usd-test", batch.UnsealedAssets[0].Asset.Name)
 	require.Equal(t, "txid:0",

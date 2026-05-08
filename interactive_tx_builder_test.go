@@ -6,8 +6,7 @@ import (
 	"testing"
 
 	btcpsbt "github.com/btcsuite/btcd/btcutil/psbt"
-	"github.com/lightninglabs/tap-sdk/codec"
-	"github.com/lightninglabs/tap-sdk/entities"
+	"github.com/lightninglabs/tap-sdk/internal/codec"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -18,22 +17,22 @@ func TestInteractiveTxBuilder_Execute(t *testing.T) {
 	ctx := context.Background()
 
 	// Test data
-	var assetID entities.AssetID
+	var assetID AssetID
 	copy(assetID[:], []byte("asset_id_32_bytes_long_enough!!!"))
 
-	var scriptKeyPubKey entities.PubKey
+	var scriptKeyPubKey PubKey
 	copy(scriptKeyPubKey[:], []byte("script_key_pubkey_33_bytes_long"))
 
-	var internalKeyPubKey entities.PubKey
+	var internalKeyPubKey PubKey
 	copy(internalKeyPubKey[:], []byte("internal_key_pubkey_33_bytes_lo"))
 
-	receiverKeys := entities.DerivedKeys{
-		ScriptKey: entities.ScriptKey{
+	receiverKeys := DerivedKeys{
+		ScriptKey: ScriptKey{
 			PubKey: scriptKeyPubKey,
 		},
-		InternalKey: entities.InternalKey{
+		InternalKey: InternalKey{
 			PubKey: internalKeyPubKey,
-			KeyLocator: entities.KeyLocator{
+			KeyLocator: KeyLocator{
 				Family: 212,
 				Index:  5,
 			},
@@ -46,12 +45,12 @@ func TestInteractiveTxBuilder_Execute(t *testing.T) {
 	var transferTxid [32]byte
 	copy(transferTxid[:], []byte("txid_hash_32_bytes_long_enough!!"))
 
-	expectedResult := &entities.AssetTransfer{
+	expectedResult := &AssetTransfer{
 		TransferTxid: transferTxid,
 		AnchorTx:     []byte("anchor_tx_bytes"),
-		Outputs: []entities.TransferOutput{
+		Outputs: []TransferOutput{
 			{
-				AnchorOutpoint: entities.Outpoint{Txid: transferTxid, Index: 0},
+				AnchorOutpoint: Outpoint{Txid: transferTxid, Index: 0},
 				AnchorValue:    10,
 				ScriptKey:      scriptKeyPubKey,
 				Amount:         1000,
@@ -62,7 +61,7 @@ func TestInteractiveTxBuilder_Execute(t *testing.T) {
 
 	// 1. Fund interactive PSBT (matches any PSBT since we build it internally)
 	mockWalletKit.On("FundInteractivePsbt", ctx, mock.Anything).Return(
-		&entities.FundedTransfer{
+		&FundedTransfer{
 			FundedPsbt: fundedPsbt,
 		}, nil)
 
@@ -76,7 +75,7 @@ func TestInteractiveTxBuilder_Execute(t *testing.T) {
 
 	// Execute interactive send
 	builder := newInteractiveTxBuilder(mockWalletKit, "tapassetr", 1)
-	builder.SetAsset(entities.AssetRefFromAssetID(assetID), 1000).
+	builder.SetAsset(AssetRefFromAssetID(assetID), 1000).
 		SetReceiverKeys(receiverKeys)
 
 	result, err := builder.Execute(ctx)
@@ -99,13 +98,13 @@ func TestInteractiveTxBuilder_Execute(t *testing.T) {
 type interactiveResolverMock struct {
 	*MockWalletKitClient
 
-	assets []*entities.AssetRecord
+	assets []*AssetRecord
 	err    error
-	gotReq *entities.ListAssetsRequest
+	gotReq *ListAssetsRequest
 }
 
 func (m *interactiveResolverMock) ListAssetRecords(_ context.Context,
-	req *entities.ListAssetsRequest) ([]*entities.AssetRecord, error) {
+	req *ListAssetsRequest) ([]*AssetRecord, error) {
 
 	m.gotReq = req
 
@@ -119,26 +118,26 @@ func TestInteractiveTxBuilder_GroupRefResolvesSpendableIssuance(
 
 	ctx := context.Background()
 
-	var smallID entities.AssetID
+	var smallID AssetID
 	copy(smallID[:], []byte("small_asset_id_32_bytes_long!!!!"))
 
-	var selectedID entities.AssetID
+	var selectedID AssetID
 	copy(selectedID[:], []byte("selected_asset_id_32_bytes_long!"))
 
-	groupRef := entities.AssetRefFromGroupKey(testRefGroupKey(t))
+	groupRef := AssetRefFromGroupKey(testRefGroupKey(t))
 	resolver := &interactiveResolverMock{
 		MockWalletKitClient: mockWalletKit,
-		assets: []*entities.AssetRecord{
+		assets: []*AssetRecord{
 			{
 				AssetRef: groupRef,
-				Genesis: entities.IssuanceGenesis{
+				Genesis: IssuanceGenesis{
 					IssuanceID: smallID,
 				},
 				Amount: 250,
 			},
 			{
 				AssetRef: groupRef,
-				Genesis: entities.IssuanceGenesis{
+				Genesis: IssuanceGenesis{
 					IssuanceID: selectedID,
 				},
 				Amount: 1000,
@@ -146,19 +145,19 @@ func TestInteractiveTxBuilder_GroupRefResolvesSpendableIssuance(
 		},
 	}
 
-	var scriptKeyPubKey entities.PubKey
+	var scriptKeyPubKey PubKey
 	copy(scriptKeyPubKey[:], []byte("script_key_pubkey_33_bytes_long"))
 
-	var internalKeyPubKey entities.PubKey
+	var internalKeyPubKey PubKey
 	copy(internalKeyPubKey[:], []byte("internal_key_pubkey_33_bytes_lo"))
 
-	receiverKeys := entities.DerivedKeys{
-		ScriptKey: entities.ScriptKey{
+	receiverKeys := DerivedKeys{
+		ScriptKey: ScriptKey{
 			PubKey: scriptKeyPubKey,
 		},
-		InternalKey: entities.InternalKey{
+		InternalKey: InternalKey{
 			PubKey: internalKeyPubKey,
-			KeyLocator: entities.KeyLocator{
+			KeyLocator: KeyLocator{
 				Family: 212,
 				Index:  5,
 			},
@@ -167,7 +166,7 @@ func TestInteractiveTxBuilder_GroupRefResolvesSpendableIssuance(
 
 	fundedPsbt := []byte("funded_psbt")
 	signedPsbt := []byte("signed_psbt")
-	expectedResult := &entities.AssetTransfer{
+	expectedResult := &AssetTransfer{
 		AnchorTx: []byte("anchor_tx_bytes"),
 	}
 
@@ -177,7 +176,7 @@ func TestInteractiveTxBuilder_GroupRefResolvesSpendableIssuance(
 			psbtBytes := args.Get(1).([]byte)
 			capturedPsbt = append([]byte(nil), psbtBytes...)
 		},
-	).Return(&entities.FundedTransfer{
+	).Return(&FundedTransfer{
 		FundedPsbt: fundedPsbt,
 	}, nil)
 	mockWalletKit.On("SignVirtualPsbt", ctx, fundedPsbt).Return(
@@ -204,22 +203,22 @@ func TestInteractiveTxBuilder_WithAltLeaves(t *testing.T) {
 
 	ctx := context.Background()
 
-	var assetID entities.AssetID
+	var assetID AssetID
 	copy(assetID[:], []byte("asset_id_32_bytes_long_enough!!!"))
 
-	var scriptKeyPubKey entities.PubKey
+	var scriptKeyPubKey PubKey
 	copy(scriptKeyPubKey[:], []byte("script_key_pubkey_33_bytes_long"))
 
-	var internalKeyPubKey entities.PubKey
+	var internalKeyPubKey PubKey
 	copy(internalKeyPubKey[:], []byte("internal_key_pubkey_33_bytes_lo"))
 
-	receiverKeys := entities.DerivedKeys{
-		ScriptKey: entities.ScriptKey{
+	receiverKeys := DerivedKeys{
+		ScriptKey: ScriptKey{
 			PubKey: scriptKeyPubKey,
 		},
-		InternalKey: entities.InternalKey{
+		InternalKey: InternalKey{
 			PubKey: internalKeyPubKey,
-			KeyLocator: entities.KeyLocator{
+			KeyLocator: KeyLocator{
 				Family: 212,
 				Index:  5,
 			},
@@ -232,12 +231,12 @@ func TestInteractiveTxBuilder_WithAltLeaves(t *testing.T) {
 	var transferTxid [32]byte
 	copy(transferTxid[:], []byte("txid_hash_32_bytes_long_enough!!"))
 
-	expectedResult := &entities.AssetTransfer{
+	expectedResult := &AssetTransfer{
 		TransferTxid: transferTxid,
 		AnchorTx:     []byte("anchor_tx_bytes"),
-		Outputs: []entities.TransferOutput{
+		Outputs: []TransferOutput{
 			{
-				AnchorOutpoint: entities.Outpoint{Txid: transferTxid, Index: 0},
+				AnchorOutpoint: Outpoint{Txid: transferTxid, Index: 0},
 				AnchorValue:    10,
 				ScriptKey:      scriptKeyPubKey,
 				Amount:         1000,
@@ -259,7 +258,7 @@ func TestInteractiveTxBuilder_WithAltLeaves(t *testing.T) {
 			psbtBytes := args.Get(1).([]byte)
 			capturedPsbt = append([]byte(nil), psbtBytes...)
 		},
-	).Return(&entities.FundedTransfer{
+	).Return(&FundedTransfer{
 		FundedPsbt: fundedPsbt,
 	}, nil)
 
@@ -272,7 +271,7 @@ func TestInteractiveTxBuilder_WithAltLeaves(t *testing.T) {
 		expectedResult, nil)
 
 	builder := newInteractiveTxBuilder(mockWalletKit, "tapassetr", 1)
-	builder.SetAsset(entities.AssetRefFromAssetID(assetID), 1000).
+	builder.SetAsset(AssetRefFromAssetID(assetID), 1000).
 		SetReceiverKeys(receiverKeys).
 		WithAltLeaves(receiverKeys.ScriptKey.PubKey, altLeaves)
 
@@ -317,7 +316,7 @@ func TestInteractiveTxBuilder_WithAltLeaves(t *testing.T) {
 }
 
 func requireInteractiveInputAssetID(t *testing.T, rawPSBT []byte,
-	want entities.AssetID) {
+	want AssetID) {
 
 	t.Helper()
 
@@ -336,7 +335,7 @@ func requireInteractiveInputAssetID(t *testing.T, rawPSBT []byte,
 	require.NotNil(t, prevID)
 	require.GreaterOrEqual(t, len(prevID), 68)
 
-	assetID, err := entities.ParseAssetID(prevID[36:68])
+	assetID, err := ParseAssetID(prevID[36:68])
 	require.NoError(t, err)
 	require.Equal(t, want, assetID)
 }
@@ -351,30 +350,30 @@ func TestInteractiveTxBuilder_Validation(t *testing.T) {
 
 	// Test missing receiver keys
 	builder := services.NewInteractiveTxBuilder()
-	builder.SetAsset(entities.AssetRefFromAssetID(entities.AssetID{1, 2, 3}), 1000)
+	builder.SetAsset(AssetRefFromAssetID(AssetID{1, 2, 3}), 1000)
 
 	_, err := builder.Execute(ctx)
 	require.ErrorIs(t, err, ErrNoReceiverKeys)
 
 	// Test missing asset ref.
 	builder2 := services.NewInteractiveTxBuilder()
-	builder2.SetReceiverKeys(entities.DerivedKeys{})
+	builder2.SetReceiverKeys(DerivedKeys{})
 
 	_, err = builder2.Execute(ctx)
 	require.ErrorIs(t, err, ErrNoAssetRef)
 
 	// Test zero amount
-	var assetID entities.AssetID
+	var assetID AssetID
 	copy(assetID[:], []byte("asset_id_32_bytes_long_enough!!!"))
 
 	builder3 := services.NewInteractiveTxBuilder()
-	builder3.SetAsset(entities.AssetRefFromAssetID(assetID), 0).
-		SetReceiverKeys(entities.DerivedKeys{
-			ScriptKey: entities.ScriptKey{
-				PubKey: entities.PubKey{1},
+	builder3.SetAsset(AssetRefFromAssetID(assetID), 0).
+		SetReceiverKeys(DerivedKeys{
+			ScriptKey: ScriptKey{
+				PubKey: PubKey{1},
 			},
-			InternalKey: entities.InternalKey{
-				PubKey: entities.PubKey{1},
+			InternalKey: InternalKey{
+				PubKey: PubKey{1},
 			},
 		})
 
@@ -385,13 +384,13 @@ func TestInteractiveTxBuilder_Validation(t *testing.T) {
 		new(MockWalletKitClient), "tapassetr", 1,
 	)
 	builder4.SetAsset(
-		entities.AssetRefFromGroupKey(testRefGroupKey(t)), 1000,
-	).SetReceiverKeys(entities.DerivedKeys{
-		ScriptKey: entities.ScriptKey{
-			PubKey: entities.PubKey{1},
+		AssetRefFromGroupKey(testRefGroupKey(t)), 1000,
+	).SetReceiverKeys(DerivedKeys{
+		ScriptKey: ScriptKey{
+			PubKey: PubKey{1},
 		},
-		InternalKey: entities.InternalKey{
-			PubKey: entities.PubKey{1},
+		InternalKey: InternalKey{
+			PubKey: PubKey{1},
 		},
 	})
 
@@ -404,34 +403,34 @@ func TestInteractiveTxBuilder_AlreadyFinished(t *testing.T) {
 
 	ctx := context.Background()
 
-	var assetID entities.AssetID
+	var assetID AssetID
 	copy(assetID[:], []byte("asset_id_32_bytes_long_enough!!!"))
 
-	var scriptKeyPubKey entities.PubKey
+	var scriptKeyPubKey PubKey
 	copy(scriptKeyPubKey[:], []byte("script_key_pubkey_33_bytes_long"))
 
-	var internalKeyPubKey entities.PubKey
+	var internalKeyPubKey PubKey
 	copy(internalKeyPubKey[:], []byte("internal_key_pubkey_33_bytes_lo"))
 
-	receiverKeys := entities.DerivedKeys{
-		ScriptKey: entities.ScriptKey{
+	receiverKeys := DerivedKeys{
+		ScriptKey: ScriptKey{
 			PubKey: scriptKeyPubKey,
 		},
-		InternalKey: entities.InternalKey{
+		InternalKey: InternalKey{
 			PubKey:     internalKeyPubKey,
-			KeyLocator: entities.KeyLocator{Family: 212, Index: 5},
+			KeyLocator: KeyLocator{Family: 212, Index: 5},
 		},
 	}
 
 	fundedPsbt := []byte("funded_psbt")
 	signedPsbt := []byte("signed_psbt")
 
-	expectedResult := &entities.AssetTransfer{
+	expectedResult := &AssetTransfer{
 		AnchorTx: []byte("anchor_tx_bytes"),
 	}
 
 	mockWalletKit.On("FundInteractivePsbt", ctx, mock.Anything).Return(
-		&entities.FundedTransfer{FundedPsbt: fundedPsbt}, nil)
+		&FundedTransfer{FundedPsbt: fundedPsbt}, nil)
 	mockWalletKit.On("SignVirtualPsbt", ctx, fundedPsbt).Return(
 		signedPsbt, nil)
 	mockWalletKit.On("AnchorVirtualPsbts", ctx, [][]byte{signedPsbt}).Return(
@@ -439,7 +438,7 @@ func TestInteractiveTxBuilder_AlreadyFinished(t *testing.T) {
 
 	builder := newInteractiveTxBuilder(mockWalletKit, "tapassetr", 1)
 	builder.SetAsset(
-		entities.AssetRefFromAssetID(assetID), 1000,
+		AssetRefFromAssetID(assetID), 1000,
 	).SetReceiverKeys(receiverKeys)
 
 	// First execution succeeds

@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -18,15 +17,15 @@ import (
 // controlling event delivery and stream errors.
 type mockEventClient struct {
 	mu             sync.Mutex
-	receiveSetup   func() (<-chan *entities.ReceiveEventRecord, <-chan error)
-	sendSetup      func() (<-chan *entities.SendEventRecord, <-chan error)
-	mintSetup      func() (<-chan *entities.MintEvent, <-chan error)
+	receiveSetup   func() (<-chan *ReceiveEventRecord, <-chan error)
+	sendSetup      func() (<-chan *SendEventRecord, <-chan error)
+	mintSetup      func() (<-chan *MintEvent, <-chan error)
 	subscribeCalls int
 }
 
 func (m *mockEventClient) SubscribeReceiveEvents(_ context.Context,
-	_ *entities.SubscribeReceiveEventsRequest) (
-	<-chan *entities.ReceiveEventRecord, <-chan error, error) {
+	_ *SubscribeReceiveEventsRequest) (
+	<-chan *ReceiveEventRecord, <-chan error, error) {
 
 	m.mu.Lock()
 	m.subscribeCalls++
@@ -43,8 +42,8 @@ func (m *mockEventClient) SubscribeReceiveEvents(_ context.Context,
 }
 
 func (m *mockEventClient) SubscribeSendEvents(_ context.Context,
-	_ *entities.SubscribeSendEventsRequest) (
-	<-chan *entities.SendEventRecord, <-chan error, error) {
+	_ *SubscribeSendEventsRequest) (
+	<-chan *SendEventRecord, <-chan error, error) {
 
 	m.mu.Lock()
 	m.subscribeCalls++
@@ -61,8 +60,8 @@ func (m *mockEventClient) SubscribeSendEvents(_ context.Context,
 }
 
 func (m *mockEventClient) SubscribeMintEvents(_ context.Context,
-	_ *entities.SubscribeMintEventsRequest) (
-	<-chan *entities.MintEvent, <-chan error, error) {
+	_ *SubscribeMintEventsRequest) (
+	<-chan *MintEvent, <-chan error, error) {
 
 	m.mu.Lock()
 	m.subscribeCalls++
@@ -91,16 +90,16 @@ func TestEventListener_ReceiveEvents(t *testing.T) {
 
 	mc := &mockEventClient{
 		receiveSetup: func() (
-			<-chan *entities.ReceiveEventRecord, <-chan error) {
+			<-chan *ReceiveEventRecord, <-chan error) {
 
-			evCh := make(chan *entities.ReceiveEventRecord, 3)
+			evCh := make(chan *ReceiveEventRecord, 3)
 			errCh := make(chan error, 1)
 
-			evCh <- &entities.ReceiveEventRecord{
+			evCh <- &ReceiveEventRecord{
 				Timestamp: 1,
 				Outpoint:  "txid:0",
 			}
-			evCh <- &entities.ReceiveEventRecord{
+			evCh <- &ReceiveEventRecord{
 				Timestamp: 2,
 				Outpoint:  "txid:1",
 			}
@@ -115,7 +114,7 @@ func TestEventListener_ReceiveEvents(t *testing.T) {
 
 	listener := NewEventListener(mc, EventHandler{
 		OnReceive: func(_ context.Context,
-			e *entities.ReceiveEvent) {
+			e *ReceiveEvent) {
 
 			received.Add(1)
 		},
@@ -145,17 +144,17 @@ func TestEventListener_Reconnect(t *testing.T) {
 
 	mc := &mockEventClient{
 		receiveSetup: func() (
-			<-chan *entities.ReceiveEventRecord, <-chan error) {
+			<-chan *ReceiveEventRecord, <-chan error) {
 
 			call := callCount.Add(1)
 
-			evCh := make(chan *entities.ReceiveEventRecord, 1)
+			evCh := make(chan *ReceiveEventRecord, 1)
 			errCh := make(chan error, 1)
 
 			if call == 1 {
 				// First call: deliver one event then
 				// fail with retriable error.
-				evCh <- &entities.ReceiveEventRecord{
+				evCh <- &ReceiveEventRecord{
 					Timestamp: 1,
 				}
 				close(evCh)
@@ -163,7 +162,7 @@ func TestEventListener_Reconnect(t *testing.T) {
 			} else {
 				// Second call: deliver event and close
 				// cleanly.
-				evCh <- &entities.ReceiveEventRecord{
+				evCh <- &ReceiveEventRecord{
 					Timestamp: 2,
 				}
 				close(evCh)
@@ -177,7 +176,7 @@ func TestEventListener_Reconnect(t *testing.T) {
 	var received atomic.Int32
 	listener := NewEventListener(mc, EventHandler{
 		OnReceive: func(_ context.Context,
-			_ *entities.ReceiveEvent) {
+			_ *ReceiveEvent) {
 
 			received.Add(1)
 		},
@@ -215,11 +214,11 @@ func TestEventListener_OnDisconnect(t *testing.T) {
 
 	mc := &mockEventClient{
 		receiveSetup: func() (
-			<-chan *entities.ReceiveEventRecord, <-chan error) {
+			<-chan *ReceiveEventRecord, <-chan error) {
 
 			call := callCount.Add(1)
 
-			evCh := make(chan *entities.ReceiveEventRecord, 1)
+			evCh := make(chan *ReceiveEventRecord, 1)
 			errCh := make(chan error, 1)
 
 			if call == 1 {
@@ -229,7 +228,7 @@ func TestEventListener_OnDisconnect(t *testing.T) {
 			} else {
 				// Second call: deliver event and close
 				// cleanly so the test terminates.
-				evCh <- &entities.ReceiveEventRecord{Timestamp: 1}
+				evCh <- &ReceiveEventRecord{Timestamp: 1}
 				close(evCh)
 				close(errCh)
 			}
@@ -252,7 +251,7 @@ func TestEventListener_OnDisconnect(t *testing.T) {
 
 	listener := NewEventListener(mc, EventHandler{
 		OnReceive: func(_ context.Context,
-			_ *entities.ReceiveEvent) {
+			_ *ReceiveEvent) {
 		},
 		OnDisconnect: func(stream string, err error,
 			nextRetry time.Duration) {
@@ -308,9 +307,9 @@ func TestEventListener_OnDisconnect(t *testing.T) {
 func TestEventListener_FatalError(t *testing.T) {
 	mc := &mockEventClient{
 		receiveSetup: func() (
-			<-chan *entities.ReceiveEventRecord, <-chan error) {
+			<-chan *ReceiveEventRecord, <-chan error) {
 
-			evCh := make(chan *entities.ReceiveEventRecord)
+			evCh := make(chan *ReceiveEventRecord)
 			errCh := make(chan error, 1)
 
 			// Send a fatal error immediately.
@@ -330,7 +329,7 @@ func TestEventListener_FatalError(t *testing.T) {
 
 	listener := NewEventListener(mc, EventHandler{
 		OnReceive: func(_ context.Context,
-			_ *entities.ReceiveEvent) {
+			_ *ReceiveEvent) {
 
 			t.Fatal("should not receive events")
 		},
@@ -372,9 +371,9 @@ func TestEventListener_FatalError(t *testing.T) {
 func TestEventListener_MaxRetries(t *testing.T) {
 	mc := &mockEventClient{
 		receiveSetup: func() (
-			<-chan *entities.ReceiveEventRecord, <-chan error) {
+			<-chan *ReceiveEventRecord, <-chan error) {
 
-			evCh := make(chan *entities.ReceiveEventRecord)
+			evCh := make(chan *ReceiveEventRecord)
 			errCh := make(chan error, 1)
 
 			close(evCh)
@@ -388,7 +387,7 @@ func TestEventListener_MaxRetries(t *testing.T) {
 
 	listener := NewEventListener(mc, EventHandler{
 		OnReceive: func(_ context.Context,
-			_ *entities.ReceiveEvent) {
+			_ *ReceiveEvent) {
 		},
 		OnError: func(_ string, _ error) {
 			gotError.Store(true)
@@ -420,16 +419,16 @@ func TestEventListener_Stop(t *testing.T) {
 	// Create a stream that blocks forever.
 	mc := &mockEventClient{
 		receiveSetup: func() (
-			<-chan *entities.ReceiveEventRecord, <-chan error) {
+			<-chan *ReceiveEventRecord, <-chan error) {
 
-			return make(chan *entities.ReceiveEventRecord),
+			return make(chan *ReceiveEventRecord),
 				make(chan error, 1)
 		},
 	}
 
 	listener := NewEventListener(mc, EventHandler{
 		OnReceive: func(_ context.Context,
-			_ *entities.ReceiveEvent) {
+			_ *ReceiveEvent) {
 		},
 	})
 
@@ -479,28 +478,28 @@ func TestEventListener_MultipleStreams(t *testing.T) {
 
 	mc := &mockEventClient{
 		receiveSetup: func() (
-			<-chan *entities.ReceiveEventRecord, <-chan error) {
+			<-chan *ReceiveEventRecord, <-chan error) {
 
-			ch := make(chan *entities.ReceiveEventRecord, 1)
-			ch <- &entities.ReceiveEventRecord{Timestamp: 1}
+			ch := make(chan *ReceiveEventRecord, 1)
+			ch <- &ReceiveEventRecord{Timestamp: 1}
 			close(ch)
 
 			return ch, make(chan error)
 		},
 		sendSetup: func() (
-			<-chan *entities.SendEventRecord, <-chan error) {
+			<-chan *SendEventRecord, <-chan error) {
 
-			ch := make(chan *entities.SendEventRecord, 1)
-			ch <- &entities.SendEventRecord{Timestamp: 1}
+			ch := make(chan *SendEventRecord, 1)
+			ch <- &SendEventRecord{Timestamp: 1}
 			close(ch)
 
 			return ch, make(chan error)
 		},
 		mintSetup: func() (
-			<-chan *entities.MintEvent, <-chan error) {
+			<-chan *MintEvent, <-chan error) {
 
-			ch := make(chan *entities.MintEvent, 1)
-			ch <- &entities.MintEvent{Timestamp: 1}
+			ch := make(chan *MintEvent, 1)
+			ch <- &MintEvent{Timestamp: 1}
 			close(ch)
 
 			return ch, make(chan error)
@@ -509,17 +508,17 @@ func TestEventListener_MultipleStreams(t *testing.T) {
 
 	listener := NewEventListener(mc, EventHandler{
 		OnReceive: func(_ context.Context,
-			_ *entities.ReceiveEvent) {
+			_ *ReceiveEvent) {
 
 			receiveCount.Add(1)
 		},
 		OnSend: func(_ context.Context,
-			_ *entities.SendEvent) {
+			_ *SendEvent) {
 
 			sendCount.Add(1)
 		},
 		OnMint: func(_ context.Context,
-			_ *entities.MintEvent) {
+			_ *MintEvent) {
 
 			mintCount.Add(1)
 		},

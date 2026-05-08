@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
-	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/status"
 )
@@ -28,10 +27,10 @@ func TestErrorHandling(t *testing.T) {
 		{
 			name: "non-existent proof",
 			run: func(c tapsdk.Client, ctx context.Context) error {
-				fakeRef := entities.AssetRefFromAssetID(
-					entities.AssetID{},
+				fakeRef := tapsdk.AssetRefFromAssetID(
+					tapsdk.AssetID{},
 				)
-				fakePubKey := entities.PubKey{}
+				fakePubKey := tapsdk.PubKey{}
 				_, err := c.ExportProof(
 					ctx, fakeRef, fakePubKey, nil,
 				)

@@ -17,7 +17,7 @@ import (
 type TLSSource interface {
 	// tlsConfig builds the *tls.Config used by the underlying
 	// http.Transport.
-	tlsConfig() (*tls.Config, error)
+	tlsConfig(minVersion uint16) (*tls.Config, error)
 }
 
 // TLSFromPath returns a TLSSource that loads a PEM-encoded
@@ -48,34 +48,40 @@ type tlsPathSource struct {
 	path string
 }
 
-func (s tlsPathSource) tlsConfig() (*tls.Config, error) {
-	return tlsConfigFromFile(s.path)
+func (s tlsPathSource) tlsConfig(minVersion uint16) (*tls.Config, error) {
+	return tlsConfigFromFile(s.path, minVersion)
 }
 
 type tlsDataSource struct {
 	pem string
 }
 
-func (s tlsDataSource) tlsConfig() (*tls.Config, error) {
+func (s tlsDataSource) tlsConfig(minVersion uint16) (*tls.Config, error) {
 	pool, err := certPoolFromPEM([]byte(s.pem))
 	if err != nil {
 		return nil, err
 	}
 
-	return &tls.Config{RootCAs: pool}, nil
+	return &tls.Config{
+		RootCAs:    pool,
+		MinVersion: minVersion,
+	}, nil
 }
 
 type tlsSystemSource struct{}
 
-func (tlsSystemSource) tlsConfig() (*tls.Config, error) {
-	return &tls.Config{}, nil
+func (tlsSystemSource) tlsConfig(minVersion uint16) (*tls.Config, error) {
+	return &tls.Config{
+		MinVersion: minVersion,
+	}, nil
 }
 
 type tlsInsecureSource struct{}
 
-func (tlsInsecureSource) tlsConfig() (*tls.Config, error) {
+func (tlsInsecureSource) tlsConfig(minVersion uint16) (*tls.Config, error) {
 	return &tls.Config{
 		InsecureSkipVerify: true, //nolint:gosec
+		MinVersion:         minVersion,
 	}, nil
 }
 
@@ -101,7 +107,9 @@ func certPoolFromPEM(pemData []byte) (*x509.CertPool, error) {
 
 // tlsConfigFromFile reads a PEM certificate file and returns a TLS
 // config that trusts it.
-func tlsConfigFromFile(path string) (*tls.Config, error) {
+func tlsConfigFromFile(path string,
+	minVersion uint16) (*tls.Config, error) {
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read TLS cert at %s: %v",
@@ -113,5 +121,8 @@ func tlsConfigFromFile(path string) (*tls.Config, error) {
 		return nil, err
 	}
 
-	return &tls.Config{RootCAs: pool}, nil
+	return &tls.Config{
+		RootCAs:    pool,
+		MinVersion: minVersion,
+	}, nil
 }

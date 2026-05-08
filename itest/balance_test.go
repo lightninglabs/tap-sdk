@@ -10,7 +10,6 @@ import (
 	"time"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
-	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,7 +23,7 @@ func TestBalanceQueries(t *testing.T) {
 				testing.TB, *TestHarness, context.Context,
 			) (*MintResult, error)
 			wantAmount uint64
-			wantRef    func(entities.AssetRef) bool
+			wantRef    func(tapsdk.AssetRef) bool
 		}{
 			{
 				name: "grouped fungible asset",
@@ -39,7 +38,7 @@ func TestBalanceQueries(t *testing.T) {
 					)
 				},
 				wantAmount: 500,
-				wantRef: func(ref entities.AssetRef) bool {
+				wantRef: func(ref tapsdk.AssetRef) bool {
 					return ref.IsGroupRef()
 				},
 			},
@@ -56,7 +55,7 @@ func TestBalanceQueries(t *testing.T) {
 					)
 				},
 				wantAmount: 1,
-				wantRef: func(ref entities.AssetRef) bool {
+				wantRef: func(ref tapsdk.AssetRef) bool {
 					return ref.IsAssetIDRef()
 				},
 			},
@@ -83,7 +82,7 @@ func TestBalanceQueries(t *testing.T) {
 				require.Equal(t, tc.wantAmount, balance)
 
 				balances, err := h.AliceWallet.ListBalances(
-					ctx, &entities.ListBalancesRequest{
+					ctx, &tapsdk.ListBalancesRequest{
 						AssetRef: &minted.Ref,
 					},
 				)
@@ -121,7 +120,7 @@ func TestListBalancesMultiIssuanceFungible(t *testing.T) {
 		)
 
 		balances, err := h.AliceWallet.ListBalances(
-			ctx, &entities.ListBalancesRequest{
+			ctx, &tapsdk.ListBalancesRequest{
 				AssetRef: &first.Ref,
 			},
 		)
@@ -155,7 +154,7 @@ func TestListBalancesCollectionItems(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, second.Ref.IsAssetIDRef())
 
-		firstItemRef := entities.AssetRefFromAssetID(
+		firstItemRef := tapsdk.AssetRefFromAssetID(
 			first.Asset.Genesis.IssuanceID,
 		)
 
@@ -193,7 +192,7 @@ func TestGetBalance_UnknownAsset(t *testing.T) {
 		ref := randomAssetIDRef(t)
 
 		_, err = h.AliceWallet.ListBalances(
-			ctx, &entities.ListBalancesRequest{
+			ctx, &tapsdk.ListBalancesRequest{
 				AssetRef: &ref,
 			},
 		)
@@ -230,7 +229,7 @@ func TestGetBalance_ZeroAfterUniverseBootstrap(t *testing.T) {
 		}, defaultWaitTimeout, time.Second)
 
 		balances, err := h.BobWallet.ListBalances(
-			ctx, &entities.ListBalancesRequest{
+			ctx, &tapsdk.ListBalancesRequest{
 				AssetRef: &minted.Ref,
 			},
 		)
@@ -250,21 +249,21 @@ func TestGetBalance_ZeroAfterUniverseBootstrap(t *testing.T) {
 // randomAssetIDRef builds a 32-byte random AssetID and wraps it in an
 // AssetRef. Collision with a live asset is astronomically unlikely in
 // regtest.
-func randomAssetIDRef(t testing.TB) entities.AssetRef {
+func randomAssetIDRef(t testing.TB) tapsdk.AssetRef {
 	t.Helper()
 
 	var raw [32]byte
 	_, err := rand.Read(raw[:])
 	require.NoError(t, err)
 
-	id, err := entities.ParseAssetID(raw[:])
+	id, err := tapsdk.ParseAssetID(raw[:])
 	require.NoError(t, err)
 
-	return entities.AssetRefFromAssetID(id)
+	return tapsdk.AssetRefFromAssetID(id)
 }
 
 func requireBalanceEntry(t testing.TB,
-	resp *entities.ListBalancesResponse, ref entities.AssetRef,
+	resp *tapsdk.ListBalancesResponse, ref tapsdk.AssetRef,
 	amount uint64) {
 
 	t.Helper()

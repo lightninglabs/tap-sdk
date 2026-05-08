@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 )
 
 const (
@@ -84,14 +84,14 @@ func parseInt64(s string) (int64, error) {
 	return strconv.ParseInt(s, 10, 64)
 }
 
-// parseAssetType converts a proto enum string to entities.AssetType.
-func parseAssetType(s string) (entities.AssetType, error) {
+// parseAssetType converts a proto enum string to tapsdk.AssetType.
+func parseAssetType(s string) (tapsdk.AssetType, error) {
 	switch s {
 	case assetTypeNormalJSON:
-		return entities.AssetTypeFungible, nil
+		return tapsdk.AssetTypeFungible, nil
 
 	case assetTypeCollectibleJSON:
-		return entities.AssetTypeNFT, nil
+		return tapsdk.AssetTypeNFT, nil
 
 	default:
 		return 0, fmt.Errorf("unknown asset_type: %s", s)
@@ -99,15 +99,15 @@ func parseAssetType(s string) (entities.AssetType, error) {
 }
 
 // parseBurnAssetType converts a burn asset_type enum string to
-// entities.AssetType. Burn history rejects unknown values because the type
+// tapsdk.AssetType. Burn history rejects unknown values because the type
 // determines how the row is keyed by AssetRef.
-func parseBurnAssetType(s string) (entities.AssetType, error) {
+func parseBurnAssetType(s string) (tapsdk.AssetType, error) {
 	switch s {
 	case assetTypeNormalJSON:
-		return entities.AssetTypeFungible, nil
+		return tapsdk.AssetTypeFungible, nil
 
 	case assetTypeCollectibleJSON:
-		return entities.AssetTypeNFT, nil
+		return tapsdk.AssetTypeNFT, nil
 
 	default:
 		return 0, fmt.Errorf("unknown burn asset_type: %s", s)
@@ -115,95 +115,95 @@ func parseBurnAssetType(s string) (entities.AssetType, error) {
 }
 
 // parseAssetVersion converts a proto enum string to
-// entities.AssetVersion.
-func parseAssetVersion(s string) entities.AssetVersion {
+// tapsdk.AssetVersion.
+func parseAssetVersion(s string) tapsdk.AssetVersion {
 	switch s {
 	case "ASSET_VERSION_V1":
-		return entities.AssetVersionV1
+		return tapsdk.AssetVersionV1
 	default:
-		return entities.AssetVersionV0
+		return tapsdk.AssetVersionV0
 	}
 }
 
 // parseAddressVersion converts a proto enum string to
-// entities.AddressVersion.
-func parseAddressVersion(s string) entities.AddressVersion {
+// tapsdk.AddressVersion.
+func parseAddressVersion(s string) tapsdk.AddressVersion {
 	switch s {
 	case "ADDR_VERSION_V1":
-		return entities.AddressVersionV1
+		return tapsdk.AddressVersionV1
 	case "ADDR_VERSION_V2":
-		return entities.AddressVersionV2
+		return tapsdk.AddressVersionV2
 	default:
-		return entities.AddressVersionV0
+		return tapsdk.AddressVersionV0
 	}
 }
 
-// parseBackupMode converts a proto enum string to entities.BackupMode.
-func parseBackupMode(s string) entities.BackupMode {
+// parseBackupMode converts a proto enum string to tapsdk.BackupMode.
+func parseBackupMode(s string) tapsdk.BackupMode {
 	switch s {
 	case "COMPACT":
-		return entities.BackupModeCompact
+		return tapsdk.BackupModeCompact
 	case "OPTIMISTIC":
-		return entities.BackupModeOptimistic
+		return tapsdk.BackupModeOptimistic
 	default:
-		return entities.BackupModeRaw
+		return tapsdk.BackupModeRaw
 	}
 }
 
 // parseAddressEventStatus converts a proto enum string to
-// entities.AddressEventStatus.
-func parseAddressEventStatus(s string) entities.AddressEventStatus {
+// tapsdk.AddressEventStatus.
+func parseAddressEventStatus(s string) tapsdk.AddressEventStatus {
 	switch s {
 	case "ADDR_EVENT_STATUS_TRANSACTION_DETECTED":
-		return entities.AddressEventStatusTransactionDetected
+		return tapsdk.AddressEventStatusTransactionDetected
 	case "ADDR_EVENT_STATUS_TRANSACTION_CONFIRMED":
-		return entities.AddressEventStatusTransactionConfirmed
+		return tapsdk.AddressEventStatusTransactionConfirmed
 	case "ADDR_EVENT_STATUS_PROOF_RECEIVED":
-		return entities.AddressEventStatusProofReceived
+		return tapsdk.AddressEventStatusProofReceived
 	case "ADDR_EVENT_STATUS_COMPLETED":
-		return entities.AddressEventStatusCompleted
+		return tapsdk.AddressEventStatusCompleted
 	default:
-		return entities.AddressEventStatusUnknown
+		return tapsdk.AddressEventStatusUnknown
 	}
 }
 
-// parseBatchState converts a proto enum string to entities.BatchState.
-func parseBatchState(s string) entities.BatchState {
+// parseBatchState converts a proto enum string to tapsdk.BatchState.
+func parseBatchState(s string) tapsdk.BatchState {
 	switch s {
 	case "BATCH_STATE_PENDING":
-		return entities.BatchStatePending
+		return tapsdk.BatchStatePending
 	case "BATCH_STATE_FROZEN":
-		return entities.BatchStateFrozen
+		return tapsdk.BatchStateFrozen
 	case "BATCH_STATE_COMMITTED":
-		return entities.BatchStateCommitted
+		return tapsdk.BatchStateCommitted
 	case "BATCH_STATE_BROADCAST":
-		return entities.BatchStateBroadcast
+		return tapsdk.BatchStateBroadcast
 	case "BATCH_STATE_CONFIRMED":
-		return entities.BatchStateConfirmed
+		return tapsdk.BatchStateConfirmed
 	case "BATCH_STATE_FINALIZED":
-		return entities.BatchStateFinalized
+		return tapsdk.BatchStateFinalized
 	case "BATCH_STATE_SEEDLING_CANCELLED":
-		return entities.BatchStateSeedlingCancelled
+		return tapsdk.BatchStateSeedlingCancelled
 	case "BATCH_STATE_SPROUT_CANCELLED":
-		return entities.BatchStateSproutCancelled
+		return tapsdk.BatchStateSproutCancelled
 	default:
-		return entities.BatchStatePending
+		return tapsdk.BatchStatePending
 	}
 }
 
 // parseAssetMetaType converts a proto enum string to
-// entities.AssetMetaType.
-func parseAssetMetaType(s string) entities.AssetMetaType {
+// tapsdk.AssetMetaType.
+func parseAssetMetaType(s string) tapsdk.AssetMetaType {
 	switch s {
 	case "META_TYPE_JSON":
-		return entities.AssetMetaTypeJSON
+		return tapsdk.AssetMetaTypeJSON
 	default:
-		return entities.AssetMetaTypeOpaque
+		return tapsdk.AssetMetaTypeOpaque
 	}
 }
 
-// unmarshalInfo converts a JSON info response to entities.Info.
-func unmarshalInfo(resp *jsonGetInfoResponse) (*entities.Info, error) {
+// unmarshalInfo converts a JSON info response to tapsdk.Info.
+func unmarshalInfo(resp *jsonGetInfoResponse) (*tapsdk.Info, error) {
 	pubKeyBytes, err := parseHexBytes(resp.LndIdentityPubkey)
 	if err != nil {
 		return nil, fmt.Errorf("invalid lnd_identity_pubkey: %w", err)
@@ -212,7 +212,7 @@ func unmarshalInfo(resp *jsonGetInfoResponse) (*entities.Info, error) {
 	var pubKey [33]byte
 	copy(pubKey[:], pubKeyBytes)
 
-	return &entities.Info{
+	return &tapsdk.Info{
 		Version:           resp.Version,
 		LndVersion:        resp.LndVersion,
 		Network:           resp.Network,
@@ -226,7 +226,7 @@ func unmarshalInfo(resp *jsonGetInfoResponse) (*entities.Info, error) {
 // unmarshalIssuanceGenesis converts a JSON asset_genesis wire field into the
 // SDK's concrete issuance genesis type.
 func unmarshalIssuanceGenesis(
-	g *jsonGenesisInfo) (*entities.IssuanceGenesis, error) {
+	g *jsonGenesisInfo) (*tapsdk.IssuanceGenesis, error) {
 
 	if g == nil {
 		return nil, fmt.Errorf("nil asset genesis")
@@ -236,7 +236,7 @@ func unmarshalIssuanceGenesis(
 		return nil, fmt.Errorf("missing genesis point")
 	}
 
-	firstPrevOut, err := entities.NewOutpointFromStr(g.GenesisPoint)
+	firstPrevOut, err := tapsdk.NewOutpointFromStr(g.GenesisPoint)
 	if err != nil {
 		return nil, fmt.Errorf("invalid genesis point: %w", err)
 	}
@@ -269,7 +269,7 @@ func unmarshalIssuanceGenesis(
 		return nil, err
 	}
 
-	return &entities.IssuanceGenesis{
+	return &tapsdk.IssuanceGenesis{
 		FirstPrevOut: firstPrevOut,
 		Tag:          g.Name,
 		MetaHash:     metaHash,
@@ -279,8 +279,8 @@ func unmarshalIssuanceGenesis(
 	}, nil
 }
 
-// unmarshalAsset converts a JSON asset to entities.AssetRecord.
-func unmarshalAsset(a *jsonAsset) (*entities.AssetRecord, error) {
+// unmarshalAsset converts a JSON asset to tapsdk.AssetRecord.
+func unmarshalAsset(a *jsonAsset) (*tapsdk.AssetRecord, error) {
 	if a == nil {
 		return nil, fmt.Errorf("nil asset")
 	}
@@ -308,21 +308,21 @@ func unmarshalAsset(a *jsonAsset) (*entities.AssetRecord, error) {
 		return nil, fmt.Errorf("invalid amount: %w", err)
 	}
 
-	asset := &entities.AssetRecord{
+	asset := &tapsdk.AssetRecord{
 		Version:          uint8(parseAssetVersion(a.Version)),
 		Genesis:          *genesis,
 		Amount:           amount,
 		LockTime:         uint64(a.LockTime),
 		RelativeLockTime: uint64(a.RelativeLockTime),
 		ScriptVersion:    uint16(a.ScriptVersion),
-		ScriptKey: entities.ScriptKey{
+		ScriptKey: tapsdk.ScriptKey{
 			PubKey: scriptKeyPub,
 		},
 	}
 
 	// tapd keys every queryable map by the tweaked group key, so
 	// that's what AssetRef must encode.
-	var tweakedGroupKey *entities.PubKey
+	var tweakedGroupKey *tapsdk.PubKey
 	if a.AssetGroup != nil && a.AssetGroup.TweakedGroupKey != "" {
 		tweaked, err := parseHexBytes(a.AssetGroup.TweakedGroupKey)
 		if err != nil {
@@ -331,21 +331,21 @@ func unmarshalAsset(a *jsonAsset) (*entities.AssetRecord, error) {
 			)
 		}
 		if len(tweaked) == 33 {
-			var gk entities.PubKey
+			var gk tapsdk.PubKey
 			copy(gk[:], tweaked)
 			tweakedGroupKey = &gk
 		}
 	}
 
-	asset.AssetRef = entities.AssetRefFromAsset(
+	asset.AssetRef = tapsdk.AssetRefFromAsset(
 		asset.Genesis.IssuanceID, tweakedGroupKey,
 	)
 
 	return asset, nil
 }
 
-// unmarshalAddr converts a JSON addr to entities.Address.
-func unmarshalAddr(a *jsonAddr) (*entities.Address, error) {
+// unmarshalAddr converts a JSON addr to tapsdk.Address.
+func unmarshalAddr(a *jsonAddr) (*tapsdk.Address, error) {
 	if a == nil {
 		return nil, fmt.Errorf("nil address")
 	}
@@ -387,7 +387,7 @@ func unmarshalAddr(a *jsonAddr) (*entities.Address, error) {
 		return nil, err
 	}
 
-	addr := &entities.Address{
+	addr := &tapsdk.Address{
 		Encoded:          a.Encoded,
 		AssetType:        assetType,
 		ProofCourierAddr: a.ProofCourierAddr,
@@ -406,45 +406,45 @@ func unmarshalAddr(a *jsonAddr) (*entities.Address, error) {
 	copy(addr.InternalKey[:], internalKeyBytes)
 	copy(addr.TaprootOutputKey[:], taprootOutputKeyBytes)
 
-	var assetID *entities.AssetID
+	var assetID *tapsdk.AssetID
 	assetIDBytes, err := parseHexBytes(a.AssetID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid asset ID: %w", err)
 	}
 
 	if len(assetIDBytes) == 32 {
-		var parsedAssetID entities.AssetID
+		var parsedAssetID tapsdk.AssetID
 		copy(parsedAssetID[:], assetIDBytes)
 		assetID = &parsedAssetID
 	}
 
-	var groupKey *entities.PubKey
+	var groupKey *tapsdk.PubKey
 	groupKeyBytes, err := parseHexBytes(a.GroupKey)
 	if err != nil {
 		return nil, fmt.Errorf("invalid group key: %w", err)
 	}
 
 	if len(groupKeyBytes) == 33 {
-		var parsedGroupKey entities.PubKey
+		var parsedGroupKey tapsdk.PubKey
 		copy(parsedGroupKey[:], groupKeyBytes)
 		groupKey = &parsedGroupKey
 	}
 
 	switch {
 	case assetID != nil && assetID.IsZero() && groupKey != nil:
-		addr.AssetRef = entities.AssetRefFromGroupKey(*groupKey)
+		addr.AssetRef = tapsdk.AssetRefFromGroupKey(*groupKey)
 
 	case assetID != nil && assetID.IsZero():
 		return nil, fmt.Errorf("address asset ID is zero with no " +
 			"group key")
 
 	case assetID != nil:
-		addr.AssetRef = entities.AssetRefFromTypedAsset(
+		addr.AssetRef = tapsdk.AssetRefFromTypedAsset(
 			*assetID, groupKey, addr.AssetType,
 		)
 
 	case groupKey != nil:
-		addr.AssetRef = entities.AssetRefFromGroupKey(*groupKey)
+		addr.AssetRef = tapsdk.AssetRefFromGroupKey(*groupKey)
 
 	default:
 		return nil, fmt.Errorf("address missing asset ID or group key")
@@ -461,9 +461,9 @@ func unmarshalAddr(a *jsonAddr) (*entities.Address, error) {
 }
 
 // unmarshalAssetTransfer converts a JSON transfer to
-// entities.AssetTransfer.
+// tapsdk.AssetTransfer.
 func unmarshalAssetTransfer(
-	t *jsonAssetTransfer) (*entities.AssetTransfer, error) {
+	t *jsonAssetTransfer) (*tapsdk.AssetTransfer, error) {
 
 	if t == nil {
 		return nil, fmt.Errorf("nil transfer")
@@ -485,7 +485,7 @@ func unmarshalAssetTransfer(
 		anchorTxid = h.String()
 	}
 
-	outputs := make([]entities.TransferOutput, 0, len(t.Outputs))
+	outputs := make([]tapsdk.TransferOutput, 0, len(t.Outputs))
 	for _, out := range t.Outputs {
 		amount, err := parseUint64(out.Amount)
 		if err != nil {
@@ -503,7 +503,7 @@ func unmarshalAssetTransfer(
 			return nil, err
 		}
 
-		output := entities.TransferOutput{
+		output := tapsdk.TransferOutput{
 			Amount:    amount,
 			AssetType: assetType,
 			ProofBlob: proofBlob,
@@ -537,7 +537,7 @@ func unmarshalAssetTransfer(
 		}
 
 		if out.Anchor != nil {
-			op, err := entities.NewOutpointFromStr(
+			op, err := tapsdk.NewOutpointFromStr(
 				out.Anchor.Outpoint,
 			)
 			if err != nil {
@@ -567,7 +567,7 @@ func unmarshalAssetTransfer(
 				)
 			}
 			if len(groupKeyBytes) > 0 {
-				groupKey, err := entities.ParsePubKey(
+				groupKey, err := tapsdk.ParsePubKey(
 					groupKeyBytes,
 				)
 				if err != nil {
@@ -583,7 +583,7 @@ func unmarshalAssetTransfer(
 		outputs = append(outputs, output)
 	}
 
-	inputs := make([]entities.TransferInput, 0, len(t.Inputs))
+	inputs := make([]tapsdk.TransferInput, 0, len(t.Inputs))
 	for _, in := range t.Inputs {
 		if in == nil {
 			return nil, fmt.Errorf("nil transfer input")
@@ -621,7 +621,7 @@ func unmarshalAssetTransfer(
 				err)
 		}
 
-		anchorPoint, err := entities.NewOutpointFromStr(
+		anchorPoint, err := tapsdk.NewOutpointFromStr(
 			in.AnchorPoint,
 		)
 		if err != nil {
@@ -640,7 +640,7 @@ func unmarshalAssetTransfer(
 			return nil, err
 		}
 
-		input := entities.TransferInput{
+		input := tapsdk.TransferInput{
 			AnchorPoint: anchorPoint,
 			IssuanceID:  assetID,
 			AssetType:   assetType,
@@ -659,7 +659,7 @@ func unmarshalAssetTransfer(
 				)
 			}
 			if len(groupKeyBytes) > 0 {
-				groupKey, err := entities.ParsePubKey(
+				groupKey, err := tapsdk.ParsePubKey(
 					groupKeyBytes,
 				)
 				if err != nil {
@@ -710,7 +710,7 @@ func unmarshalAssetTransfer(
 		)
 	}
 
-	return &entities.AssetTransfer{
+	return &tapsdk.AssetTransfer{
 		TransferTimestamp:    transferTimestamp,
 		TransferTxid:         transferTxid,
 		AnchorTxid:           anchorTxid,
@@ -727,9 +727,9 @@ func unmarshalAssetTransfer(
 }
 
 // unmarshalAddrEvent converts a JSON addr event to
-// entities.AddressEvent.
+// tapsdk.AddressEvent.
 func unmarshalAddrEvent(
-	e *jsonAddrEvent) (*entities.AddressEvent, error) {
+	e *jsonAddrEvent) (*tapsdk.AddressEvent, error) {
 
 	if e == nil {
 		return nil, fmt.Errorf("nil address event")
@@ -745,7 +745,7 @@ func unmarshalAddrEvent(
 		return nil, fmt.Errorf("invalid utxo amount: %w", err)
 	}
 
-	event := &entities.AddressEvent{
+	event := &tapsdk.AddressEvent{
 		CreationTime:       creationTime,
 		Status:             parseAddressEventStatus(e.Status),
 		Outpoint:           e.Outpoint,
@@ -776,8 +776,8 @@ func unmarshalAddrEvent(
 }
 
 // unmarshalScriptKey converts a JSON script key to
-// entities.ScriptKey.
-func unmarshalScriptKey(k *jsonScriptKey) (*entities.ScriptKey, error) {
+// tapsdk.ScriptKey.
+func unmarshalScriptKey(k *jsonScriptKey) (*tapsdk.ScriptKey, error) {
 	if k == nil {
 		return nil, fmt.Errorf("nil script key")
 	}
@@ -787,7 +787,7 @@ func unmarshalScriptKey(k *jsonScriptKey) (*entities.ScriptKey, error) {
 		return nil, fmt.Errorf("invalid script key pub_key: %w", err)
 	}
 
-	pubKey, err := entities.ParseTaprootPubKey(pubKeyBytes)
+	pubKey, err := tapsdk.ParseTaprootPubKey(pubKeyBytes)
 	if err != nil {
 		return nil, fmt.Errorf("invalid script key public key: %w",
 			err)
@@ -798,7 +798,7 @@ func unmarshalScriptKey(k *jsonScriptKey) (*entities.ScriptKey, error) {
 		return nil, fmt.Errorf("invalid tap_tweak: %w", err)
 	}
 
-	scriptKey := &entities.ScriptKey{
+	scriptKey := &tapsdk.ScriptKey{
 		PubKey:   pubKey,
 		TapTweak: tapTweak,
 	}
@@ -816,9 +816,9 @@ func unmarshalScriptKey(k *jsonScriptKey) (*entities.ScriptKey, error) {
 }
 
 // unmarshalKeyDescriptor converts a JSON key descriptor to
-// entities.KeyDescriptor.
+// tapsdk.KeyDescriptor.
 func unmarshalKeyDescriptor(
-	d *jsonKeyDescriptor) (*entities.KeyDescriptor, error) {
+	d *jsonKeyDescriptor) (*tapsdk.KeyDescriptor, error) {
 
 	if d == nil {
 		return nil, fmt.Errorf("nil key descriptor")
@@ -829,15 +829,15 @@ func unmarshalKeyDescriptor(
 		return nil, fmt.Errorf("invalid raw_key_bytes: %w", err)
 	}
 
-	parsedKey, err := entities.ParsePubKey(rawKeyBytes)
+	parsedKey, err := tapsdk.ParsePubKey(rawKeyBytes)
 	if err != nil {
 		return nil, fmt.Errorf("invalid raw key bytes: %w", err)
 	}
 
-	keyDesc := &entities.KeyDescriptor{RawKeyBytes: parsedKey}
+	keyDesc := &tapsdk.KeyDescriptor{RawKeyBytes: parsedKey}
 
 	if d.KeyLoc != nil {
-		keyDesc.KeyLocator = entities.KeyLocator{
+		keyDesc.KeyLocator = tapsdk.KeyLocator{
 			Family: uint32(d.KeyLoc.KeyFamily),
 			Index:  uint32(d.KeyLoc.KeyIndex),
 		}
@@ -847,9 +847,9 @@ func unmarshalKeyDescriptor(
 }
 
 // unmarshalMintingBatch converts a JSON minting batch to
-// entities.MintingBatch.
+// tapsdk.MintingBatch.
 func unmarshalMintingBatch(
-	b *jsonMintingBatch) (*entities.MintingBatch, error) {
+	b *jsonMintingBatch) (*tapsdk.MintingBatch, error) {
 
 	if b == nil {
 		return nil, fmt.Errorf("nil minting batch")
@@ -865,7 +865,7 @@ func unmarshalMintingBatch(
 		return nil, fmt.Errorf("invalid batch_psbt: %w", err)
 	}
 
-	batch := &entities.MintingBatch{
+	batch := &tapsdk.MintingBatch{
 		BatchTxid:  b.BatchTxid,
 		State:      parseBatchState(b.State),
 		CreatedAt:  createdAt,
@@ -879,7 +879,7 @@ func unmarshalMintingBatch(
 			return nil, fmt.Errorf("invalid batch_key: %w", err)
 		}
 
-		batchKey, err := entities.ParsePubKey(batchKeyBytes)
+		batchKey, err := tapsdk.ParsePubKey(batchKeyBytes)
 		if err != nil {
 			return nil, fmt.Errorf("invalid batch key: %w", err)
 		}
@@ -888,7 +888,7 @@ func unmarshalMintingBatch(
 	}
 
 	batch.Assets = make(
-		[]entities.PendingMintAsset, 0, len(b.Assets),
+		[]tapsdk.PendingMintAsset, 0, len(b.Assets),
 	)
 	for _, rpcAsset := range b.Assets {
 		asset, err := unmarshalPendingMintAsset(rpcAsset)
@@ -903,9 +903,9 @@ func unmarshalMintingBatch(
 }
 
 // unmarshalPendingMintAsset converts a JSON pending asset to
-// entities.PendingMintAsset.
+// tapsdk.PendingMintAsset.
 func unmarshalPendingMintAsset(
-	a *jsonPendingAsset) (*entities.PendingMintAsset, error) {
+	a *jsonPendingAsset) (*tapsdk.PendingMintAsset, error) {
 
 	if a == nil {
 		return nil, fmt.Errorf("nil pending mint asset")
@@ -927,7 +927,7 @@ func unmarshalPendingMintAsset(
 		return nil, err
 	}
 
-	asset := &entities.PendingMintAsset{
+	asset := &tapsdk.PendingMintAsset{
 		AssetVersion:       parseAssetVersion(a.AssetVersion),
 		AssetType:          assetType,
 		Name:               a.Name,
@@ -943,7 +943,7 @@ func unmarshalPendingMintAsset(
 			return nil, fmt.Errorf("invalid group key: %w", err)
 		}
 
-		groupKey, err := entities.ParsePubKey(groupKeyBytes)
+		groupKey, err := tapsdk.ParsePubKey(groupKeyBytes)
 		if err != nil {
 			return nil, fmt.Errorf("invalid group key: %w", err)
 		}
@@ -986,9 +986,9 @@ func unmarshalPendingMintAsset(
 }
 
 // unmarshalAssetMeta converts a JSON asset meta to
-// entities.AssetMeta.
+// tapsdk.AssetMeta.
 func unmarshalAssetMeta(
-	m *jsonAssetMeta) (*entities.AssetMeta, error) {
+	m *jsonAssetMeta) (*tapsdk.AssetMeta, error) {
 
 	if m == nil {
 		return nil, fmt.Errorf("nil asset meta")
@@ -1006,12 +1006,12 @@ func unmarshalAssetMeta(
 		return nil, fmt.Errorf("invalid meta hash: %w", err)
 	}
 
-	metaHash, err := entities.ParseHash(metaHashBytes)
+	metaHash, err := tapsdk.ParseHash(metaHashBytes)
 	if err != nil {
 		return nil, fmt.Errorf("invalid asset meta hash: %w", err)
 	}
 
-	return &entities.AssetMeta{
+	return &tapsdk.AssetMeta{
 		Data:     data,
 		Type:     parseAssetMetaType(m.Type),
 		MetaHash: metaHash,
@@ -1020,7 +1020,7 @@ func unmarshalAssetMeta(
 
 // unmarshalManagedUtxo converts a JSON managed UTXO to an entity.
 func unmarshalManagedUtxo(
-	u *jsonManagedUtxo) (*entities.ManagedUtxo, error) {
+	u *jsonManagedUtxo) (*tapsdk.ManagedUtxo, error) {
 
 	if u == nil {
 		return nil, fmt.Errorf("nil managed utxo")
@@ -1037,7 +1037,7 @@ func unmarshalManagedUtxo(
 			err)
 	}
 
-	assets := make([]*entities.AssetRecord, 0, len(u.Assets))
+	assets := make([]*tapsdk.AssetRecord, 0, len(u.Assets))
 	for _, a := range u.Assets {
 		asset, err := unmarshalAsset(a)
 		if err != nil {
@@ -1057,15 +1057,15 @@ func unmarshalManagedUtxo(
 		return nil, fmt.Errorf("invalid merkle_root: %w", err)
 	}
 
-	outpoint, err := entities.NewOutpointFromStr(u.Outpoint)
+	outpoint, err := tapsdk.NewOutpointFromStr(u.Outpoint)
 	if err != nil {
 		return nil, fmt.Errorf("invalid outpoint: %w", err)
 	}
 
-	taprootRootHash, _ := entities.ParseHash(taprootRoot)
-	merkleRootHash, _ := entities.ParseHash(merkleRoot)
+	taprootRootHash, _ := tapsdk.ParseHash(taprootRoot)
+	merkleRootHash, _ := tapsdk.ParseHash(merkleRoot)
 
-	var pubKey entities.PubKey
+	var pubKey tapsdk.PubKey
 	copy(pubKey[:], internalKey)
 
 	var leaseOwner []byte
@@ -1088,7 +1088,7 @@ func unmarshalManagedUtxo(
 		}
 	}
 
-	return &entities.ManagedUtxo{
+	return &tapsdk.ManagedUtxo{
 		OutPoint:         outpoint,
 		AmtSat:           int64(amtSat),
 		InternalKey:      pubKey,
@@ -1104,20 +1104,20 @@ func unmarshalManagedUtxo(
 // groupKeyHex is the map key from the ListAssetGroups response, which tapd
 // returns as either 33-byte compressed or 32-byte x-only hex.
 func unmarshalAssetGroupRecord(groupKeyHex string,
-	g *jsonGroupedAssets) (*entities.AssetGroupRecord, error) {
+	g *jsonGroupedAssets) (*tapsdk.AssetGroupRecord, error) {
 
 	if g == nil {
 		return nil, fmt.Errorf("nil grouped assets")
 	}
 
-	groupKey, err := entities.ParseGroupRefKey(groupKeyHex)
+	groupKey, err := tapsdk.ParseGroupRefKey(groupKeyHex)
 	if err != nil {
 		return nil, fmt.Errorf("invalid group key: %w", err)
 	}
-	groupRef := entities.AssetRefFromGroupKey(groupKey)
+	groupRef := tapsdk.AssetRefFromGroupKey(groupKey)
 
 	members := make(
-		[]*entities.AssetGroupMember, 0, len(g.Assets),
+		[]*tapsdk.AssetGroupMember, 0, len(g.Assets),
 	)
 	for _, a := range g.Assets {
 		asset, err := unmarshalAssetGroupMember(a)
@@ -1129,7 +1129,7 @@ func unmarshalAssetGroupRecord(groupKeyHex string,
 		members = append(members, asset)
 	}
 
-	return &entities.AssetGroupRecord{
+	return &tapsdk.AssetGroupRecord{
 		AssetRef: groupRef,
 		Members:  members,
 	}, nil
@@ -1138,7 +1138,7 @@ func unmarshalAssetGroupRecord(groupKeyHex string,
 // unmarshalAssetGroupMember converts tapd's simplified AssetHumanReadable JSON
 // row into the SDK group member entity.
 func unmarshalAssetGroupMember(
-	a *jsonAssetHumanReadable) (*entities.AssetGroupMember, error) {
+	a *jsonAssetHumanReadable) (*tapsdk.AssetGroupMember, error) {
 
 	if a == nil {
 		return nil, fmt.Errorf("nil asset")
@@ -1149,7 +1149,7 @@ func unmarshalAssetGroupMember(
 		return nil, fmt.Errorf("invalid amount: %w", err)
 	}
 
-	var assetID entities.AssetID
+	var assetID tapsdk.AssetID
 	if a.ID != "" {
 		idBytes, err := parseHexBytes(a.ID)
 		if err != nil {
@@ -1158,13 +1158,13 @@ func unmarshalAssetGroupMember(
 		copy(assetID[:], idBytes)
 	}
 
-	var metaHash entities.Hash
+	var metaHash tapsdk.Hash
 	if a.MetaHash != "" {
 		hashBytes, err := parseHexBytes(a.MetaHash)
 		if err != nil {
 			return nil, fmt.Errorf("invalid meta hash: %w", err)
 		}
-		metaHash, _ = entities.ParseHash(hashBytes)
+		metaHash, _ = tapsdk.ParseHash(hashBytes)
 	}
 
 	assetType, err := parseAssetType(a.Type)
@@ -1172,8 +1172,8 @@ func unmarshalAssetGroupMember(
 		return nil, err
 	}
 
-	return &entities.AssetGroupMember{
-		AssetRef:         entities.AssetRefFromAssetID(assetID),
+	return &tapsdk.AssetGroupMember{
+		AssetRef:         tapsdk.AssetRefFromAssetID(assetID),
 		IssuanceID:       assetID,
 		Amount:           amount,
 		LockTime:         a.LockTime,
@@ -1188,14 +1188,14 @@ func unmarshalAssetGroupMember(
 // unmarshalBurnAssetResponse converts a JSON burn response to an
 // entity.
 func unmarshalBurnAssetResponse(
-	r *jsonBurnAssetResponse) (*entities.BurnAssetResponse,
+	r *jsonBurnAssetResponse) (*tapsdk.BurnAssetResponse,
 	error) {
 
 	if r == nil {
 		return nil, fmt.Errorf("nil burn response")
 	}
 
-	var transfer *entities.AssetTransfer
+	var transfer *tapsdk.AssetTransfer
 	if r.BurnTransfer != nil {
 		var err error
 		transfer, err = unmarshalAssetTransfer(r.BurnTransfer)
@@ -1205,14 +1205,14 @@ func unmarshalBurnAssetResponse(
 		}
 	}
 
-	return &entities.BurnAssetResponse{
+	return &tapsdk.BurnAssetResponse{
 		BurnTransfer: transfer,
 	}, nil
 }
 
 // unmarshalBurnRecord converts a JSON asset burn to an entity.
 func unmarshalBurnRecord(
-	b *jsonAssetBurn) (*entities.BurnRecord, error) {
+	b *jsonAssetBurn) (*tapsdk.BurnRecord, error) {
 
 	if b == nil {
 		return nil, fmt.Errorf("nil asset burn")
@@ -1228,7 +1228,7 @@ func unmarshalBurnRecord(
 		return nil, fmt.Errorf("invalid burn asset_id: %w",
 			err)
 	}
-	assetID, err := entities.ParseAssetID(idBytes)
+	assetID, err := tapsdk.ParseAssetID(idBytes)
 	if err != nil {
 		return nil, fmt.Errorf("invalid burn asset_id: %w", err)
 	}
@@ -1239,9 +1239,9 @@ func unmarshalBurnRecord(
 			err)
 	}
 
-	var groupKey *entities.PubKey
+	var groupKey *tapsdk.PubKey
 	if len(groupKeyBytes) > 0 {
-		pk, err := entities.ParsePubKey(groupKeyBytes)
+		pk, err := tapsdk.ParsePubKey(groupKeyBytes)
 		if err != nil {
 			return nil, fmt.Errorf("invalid burn tweaked_group_key: "+
 				"%w", err)
@@ -1254,7 +1254,7 @@ func unmarshalBurnRecord(
 	if err != nil {
 		return nil, err
 	}
-	if assetType == entities.AssetTypeCollectible && amount != 1 {
+	if assetType == tapsdk.AssetTypeCollectible && amount != 1 {
 		return nil, fmt.Errorf("invalid collectible burn amount: %d",
 			amount)
 	}
@@ -1263,20 +1263,20 @@ func unmarshalBurnRecord(
 	if err != nil {
 		return nil, fmt.Errorf("invalid burn txid: %w", err)
 	}
-	anchorTxid, err := entities.ParseHash(txidBytes)
+	anchorTxid, err := tapsdk.ParseHash(txidBytes)
 	if err != nil {
 		return nil, fmt.Errorf("invalid burn txid: %w", err)
 	}
 
-	var collectionRef *entities.AssetRef
-	if assetType == entities.AssetTypeCollectible && groupKey != nil {
-		ref := entities.AssetRefFromGroupKey(*groupKey)
+	var collectionRef *tapsdk.AssetRef
+	if assetType == tapsdk.AssetTypeCollectible && groupKey != nil {
+		ref := tapsdk.AssetRefFromGroupKey(*groupKey)
 		collectionRef = &ref
 	}
 
-	return &entities.BurnRecord{
+	return &tapsdk.BurnRecord{
 		Note:          b.Note,
-		AssetRef:      entities.AssetRefFromTypedAsset(assetID, groupKey, assetType),
+		AssetRef:      tapsdk.AssetRefFromTypedAsset(assetID, groupKey, assetType),
 		CollectionRef: collectionRef,
 		Type:          assetType,
 		IssuanceID:    assetID,
@@ -1286,14 +1286,14 @@ func unmarshalBurnRecord(
 }
 
 func unmarshalVerifyOwnershipResponse(
-	resp *jsonVerifyOwnershipResponse) (*entities.VerifyOwnershipResponse,
+	resp *jsonVerifyOwnershipResponse) (*tapsdk.VerifyOwnershipResponse,
 	error) {
 
 	if resp == nil {
 		return nil, fmt.Errorf("nil verify ownership response")
 	}
 
-	result := &entities.VerifyOwnershipResponse{
+	result := &tapsdk.VerifyOwnershipResponse{
 		Valid:       resp.ValidProof,
 		BlockHeight: resp.BlockHeight,
 	}
@@ -1307,7 +1307,7 @@ func unmarshalVerifyOwnershipResponse(
 		result.Outpoint = outpoint
 
 	case resp.OutpointStr != "":
-		outpoint, err := entities.NewOutpointFromStr(resp.OutpointStr)
+		outpoint, err := tapsdk.NewOutpointFromStr(resp.OutpointStr)
 		if err != nil {
 			return nil, fmt.Errorf("invalid outpoint: %w", err)
 		}
@@ -1330,7 +1330,7 @@ func unmarshalVerifyOwnershipResponse(
 			len(blockHashBytes), len(result.BlockHash),
 		)
 	}
-	if result.Valid && result.Outpoint == (entities.Outpoint{}) {
+	if result.Valid && result.Outpoint == (tapsdk.Outpoint{}) {
 		return nil, fmt.Errorf(
 			"valid ownership proof response missing outpoint",
 		)
@@ -1374,7 +1374,7 @@ func parseOwnershipBlockHash(
 // unmarshalFetchAssetMetaResponse converts a JSON fetch meta response
 // to an entity.
 func unmarshalFetchAssetMetaResponse(
-	r *jsonFetchAssetMetaResponse) (*entities.AssetMeta, error) {
+	r *jsonFetchAssetMetaResponse) (*tapsdk.AssetMeta, error) {
 
 	return unmarshalAssetMeta(&jsonAssetMeta{
 		Data:     r.Data,
@@ -1387,35 +1387,35 @@ func unmarshalFetchAssetMetaResponse(
 // to an entity.
 func unmarshalVerifyProofResponse(
 	r *jsonVerifyProofResponse) (
-	*entities.VerifyProofResponse, error) {
+	*tapsdk.VerifyProofResponse, error) {
 
 	if r == nil {
 		return nil, fmt.Errorf("nil verify proof response")
 	}
 
-	return &entities.VerifyProofResponse{
+	return &tapsdk.VerifyProofResponse{
 		Valid: r.Valid,
 	}, nil
 }
 
 // --- Universe unmarshal helpers ---
 
-// parseProofType converts a proto enum string to entities.ProofType.
-func parseProofType(s string) entities.ProofType {
+// parseProofType converts a proto enum string to tapsdk.ProofType.
+func parseProofType(s string) tapsdk.ProofType {
 	switch s {
 	case proofTypeIssuance:
-		return entities.ProofTypeIssuance
+		return tapsdk.ProofTypeIssuance
 	case proofTypeTransfer:
-		return entities.ProofTypeTransfer
+		return tapsdk.ProofTypeTransfer
 	default:
-		return entities.ProofTypeUnspecified
+		return tapsdk.ProofTypeUnspecified
 	}
 }
 
 // unmarshalMerkleSumNode converts a JSON merkle sum node to an
 // entity.
 func unmarshalMerkleSumNode(
-	n *jsonMerkleSumNode) (*entities.MerkleSumNode, error) {
+	n *jsonMerkleSumNode) (*tapsdk.MerkleSumNode, error) {
 
 	if n == nil {
 		return nil, nil
@@ -1426,7 +1426,7 @@ func unmarshalMerkleSumNode(
 		return nil, fmt.Errorf("invalid root_hash: %w", err)
 	}
 
-	rootHash, err := entities.ParseHash(rootHashBytes)
+	rootHash, err := tapsdk.ParseHash(rootHashBytes)
 	if err != nil {
 		return nil, fmt.Errorf("invalid root hash: %w", err)
 	}
@@ -1436,7 +1436,7 @@ func unmarshalMerkleSumNode(
 		return nil, fmt.Errorf("invalid root_sum: %w", err)
 	}
 
-	return &entities.MerkleSumNode{
+	return &tapsdk.MerkleSumNode{
 		RootHash: rootHash,
 		RootSum:  rootSum,
 	}, nil
@@ -1444,16 +1444,16 @@ func unmarshalMerkleSumNode(
 
 // unmarshalUniverseID converts a JSON universe ID to an entity.
 func unmarshalUniverseID(
-	id *jsonUniverseID) (*entities.UniverseID, error) {
+	id *jsonUniverseID) (*tapsdk.UniverseID, error) {
 
 	if id == nil {
 		return nil, fmt.Errorf("nil universe ID")
 	}
 
-	uniID := &entities.UniverseID{ProofType: parseProofType(id.ProofType)}
+	uniID := &tapsdk.UniverseID{ProofType: parseProofType(id.ProofType)}
 
-	var assetID *entities.AssetID
-	var groupKey *entities.PubKey
+	var assetID *tapsdk.AssetID
+	var groupKey *tapsdk.PubKey
 
 	if id.AssetID != "" {
 		assetIDBytes, err := parseHexBytes(id.AssetID)
@@ -1463,7 +1463,7 @@ func unmarshalUniverseID(
 		}
 
 		if len(assetIDBytes) == 32 {
-			var parsedAssetID entities.AssetID
+			var parsedAssetID tapsdk.AssetID
 			copy(parsedAssetID[:], assetIDBytes)
 			assetID = &parsedAssetID
 		}
@@ -1482,7 +1482,7 @@ func unmarshalUniverseID(
 		if len(groupKeyBytes) == 32 ||
 			len(groupKeyBytes) == 33 {
 
-			parsedGroupKey, err := entities.ParseTaprootPubKey(
+			parsedGroupKey, err := tapsdk.ParseTaprootPubKey(
 				groupKeyBytes,
 			)
 			if err != nil {
@@ -1495,7 +1495,7 @@ func unmarshalUniverseID(
 	}
 
 	if assetID != nil || groupKey != nil {
-		assetRef, err := entities.AssetRefFromSpecifier(
+		assetRef, err := tapsdk.AssetRefFromSpecifier(
 			assetID, groupKey,
 		)
 		if err != nil {
@@ -1509,7 +1509,7 @@ func unmarshalUniverseID(
 
 // unmarshalUniverseRoot converts a JSON universe root to an entity.
 func unmarshalUniverseRoot(
-	r *jsonUniverseRoot) (*entities.UniverseRoot, error) {
+	r *jsonUniverseRoot) (*tapsdk.UniverseRoot, error) {
 
 	if r == nil {
 		return nil, nil
@@ -1534,7 +1534,7 @@ func unmarshalUniverseRoot(
 		return nil, fmt.Errorf("invalid mssmt_root: %w", err)
 	}
 
-	root := &entities.UniverseRoot{
+	root := &tapsdk.UniverseRoot{
 		ID:        *id,
 		MSSMTRoot: mssmtRoot,
 		AssetName: r.AssetName,
@@ -1558,7 +1558,7 @@ func unmarshalUniverseRoot(
 
 // unmarshalAssetLeafKey converts a JSON asset key to an entity.
 func unmarshalAssetLeafKey(
-	k *jsonAssetKey) (*entities.AssetLeafKey, error) {
+	k *jsonAssetKey) (*tapsdk.AssetLeafKey, error) {
 
 	if k == nil {
 		return nil, fmt.Errorf("nil asset key")
@@ -1574,23 +1574,23 @@ func unmarshalAssetLeafKey(
 		return nil, fmt.Errorf("invalid script_key: %w", err)
 	}
 
-	scriptKey, err := entities.ParseScriptKey(scriptKeyBytes)
+	scriptKey, err := tapsdk.ParseScriptKey(scriptKeyBytes)
 	if err != nil {
 		return nil, fmt.Errorf("invalid script_key: %w", err)
 	}
 
-	return &entities.AssetLeafKey{
+	return &tapsdk.AssetLeafKey{
 		Outpoint:  outpoint,
 		ScriptKey: scriptKey,
 	}, nil
 }
 
-func unmarshalAssetKeyOutpoint(k *jsonAssetKey) (entities.Outpoint, error) {
+func unmarshalAssetKeyOutpoint(k *jsonAssetKey) (tapsdk.Outpoint, error) {
 	opStr := k.OpStr
 	if opStr != "" {
-		outpoint, err := entities.NewOutpointFromStr(opStr)
+		outpoint, err := tapsdk.NewOutpointFromStr(opStr)
 		if err != nil {
-			return entities.Outpoint{}, fmt.Errorf(
+			return tapsdk.Outpoint{}, fmt.Errorf(
 				"invalid outpoint: %w", err,
 			)
 		}
@@ -1603,28 +1603,28 @@ func unmarshalAssetKeyOutpoint(k *jsonAssetKey) (entities.Outpoint, error) {
 		op = k.Op
 	}
 	if op == nil {
-		return entities.Outpoint{}, fmt.Errorf("nil outpoint")
+		return tapsdk.Outpoint{}, fmt.Errorf("nil outpoint")
 	}
 
 	return unmarshalJSONOutpoint(op)
 }
 
-func unmarshalJSONOutpoint(op *jsonOutpoint) (entities.Outpoint, error) {
+func unmarshalJSONOutpoint(op *jsonOutpoint) (tapsdk.Outpoint, error) {
 	opStr := firstNonEmpty(op.Txid, op.HashStr)
 	if opStr == "" {
-		return entities.Outpoint{}, fmt.Errorf("empty outpoint")
+		return tapsdk.Outpoint{}, fmt.Errorf("empty outpoint")
 	}
 
 	if strings.Contains(opStr, ":") {
-		return entities.NewOutpointFromStr(opStr)
+		return tapsdk.NewOutpointFromStr(opStr)
 	}
 
 	txidBytes, err := parseHexBytes(opStr)
 	if err != nil {
-		return entities.Outpoint{}, fmt.Errorf("invalid txid: %w", err)
+		return tapsdk.Outpoint{}, fmt.Errorf("invalid txid: %w", err)
 	}
 	if len(txidBytes) != 32 {
-		return entities.Outpoint{}, fmt.Errorf(
+		return tapsdk.Outpoint{}, fmt.Errorf(
 			"invalid txid length: %d", len(txidBytes),
 		)
 	}
@@ -1634,7 +1634,7 @@ func unmarshalJSONOutpoint(op *jsonOutpoint) (entities.Outpoint, error) {
 		index = op.Index
 	}
 
-	outpoint := entities.Outpoint{
+	outpoint := tapsdk.Outpoint{
 		Index: index,
 	}
 	copy(outpoint.Txid[:], txidBytes)
@@ -1650,13 +1650,13 @@ func assetKeyScriptKey(k *jsonAssetKey) string {
 
 // unmarshalAssetLeaf converts a JSON asset leaf to an entity.
 func unmarshalAssetLeaf(
-	l *jsonAssetLeafResp) (*entities.AssetLeaf, error) {
+	l *jsonAssetLeafResp) (*tapsdk.AssetLeaf, error) {
 
 	if l == nil {
 		return nil, fmt.Errorf("nil asset leaf")
 	}
 
-	leaf := &entities.AssetLeaf{}
+	leaf := &tapsdk.AssetLeaf{}
 
 	if l.Asset != nil {
 		asset, err := unmarshalAsset(l.Asset)
@@ -1680,14 +1680,14 @@ func unmarshalAssetLeaf(
 // unmarshalAssetProofResponse converts a JSON query proof response to
 // an entity.
 func unmarshalAssetProofResponse(
-	r *jsonQueryProofResponse) (*entities.AssetProofResponse,
+	r *jsonQueryProofResponse) (*tapsdk.AssetProofResponse,
 	error) {
 
 	if r == nil {
 		return nil, fmt.Errorf("nil proof response")
 	}
 
-	resp := &entities.AssetProofResponse{}
+	resp := &tapsdk.AssetProofResponse{}
 
 	if r.Req != nil {
 		id, err := unmarshalUniverseID(r.Req.ID)
@@ -1696,7 +1696,7 @@ func unmarshalAssetProofResponse(
 				err)
 		}
 
-		key := entities.UniverseKey{ID: *id}
+		key := tapsdk.UniverseKey{ID: *id}
 
 		if r.Req.LeafKey != nil {
 			leafKey, err := unmarshalAssetLeafKey(r.Req.LeafKey)
@@ -1767,7 +1767,7 @@ func unmarshalAssetProofResponse(
 // unmarshalUniverseStats converts a JSON universe stats response to an
 // entity.
 func unmarshalUniverseStats(
-	r *jsonUniverseStatsResponse) (*entities.UniverseStats,
+	r *jsonUniverseStatsResponse) (*tapsdk.UniverseStats,
 	error) {
 
 	if r == nil {
@@ -1798,7 +1798,7 @@ func unmarshalUniverseStats(
 			err)
 	}
 
-	return &entities.UniverseStats{
+	return &tapsdk.UniverseStats{
 		NumTotalAssets: numTotalAssets,
 		NumTotalGroups: numTotalGroups,
 		NumTotalSyncs:  numTotalSyncs,
@@ -1809,7 +1809,7 @@ func unmarshalUniverseStats(
 // unmarshalAssetStatsAsset converts a JSON asset stats asset to an
 // entity.
 func unmarshalAssetStatsAsset(
-	a *jsonAssetStatsAsset) (*entities.AssetStatsAsset, error) {
+	a *jsonAssetStatsAsset) (*tapsdk.AssetStatsAsset, error) {
 
 	if a == nil {
 		return nil, nil
@@ -1820,7 +1820,7 @@ func unmarshalAssetStatsAsset(
 		return nil, fmt.Errorf("invalid asset_id: %w", err)
 	}
 
-	var assetID entities.AssetID
+	var assetID tapsdk.AssetID
 	if len(assetIDBytes) == 32 {
 		copy(assetID[:], assetIDBytes)
 	}
@@ -1842,8 +1842,8 @@ func unmarshalAssetStatsAsset(
 		return nil, err
 	}
 
-	return &entities.AssetStatsAsset{
-		AssetRef:         entities.AssetRefFromAssetID(assetID),
+	return &tapsdk.AssetStatsAsset{
+		AssetRef:         tapsdk.AssetRefFromAssetID(assetID),
 		IssuanceID:       assetID,
 		GenesisPoint:     a.GenesisPoint,
 		TotalSupply:      totalSupply,
@@ -1859,24 +1859,24 @@ func unmarshalAssetStatsAsset(
 // unmarshalAssetStatsSnapshot converts a JSON asset stats snapshot to
 // an entity.
 func unmarshalAssetStatsSnapshot(
-	s *jsonAssetStatsSnapshot) (*entities.AssetStatsSnapshot,
+	s *jsonAssetStatsSnapshot) (*tapsdk.AssetStatsSnapshot,
 	error) {
 
 	if s == nil {
 		return nil, fmt.Errorf("nil asset stats snapshot")
 	}
 
-	snapshot := &entities.AssetStatsSnapshot{}
+	snapshot := &tapsdk.AssetStatsSnapshot{}
 
 	if s.GroupKey != "" {
-		groupKey, err := entities.ParseGroupRefKey(s.GroupKey)
+		groupKey, err := tapsdk.ParseGroupRefKey(s.GroupKey)
 		if err != nil {
 			return nil, fmt.Errorf("invalid group_key: %w",
 				err)
 		}
 
 		snapshot.GroupKey = &groupKey
-		snapshot.AssetRef = entities.AssetRefFromGroupKey(groupKey)
+		snapshot.AssetRef = tapsdk.AssetRefFromGroupKey(groupKey)
 	}
 
 	groupSupply, err := parseInt64(s.GroupSupply)
@@ -1924,7 +1924,7 @@ func unmarshalAssetStatsSnapshot(
 // events to an entity.
 func unmarshalGroupedUniverseEvents(
 	e *jsonGroupedUniverseEvents) (
-	*entities.GroupedUniverseEvents, error) {
+	*tapsdk.GroupedUniverseEvents, error) {
 
 	if e == nil {
 		return nil, fmt.Errorf("nil grouped universe events")
@@ -1942,7 +1942,7 @@ func unmarshalGroupedUniverseEvents(
 		)
 	}
 
-	return &entities.GroupedUniverseEvents{
+	return &tapsdk.GroupedUniverseEvents{
 		Date:           e.Date,
 		SyncEvents:     syncEvents,
 		NewProofEvents: newProofEvents,
@@ -1953,13 +1953,13 @@ func unmarshalGroupedUniverseEvents(
 // entity.
 func unmarshalFederationServer(
 	s *jsonUniverseFederationServer) (
-	*entities.FederationServer, error) {
+	*tapsdk.FederationServer, error) {
 
 	if s == nil {
 		return nil, fmt.Errorf("nil federation server")
 	}
 
-	return &entities.FederationServer{
+	return &tapsdk.FederationServer{
 		Host: s.Host,
 		ID:   s.ID,
 	}, nil
@@ -1969,13 +1969,13 @@ func unmarshalFederationServer(
 // federation sync config to an entity.
 func unmarshalGlobalFederationSyncConfig(
 	c *jsonGlobalFederationSyncConfig) (
-	*entities.GlobalFederationSyncConfig, error) {
+	*tapsdk.GlobalFederationSyncConfig, error) {
 
 	if c == nil {
 		return nil, fmt.Errorf("nil global federation sync config")
 	}
 
-	return &entities.GlobalFederationSyncConfig{
+	return &tapsdk.GlobalFederationSyncConfig{
 		ProofType:       parseProofType(c.ProofType),
 		AllowSyncInsert: c.AllowSyncInsert,
 		AllowSyncExport: c.AllowSyncExport,
@@ -1986,7 +1986,7 @@ func unmarshalGlobalFederationSyncConfig(
 // sync config to an entity.
 func unmarshalAssetFederationSyncConfig(
 	c *jsonAssetFederationSyncConfig) (
-	*entities.AssetFederationSyncConfig, error) {
+	*tapsdk.AssetFederationSyncConfig, error) {
 
 	if c == nil {
 		return nil, fmt.Errorf("nil asset federation sync config")
@@ -1997,7 +1997,7 @@ func unmarshalAssetFederationSyncConfig(
 		return nil, fmt.Errorf("invalid ID: %w", err)
 	}
 
-	return &entities.AssetFederationSyncConfig{
+	return &tapsdk.AssetFederationSyncConfig{
 		ID:              *id,
 		AllowSyncInsert: c.AllowSyncInsert,
 		AllowSyncExport: c.AllowSyncExport,
@@ -2007,13 +2007,13 @@ func unmarshalAssetFederationSyncConfig(
 // unmarshalSyncedUniverse converts a JSON synced universe to an
 // entity.
 func unmarshalSyncedUniverse(
-	s *jsonSyncedUniverse) (*entities.SyncedUniverse, error) {
+	s *jsonSyncedUniverse) (*tapsdk.SyncedUniverse, error) {
 
 	if s == nil {
 		return nil, fmt.Errorf("nil synced universe")
 	}
 
-	synced := &entities.SyncedUniverse{}
+	synced := &tapsdk.SyncedUniverse{}
 
 	if s.OldAssetRoot != nil {
 		oldRoot, err := unmarshalUniverseRoot(s.OldAssetRoot)
@@ -2037,7 +2037,7 @@ func unmarshalSyncedUniverse(
 
 	if len(s.NewAssetLeaves) > 0 {
 		leaves := make(
-			[]entities.AssetLeaf, 0, len(s.NewAssetLeaves),
+			[]tapsdk.AssetLeaf, 0, len(s.NewAssetLeaves),
 		)
 		for _, l := range s.NewAssetLeaves {
 			leaf, err := unmarshalAssetLeaf(l)

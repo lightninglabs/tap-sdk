@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/stretchr/testify/require"
 )
 
@@ -32,39 +32,39 @@ func (s *eventSubscription[T]) Stop() {
 // can subscribe on either Alice or Bob.
 type mintSubscriber interface {
 	SubscribeMintEvents(context.Context,
-		*entities.SubscribeMintEventsRequest) (
-		<-chan *entities.MintEvent, <-chan error, error)
+		*tapsdk.SubscribeMintEventsRequest) (
+		<-chan *tapsdk.MintEvent, <-chan error, error)
 }
 
 // receiveSubscriber is the minimal client surface needed to open a
 // receive stream.
 type receiveSubscriber interface {
 	SubscribeReceiveEvents(context.Context,
-		*entities.SubscribeReceiveEventsRequest) (
-		<-chan *entities.ReceiveEventRecord, <-chan error, error)
+		*tapsdk.SubscribeReceiveEventsRequest) (
+		<-chan *tapsdk.ReceiveEventRecord, <-chan error, error)
 }
 
 // sendSubscriber is the minimal client surface needed to open a send
 // stream.
 type sendSubscriber interface {
 	SubscribeSendEvents(context.Context,
-		*entities.SubscribeSendEventsRequest) (
-		<-chan *entities.SendEventRecord, <-chan error, error)
+		*tapsdk.SubscribeSendEventsRequest) (
+		<-chan *tapsdk.SendEventRecord, <-chan error, error)
 }
 
 func (h *TestHarness) subscribeMintEvents(t testing.TB,
 	ctx context.Context,
-	client mintSubscriber) *eventSubscription[entities.MintEvent] {
+	client mintSubscriber) *eventSubscription[tapsdk.MintEvent] {
 
 	t.Helper()
 
 	subCtx, cancel := context.WithCancel(ctx)
 	events, errs, err := client.SubscribeMintEvents(
-		subCtx, &entities.SubscribeMintEventsRequest{},
+		subCtx, &tapsdk.SubscribeMintEventsRequest{},
 	)
 	require.NoError(t, err)
 
-	sub := &eventSubscription[entities.MintEvent]{
+	sub := &eventSubscription[tapsdk.MintEvent]{
 		events: events,
 		errs:   errs,
 		cancel: cancel,
@@ -83,19 +83,19 @@ func (h *TestHarness) subscribeMintEvents(t testing.TB,
 // must subscribe before the sender broadcasts.
 func (h *TestHarness) subscribeReceiveEvents(t testing.TB,
 	ctx context.Context, client receiveSubscriber,
-	addr string) *eventSubscription[entities.ReceiveEventRecord] {
+	addr string) *eventSubscription[tapsdk.ReceiveEventRecord] {
 
 	t.Helper()
 
 	subCtx, cancel := context.WithCancel(ctx)
 	events, errs, err := client.SubscribeReceiveEvents(
-		subCtx, &entities.SubscribeReceiveEventsRequest{
+		subCtx, &tapsdk.SubscribeReceiveEventsRequest{
 			FilterAddr: addr,
 		},
 	)
 	require.NoError(t, err)
 
-	sub := &eventSubscription[entities.ReceiveEventRecord]{
+	sub := &eventSubscription[tapsdk.ReceiveEventRecord]{
 		events: events,
 		errs:   errs,
 		cancel: cancel,
@@ -114,20 +114,20 @@ func (h *TestHarness) subscribeReceiveEvents(t testing.TB,
 // calling Send and still observe the terminal SendStateComplete event.
 func (h *TestHarness) subscribeSendEvents(t testing.TB,
 	ctx context.Context, client sendSubscriber, label string,
-	startTimestamp int64) *eventSubscription[entities.SendEventRecord] {
+	startTimestamp int64) *eventSubscription[tapsdk.SendEventRecord] {
 
 	t.Helper()
 
 	subCtx, cancel := context.WithCancel(ctx)
 	events, errs, err := client.SubscribeSendEvents(
-		subCtx, &entities.SubscribeSendEventsRequest{
+		subCtx, &tapsdk.SubscribeSendEventsRequest{
 			FilterLabel:    label,
 			StartTimestamp: startTimestamp,
 		},
 	)
 	require.NoError(t, err)
 
-	sub := &eventSubscription[entities.SendEventRecord]{
+	sub := &eventSubscription[tapsdk.SendEventRecord]{
 		events: events,
 		errs:   errs,
 		cancel: cancel,
@@ -204,13 +204,13 @@ func failClosedEventStream[T any](t testing.TB, sub *eventSubscription[T],
 }
 
 func waitForMintFinalized(t testing.TB,
-	sub *eventSubscription[entities.MintEvent], batchKey entities.PubKey,
-	timeout time.Duration) *entities.MintEvent {
+	sub *eventSubscription[tapsdk.MintEvent], batchKey tapsdk.PubKey,
+	timeout time.Duration) *tapsdk.MintEvent {
 
 	t.Helper()
 
 	return waitForEvent(t, sub, timeout, "mint batch finalized",
-		func(event *entities.MintEvent) (bool, string) {
+		func(event *tapsdk.MintEvent) (bool, string) {
 			if event == nil || event.Batch == nil {
 				return false, "nil mint event or batch"
 			}
@@ -230,20 +230,20 @@ func waitForMintFinalized(t testing.TB,
 				event.BatchState,
 			)
 
-			return event.BatchState == entities.BatchStateFinalized,
+			return event.BatchState == tapsdk.BatchStateFinalized,
 				observation
 		},
 	)
 }
 
 func waitForReceiveCompleted(t testing.TB,
-	sub *eventSubscription[entities.ReceiveEventRecord], addr string,
-	timeout time.Duration) *entities.ReceiveEventRecord {
+	sub *eventSubscription[tapsdk.ReceiveEventRecord], addr string,
+	timeout time.Duration) *tapsdk.ReceiveEventRecord {
 
 	t.Helper()
 
 	return waitForEvent(t, sub, timeout, "receive completed",
-		func(event *entities.ReceiveEventRecord) (bool, string) {
+		func(event *tapsdk.ReceiveEventRecord) (bool, string) {
 			if event == nil {
 				return false, "nil receive event"
 			}
@@ -263,20 +263,20 @@ func waitForReceiveCompleted(t testing.TB,
 
 			return eventAddr == addr &&
 					event.Status ==
-						entities.AddressEventStatusCompleted,
+						tapsdk.AddressEventStatusCompleted,
 				observation
 		},
 	)
 }
 
 func waitForSendCompleted(t testing.TB,
-	sub *eventSubscription[entities.SendEventRecord], label string,
-	timeout time.Duration) *entities.SendEventRecord {
+	sub *eventSubscription[tapsdk.SendEventRecord], label string,
+	timeout time.Duration) *tapsdk.SendEventRecord {
 
 	t.Helper()
 
 	return waitForEvent(t, sub, timeout, "send completed",
-		func(event *entities.SendEventRecord) (bool, string) {
+		func(event *tapsdk.SendEventRecord) (bool, string) {
 			if event == nil {
 				return false, "nil send event"
 			}
@@ -297,7 +297,7 @@ func waitForSendCompleted(t testing.TB,
 				event.NextSendState,
 			)
 
-			return event.SendState == entities.SendStateComplete,
+			return event.SendState == tapsdk.SendStateComplete,
 				observation
 		},
 	)
@@ -309,8 +309,8 @@ func waitForSendCompleted(t testing.TB,
 // status it cares about. Events that reached the terminal state but
 // also carry an Error are skipped — they represent a failed final
 // transition, not a successful completion.
-func hasFinalizedMint(events []*entities.MintEvent,
-	batchKey entities.PubKey) bool {
+func hasFinalizedMint(events []*tapsdk.MintEvent,
+	batchKey tapsdk.PubKey) bool {
 
 	for _, event := range events {
 		if event == nil || event.Batch == nil || event.Error != "" {
@@ -318,7 +318,7 @@ func hasFinalizedMint(events []*entities.MintEvent,
 		}
 
 		if event.Batch.BatchKey == batchKey &&
-			event.BatchState == entities.BatchStateFinalized {
+			event.BatchState == tapsdk.BatchStateFinalized {
 
 			return true
 		}
@@ -327,12 +327,12 @@ func hasFinalizedMint(events []*entities.MintEvent,
 	return false
 }
 
-func hasCompletedSend(events []*entities.SendEvent, label string) bool {
+func hasCompletedSend(events []*tapsdk.SendEvent, label string) bool {
 	return findCompletedSend(events, label) != nil
 }
 
-func findCompletedSend(events []*entities.SendEvent,
-	label string) *entities.SendEvent {
+func findCompletedSend(events []*tapsdk.SendEvent,
+	label string) *tapsdk.SendEvent {
 
 	for _, event := range events {
 		if event == nil || event.Error != "" {
@@ -340,7 +340,7 @@ func findCompletedSend(events []*entities.SendEvent,
 		}
 
 		if event.TransferLabel == label &&
-			event.SendState == entities.SendStateComplete {
+			event.SendState == tapsdk.SendStateComplete {
 
 			return event
 		}
@@ -354,14 +354,14 @@ func findCompletedSend(events []*entities.SendEvent,
 // completed status. The post-projection event no longer carries the raw
 // address string, so callers identify the receive by its user-facing
 // AssetRef instead.
-func hasCompletedReceive(events []*entities.ReceiveEvent,
-	ref entities.AssetRef) bool {
+func hasCompletedReceive(events []*tapsdk.ReceiveEvent,
+	ref tapsdk.AssetRef) bool {
 
 	return findCompletedReceive(events, ref) != nil
 }
 
-func findCompletedReceive(events []*entities.ReceiveEvent,
-	ref entities.AssetRef) *entities.ReceiveEvent {
+func findCompletedReceive(events []*tapsdk.ReceiveEvent,
+	ref tapsdk.AssetRef) *tapsdk.ReceiveEvent {
 
 	for _, event := range events {
 		if event == nil || event.Error != "" {
@@ -369,7 +369,7 @@ func findCompletedReceive(events []*entities.ReceiveEvent,
 		}
 
 		if event.AssetRef.Equivalent(ref) &&
-			event.Status == entities.AddressEventStatusCompleted {
+			event.Status == tapsdk.AddressEventStatusCompleted {
 
 			return event
 		}

@@ -5,8 +5,8 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/lightninglabs/tap-sdk/anchor"
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
+	"github.com/lightninglabs/tap-sdk/internal/anchor"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 )
 
@@ -27,12 +27,12 @@ type jsonImportAssetsFromBackupRequest struct {
 	Backup string `json:"backup"`
 }
 
-func marshalBackupMode(mode entities.BackupMode) string {
+func marshalBackupMode(mode tapsdk.BackupMode) string {
 	switch mode {
-	case entities.BackupModeCompact:
+	case tapsdk.BackupModeCompact:
 		return "COMPACT"
 
-	case entities.BackupModeOptimistic:
+	case tapsdk.BackupModeOptimistic:
 		return "OPTIMISTIC"
 
 	default:
@@ -47,10 +47,10 @@ type jsonNextScriptKeyRequest struct {
 
 // DeriveScriptKey derives a new script key for receiving assets.
 func (w *walletKitClient) DeriveScriptKey(
-	ctx context.Context) (*entities.ScriptKey, error) {
+	ctx context.Context) (*tapsdk.ScriptKey, error) {
 
 	body := &jsonNextScriptKeyRequest{
-		KeyFamily: entities.TaprootAssetsKeyFamily,
+		KeyFamily: tapsdk.TaprootAssetsKeyFamily,
 	}
 
 	var resp jsonNextScriptKeyResponse
@@ -77,10 +77,10 @@ type jsonNextInternalKeyRequest struct {
 
 // DeriveInternalKey derives a new internal key for anchor outputs.
 func (w *walletKitClient) DeriveInternalKey(
-	ctx context.Context) (*entities.InternalKey, error) {
+	ctx context.Context) (*tapsdk.InternalKey, error) {
 
 	body := &jsonNextInternalKeyRequest{
-		KeyFamily: entities.TaprootAssetsKeyFamily,
+		KeyFamily: tapsdk.TaprootAssetsKeyFamily,
 	}
 
 	var resp jsonNextInternalKeyResponse
@@ -104,7 +104,7 @@ func (w *walletKitClient) DeriveInternalKey(
 		)
 	}
 
-	return &entities.InternalKey{
+	return &tapsdk.InternalKey{
 		PubKey:     keyDesc.RawKeyBytes,
 		KeyLocator: keyDesc.KeyLocator,
 	}, nil
@@ -134,8 +134,8 @@ type jsonPrevIDReq struct {
 
 // FundTransfer funds a virtual transaction using addresses.
 func (w *walletKitClient) FundTransfer(ctx context.Context,
-	recipients []entities.Recipient,
-	inputs []entities.PrevID) (*entities.FundedTransfer, error) {
+	recipients []tapsdk.Recipient,
+	inputs []tapsdk.PrevID) (*tapsdk.FundedTransfer, error) {
 
 	rpcInputs := make([]*jsonPrevIDReq, 0, len(inputs))
 	for _, input := range inputs {
@@ -207,7 +207,7 @@ func (w *walletKitClient) FundTransfer(ctx context.Context,
 		passivePsbts = append(passivePsbts, psbt)
 	}
 
-	return &entities.FundedTransfer{
+	return &tapsdk.FundedTransfer{
 		FundedPsbt:        fundedPsbt,
 		PassiveAssetPsbts: passivePsbts,
 	}, nil
@@ -215,7 +215,7 @@ func (w *walletKitClient) FundTransfer(ctx context.Context,
 
 // FundInteractivePsbt funds a virtual PSBT for interactive sends.
 func (w *walletKitClient) FundInteractivePsbt(ctx context.Context,
-	psbt []byte) (*entities.FundedTransfer, error) {
+	psbt []byte) (*tapsdk.FundedTransfer, error) {
 
 	body := &jsonFundVirtualPsbtRequest{
 		Psbt: hex.EncodeToString(psbt),
@@ -249,7 +249,7 @@ func (w *walletKitClient) FundInteractivePsbt(ctx context.Context,
 		passivePsbts = append(passivePsbts, psbt)
 	}
 
-	return &entities.FundedTransfer{
+	return &tapsdk.FundedTransfer{
 		FundedPsbt:        fundedPsbt,
 		PassiveAssetPsbts: passivePsbts,
 	}, nil
@@ -296,7 +296,7 @@ type jsonCommitVirtualPsbtsRequest struct {
 // CommitVirtualPsbts commits virtual transactions.
 func (w *walletKitClient) CommitVirtualPsbts(ctx context.Context,
 	virtualPsbts [][]byte, passivePsbts [][]byte,
-	feeRate uint64) (*entities.CommittedTransfer, error) {
+	feeRate uint64) (*tapsdk.CommittedTransfer, error) {
 
 	anchorPsbt, err := anchor.PreparePsbt(virtualPsbts, passivePsbts)
 	if err != nil {
@@ -370,7 +370,7 @@ func (w *walletKitClient) CommitVirtualPsbts(ctx context.Context,
 		pPsbtBytes = append(pPsbtBytes, psbt)
 	}
 
-	return &entities.CommittedTransfer{
+	return &tapsdk.CommittedTransfer{
 		AnchorPsbt:        respAnchorPsbt,
 		VirtualPsbts:      vPsbtBytes,
 		PassiveAssetPsbts: pPsbtBytes,
@@ -386,7 +386,7 @@ type jsonAnchorVirtualPsbtsRequest struct {
 // AnchorVirtualPsbts anchors signed virtual PSBTs in a single
 // call.
 func (w *walletKitClient) AnchorVirtualPsbts(ctx context.Context,
-	signedPsbts [][]byte) (*entities.AssetTransfer, error) {
+	signedPsbts [][]byte) (*tapsdk.AssetTransfer, error) {
 
 	psbts := make([]string, 0, len(signedPsbts))
 	for _, p := range signedPsbts {
@@ -429,7 +429,7 @@ func (w *walletKitClient) PublishAndLogTransfer(ctx context.Context,
 	anchorPsbt []byte, virtualPsbts [][]byte,
 	passivePsbts [][]byte,
 	skipAnchorTxBroadcast bool) (
-	*entities.AssetPacket, error) {
+	*tapsdk.AssetPacket, error) {
 
 	vPsbts := make([]string, 0, len(virtualPsbts))
 	for _, p := range virtualPsbts {
@@ -479,7 +479,7 @@ func (w *walletKitClient) PublishAndLogTransfer(ctx context.Context,
 
 	// Return the raw bytes from the original call for
 	// virtual and passive transactions.
-	return &entities.AssetPacket{
+	return &tapsdk.AssetPacket{
 		AnchorTransaction:        anchorTx,
 		VirtualTransactions:      virtualPsbts,
 		PassiveAssetTransactions: passivePsbts,
@@ -488,7 +488,7 @@ func (w *walletKitClient) PublishAndLogTransfer(ctx context.Context,
 
 // QueryInternalKey looks up an internal key by its raw public key.
 func (w *walletKitClient) QueryInternalKey(ctx context.Context,
-	internalKey []byte) (*entities.KeyDescriptor, error) {
+	internalKey []byte) (*tapsdk.KeyDescriptor, error) {
 
 	keyHex := hex.EncodeToString(internalKey)
 	path := fmt.Sprintf(
@@ -512,7 +512,7 @@ func (w *walletKitClient) QueryInternalKey(ctx context.Context,
 
 // QueryScriptKey looks up a script key by its tweaked public key.
 func (w *walletKitClient) QueryScriptKey(ctx context.Context,
-	tweakedScriptKey []byte) (*entities.ScriptKey, error) {
+	tweakedScriptKey []byte) (*tapsdk.ScriptKey, error) {
 
 	keyHex := hex.EncodeToString(tweakedScriptKey)
 	path := fmt.Sprintf(
@@ -536,8 +536,8 @@ func (w *walletKitClient) QueryScriptKey(ctx context.Context,
 
 // ProveAssetOwnership generates a proof of ownership for an asset.
 func (w *walletKitClient) ProveAssetOwnership(ctx context.Context,
-	req *entities.ProveOwnershipRequest) (
-	*entities.OwnershipProof, error) {
+	req *tapsdk.ProveOwnershipRequest) (
+	*tapsdk.OwnershipProof, error) {
 
 	if err := req.AssetRef.Validate(); err != nil {
 		return nil, err
@@ -549,7 +549,7 @@ func (w *walletKitClient) ProveAssetOwnership(ctx context.Context,
 			"asset-ID ref; group-key refs span multiple " +
 			"tranches (see issue #85)")
 	}
-	if err := entities.ValidateOwnershipChallenge(req.Challenge); err != nil {
+	if err := tapsdk.ValidateOwnershipChallenge(req.Challenge); err != nil {
 		return nil, err
 	}
 
@@ -587,7 +587,7 @@ func (w *walletKitClient) ProveAssetOwnership(ctx context.Context,
 			err)
 	}
 
-	return &entities.OwnershipProof{
+	return &tapsdk.OwnershipProof{
 		AssetRef:         req.AssetRef,
 		IssuanceID:       assetID,
 		ScriptKey:        req.ScriptKey,
@@ -598,10 +598,10 @@ func (w *walletKitClient) ProveAssetOwnership(ctx context.Context,
 
 // VerifyAssetOwnership verifies an asset ownership proof.
 func (w *walletKitClient) VerifyAssetOwnership(ctx context.Context,
-	req *entities.VerifyOwnershipRequest) (
-	*entities.VerifyOwnershipResponse, error) {
+	req *tapsdk.VerifyOwnershipRequest) (
+	*tapsdk.VerifyOwnershipResponse, error) {
 
-	if err := entities.ValidateOwnershipChallenge(req.Challenge); err != nil {
+	if err := tapsdk.ValidateOwnershipChallenge(req.Challenge); err != nil {
 		return nil, err
 	}
 
@@ -628,7 +628,7 @@ func (w *walletKitClient) VerifyAssetOwnership(ctx context.Context,
 
 // RemoveUTXOLease removes a lease on a UTXO.
 func (w *walletKitClient) RemoveUTXOLease(ctx context.Context,
-	outpoint entities.Outpoint) error {
+	outpoint tapsdk.Outpoint) error {
 
 	body := map[string]any{
 		"outpoint": map[string]any{
@@ -646,8 +646,8 @@ func (w *walletKitClient) RemoveUTXOLease(ctx context.Context,
 // DeclareScriptKey informs the wallet about an externally derived
 // script key.
 func (w *walletKitClient) DeclareScriptKey(ctx context.Context,
-	req *entities.DeclareScriptKeyRequest) (
-	*entities.ScriptKey, error) {
+	req *tapsdk.DeclareScriptKeyRequest) (
+	*tapsdk.ScriptKey, error) {
 
 	keyDesc := map[string]any{
 		"raw_key_bytes": hex.EncodeToString(
@@ -694,7 +694,7 @@ func (w *walletKitClient) DeclareScriptKey(ctx context.Context,
 
 // ExportBackup exports an asset wallet backup blob.
 func (w *walletKitClient) ExportBackup(ctx context.Context,
-	mode entities.BackupMode) ([]byte, error) {
+	mode tapsdk.BackupMode) ([]byte, error) {
 
 	body := &jsonExportAssetWalletBackupRequest{
 		Mode: marshalBackupMode(mode),

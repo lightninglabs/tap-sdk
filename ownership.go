@@ -5,8 +5,6 @@ import (
 	"context"
 	"fmt"
 	"sort"
-
-	"github.com/lightninglabs/tap-sdk/entities"
 )
 
 type ownershipOptions struct {
@@ -25,12 +23,7 @@ type OwnershipOption func(*ownershipOptions)
 func WithOwnershipChallenge(challenge []byte) OwnershipOption {
 	return func(o *ownershipOptions) {
 		o.challengeSet = true
-		if len(challenge) == 32 {
-			o.challenge = append([]byte(nil), challenge...)
-			return
-		}
-
-		o.challenge = challenge
+		o.challenge = append([]byte(nil), challenge...)
 	}
 }
 
@@ -73,7 +66,7 @@ func validateOwnershipChallenge(challenge []byte, explicit bool) error {
 		)
 	}
 
-	if err := entities.ValidateOwnershipChallenge(challenge); err != nil {
+	if err := ValidateOwnershipChallenge(challenge); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidChallenge, err)
 	}
 
@@ -86,8 +79,8 @@ func validateOwnershipChallenge(challenge []byte, explicit bool) error {
 // issuance outputs needed by tapd's low-level ownership RPC. NFT item refs
 // prove that specific item. A collection ref proves one owned item by default,
 // or all owned items when WithAllOwnedCollectionItems is set.
-func (s *Wallet) ProveOwnership(ctx context.Context, ref entities.AssetRef,
-	opts ...OwnershipOption) (*entities.OwnershipProofSet, error) {
+func (s *Wallet) ProveOwnership(ctx context.Context, ref AssetRef,
+	opts ...OwnershipOption) (*OwnershipProofSet, error) {
 
 	if err := ref.Validate(); err != nil {
 		return nil, wrapErr("ProveOwnership", err)
@@ -116,16 +109,16 @@ func (s *Wallet) ProveOwnership(ctx context.Context, ref entities.AssetRef,
 		return nil, wrapErr("ProveOwnership", err)
 	}
 
-	result := &entities.OwnershipProofSet{
+	result := &OwnershipProofSet{
 		AssetRef: ref,
-		Proofs:   make([]entities.OwnershipProof, 0, len(selected)),
+		Proofs:   make([]OwnershipProof, 0, len(selected)),
 	}
 
 	for _, candidate := range selected {
 		issuanceID := candidate.asset.Genesis.IssuanceID
 		proof, err := s.client.ProveAssetOwnership(
-			ctx, &entities.ProveOwnershipRequest{
-				AssetRef:  entities.AssetRefFromAssetID(issuanceID),
+			ctx, &ProveOwnershipRequest{
+				AssetRef:  AssetRefFromAssetID(issuanceID),
 				ScriptKey: candidate.asset.ScriptKey.PubKey,
 				Outpoint:  candidate.outpoint,
 				Challenge: o.challenge,
@@ -138,7 +131,7 @@ func (s *Wallet) ProveOwnership(ctx context.Context, ref entities.AssetRef,
 			return nil, wrapErr("ProveOwnership", ErrNoProofs)
 		}
 
-		result.Proofs = append(result.Proofs, entities.OwnershipProof{
+		result.Proofs = append(result.Proofs, OwnershipProof{
 			AssetRef:         ownershipProofAssetRef(ref, candidate.asset),
 			IssuanceID:       issuanceID,
 			ScriptKey:        candidate.asset.ScriptKey.PubKey,
@@ -154,7 +147,7 @@ func (s *Wallet) ProveOwnership(ctx context.Context, ref entities.AssetRef,
 // VerifyOwnership verifies an ownership proof produced by ProveOwnership or
 // by another Taproot Assets wallet.
 func (s *Wallet) VerifyOwnership(ctx context.Context, proof []byte,
-	opts ...OwnershipOption) (*entities.VerifyOwnershipResponse, error) {
+	opts ...OwnershipOption) (*VerifyOwnershipResponse, error) {
 
 	if len(proof) == 0 {
 		return nil, wrapErr("VerifyOwnership", ErrOwnershipProofRequired)
@@ -171,7 +164,7 @@ func (s *Wallet) VerifyOwnership(ctx context.Context, proof []byte,
 	}
 
 	resp, err := s.client.VerifyAssetOwnership(
-		ctx, &entities.VerifyOwnershipRequest{
+		ctx, &VerifyOwnershipRequest{
 			ProofWithWitness: proof,
 			Challenge:        o.challenge,
 		},
@@ -187,14 +180,14 @@ func (s *Wallet) VerifyOwnership(ctx context.Context, proof []byte,
 }
 
 type ownershipCandidate struct {
-	asset    *entities.AssetRecord
-	outpoint entities.Outpoint
+	asset    *AssetRecord
+	outpoint Outpoint
 }
 
 func (s *Wallet) ownershipCandidates(ctx context.Context,
-	ref entities.AssetRef) ([]ownershipCandidate, error) {
+	ref AssetRef) ([]ownershipCandidate, error) {
 
-	utxos, err := s.client.ListUtxos(ctx, &entities.ListUtxosRequest{
+	utxos, err := s.client.ListUtxos(ctx, &ListUtxosRequest{
 		IncludeLeased: true,
 	})
 	if err != nil {
@@ -240,7 +233,7 @@ func (s *Wallet) ownershipCandidates(ctx context.Context,
 }
 
 func (s *Wallet) ownershipNoCandidatesErr(ctx context.Context,
-	ref entities.AssetRef) error {
+	ref AssetRef) error {
 
 	known, err := s.ownershipRefKnown(ctx, ref)
 	if err != nil {
@@ -258,10 +251,10 @@ func (s *Wallet) ownershipNoCandidatesErr(ctx context.Context,
 }
 
 func (s *Wallet) ownershipRefKnown(ctx context.Context,
-	ref entities.AssetRef) (bool, error) {
+	ref AssetRef) (bool, error) {
 
-	allTypes := &entities.ScriptKeyTypeQuery{AllTypes: true}
-	records, err := s.listAssetRecords(ctx, &entities.ListAssetsRequest{
+	allTypes := &ScriptKeyTypeQuery{AllTypes: true}
+	records, err := s.listAssetRecords(ctx, &ListAssetsRequest{
 		AssetRef:      &ref,
 		IncludeSpent:  true,
 		ScriptKeyType: allTypes,
@@ -273,12 +266,12 @@ func (s *Wallet) ownershipRefKnown(ctx context.Context,
 	return len(records) > 0, nil
 }
 
-func selectOwnershipCandidates(ref entities.AssetRef,
+func selectOwnershipCandidates(ref AssetRef,
 	candidates []ownershipCandidate,
 	o *ownershipOptions) ([]ownershipCandidate, error) {
 
 	collectionRef := ref.IsGroupRef() &&
-		candidates[0].asset.Genesis.Type == entities.AssetTypeCollectible
+		candidates[0].asset.Genesis.Type == AssetTypeCollectible
 
 	if err := validateOwnershipCandidateTypes(
 		ref, candidates, collectionRef,
@@ -301,7 +294,7 @@ func selectOwnershipCandidates(ref entities.AssetRef,
 		return nil, ErrWrongAssetType
 	}
 
-	if candidates[0].asset.Genesis.Type == entities.AssetTypeCollectible {
+	if candidates[0].asset.Genesis.Type == AssetTypeCollectible {
 		if o.hasAmount && o.amount > 1 {
 			return nil, fmt.Errorf(
 				"%w: NFT ownership proves one item",
@@ -330,7 +323,7 @@ func selectOwnershipCandidates(ref entities.AssetRef,
 	)
 }
 
-func validateOwnershipCandidateTypes(ref entities.AssetRef,
+func validateOwnershipCandidateTypes(ref AssetRef,
 	candidates []ownershipCandidate, collectionRef bool) error {
 
 	firstType := candidates[0].asset.Genesis.Type
@@ -347,7 +340,7 @@ func validateOwnershipCandidateTypes(ref entities.AssetRef,
 		return nil
 	}
 
-	if firstType != entities.AssetTypeNormal {
+	if firstType != AssetTypeNormal {
 		return fmt.Errorf(
 			"%w: group ref is not a fungible asset or collection",
 			ErrWrongAssetType,
@@ -357,8 +350,8 @@ func validateOwnershipCandidateTypes(ref entities.AssetRef,
 	return nil
 }
 
-func ownershipRecordMatchesRef(asset *entities.AssetRecord,
-	ref entities.AssetRef) bool {
+func ownershipRecordMatchesRef(asset *AssetRecord,
+	ref AssetRef) bool {
 
 	if ref.IsGroupRef() {
 		return asset.AssetRef.Equivalent(ref)
@@ -372,16 +365,16 @@ func ownershipRecordMatchesRef(asset *entities.AssetRecord,
 	return asset.Genesis.IssuanceID == assetID
 }
 
-func ownershipProofAssetRef(ref entities.AssetRef,
-	asset *entities.AssetRecord) entities.AssetRef {
+func ownershipProofAssetRef(ref AssetRef,
+	asset *AssetRecord) AssetRef {
 
-	if asset.Genesis.Type == entities.AssetTypeCollectible {
-		return entities.AssetRefFromAssetID(asset.Genesis.IssuanceID)
+	if asset.Genesis.Type == AssetTypeCollectible {
+		return AssetRefFromAssetID(asset.Genesis.IssuanceID)
 	}
 
 	if ref.IsGroupRef() {
 		return ref
 	}
 
-	return entities.AssetRefFromAssetID(asset.Genesis.IssuanceID)
+	return AssetRefFromAssetID(asset.Genesis.IssuanceID)
 }

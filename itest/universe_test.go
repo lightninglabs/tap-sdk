@@ -9,7 +9,6 @@ import (
 	"time"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
-	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/require"
 )
 
@@ -61,7 +60,7 @@ func TestUniverseAssetRefSurface(t *testing.T) {
 			t, ctx, aliceUniverse, itemRef, collectionName,
 		)
 
-		unknown := entities.AssetRefFromAssetID(itestAssetID(99))
+		unknown := tapsdk.AssetRefFromAssetID(itestAssetID(99))
 		ok, err := aliceUniverse.HasAsset(ctx, unknown)
 		require.NoError(t, err)
 		require.False(t, ok)
@@ -81,8 +80,8 @@ func TestUniverseProtocolReadSurface(t *testing.T) {
 		minted, err := h.CreateFungibleAndConfirm(t, ctx, name, 1000)
 		require.NoError(t, err)
 
-		id := entities.UniverseIDFromRef(
-			minted.Ref, entities.ProofTypeIssuance,
+		id := tapsdk.UniverseIDFromRef(
+			minted.Ref, tapsdk.ProofTypeIssuance,
 		)
 
 		root := h.WaitForUniverseRoot(t, ctx, id, defaultWaitTimeout)
@@ -90,7 +89,7 @@ func TestUniverseProtocolReadSurface(t *testing.T) {
 		require.NotNil(t, root.MSSMTRoot)
 
 		listedRoots, err := h.AliceClient.AssetRoots(ctx,
-			&entities.AssetRootRequest{
+			&tapsdk.AssetRootRequest{
 				WithAmountsByID: true,
 			},
 		)
@@ -105,7 +104,7 @@ func TestUniverseProtocolReadSurface(t *testing.T) {
 		))
 
 		keys, err := h.AliceClient.AssetLeafKeys(ctx,
-			&entities.AssetLeafKeysRequest{
+			&tapsdk.AssetLeafKeysRequest{
 				ID: id,
 			},
 		)
@@ -117,7 +116,7 @@ func TestUniverseProtocolReadSurface(t *testing.T) {
 		require.NotEmpty(t, leaves)
 
 		proof, err := h.AliceClient.QueryProof(ctx,
-			&entities.UniverseKey{
+			&tapsdk.UniverseKey{
 				ID:      id,
 				LeafKey: keys[0],
 			},
@@ -134,9 +133,9 @@ func TestUniverseProtocolReadSurface(t *testing.T) {
 		require.Greater(t, stats.NumTotalProofs, int64(0))
 
 		assetStats, err := h.AliceClient.QueryAssetStats(ctx,
-			&entities.AssetStatsQuery{
+			&tapsdk.AssetStatsQuery{
 				AssetNameFilter: name,
-				AssetTypeFilter: entities.FilterAssetNormal,
+				AssetTypeFilter: tapsdk.FilterAssetNormal,
 			},
 		)
 		require.NoError(t, err)
@@ -147,13 +146,13 @@ func TestUniverseProtocolReadSurface(t *testing.T) {
 }
 
 func assertUniverseRefUsable(t testing.TB, ctx context.Context,
-	universe *tapsdk.Universe, ref entities.AssetRef, name string) {
+	universe *tapsdk.Universe, ref tapsdk.AssetRef, name string) {
 
 	t.Helper()
 
 	var (
-		roots  *entities.UniverseRoots
-		proofs []*entities.UniverseProof
+		roots  *tapsdk.UniverseRoots
+		proofs []*tapsdk.UniverseProof
 	)
 	require.Eventually(t, func() bool {
 		var err error
@@ -168,7 +167,7 @@ func assertUniverseRefUsable(t testing.TB, ctx context.Context,
 		proofs, err = universe.ListProofs(
 			ctx, ref,
 			tapsdk.WithUniverseProofType(
-				entities.ProofTypeIssuance,
+				tapsdk.ProofTypeIssuance,
 			),
 		)
 		return err == nil && len(proofs) > 0
@@ -191,7 +190,7 @@ func assertUniverseRefUsable(t testing.TB, ctx context.Context,
 }
 
 func assertUniverseSyncsAsset(t testing.TB, ctx context.Context,
-	universe *tapsdk.Universe, ref entities.AssetRef) {
+	universe *tapsdk.Universe, ref tapsdk.AssetRef) {
 
 	t.Helper()
 
@@ -199,7 +198,7 @@ func assertUniverseSyncsAsset(t testing.TB, ctx context.Context,
 	require.Eventually(t, func() bool {
 		_, err := universe.SyncAsset(
 			ctx, ref, host,
-			tapsdk.WithUniverseSyncMode(entities.SyncIssuanceOnly),
+			tapsdk.WithUniverseSyncMode(tapsdk.SyncIssuanceOnly),
 		)
 		if err != nil {
 			return false
@@ -210,8 +209,8 @@ func assertUniverseSyncsAsset(t testing.TB, ctx context.Context,
 	}, defaultWaitTimeout, time.Second)
 }
 
-func itestAssetID(seed byte) entities.AssetID {
-	var id entities.AssetID
+func itestAssetID(seed byte) tapsdk.AssetID {
+	var id tapsdk.AssetID
 	for i := range id {
 		id[i] = seed + byte(i)
 	}
@@ -220,12 +219,12 @@ func itestAssetID(seed byte) entities.AssetID {
 }
 
 func (h *TestHarness) WaitForUniverseRoot(t testing.TB,
-	ctx context.Context, id entities.UniverseID,
-	timeout time.Duration) *entities.UniverseRoot {
+	ctx context.Context, id tapsdk.UniverseID,
+	timeout time.Duration) *tapsdk.UniverseRoot {
 
 	t.Helper()
 
-	var root *entities.UniverseRoot
+	var root *tapsdk.UniverseRoot
 	require.Eventually(t, func() bool {
 		roots, err := h.AliceClient.QueryAssetRoots(ctx, &id)
 		if err != nil {
@@ -250,8 +249,8 @@ func (h *TestHarness) WaitForUniverseRoot(t testing.TB,
 	return root
 }
 
-func hasStatsForRef(stats []entities.AssetStatsSnapshot,
-	ref entities.AssetRef) bool {
+func hasStatsForRef(stats []tapsdk.AssetStatsSnapshot,
+	ref tapsdk.AssetRef) bool {
 
 	for _, stat := range stats {
 		if stat.AssetRef.Equivalent(ref) {

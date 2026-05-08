@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"sync"
 	"time"
-
-	"github.com/lightninglabs/tap-sdk/entities"
 )
 
 const (
@@ -18,7 +16,7 @@ const (
 
 var errMintResultNotReady = errors.New("mint result is not visible yet")
 
-// Issuer is the high-level minting surface for SDK business entities.
+// Issuer is the high-level minting surface for SDK business assets.
 //
 // It creates grouped fungible assets, standalone NFTs, NFT collections, and
 // additional supply or collection items while hiding tapd batch mechanics from
@@ -89,8 +87,8 @@ func WithMintResolveTimeout(timeout time.Duration) MintOption {
 // accepted or finalized the mint. Do not blindly retry; inspect wallet assets,
 // issuances, or mint batches first to avoid duplicate issuance.
 func (i *Issuer) CreateFungible(ctx context.Context,
-	spec entities.FungibleAssetSpec,
-	opts ...MintOption) (*entities.Asset, error) {
+	spec FungibleAssetSpec,
+	opts ...MintOption) (*Asset, error) {
 
 	unlock := i.lock()
 	defer unlock()
@@ -110,8 +108,8 @@ func (i *Issuer) CreateFungible(ctx context.Context,
 // accepted or finalized the mint. Do not blindly retry; inspect wallet assets,
 // issuances, or mint batches first to avoid duplicate issuance.
 func (i *Issuer) IssueFungible(ctx context.Context,
-	ref entities.AssetRef, amount uint64,
-	opts ...MintOption) (*entities.Issuance, error) {
+	ref AssetRef, amount uint64,
+	opts ...MintOption) (*Issuance, error) {
 
 	unlock := i.lock()
 	defer unlock()
@@ -130,8 +128,8 @@ func (i *Issuer) IssueFungible(ctx context.Context,
 // If the returned error wraps ErrMintResolveTimeout, tapd may already have
 // accepted or finalized the mint. Do not blindly retry; inspect wallet assets
 // or mint batches first to avoid duplicate NFTs.
-func (i *Issuer) CreateNFT(ctx context.Context, spec entities.NFTSpec,
-	opts ...MintOption) (*entities.Asset, error) {
+func (i *Issuer) CreateNFT(ctx context.Context, spec NFTSpec,
+	opts ...MintOption) (*Asset, error) {
 
 	unlock := i.lock()
 	defer unlock()
@@ -152,8 +150,8 @@ func (i *Issuer) CreateNFT(ctx context.Context, spec entities.NFTSpec,
 // accepted or finalized the mint. Do not blindly retry; inspect wallet assets,
 // collections, or mint batches first to avoid duplicate NFTs.
 func (i *Issuer) CreateCollection(ctx context.Context,
-	firstItem entities.NFTSpec,
-	opts ...MintOption) (*entities.CollectionMintResult, error) {
+	firstItem NFTSpec,
+	opts ...MintOption) (*CollectionMintResult, error) {
 
 	unlock := i.lock()
 	defer unlock()
@@ -172,8 +170,8 @@ func (i *Issuer) CreateCollection(ctx context.Context,
 // accepted or finalized the mint. Do not blindly retry; inspect wallet assets,
 // collections, or mint batches first to avoid duplicate NFTs.
 func (i *Issuer) MintCollectionItem(ctx context.Context,
-	collectionRef entities.AssetRef, item entities.NFTSpec,
-	opts ...MintOption) (*entities.Asset, error) {
+	collectionRef AssetRef, item NFTSpec,
+	opts ...MintOption) (*Asset, error) {
 
 	unlock := i.lock()
 	defer unlock()
@@ -187,16 +185,16 @@ func (i *Issuer) MintCollectionItem(ctx context.Context,
 }
 
 func (i *Issuer) createFungible(ctx context.Context,
-	spec entities.FungibleAssetSpec,
-	opts ...MintOption) (*entities.Asset, error) {
+	spec FungibleAssetSpec,
+	opts ...MintOption) (*Asset, error) {
 
 	if err := validateFungibleSpec(spec); err != nil {
 		return nil, err
 	}
 
-	stage := &entities.MintAsset{
+	stage := &MintAsset{
 		AssetVersion:            spec.AssetVersion,
-		AssetType:               entities.AssetTypeFungible,
+		AssetType:               AssetTypeFungible,
 		Name:                    spec.Name,
 		AssetMeta:               spec.AssetMeta,
 		InitialSupply:           spec.Amount,
@@ -207,16 +205,16 @@ func (i *Issuer) createFungible(ctx context.Context,
 	}
 
 	record, err := i.mintAssetAndResolve(ctx, stage, nil, func(
-		record *entities.AssetRecord) bool {
+		record *AssetRecord) bool {
 
-		return isRecord(record, entities.AssetTypeFungible, spec.Name,
+		return isRecord(record, AssetTypeFungible, spec.Name,
 			spec.Amount) && record.AssetRef.IsGroupRef()
 	}, opts)
 	if err != nil {
 		return nil, err
 	}
 
-	assets := assetsFromRecords([]*entities.AssetRecord{record})
+	assets := assetsFromRecords([]*AssetRecord{record})
 	if len(assets) != 1 {
 		return nil, fmt.Errorf("%w: %s", ErrMintResultNotFound,
 			spec.Name)
@@ -226,8 +224,8 @@ func (i *Issuer) createFungible(ctx context.Context,
 }
 
 func (i *Issuer) issueFungible(ctx context.Context,
-	ref entities.AssetRef, amount uint64,
-	opts ...MintOption) (*entities.Issuance, error) {
+	ref AssetRef, amount uint64,
+	opts ...MintOption) (*Issuance, error) {
 
 	if err := validateGroupedRef(ref); err != nil {
 		return nil, err
@@ -251,18 +249,18 @@ func (i *Issuer) issueFungible(ctx context.Context,
 		return nil, err
 	}
 
-	stage := &entities.MintIssuance{
+	stage := &MintIssuance{
 		AssetRef:  base.AssetRef,
 		Name:      base.Genesis.Tag,
-		AssetType: entities.AssetTypeFungible,
+		AssetType: AssetTypeFungible,
 		Amount:    amount,
 	}
 
-	err = i.mintAndFinalize(ctx, func() (*entities.MintingBatch,
+	err = i.mintAndFinalize(ctx, func() (*MintingBatch,
 		error) {
 
 		return i.client.MintIssuance(ctx,
-			&entities.MintIssuanceRequest{
+			&MintIssuanceRequest{
 				Issuance:      stage,
 				ShortResponse: true,
 			},
@@ -273,9 +271,9 @@ func (i *Issuer) issueFungible(ctx context.Context,
 	}
 
 	record, err := i.findNewRecord(ctx, &base.AssetRef, recordIDs(before),
-		func(record *entities.AssetRecord) bool {
+		func(record *AssetRecord) bool {
 			return isRecord(
-				record, entities.AssetTypeFungible,
+				record, AssetTypeFungible,
 				base.Genesis.Tag, amount,
 			)
 		},
@@ -285,7 +283,7 @@ func (i *Issuer) issueFungible(ctx context.Context,
 		return nil, err
 	}
 
-	issuances := issuancesFromRecords([]*entities.AssetRecord{record})
+	issuances := issuancesFromRecords([]*AssetRecord{record})
 	if len(issuances) != 1 {
 		return nil, fmt.Errorf("%w: %s", ErrMintResultNotFound, ref)
 	}
@@ -293,8 +291,8 @@ func (i *Issuer) issueFungible(ctx context.Context,
 	return issuances[0], nil
 }
 
-func (i *Issuer) createNFT(ctx context.Context, spec entities.NFTSpec,
-	opts ...MintOption) (*entities.Asset, error) {
+func (i *Issuer) createNFT(ctx context.Context, spec NFTSpec,
+	opts ...MintOption) (*Asset, error) {
 
 	if err := validateNFTSpec(spec); err != nil {
 		return nil, err
@@ -302,16 +300,16 @@ func (i *Issuer) createNFT(ctx context.Context, spec entities.NFTSpec,
 
 	stage := mintNFTAsset(spec, false)
 	record, err := i.mintAssetAndResolve(ctx, stage, nil, func(
-		record *entities.AssetRecord) bool {
+		record *AssetRecord) bool {
 
-		return isRecord(record, entities.AssetTypeNFT, spec.Name, 1) &&
+		return isRecord(record, AssetTypeNFT, spec.Name, 1) &&
 			record.AssetRef.IsAssetIDRef()
 	}, opts)
 	if err != nil {
 		return nil, err
 	}
 
-	assets := assetsFromRecords([]*entities.AssetRecord{record})
+	assets := assetsFromRecords([]*AssetRecord{record})
 	if len(assets) != 1 {
 		return nil, fmt.Errorf("%w: %s", ErrMintResultNotFound,
 			spec.Name)
@@ -321,8 +319,8 @@ func (i *Issuer) createNFT(ctx context.Context, spec entities.NFTSpec,
 }
 
 func (i *Issuer) createCollection(ctx context.Context,
-	firstItem entities.NFTSpec,
-	opts ...MintOption) (*entities.CollectionMintResult, error) {
+	firstItem NFTSpec,
+	opts ...MintOption) (*CollectionMintResult, error) {
 
 	if err := validateNFTSpec(firstItem); err != nil {
 		return nil, err
@@ -330,37 +328,37 @@ func (i *Issuer) createCollection(ctx context.Context,
 
 	stage := mintNFTAsset(firstItem, true)
 	record, err := i.mintAssetAndResolve(ctx, stage, nil, func(
-		record *entities.AssetRecord) bool {
+		record *AssetRecord) bool {
 
 		return isRecord(
-			record, entities.AssetTypeNFT, firstItem.Name, 1,
+			record, AssetTypeNFT, firstItem.Name, 1,
 		) && record.AssetRef.IsGroupRef()
 	}, opts)
 	if err != nil {
 		return nil, err
 	}
 
-	collections := collectionsFromRecords([]*entities.AssetRecord{record})
+	collections := collectionsFromRecords([]*AssetRecord{record})
 	if len(collections) != 1 {
 		return nil, fmt.Errorf("%w: %s", ErrMintResultNotFound,
 			firstItem.Name)
 	}
 
-	assets := assetsFromRecords([]*entities.AssetRecord{record})
+	assets := assetsFromRecords([]*AssetRecord{record})
 	if len(assets) != 1 {
 		return nil, fmt.Errorf("%w: %s", ErrMintResultNotFound,
 			firstItem.Name)
 	}
 
-	return &entities.CollectionMintResult{
+	return &CollectionMintResult{
 		Collection: collections[0],
 		FirstItem:  assets[0],
 	}, nil
 }
 
 func (i *Issuer) mintCollectionItem(ctx context.Context,
-	collectionRef entities.AssetRef, item entities.NFTSpec,
-	opts ...MintOption) (*entities.Asset, error) {
+	collectionRef AssetRef, item NFTSpec,
+	opts ...MintOption) (*Asset, error) {
 
 	if err := validateGroupedRef(collectionRef); err != nil {
 		return nil, err
@@ -384,21 +382,21 @@ func (i *Issuer) mintCollectionItem(ctx context.Context,
 		return nil, err
 	}
 
-	stage := &entities.MintIssuance{
+	stage := &MintIssuance{
 		AssetRef:     collection.AssetRef,
 		Name:         item.Name,
-		AssetType:    entities.AssetTypeNFT,
+		AssetType:    AssetTypeNFT,
 		AssetMeta:    item.AssetMeta,
 		Amount:       1,
 		AssetVersion: item.AssetVersion,
 		ScriptKey:    item.ScriptKey,
 	}
 
-	err = i.mintAndFinalize(ctx, func() (*entities.MintingBatch,
+	err = i.mintAndFinalize(ctx, func() (*MintingBatch,
 		error) {
 
 		return i.client.MintIssuance(ctx,
-			&entities.MintIssuanceRequest{
+			&MintIssuanceRequest{
 				Issuance:      stage,
 				ShortResponse: true,
 			},
@@ -409,9 +407,9 @@ func (i *Issuer) mintCollectionItem(ctx context.Context,
 	}
 
 	record, err := i.findNewRecord(ctx, &collection.AssetRef,
-		recordIDs(before), func(record *entities.AssetRecord) bool {
+		recordIDs(before), func(record *AssetRecord) bool {
 			return isRecord(
-				record, entities.AssetTypeNFT, item.Name, 1,
+				record, AssetTypeNFT, item.Name, 1,
 			) && record.AssetRef.Equivalent(collection.AssetRef)
 		},
 		mintOpts.resolveTimeoutOrDefault(),
@@ -420,7 +418,7 @@ func (i *Issuer) mintCollectionItem(ctx context.Context,
 		return nil, err
 	}
 
-	assets := assetsFromRecords([]*entities.AssetRecord{record})
+	assets := assetsFromRecords([]*AssetRecord{record})
 	if len(assets) != 1 {
 		return nil, fmt.Errorf("%w: %s", ErrMintResultNotFound,
 			item.Name)
@@ -429,7 +427,7 @@ func (i *Issuer) mintCollectionItem(ctx context.Context,
 	return assets[0], nil
 }
 
-func validateFungibleSpec(spec entities.FungibleAssetSpec) error {
+func validateFungibleSpec(spec FungibleAssetSpec) error {
 	if spec.Name == "" {
 		return ErrAssetNameRequired
 	}
@@ -440,7 +438,7 @@ func validateFungibleSpec(spec entities.FungibleAssetSpec) error {
 	return nil
 }
 
-func validateNFTSpec(spec entities.NFTSpec) error {
+func validateNFTSpec(spec NFTSpec) error {
 	if spec.Name == "" {
 		return ErrAssetNameRequired
 	}
@@ -448,7 +446,7 @@ func validateNFTSpec(spec entities.NFTSpec) error {
 	return nil
 }
 
-func validateGroupedRef(ref entities.AssetRef) error {
+func validateGroupedRef(ref AssetRef) error {
 	if err := ref.Validate(); err != nil {
 		return err
 	}
@@ -459,10 +457,10 @@ func validateGroupedRef(ref entities.AssetRef) error {
 	return nil
 }
 
-func mintNFTAsset(spec entities.NFTSpec, collection bool) *entities.MintAsset {
-	return &entities.MintAsset{
+func mintNFTAsset(spec NFTSpec, collection bool) *MintAsset {
+	return &MintAsset{
 		AssetVersion:  spec.AssetVersion,
-		AssetType:     entities.AssetTypeNFT,
+		AssetType:     AssetTypeNFT,
 		Name:          spec.Name,
 		AssetMeta:     spec.AssetMeta,
 		InitialSupply: 1,
@@ -480,12 +478,12 @@ func (i *Issuer) lock() func() {
 	return i.mu.Unlock
 }
 
-type recordMatcher func(*entities.AssetRecord) bool
+type recordMatcher func(*AssetRecord) bool
 
 func (i *Issuer) mintAssetAndResolve(ctx context.Context,
-	stage *entities.MintAsset, ref *entities.AssetRef,
+	stage *MintAsset, ref *AssetRef,
 	matches recordMatcher,
-	opts []MintOption) (*entities.AssetRecord, error) {
+	opts []MintOption) (*AssetRecord, error) {
 
 	mintOpts := applyMintOptions(opts)
 	if err := i.ensureReady(ctx); err != nil {
@@ -497,10 +495,10 @@ func (i *Issuer) mintAssetAndResolve(ctx context.Context,
 		return nil, err
 	}
 
-	err = i.mintAndFinalize(ctx, func() (*entities.MintingBatch,
+	err = i.mintAndFinalize(ctx, func() (*MintingBatch,
 		error) {
 
-		return i.client.MintAsset(ctx, &entities.MintAssetRequest{
+		return i.client.MintAsset(ctx, &MintAssetRequest{
 			Asset:         stage,
 			ShortResponse: true,
 		})
@@ -516,7 +514,7 @@ func (i *Issuer) mintAssetAndResolve(ctx context.Context,
 }
 
 func (i *Issuer) mintAndFinalize(ctx context.Context,
-	stage func() (*entities.MintingBatch, error),
+	stage func() (*MintingBatch, error),
 	opts *MintOptions) error {
 
 	if i == nil || i.client == nil {
@@ -531,7 +529,7 @@ func (i *Issuer) mintAndFinalize(ctx context.Context,
 	}
 
 	_, err := i.client.FinalizeBatch(ctx,
-		&entities.FinalizeBatchRequest{
+		&FinalizeBatchRequest{
 			ShortResponse: true,
 			FeeRate:       opts.feeRate,
 		},
@@ -559,7 +557,7 @@ func (i *Issuer) ensureReady(ctx context.Context) error {
 		return fmt.Errorf("issuer client is nil")
 	}
 
-	batches, err := i.client.ListBatches(ctx, &entities.ListBatchesRequest{})
+	batches, err := i.client.ListBatches(ctx, &ListBatchesRequest{})
 	if err != nil {
 		return err
 	}
@@ -578,12 +576,12 @@ func (i *Issuer) ensureReady(ctx context.Context) error {
 	return nil
 }
 
-func isActiveMintBatch(state entities.BatchState) bool {
+func isActiveMintBatch(state BatchState) bool {
 	switch state {
-	case entities.BatchStatePending,
-		entities.BatchStateFrozen,
-		entities.BatchStateCommitted,
-		entities.BatchStateBroadcast:
+	case BatchStatePending,
+		BatchStateFrozen,
+		BatchStateCommitted,
+		BatchStateBroadcast:
 
 		return true
 
@@ -593,7 +591,7 @@ func isActiveMintBatch(state entities.BatchState) bool {
 }
 
 func (i *Issuer) resolveFungibleAsset(ctx context.Context,
-	ref entities.AssetRef) (*entities.AssetRecord, error) {
+	ref AssetRef) (*AssetRecord, error) {
 
 	records, err := i.listMintRecords(ctx, &ref)
 	if err != nil {
@@ -605,7 +603,7 @@ func (i *Issuer) resolveFungibleAsset(ctx context.Context,
 			continue
 		}
 
-		if record.Genesis.Type != entities.AssetTypeFungible {
+		if record.Genesis.Type != AssetTypeFungible {
 			return nil, fmt.Errorf("%w: expected fungible asset",
 				ErrWrongAssetType)
 		}
@@ -620,7 +618,7 @@ func (i *Issuer) resolveFungibleAsset(ctx context.Context,
 }
 
 func (i *Issuer) resolveCollection(ctx context.Context,
-	ref entities.AssetRef) (*entities.Collection, error) {
+	ref AssetRef) (*Collection, error) {
 
 	records, err := i.listMintRecords(ctx, &ref)
 	if err != nil {
@@ -632,7 +630,7 @@ func (i *Issuer) resolveCollection(ctx context.Context,
 			continue
 		}
 
-		if record.Genesis.Type != entities.AssetTypeNFT {
+		if record.Genesis.Type != AssetTypeNFT {
 			return nil, fmt.Errorf("%w: expected NFT collection",
 				ErrWrongAssetType)
 		}
@@ -642,7 +640,7 @@ func (i *Issuer) resolveCollection(ctx context.Context,
 		}
 
 		collections := collectionsFromRecords(
-			[]*entities.AssetRecord{record},
+			[]*AssetRecord{record},
 		)
 		if len(collections) != 1 {
 			return nil, fmt.Errorf("%w: %s", ErrMintResultNotFound,
@@ -656,13 +654,13 @@ func (i *Issuer) resolveCollection(ctx context.Context,
 }
 
 func (i *Issuer) listMintRecords(ctx context.Context,
-	ref *entities.AssetRef) ([]*entities.AssetRecord, error) {
+	ref *AssetRef) ([]*AssetRecord, error) {
 
 	if i == nil || i.client == nil {
 		return nil, fmt.Errorf("issuer client is nil")
 	}
 
-	req := &entities.ListAssetsRequest{
+	req := &ListAssetsRequest{
 		IncludeUnconfirmedMints: true,
 		AssetRef:                ref,
 	}
@@ -671,8 +669,8 @@ func (i *Issuer) listMintRecords(ctx context.Context,
 }
 
 func (i *Issuer) findNewRecord(ctx context.Context,
-	ref *entities.AssetRef, before map[entities.AssetID]struct{},
-	matches recordMatcher, timeout time.Duration) (*entities.AssetRecord,
+	ref *AssetRef, before map[AssetID]struct{},
+	matches recordMatcher, timeout time.Duration) (*AssetRecord,
 	error) {
 
 	deadline := time.NewTimer(timeout)
@@ -704,8 +702,8 @@ func (i *Issuer) findNewRecord(ctx context.Context,
 }
 
 func (i *Issuer) findNewRecordOnce(ctx context.Context,
-	ref *entities.AssetRef, before map[entities.AssetID]struct{},
-	matches recordMatcher) (*entities.AssetRecord, error) {
+	ref *AssetRef, before map[AssetID]struct{},
+	matches recordMatcher) (*AssetRecord, error) {
 
 	records, err := i.listMintRecords(ctx, ref)
 	if err != nil {
@@ -728,8 +726,8 @@ func (i *Issuer) findNewRecordOnce(ctx context.Context,
 	return nil, errMintResultNotReady
 }
 
-func recordIDs(records []*entities.AssetRecord) map[entities.AssetID]struct{} {
-	ids := make(map[entities.AssetID]struct{}, len(records))
+func recordIDs(records []*AssetRecord) map[AssetID]struct{} {
+	ids := make(map[AssetID]struct{}, len(records))
 	for _, record := range records {
 		if record == nil {
 			continue
@@ -741,7 +739,7 @@ func recordIDs(records []*entities.AssetRecord) map[entities.AssetID]struct{} {
 	return ids
 }
 
-func isRecord(record *entities.AssetRecord, assetType entities.AssetType,
+func isRecord(record *AssetRecord, assetType AssetType,
 	name string, amount uint64) bool {
 
 	if record == nil {

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/stretchr/testify/require"
 )
 
@@ -33,13 +33,13 @@ func TestWalletCollectionSurface(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, second.Ref.IsAssetIDRef())
 
-		firstItemRef := entities.AssetRefFromAssetID(
+		firstItemRef := tapsdk.AssetRefFromAssetID(
 			first.Asset.Genesis.IssuanceID,
 		)
 		secondItemRef := second.Ref
 
 		collections, err := h.AliceWallet.ListCollections(
-			ctx, &entities.ListCollectionsRequest{
+			ctx, &tapsdk.ListCollectionsRequest{
 				AssetRef: &first.Ref,
 			},
 		)
@@ -49,7 +49,7 @@ func TestWalletCollectionSurface(t *testing.T) {
 		require.Equal(t, uint64(2), collections[0].ItemCount)
 
 		assets, err := h.AliceWallet.ListAssets(
-			ctx, &entities.ListAssetsRequest{
+			ctx, &tapsdk.ListAssetsRequest{
 				AssetRef: &first.Ref,
 			},
 		)
@@ -59,7 +59,7 @@ func TestWalletCollectionSurface(t *testing.T) {
 		requireNFTItem(t, assets, first.Ref, secondItemRef)
 
 		items, err := h.AliceWallet.ListCollectionItems(
-			ctx, &entities.ListCollectionItemsRequest{
+			ctx, &tapsdk.ListCollectionItemsRequest{
 				CollectionRef: &first.Ref,
 			},
 		)
@@ -69,7 +69,7 @@ func TestWalletCollectionSurface(t *testing.T) {
 		requireNFTItem(t, items, first.Ref, secondItemRef)
 
 		itemByRef, err := h.AliceWallet.ListCollectionItems(
-			ctx, &entities.ListCollectionItemsRequest{
+			ctx, &tapsdk.ListCollectionItemsRequest{
 				AssetRef: &firstItemRef,
 			},
 		)
@@ -78,7 +78,7 @@ func TestWalletCollectionSurface(t *testing.T) {
 		requireNFTItem(t, itemByRef, first.Ref, firstItemRef)
 
 		issuances, err := h.AliceWallet.ListIssuances(
-			ctx, &entities.ListIssuancesRequest{
+			ctx, &tapsdk.ListIssuancesRequest{
 				AssetRef: &first.Ref,
 			},
 		)
@@ -87,8 +87,8 @@ func TestWalletCollectionSurface(t *testing.T) {
 	})
 }
 
-func requireNFTItem(t testing.TB, assets []*entities.Asset,
-	collectionRef, itemRef entities.AssetRef) {
+func requireNFTItem(t testing.TB, assets []*tapsdk.Asset,
+	collectionRef, itemRef tapsdk.AssetRef) {
 
 	t.Helper()
 
@@ -97,7 +97,7 @@ func requireNFTItem(t testing.TB, assets []*entities.Asset,
 			continue
 		}
 
-		require.Equal(t, entities.AssetTypeNFT, asset.Type)
+		require.Equal(t, tapsdk.AssetTypeNFT, asset.Type)
 		require.Equal(t, uint64(1), asset.Amount)
 		require.NotNil(t, asset.CollectionRef)
 		require.Equal(t, collectionRef, *asset.CollectionRef)

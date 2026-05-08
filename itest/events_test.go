@@ -11,7 +11,6 @@ import (
 	"time"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
-	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/require"
 )
 
@@ -28,9 +27,9 @@ func testEventListenerMintAndSend(t *testing.T, transport Transport) {
 
 	var (
 		mu          sync.Mutex
-		mintEvents  []*entities.MintEvent
-		sendEvents  []*entities.SendEvent
-		recvEvents  []*entities.ReceiveEvent
+		mintEvents  []*tapsdk.MintEvent
+		sendEvents  []*tapsdk.SendEvent
+		recvEvents  []*tapsdk.ReceiveEvent
 		streamError error
 	)
 
@@ -38,14 +37,14 @@ func testEventListenerMintAndSend(t *testing.T, transport Transport) {
 		h.AliceClient,
 		tapsdk.EventHandler{
 			OnMint: func(
-				_ context.Context, e *entities.MintEvent,
+				_ context.Context, e *tapsdk.MintEvent,
 			) {
 				mu.Lock()
 				mintEvents = append(mintEvents, e)
 				mu.Unlock()
 			},
 			OnSend: func(
-				_ context.Context, e *entities.SendEvent,
+				_ context.Context, e *tapsdk.SendEvent,
 			) {
 				mu.Lock()
 				sendEvents = append(sendEvents, e)
@@ -66,7 +65,7 @@ func testEventListenerMintAndSend(t *testing.T, transport Transport) {
 		h.BobClient,
 		tapsdk.EventHandler{
 			OnReceive: func(
-				_ context.Context, e *entities.ReceiveEvent,
+				_ context.Context, e *tapsdk.ReceiveEvent,
 			) {
 				mu.Lock()
 				recvEvents = append(recvEvents, e)
@@ -163,15 +162,15 @@ func testEventListenerOnDisconnect(t *testing.T, transport Transport) {
 		h.BobClient,
 		tapsdk.EventHandler{
 			OnReceive: func(
-				_ context.Context, _ *entities.ReceiveEvent,
+				_ context.Context, _ *tapsdk.ReceiveEvent,
 			) {
 			},
 			OnSend: func(
-				_ context.Context, _ *entities.SendEvent,
+				_ context.Context, _ *tapsdk.SendEvent,
 			) {
 			},
 			OnMint: func(
-				_ context.Context, _ *entities.MintEvent,
+				_ context.Context, _ *tapsdk.MintEvent,
 			) {
 			},
 			OnDisconnect: func(stream string, err error,

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/universerpc"
@@ -34,16 +34,16 @@ func NewUniverseClient(conn grpc.ClientConnInterface, timeout time.Duration,
 // InsertProof inserts a proof into the local universe.
 // The decoded proof information is used to construct the universe key.
 func (u *universeClient) InsertProof(ctx context.Context, rawProof []byte,
-	decoded *entities.DecodedProof) error {
+	decoded *tapsdk.DecodedProof) error {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, u.timeout)
 	defer cancel()
 
 	rpcCtx = u.universeMac.WithMacaroonAuth(rpcCtx)
 
-	uniID, err := marshalUniverseID(&entities.UniverseID{
+	uniID, err := marshalUniverseID(&tapsdk.UniverseID{
 		AssetRef:  decoded.AssetRef,
-		ProofType: entities.ProofTypeTransfer,
+		ProofType: tapsdk.ProofTypeTransfer,
 	})
 	if err != nil {
 		return err
@@ -86,8 +86,8 @@ func (u *universeClient) InsertProof(ctx context.Context, rawProof []byte,
 
 // AssetRoots returns the known universe roots for all assets.
 func (u *universeClient) AssetRoots(ctx context.Context,
-	req *entities.AssetRootRequest) (
-	map[string]*entities.UniverseRoot, error) {
+	req *tapsdk.AssetRootRequest) (
+	map[string]*tapsdk.UniverseRoot, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, u.timeout)
 	defer cancel()
@@ -107,7 +107,7 @@ func (u *universeClient) AssetRoots(ctx context.Context,
 		return nil, err
 	}
 
-	roots := make(map[string]*entities.UniverseRoot, len(resp.UniverseRoots))
+	roots := make(map[string]*tapsdk.UniverseRoot, len(resp.UniverseRoots))
 	for key, rpcRoot := range resp.UniverseRoots {
 		root, err := unmarshalUniverseRoot(rpcRoot)
 		if err != nil {
@@ -122,7 +122,7 @@ func (u *universeClient) AssetRoots(ctx context.Context,
 // QueryAssetRoots queries the issuance and transfer roots for a specific
 // asset.
 func (u *universeClient) QueryAssetRoots(ctx context.Context,
-	id *entities.UniverseID) (*entities.QueryRootResponse, error) {
+	id *tapsdk.UniverseID) (*tapsdk.QueryRootResponse, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, u.timeout)
 	defer cancel()
@@ -143,7 +143,7 @@ func (u *universeClient) QueryAssetRoots(ctx context.Context,
 		return nil, err
 	}
 
-	result := &entities.QueryRootResponse{}
+	result := &tapsdk.QueryRootResponse{}
 
 	if resp.IssuanceRoot != nil {
 		root, err := unmarshalUniverseRoot(resp.IssuanceRoot)
@@ -166,7 +166,7 @@ func (u *universeClient) QueryAssetRoots(ctx context.Context,
 
 // DeleteAssetRoot deletes a universe root for a specific asset.
 func (u *universeClient) DeleteAssetRoot(ctx context.Context,
-	id *entities.UniverseID) error {
+	id *tapsdk.UniverseID) error {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, u.timeout)
 	defer cancel()
@@ -188,7 +188,7 @@ func (u *universeClient) DeleteAssetRoot(ctx context.Context,
 
 // AssetLeafKeys returns the set of leaf keys for a universe.
 func (u *universeClient) AssetLeafKeys(ctx context.Context,
-	req *entities.AssetLeafKeysRequest) ([]entities.AssetLeafKey,
+	req *tapsdk.AssetLeafKeysRequest) ([]tapsdk.AssetLeafKey,
 	error) {
 
 	if req == nil {
@@ -217,7 +217,7 @@ func (u *universeClient) AssetLeafKeys(ctx context.Context,
 		return nil, err
 	}
 
-	keys := make([]entities.AssetLeafKey, 0, len(resp.AssetKeys))
+	keys := make([]tapsdk.AssetLeafKey, 0, len(resp.AssetKeys))
 	for _, rpcKey := range resp.AssetKeys {
 		key, err := unmarshalAssetLeafKey(rpcKey)
 		if err != nil {
@@ -231,7 +231,7 @@ func (u *universeClient) AssetLeafKeys(ctx context.Context,
 
 // AssetLeaves returns the set of asset leaves for a universe.
 func (u *universeClient) AssetLeaves(ctx context.Context,
-	id *entities.UniverseID) ([]entities.AssetLeaf, error) {
+	id *tapsdk.UniverseID) ([]tapsdk.AssetLeaf, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, u.timeout)
 	defer cancel()
@@ -252,7 +252,7 @@ func (u *universeClient) AssetLeaves(ctx context.Context,
 		return nil, err
 	}
 
-	leaves := make([]entities.AssetLeaf, 0, len(resp.Leaves))
+	leaves := make([]tapsdk.AssetLeaf, 0, len(resp.Leaves))
 	for _, rpcLeaf := range resp.Leaves {
 		leaf, err := unmarshalAssetLeaf(rpcLeaf)
 		if err != nil {
@@ -266,7 +266,7 @@ func (u *universeClient) AssetLeaves(ctx context.Context,
 
 // QueryProof queries a specific proof from the universe.
 func (u *universeClient) QueryProof(ctx context.Context,
-	key *entities.UniverseKey) (*entities.AssetProofResponse, error) {
+	key *tapsdk.UniverseKey) (*tapsdk.AssetProofResponse, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, u.timeout)
 	defer cancel()
@@ -288,7 +288,7 @@ func (u *universeClient) QueryProof(ctx context.Context,
 
 // UniverseStats returns aggregate statistics for the universe.
 func (u *universeClient) UniverseStats(
-	ctx context.Context) (*entities.UniverseStats, error) {
+	ctx context.Context) (*tapsdk.UniverseStats, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, u.timeout)
 	defer cancel()
@@ -302,7 +302,7 @@ func (u *universeClient) UniverseStats(
 		return nil, err
 	}
 
-	return &entities.UniverseStats{
+	return &tapsdk.UniverseStats{
 		NumTotalAssets: resp.NumTotalAssets,
 		NumTotalGroups: resp.NumTotalGroups,
 		NumTotalSyncs:  resp.NumTotalSyncs,
@@ -312,7 +312,7 @@ func (u *universeClient) UniverseStats(
 
 // QueryAssetStats returns per-asset statistics.
 func (u *universeClient) QueryAssetStats(ctx context.Context,
-	req *entities.AssetStatsQuery) ([]entities.AssetStatsSnapshot,
+	req *tapsdk.AssetStatsQuery) ([]tapsdk.AssetStatsSnapshot,
 	error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, u.timeout)
@@ -328,7 +328,7 @@ func (u *universeClient) QueryAssetStats(ctx context.Context,
 	}
 
 	snapshots := make(
-		[]entities.AssetStatsSnapshot, 0,
+		[]tapsdk.AssetStatsSnapshot, 0,
 		len(resp.AssetStats),
 	)
 	for _, rpcSnap := range resp.AssetStats {
@@ -344,8 +344,8 @@ func (u *universeClient) QueryAssetStats(ctx context.Context,
 
 // QueryEvents returns daily event counts for a time range.
 func (u *universeClient) QueryEvents(ctx context.Context,
-	req *entities.QueryEventsRequest) (
-	[]entities.GroupedUniverseEvents, error) {
+	req *tapsdk.QueryEventsRequest) (
+	[]tapsdk.GroupedUniverseEvents, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, u.timeout)
 	defer cancel()
@@ -363,11 +363,11 @@ func (u *universeClient) QueryEvents(ctx context.Context,
 	}
 
 	events := make(
-		[]entities.GroupedUniverseEvents, 0,
+		[]tapsdk.GroupedUniverseEvents, 0,
 		len(resp.Events),
 	)
 	for _, rpcEvent := range resp.Events {
-		events = append(events, entities.GroupedUniverseEvents{
+		events = append(events, tapsdk.GroupedUniverseEvents{
 			Date:           rpcEvent.Date,
 			SyncEvents:     rpcEvent.SyncEvents,
 			NewProofEvents: rpcEvent.NewProofEvents,
@@ -379,7 +379,7 @@ func (u *universeClient) QueryEvents(ctx context.Context,
 
 // ListFederationServers lists the universe federation peers.
 func (u *universeClient) ListFederationServers(
-	ctx context.Context) ([]entities.FederationServer, error) {
+	ctx context.Context) ([]tapsdk.FederationServer, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, u.timeout)
 	defer cancel()
@@ -394,11 +394,11 @@ func (u *universeClient) ListFederationServers(
 	}
 
 	servers := make(
-		[]entities.FederationServer, 0,
+		[]tapsdk.FederationServer, 0,
 		len(resp.Servers),
 	)
 	for _, rpcServer := range resp.Servers {
-		servers = append(servers, entities.FederationServer{
+		servers = append(servers, tapsdk.FederationServer{
 			Host: rpcServer.Host,
 			ID:   rpcServer.Id,
 		})
@@ -409,7 +409,7 @@ func (u *universeClient) ListFederationServers(
 
 // AddFederationServer adds servers to the federation.
 func (u *universeClient) AddFederationServer(ctx context.Context,
-	servers []entities.FederationServer) error {
+	servers []tapsdk.FederationServer) error {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, u.timeout)
 	defer cancel()
@@ -441,7 +441,7 @@ func (u *universeClient) AddFederationServer(ctx context.Context,
 
 // DeleteFederationServer removes servers from the federation.
 func (u *universeClient) DeleteFederationServer(ctx context.Context,
-	servers []entities.FederationServer) error {
+	servers []tapsdk.FederationServer) error {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, u.timeout)
 	defer cancel()
@@ -473,8 +473,8 @@ func (u *universeClient) DeleteFederationServer(ctx context.Context,
 
 // SetFederationSyncConfig sets the federation sync configuration.
 func (u *universeClient) SetFederationSyncConfig(ctx context.Context,
-	global []entities.GlobalFederationSyncConfig,
-	asset []entities.AssetFederationSyncConfig) error {
+	global []tapsdk.GlobalFederationSyncConfig,
+	asset []tapsdk.AssetFederationSyncConfig) error {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, u.timeout)
 	defer cancel()
@@ -530,7 +530,7 @@ func (u *universeClient) SetFederationSyncConfig(ctx context.Context,
 
 // QueryFederationSyncConfig queries the federation sync configuration.
 func (u *universeClient) QueryFederationSyncConfig(ctx context.Context,
-	ids []entities.UniverseID) (*entities.FederationSyncConfig, error) {
+	ids []tapsdk.UniverseID) (*tapsdk.FederationSyncConfig, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, u.timeout)
 	defer cancel()
@@ -557,12 +557,12 @@ func (u *universeClient) QueryFederationSyncConfig(ctx context.Context,
 		return nil, err
 	}
 
-	result := &entities.FederationSyncConfig{}
+	result := &tapsdk.FederationSyncConfig{}
 
 	for _, g := range resp.GlobalSyncConfigs {
 		result.GlobalSyncConfigs = append(
 			result.GlobalSyncConfigs,
-			entities.GlobalFederationSyncConfig{
+			tapsdk.GlobalFederationSyncConfig{
 				ProofType: unmarshalProofType(
 					g.ProofType,
 				),
@@ -580,7 +580,7 @@ func (u *universeClient) QueryFederationSyncConfig(ctx context.Context,
 		}
 		result.AssetSyncConfigs = append(
 			result.AssetSyncConfigs,
-			entities.AssetFederationSyncConfig{
+			tapsdk.AssetFederationSyncConfig{
 				ID:              *uniID,
 				AllowSyncInsert: a.AllowSyncInsert,
 				AllowSyncExport: a.AllowSyncExport,
@@ -593,7 +593,7 @@ func (u *universeClient) QueryFederationSyncConfig(ctx context.Context,
 
 // Info returns basic universe server information.
 func (u *universeClient) Info(
-	ctx context.Context) (*entities.UniverseInfo, error) {
+	ctx context.Context) (*tapsdk.UniverseInfo, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, u.timeout)
 	defer cancel()
@@ -607,14 +607,14 @@ func (u *universeClient) Info(
 		return nil, err
 	}
 
-	return &entities.UniverseInfo{
+	return &tapsdk.UniverseInfo{
 		RuntimeID: resp.RuntimeId,
 	}, nil
 }
 
 // SyncUniverse synchronizes with a remote universe server.
 func (u *universeClient) SyncUniverse(ctx context.Context,
-	req *entities.SyncRequest) ([]entities.SyncedUniverse, error) {
+	req *tapsdk.SyncRequest) ([]tapsdk.SyncedUniverse, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, u.timeout)
 	defer cancel()
@@ -654,7 +654,7 @@ func (u *universeClient) SyncUniverse(ctx context.Context,
 	}
 
 	synced := make(
-		[]entities.SyncedUniverse, 0,
+		[]tapsdk.SyncedUniverse, 0,
 		len(resp.SyncedUniverses),
 	)
 	for _, rpcSynced := range resp.SyncedUniverses {
@@ -670,7 +670,7 @@ func (u *universeClient) SyncUniverse(ctx context.Context,
 
 // marshalUniverseID converts an SDK UniverseID to the RPC type.
 func marshalUniverseID(
-	id *entities.UniverseID) (*universerpc.ID, error) {
+	id *tapsdk.UniverseID) (*universerpc.ID, error) {
 
 	if id == nil {
 		return nil, fmt.Errorf("nil universe ID")
@@ -703,20 +703,20 @@ func marshalUniverseID(
 
 // unmarshalUniverseID converts an RPC universe ID to the SDK type.
 func unmarshalUniverseID(
-	rpcID *universerpc.ID) (*entities.UniverseID, error) {
+	rpcID *universerpc.ID) (*tapsdk.UniverseID, error) {
 
 	if rpcID == nil {
 		return nil, fmt.Errorf("nil universe ID")
 	}
 
-	uniID := &entities.UniverseID{ProofType: unmarshalProofType(rpcID.ProofType)}
+	uniID := &tapsdk.UniverseID{ProofType: unmarshalProofType(rpcID.ProofType)}
 
-	var assetID *entities.AssetID
-	var groupKey *entities.PubKey
+	var assetID *tapsdk.AssetID
+	var groupKey *tapsdk.PubKey
 
 	switch v := rpcID.Id.(type) {
 	case *universerpc.ID_AssetId:
-		parsedAssetID, err := entities.ParseAssetID(v.AssetId)
+		parsedAssetID, err := tapsdk.ParseAssetID(v.AssetId)
 		if err != nil {
 			return nil, fmt.Errorf("invalid asset ID: %w",
 				err)
@@ -724,7 +724,7 @@ func unmarshalUniverseID(
 		assetID = &parsedAssetID
 
 	case *universerpc.ID_AssetIdStr:
-		parsedAssetID, err := entities.ParseAssetIDHex(v.AssetIdStr)
+		parsedAssetID, err := tapsdk.ParseAssetIDHex(v.AssetIdStr)
 		if err != nil {
 			return nil, fmt.Errorf("invalid asset ID "+
 				"string: %w", err)
@@ -735,7 +735,7 @@ func unmarshalUniverseID(
 		// Universe responses carry group keys as 32-byte
 		// x-only (schnorr) while SDK callers submit 33-byte
 		// compressed keys, so accept both encodings here.
-		parsedGroupKey, err := entities.ParseTaprootPubKey(
+		parsedGroupKey, err := tapsdk.ParseTaprootPubKey(
 			v.GroupKey,
 		)
 		if err != nil {
@@ -750,7 +750,7 @@ func unmarshalUniverseID(
 			return nil, fmt.Errorf("invalid group key "+
 				"string: %w", err)
 		}
-		parsedGroupKey, err := entities.ParseTaprootPubKey(
+		parsedGroupKey, err := tapsdk.ParseTaprootPubKey(
 			groupKeyBytes,
 		)
 		if err != nil {
@@ -761,7 +761,7 @@ func unmarshalUniverseID(
 	}
 
 	if assetID != nil || groupKey != nil {
-		assetRef, err := entities.AssetRefFromSpecifier(
+		assetRef, err := tapsdk.AssetRefFromSpecifier(
 			assetID, groupKey,
 		)
 		if err != nil {
@@ -774,11 +774,11 @@ func unmarshalUniverseID(
 }
 
 // marshalProofType converts an SDK ProofType to the RPC type.
-func marshalProofType(pt entities.ProofType) universerpc.ProofType {
+func marshalProofType(pt tapsdk.ProofType) universerpc.ProofType {
 	switch pt {
-	case entities.ProofTypeIssuance:
+	case tapsdk.ProofTypeIssuance:
 		return universerpc.ProofType_PROOF_TYPE_ISSUANCE
-	case entities.ProofTypeTransfer:
+	case tapsdk.ProofTypeTransfer:
 		return universerpc.ProofType_PROOF_TYPE_TRANSFER
 	default:
 		return universerpc.ProofType_PROOF_TYPE_UNSPECIFIED
@@ -787,15 +787,15 @@ func marshalProofType(pt entities.ProofType) universerpc.ProofType {
 
 // unmarshalProofType converts an RPC ProofType to the SDK type.
 func unmarshalProofType(
-	pt universerpc.ProofType) entities.ProofType {
+	pt universerpc.ProofType) tapsdk.ProofType {
 
 	switch pt {
 	case universerpc.ProofType_PROOF_TYPE_ISSUANCE:
-		return entities.ProofTypeIssuance
+		return tapsdk.ProofTypeIssuance
 	case universerpc.ProofType_PROOF_TYPE_TRANSFER:
-		return entities.ProofTypeTransfer
+		return tapsdk.ProofTypeTransfer
 	default:
-		return entities.ProofTypeUnspecified
+		return tapsdk.ProofTypeUnspecified
 	}
 }
 
@@ -803,26 +803,26 @@ func unmarshalProofType(
 // NOTE: this follows the same direct-cast approach used in wallet_client.go
 // for consistency.
 func marshalSortDirection(
-	d entities.SortDirection) taprpc.SortDirection {
+	d tapsdk.SortDirection) taprpc.SortDirection {
 
 	return taprpc.SortDirection(d)
 }
 
 // unmarshalMerkleSumNode converts an RPC MerkleSumNode to the SDK type.
 func unmarshalMerkleSumNode(
-	rpcNode *universerpc.MerkleSumNode) (*entities.MerkleSumNode,
+	rpcNode *universerpc.MerkleSumNode) (*tapsdk.MerkleSumNode,
 	error) {
 
 	if rpcNode == nil {
 		return nil, nil
 	}
 
-	rootHash, err := entities.ParseHash(rpcNode.RootHash)
+	rootHash, err := tapsdk.ParseHash(rpcNode.RootHash)
 	if err != nil {
 		return nil, fmt.Errorf("invalid root hash: %w", err)
 	}
 
-	return &entities.MerkleSumNode{
+	return &tapsdk.MerkleSumNode{
 		RootHash: rootHash,
 		RootSum:  rpcNode.RootSum,
 	}, nil
@@ -830,7 +830,7 @@ func unmarshalMerkleSumNode(
 
 // unmarshalUniverseRoot converts an RPC UniverseRoot to the SDK type.
 func unmarshalUniverseRoot(
-	rpcRoot *universerpc.UniverseRoot) (*entities.UniverseRoot,
+	rpcRoot *universerpc.UniverseRoot) (*tapsdk.UniverseRoot,
 	error) {
 
 	if rpcRoot == nil {
@@ -857,7 +857,7 @@ func unmarshalUniverseRoot(
 		return nil, err
 	}
 
-	return &entities.UniverseRoot{
+	return &tapsdk.UniverseRoot{
 		ID:                  *uniID,
 		MSSMTRoot:           mssmtRoot,
 		AssetName:           rpcRoot.AssetName,
@@ -867,18 +867,18 @@ func unmarshalUniverseRoot(
 
 // unmarshalAssetLeafKey converts an RPC AssetKey to the SDK AssetLeafKey.
 func unmarshalAssetLeafKey(
-	rpcKey *universerpc.AssetKey) (*entities.AssetLeafKey, error) {
+	rpcKey *universerpc.AssetKey) (*tapsdk.AssetLeafKey, error) {
 
 	if rpcKey == nil {
 		return nil, fmt.Errorf("nil asset key")
 	}
 
-	key := &entities.AssetLeafKey{}
+	key := &tapsdk.AssetLeafKey{}
 
 	// Parse the outpoint.
 	switch v := rpcKey.Outpoint.(type) {
 	case *universerpc.AssetKey_OpStr:
-		op, err := entities.NewOutpointFromStr(v.OpStr)
+		op, err := tapsdk.NewOutpointFromStr(v.OpStr)
 		if err != nil {
 			return nil, fmt.Errorf("invalid outpoint: %w",
 				err)
@@ -887,7 +887,7 @@ func unmarshalAssetLeafKey(
 
 	case *universerpc.AssetKey_Op:
 		if v.Op != nil {
-			op, err := entities.NewOutpointFromStr(
+			op, err := tapsdk.NewOutpointFromStr(
 				fmt.Sprintf("%s:%d",
 					v.Op.HashStr, v.Op.Index),
 			)
@@ -902,7 +902,7 @@ func unmarshalAssetLeafKey(
 	// Parse the script key.
 	switch v := rpcKey.ScriptKey.(type) {
 	case *universerpc.AssetKey_ScriptKeyBytes:
-		scriptKey, err := entities.ParseScriptKey(
+		scriptKey, err := tapsdk.ParseScriptKey(
 			v.ScriptKeyBytes,
 		)
 		if err != nil {
@@ -920,7 +920,7 @@ func unmarshalAssetLeafKey(
 				"string: %w", err)
 		}
 
-		scriptKey, err := entities.ParseScriptKey(scriptKeyBytes)
+		scriptKey, err := tapsdk.ParseScriptKey(scriptKeyBytes)
 		if err != nil {
 			return nil, fmt.Errorf("invalid script key "+
 				"string: %w", err)
@@ -933,13 +933,13 @@ func unmarshalAssetLeafKey(
 
 // unmarshalAssetLeaf converts an RPC AssetLeaf to the SDK type.
 func unmarshalAssetLeaf(
-	rpcLeaf *universerpc.AssetLeaf) (*entities.AssetLeaf, error) {
+	rpcLeaf *universerpc.AssetLeaf) (*tapsdk.AssetLeaf, error) {
 
 	if rpcLeaf == nil {
 		return nil, fmt.Errorf("nil asset leaf")
 	}
 
-	leaf := &entities.AssetLeaf{
+	leaf := &tapsdk.AssetLeaf{
 		Proof: rpcLeaf.Proof,
 	}
 
@@ -958,7 +958,7 @@ func unmarshalAssetLeaf(
 
 // marshalUniverseKey converts an SDK UniverseKey to the RPC type.
 func marshalUniverseKey(
-	key *entities.UniverseKey) (*universerpc.UniverseKey, error) {
+	key *tapsdk.UniverseKey) (*universerpc.UniverseKey, error) {
 
 	rpcID, err := marshalUniverseID(&key.ID)
 	if err != nil {
@@ -984,13 +984,13 @@ func marshalUniverseKey(
 // SDK type.
 func unmarshalAssetProofResponse(
 	resp *universerpc.AssetProofResponse) (
-	*entities.AssetProofResponse, error) {
+	*tapsdk.AssetProofResponse, error) {
 
 	if resp == nil {
 		return nil, fmt.Errorf("nil proof response")
 	}
 
-	result := &entities.AssetProofResponse{
+	result := &tapsdk.AssetProofResponse{
 		UniverseInclusionProof:   resp.UniverseInclusionProof,
 		MultiverseInclusionProof: resp.MultiverseInclusionProof,
 	}
@@ -1040,13 +1040,13 @@ func unmarshalAssetProofResponse(
 
 // unmarshalUniverseKeyFromRPC converts an RPC UniverseKey to the SDK type.
 func unmarshalUniverseKeyFromRPC(
-	rpcKey *universerpc.UniverseKey) (*entities.UniverseKey, error) {
+	rpcKey *universerpc.UniverseKey) (*tapsdk.UniverseKey, error) {
 
 	if rpcKey == nil {
 		return nil, fmt.Errorf("nil universe key")
 	}
 
-	key := &entities.UniverseKey{}
+	key := &tapsdk.UniverseKey{}
 
 	if rpcKey.Id != nil {
 		uniID, err := unmarshalUniverseID(rpcKey.Id)
@@ -1069,7 +1069,7 @@ func unmarshalUniverseKeyFromRPC(
 
 // marshalAssetStatsQuery converts an SDK AssetStatsQuery to the RPC type.
 func marshalAssetStatsQuery(
-	req *entities.AssetStatsQuery) *universerpc.AssetStatsQuery {
+	req *tapsdk.AssetStatsQuery) *universerpc.AssetStatsQuery {
 
 	rpcReq := &universerpc.AssetStatsQuery{
 		AssetNameFilter: req.AssetNameFilter,
@@ -1106,20 +1106,20 @@ func marshalAssetStatsQuery(
 // SDK type.
 func unmarshalAssetStatsSnapshot(
 	rpcSnap *universerpc.AssetStatsSnapshot) (
-	*entities.AssetStatsSnapshot, error) {
+	*tapsdk.AssetStatsSnapshot, error) {
 
 	if rpcSnap == nil {
 		return nil, fmt.Errorf("nil stats snapshot")
 	}
 
-	snap := &entities.AssetStatsSnapshot{
+	snap := &tapsdk.AssetStatsSnapshot{
 		GroupSupply: rpcSnap.GroupSupply,
 		TotalSyncs:  rpcSnap.TotalSyncs,
 		TotalProofs: rpcSnap.TotalProofs,
 	}
 
 	if len(rpcSnap.GroupKey) > 0 {
-		groupKey, err := entities.ParsePubKey(
+		groupKey, err := tapsdk.ParsePubKey(
 			rpcSnap.GroupKey,
 		)
 		if err != nil {
@@ -1127,7 +1127,7 @@ func unmarshalAssetStatsSnapshot(
 				"key: %w", err)
 		}
 		snap.GroupKey = &groupKey
-		snap.AssetRef = entities.AssetRefFromGroupKey(groupKey)
+		snap.AssetRef = tapsdk.AssetRefFromGroupKey(groupKey)
 	}
 
 	if rpcSnap.GroupAnchor != nil {
@@ -1158,24 +1158,24 @@ func unmarshalAssetStatsSnapshot(
 // unmarshalAssetStatsAsset converts an RPC AssetStatsAsset to the SDK type.
 func unmarshalAssetStatsAsset(
 	rpcAsset *universerpc.AssetStatsAsset) (
-	*entities.AssetStatsAsset, error) {
+	*tapsdk.AssetStatsAsset, error) {
 
 	if rpcAsset == nil {
 		return nil, fmt.Errorf("nil stats asset")
 	}
 
-	assetID, err := entities.ParseAssetID(rpcAsset.AssetId)
+	assetID, err := tapsdk.ParseAssetID(rpcAsset.AssetId)
 	if err != nil {
 		return nil, fmt.Errorf("invalid asset ID: %w", err)
 	}
 
-	assetType := entities.AssetTypeNormal
+	assetType := tapsdk.AssetTypeNormal
 	if rpcAsset.AssetType == taprpc.AssetType_COLLECTIBLE {
-		assetType = entities.AssetTypeCollectible
+		assetType = tapsdk.AssetTypeCollectible
 	}
 
-	return &entities.AssetStatsAsset{
-		AssetRef:         entities.AssetRefFromAssetID(assetID),
+	return &tapsdk.AssetStatsAsset{
+		AssetRef:         tapsdk.AssetRefFromAssetID(assetID),
 		IssuanceID:       assetID,
 		GenesisPoint:     rpcAsset.GenesisPoint,
 		TotalSupply:      rpcAsset.TotalSupply,
@@ -1191,13 +1191,13 @@ func unmarshalAssetStatsAsset(
 // unmarshalSyncedUniverse converts an RPC SyncedUniverse to the SDK type.
 func unmarshalSyncedUniverse(
 	rpcSynced *universerpc.SyncedUniverse) (
-	*entities.SyncedUniverse, error) {
+	*tapsdk.SyncedUniverse, error) {
 
 	if rpcSynced == nil {
 		return nil, fmt.Errorf("nil synced universe")
 	}
 
-	result := &entities.SyncedUniverse{}
+	result := &tapsdk.SyncedUniverse{}
 
 	if rpcSynced.OldAssetRoot != nil {
 		root, err := unmarshalUniverseRoot(

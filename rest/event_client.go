@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/coder/websocket"
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 	"google.golang.org/grpc/codes"
 )
@@ -61,8 +61,8 @@ type wsEnvelope struct {
 // SubscribeReceiveEvents opens a WebSocket subscription for incoming
 // asset transfer events.
 func (c *eventClient) SubscribeReceiveEvents(ctx context.Context,
-	req *entities.SubscribeReceiveEventsRequest) (
-	<-chan *entities.ReceiveEventRecord, <-chan error, error) {
+	req *tapsdk.SubscribeReceiveEventsRequest) (
+	<-chan *tapsdk.ReceiveEventRecord, <-chan error, error) {
 
 	body := &jsonSubscribeReceiveEventsRequest{}
 	if req != nil {
@@ -77,7 +77,7 @@ func (c *eventClient) SubscribeReceiveEvents(ctx context.Context,
 	return streamEvents(
 		ctx, c, "/v1/taproot-assets/events/asset-receive",
 		macaroon.AdminServiceMac, body,
-		func(raw json.RawMessage) (*entities.ReceiveEventRecord,
+		func(raw json.RawMessage) (*tapsdk.ReceiveEventRecord,
 			error) {
 
 			var ev jsonReceiveEvent
@@ -93,8 +93,8 @@ func (c *eventClient) SubscribeReceiveEvents(ctx context.Context,
 // SubscribeSendEvents opens a WebSocket subscription for outgoing
 // asset transfer events.
 func (c *eventClient) SubscribeSendEvents(ctx context.Context,
-	req *entities.SubscribeSendEventsRequest) (
-	<-chan *entities.SendEventRecord, <-chan error, error) {
+	req *tapsdk.SubscribeSendEventsRequest) (
+	<-chan *tapsdk.SendEventRecord, <-chan error, error) {
 
 	body := &jsonSubscribeSendEventsRequest{}
 	if req != nil {
@@ -116,7 +116,7 @@ func (c *eventClient) SubscribeSendEvents(ctx context.Context,
 	return streamEvents(
 		ctx, c, "/v1/taproot-assets/events/asset-send",
 		macaroon.AdminServiceMac, body,
-		func(raw json.RawMessage) (*entities.SendEventRecord,
+		func(raw json.RawMessage) (*tapsdk.SendEventRecord,
 			error) {
 
 			var ev jsonSendEvent
@@ -132,8 +132,8 @@ func (c *eventClient) SubscribeSendEvents(ctx context.Context,
 // SubscribeMintEvents opens a WebSocket subscription for minting batch
 // lifecycle events.
 func (c *eventClient) SubscribeMintEvents(ctx context.Context,
-	req *entities.SubscribeMintEventsRequest) (
-	<-chan *entities.MintEvent, <-chan error, error) {
+	req *tapsdk.SubscribeMintEventsRequest) (
+	<-chan *tapsdk.MintEvent, <-chan error, error) {
 
 	body := &jsonSubscribeMintEventsRequest{}
 	if req != nil {
@@ -143,7 +143,7 @@ func (c *eventClient) SubscribeMintEvents(ctx context.Context,
 	return streamEvents(
 		ctx, c, "/v1/taproot-assets/events/asset-mint",
 		macaroon.MintServiceMac, body,
-		func(raw json.RawMessage) (*entities.MintEvent, error) {
+		func(raw json.RawMessage) (*tapsdk.MintEvent, error) {
 			var ev jsonMintEvent
 			if err := json.Unmarshal(raw, &ev); err != nil {
 				return nil, err
@@ -286,24 +286,20 @@ func streamEvents[T any](ctx context.Context, c *eventClient,
 }
 
 // websocketURL converts the REST base URL plus an RPC path into the
-// wss:// (or ws://) URL expected by tapd's WebSocket proxy. The
-// gRPC-gateway streaming bridge requires the RPC method to be carried
-// as a query parameter because the WS upgrade itself is always GET.
+// wss:// URL expected by tapd's WebSocket proxy. The gRPC-gateway streaming
+// bridge requires the RPC method to be carried as a query parameter because
+// the WS upgrade itself is always GET.
 func websocketURL(baseURL, path string) (string, error) {
 	u, err := url.Parse(baseURL)
 	if err != nil {
 		return "", fmt.Errorf("invalid base URL: %w", err)
 	}
 
-	switch u.Scheme {
-	case "https":
-		u.Scheme = "wss"
-	case "http":
-		u.Scheme = "ws"
-	default:
+	if u.Scheme != "https" {
 		return "", fmt.Errorf("unsupported base URL scheme: %s",
 			u.Scheme)
 	}
+	u.Scheme = "wss"
 
 	u.Path = strings.TrimRight(u.Path, "/") + path
 

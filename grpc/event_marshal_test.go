@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/mintrpc"
 	"github.com/stretchr/testify/require"
@@ -25,7 +25,7 @@ func TestUnmarshalReceiveEvent(t *testing.T) {
 		name     string
 		rpcEvent *taprpc.ReceiveEvent
 		wantErr  string
-		validate func(*testing.T, *entities.ReceiveEventRecord)
+		validate func(*testing.T, *tapsdk.ReceiveEventRecord)
 	}{
 		{
 			name:     "nil event",
@@ -39,14 +39,14 @@ func TestUnmarshalReceiveEvent(t *testing.T) {
 				Outpoint:  "abc123:0",
 				Status:    taprpc.AddrEventStatus_ADDR_EVENT_STATUS_TRANSACTION_DETECTED,
 			},
-			validate: func(t *testing.T, e *entities.ReceiveEventRecord) {
+			validate: func(t *testing.T, e *tapsdk.ReceiveEventRecord) {
 				require.Equal(t,
 					int64(1711627200000000),
 					e.Timestamp,
 				)
 				require.Equal(t, "abc123:0", e.Outpoint)
 				require.Equal(t,
-					entities.AddressEventStatusTransactionDetected,
+					tapsdk.AddressEventStatusTransactionDetected,
 					e.Status,
 				)
 				require.Nil(t, e.Address)
@@ -70,7 +70,7 @@ func TestUnmarshalReceiveEvent(t *testing.T) {
 				ConfirmationHeight: 800000,
 				Error:              "",
 			},
-			validate: func(t *testing.T, e *entities.ReceiveEventRecord) {
+			validate: func(t *testing.T, e *tapsdk.ReceiveEventRecord) {
 				require.Equal(t,
 					int64(1711627200000000),
 					e.Timestamp,
@@ -81,7 +81,7 @@ func TestUnmarshalReceiveEvent(t *testing.T) {
 				)
 				require.Equal(t, "abc123:1", e.Outpoint)
 				require.Equal(t,
-					entities.AddressEventStatusCompleted,
+					tapsdk.AddressEventStatusCompleted,
 					e.Status,
 				)
 				require.Equal(t,
@@ -97,9 +97,9 @@ func TestUnmarshalReceiveEvent(t *testing.T) {
 				Status:    taprpc.AddrEventStatus_ADDR_EVENT_STATUS_PROOF_RECEIVED,
 				Error:     "proof validation failed",
 			},
-			validate: func(t *testing.T, e *entities.ReceiveEventRecord) {
+			validate: func(t *testing.T, e *tapsdk.ReceiveEventRecord) {
 				require.Equal(t,
-					entities.AddressEventStatusProofReceived,
+					tapsdk.AddressEventStatusProofReceived,
 					e.Status,
 				)
 				require.Equal(t,
@@ -127,7 +127,7 @@ func TestUnmarshalSendEvent(t *testing.T) {
 		name     string
 		rpcEvent *taprpc.SendEvent
 		wantErr  string
-		validate func(*testing.T, *entities.SendEventRecord)
+		validate func(*testing.T, *tapsdk.SendEventRecord)
 	}{
 		{
 			name:     "nil event",
@@ -143,20 +143,20 @@ func TestUnmarshalSendEvent(t *testing.T) {
 				// enum. The fixtures must match those exact
 				// strings — see tapfreighter/parcel.go.
 				Timestamp:  1711627200000000,
-				SendState:  string(entities.SendStateAnchorSign),
+				SendState:  string(tapsdk.SendStateAnchorSign),
 				ParcelType: taprpc.ParcelType_PARCEL_TYPE_ADDRESS,
 			},
-			validate: func(t *testing.T, e *entities.SendEventRecord) {
+			validate: func(t *testing.T, e *tapsdk.SendEventRecord) {
 				require.Equal(t,
 					int64(1711627200000000),
 					e.Timestamp,
 				)
 				require.Equal(t,
-					entities.SendStateAnchorSign,
+					tapsdk.SendStateAnchorSign,
 					e.SendState,
 				)
 				require.Equal(t,
-					entities.ParcelTypeAddress,
+					tapsdk.ParcelTypeAddress,
 					e.ParcelType,
 				)
 				require.Nil(t, e.Addresses)
@@ -168,7 +168,7 @@ func TestUnmarshalSendEvent(t *testing.T) {
 			name: "event with virtual packets",
 			rpcEvent: &taprpc.SendEvent{
 				Timestamp:  1711627200000000,
-				SendState:  string(entities.SendStateVirtualSign),
+				SendState:  string(tapsdk.SendStateVirtualSign),
 				ParcelType: taprpc.ParcelType_PARCEL_TYPE_PRE_SIGNED,
 				VirtualPackets: [][]byte{
 					{0x01, 0x02},
@@ -178,9 +178,9 @@ func TestUnmarshalSendEvent(t *testing.T) {
 					{0x05, 0x06},
 				},
 			},
-			validate: func(t *testing.T, e *entities.SendEventRecord) {
+			validate: func(t *testing.T, e *tapsdk.SendEventRecord) {
 				require.Equal(t,
-					entities.ParcelTypePreSigned,
+					tapsdk.ParcelTypePreSigned,
 					e.ParcelType,
 				)
 				require.Len(t, e.VirtualPackets, 2)
@@ -191,7 +191,7 @@ func TestUnmarshalSendEvent(t *testing.T) {
 			name: "event with anchor transaction",
 			rpcEvent: &taprpc.SendEvent{
 				Timestamp: 1711627200000000,
-				SendState: string(entities.SendStateAnchorSign),
+				SendState: string(tapsdk.SendStateAnchorSign),
 				AnchorTransaction: &taprpc.AnchorTransaction{
 					AnchorPsbt:         []byte{0xaa, 0xbb},
 					ChangeOutputIndex:  1,
@@ -206,7 +206,7 @@ func TestUnmarshalSendEvent(t *testing.T) {
 					FinalTx: []byte{0xcc, 0xdd},
 				},
 			},
-			validate: func(t *testing.T, e *entities.SendEventRecord) {
+			validate: func(t *testing.T, e *tapsdk.SendEventRecord) {
 				require.NotNil(t, e.AnchorTransaction)
 				require.Equal(t,
 					[]byte{0xaa, 0xbb},
@@ -244,18 +244,18 @@ func TestUnmarshalSendEvent(t *testing.T) {
 			rpcEvent: &taprpc.SendEvent{
 				Timestamp: 1711627200000000,
 				SendState: string(
-					entities.SendStateStorePreBroadcast,
+					tapsdk.SendStateStorePreBroadcast,
 				),
 				TransferLabel: "payment-42",
-				NextSendState: string(entities.SendStateComplete),
+				NextSendState: string(tapsdk.SendStateComplete),
 				Error:         "timeout",
 			},
-			validate: func(t *testing.T, e *entities.SendEventRecord) {
+			validate: func(t *testing.T, e *tapsdk.SendEventRecord) {
 				require.Equal(t,
 					"payment-42", e.TransferLabel,
 				)
 				require.Equal(t,
-					entities.SendStateComplete,
+					tapsdk.SendStateComplete,
 					e.NextSendState,
 				)
 				require.Equal(t, "timeout", e.Error)
@@ -281,7 +281,7 @@ func TestUnmarshalAnchorTransaction(t *testing.T) {
 		name     string
 		rpcTx    *taprpc.AnchorTransaction
 		wantErr  string
-		validate func(*testing.T, *entities.AnchorTransaction)
+		validate func(*testing.T, *tapsdk.AnchorTransaction)
 	}{
 		{
 			name:    "nil transaction",
@@ -291,7 +291,7 @@ func TestUnmarshalAnchorTransaction(t *testing.T) {
 		{
 			name:  "empty transaction",
 			rpcTx: &taprpc.AnchorTransaction{},
-			validate: func(t *testing.T, tx *entities.AnchorTransaction) {
+			validate: func(t *testing.T, tx *tapsdk.AnchorTransaction) {
 				require.Nil(t, tx.AnchorPsbt)
 				require.Zero(t, tx.ChangeOutputIndex)
 				require.Zero(t, tx.ChainFeesSats)
@@ -317,7 +317,7 @@ func TestUnmarshalAnchorTransaction(t *testing.T) {
 				},
 				FinalTx: []byte{0x01, 0x00, 0x00, 0x00},
 			},
-			validate: func(t *testing.T, tx *entities.AnchorTransaction) {
+			validate: func(t *testing.T, tx *tapsdk.AnchorTransaction) {
 				require.Equal(t,
 					[]byte{0x70, 0x73, 0x62, 0x74},
 					tx.AnchorPsbt,
@@ -351,7 +351,7 @@ func TestUnmarshalAnchorTransaction(t *testing.T) {
 					},
 				},
 			},
-			validate: func(t *testing.T, tx *entities.AnchorTransaction) {
+			validate: func(t *testing.T, tx *tapsdk.AnchorTransaction) {
 				require.Len(t, tx.LndLockedUtxos, 1)
 				require.Equal(t,
 					uint32(5),
@@ -379,7 +379,7 @@ func TestUnmarshalOutPoint(t *testing.T) {
 		name     string
 		rpcOp    *taprpc.OutPoint
 		wantErr  string
-		validate func(*testing.T, entities.Outpoint)
+		validate func(*testing.T, tapsdk.Outpoint)
 	}{
 		{
 			name:    "nil outpoint",
@@ -400,7 +400,7 @@ func TestUnmarshalOutPoint(t *testing.T) {
 				Txid:        testTxID,
 				OutputIndex: 3,
 			},
-			validate: func(t *testing.T, op entities.Outpoint) {
+			validate: func(t *testing.T, op tapsdk.Outpoint) {
 				require.Equal(t, testTxID, op.Txid[:])
 				require.Equal(t, uint32(3), op.Index)
 			},
@@ -425,7 +425,7 @@ func TestUnmarshalMintEvent(t *testing.T) {
 		name     string
 		rpcEvent *mintrpc.MintEvent
 		wantErr  string
-		validate func(*testing.T, *entities.MintEvent)
+		validate func(*testing.T, *tapsdk.MintEvent)
 	}{
 		{
 			name:     "nil event",
@@ -438,13 +438,13 @@ func TestUnmarshalMintEvent(t *testing.T) {
 				Timestamp:  1711627200000000,
 				BatchState: mintrpc.BatchState_BATCH_STATE_PENDING,
 			},
-			validate: func(t *testing.T, e *entities.MintEvent) {
+			validate: func(t *testing.T, e *tapsdk.MintEvent) {
 				require.Equal(t,
 					int64(1711627200000000),
 					e.Timestamp,
 				)
 				require.Equal(t,
-					entities.BatchStatePending,
+					tapsdk.BatchStatePending,
 					e.BatchState,
 				)
 				require.Nil(t, e.Batch)
@@ -458,9 +458,9 @@ func TestUnmarshalMintEvent(t *testing.T) {
 				BatchState: mintrpc.BatchState_BATCH_STATE_BROADCAST,
 				Error:      "broadcast failed",
 			},
-			validate: func(t *testing.T, e *entities.MintEvent) {
+			validate: func(t *testing.T, e *tapsdk.MintEvent) {
 				require.Equal(t,
-					entities.BatchStateBroadcast,
+					tapsdk.BatchStateBroadcast,
 					e.BatchState,
 				)
 				require.Equal(t,
@@ -483,14 +483,14 @@ func TestUnmarshalMintEvent(t *testing.T) {
 					},
 				}
 			}(),
-			validate: func(t *testing.T, e *entities.MintEvent) {
+			validate: func(t *testing.T, e *tapsdk.MintEvent) {
 				require.Equal(t,
-					entities.BatchStateConfirmed,
+					tapsdk.BatchStateConfirmed,
 					e.BatchState,
 				)
 				require.NotNil(t, e.Batch)
 				require.Equal(t,
-					entities.BatchStateConfirmed,
+					tapsdk.BatchStateConfirmed,
 					e.Batch.State,
 				)
 			},

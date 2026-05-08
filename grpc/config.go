@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 	"google.golang.org/grpc"
 )
@@ -37,7 +37,7 @@ type Config struct {
 	Host string
 
 	// Network is the bitcoin network we expect the tapd instance to operate on.
-	Network entities.Network
+	Network tapsdk.Network
 
 	// Macaroon chooses where the SDK reads authentication
 	// macaroons from. Obtain values from macaroon.FromPath,

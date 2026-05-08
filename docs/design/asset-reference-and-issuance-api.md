@@ -71,7 +71,7 @@ extra SDK-side resolution rather than mirroring tapd's raw shape.
 
 ## Core Decision: `AssetRef`
 
-The public SDK asset identifier is `entities.AssetRef`.
+The public SDK asset identifier is `tapsdk.AssetRef`.
 
 ### Properties
 

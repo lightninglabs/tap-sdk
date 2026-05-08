@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
-	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,14 +23,14 @@ func TestIssuerFungibleSurface(t *testing.T) {
 			fmt.Sprintf("issuer-token-%s", transport),
 		)
 		asset, err := issuer.CreateFungible(ctx,
-			entities.FungibleAssetSpec{
+			tapsdk.FungibleAssetSpec{
 				Name:   name,
 				Amount: 1000,
 			},
 		)
 		require.NoError(t, err)
 		require.Equal(t, name, asset.Name)
-		require.Equal(t, entities.AssetTypeFungible, asset.Type)
+		require.Equal(t, tapsdk.AssetTypeFungible, asset.Type)
 		require.Equal(t, uint64(1000), asset.Amount)
 		require.True(t, asset.AssetRef.IsGroupRef())
 
@@ -48,7 +47,7 @@ func TestIssuerFungibleSurface(t *testing.T) {
 		require.Equal(t, uint64(1000), balance)
 
 		_, err = issuer.MintCollectionItem(ctx, asset.AssetRef,
-			entities.NFTSpec{Name: name + "-wrong-kind"},
+			tapsdk.NFTSpec{Name: name + "-wrong-kind"},
 		)
 		require.Error(t, err)
 		require.True(t, errors.Is(err, tapsdk.ErrWrongAssetType))
@@ -74,18 +73,18 @@ func TestIssuerFungibleSurface(t *testing.T) {
 		require.Equal(t, uint64(1250), balance)
 
 		assets, err := h.AliceWallet.ListAssets(ctx,
-			&entities.ListAssetsRequest{
+			&tapsdk.ListAssetsRequest{
 				AssetRef: &asset.AssetRef,
 			},
 		)
 		require.NoError(t, err)
 		require.Len(t, assets, 1)
 		require.Equal(t, asset.AssetRef, assets[0].AssetRef)
-		require.Equal(t, entities.AssetTypeFungible, assets[0].Type)
+		require.Equal(t, tapsdk.AssetTypeFungible, assets[0].Type)
 		require.GreaterOrEqual(t, assets[0].Amount, uint64(1250))
 
 		issuances, err := h.AliceWallet.ListIssuances(ctx,
-			&entities.ListIssuancesRequest{
+			&tapsdk.ListIssuancesRequest{
 				AssetRef: &asset.AssetRef,
 			},
 		)
@@ -95,7 +94,7 @@ func TestIssuerFungibleSurface(t *testing.T) {
 }
 
 // TestIssuerNFTCollectionSurface verifies standalone NFTs and NFT collections
-// are separate high-level entities.
+// are separate high-level tapsdk.
 func TestIssuerNFTCollectionSurface(t *testing.T) {
 	runForTransports(t, func(t *testing.T, transport Transport) {
 		h, ctx := newFundedHarnessFor(t, transport)
@@ -104,12 +103,12 @@ func TestIssuerNFTCollectionSurface(t *testing.T) {
 		nftName := uniqueEventLabel(
 			fmt.Sprintf("issuer-nft-%s", transport),
 		)
-		nft, err := issuer.CreateNFT(ctx, entities.NFTSpec{
+		nft, err := issuer.CreateNFT(ctx, tapsdk.NFTSpec{
 			Name: nftName,
 		})
 		require.NoError(t, err)
 		require.Equal(t, nftName, nft.Name)
-		require.Equal(t, entities.AssetTypeNFT, nft.Type)
+		require.Equal(t, tapsdk.AssetTypeNFT, nft.Type)
 		require.True(t, nft.AssetRef.IsAssetIDRef())
 		require.Nil(t, nft.CollectionRef)
 
@@ -127,7 +126,7 @@ func TestIssuerNFTCollectionSurface(t *testing.T) {
 			fmt.Sprintf("issuer-collection-one-%s", transport),
 		)
 		created, err := issuer.CreateCollection(
-			ctx, entities.NFTSpec{Name: firstName},
+			ctx, tapsdk.NFTSpec{Name: firstName},
 		)
 		require.NoError(t, err)
 		collection := created.Collection
@@ -157,7 +156,7 @@ func TestIssuerNFTCollectionSurface(t *testing.T) {
 		)
 		secondItem, err := issuer.MintCollectionItem(
 			ctx, collection.AssetRef,
-			entities.NFTSpec{Name: secondName},
+			tapsdk.NFTSpec{Name: secondName},
 		)
 		require.NoError(t, err)
 		require.Equal(t, secondName, secondItem.Name)
@@ -176,7 +175,7 @@ func TestIssuerNFTCollectionSurface(t *testing.T) {
 		)
 
 		collections, err := h.AliceWallet.ListCollections(
-			ctx, &entities.ListCollectionsRequest{
+			ctx, &tapsdk.ListCollectionsRequest{
 				AssetRef: &collection.AssetRef,
 			},
 		)
@@ -186,7 +185,7 @@ func TestIssuerNFTCollectionSurface(t *testing.T) {
 		require.Equal(t, uint64(2), collections[0].ItemCount)
 
 		items, err := h.AliceWallet.ListCollectionItems(
-			ctx, &entities.ListCollectionItemsRequest{
+			ctx, &tapsdk.ListCollectionItemsRequest{
 				CollectionRef: &collection.AssetRef,
 			},
 		)
@@ -207,9 +206,9 @@ func TestIssuerPendingBatchConflict(t *testing.T) {
 			fmt.Sprintf("issuer-pending-%s", transport),
 		)
 		_, err := h.AliceClient.MintAsset(ctx,
-			&entities.MintAssetRequest{
-				Asset: &entities.MintAsset{
-					AssetType:     entities.AssetTypeFungible,
+			&tapsdk.MintAssetRequest{
+				Asset: &tapsdk.MintAsset{
+					AssetType:     tapsdk.AssetTypeFungible,
 					Name:          name,
 					InitialSupply: 1,
 				},
@@ -222,7 +221,7 @@ func TestIssuerPendingBatchConflict(t *testing.T) {
 		})
 
 		_, err = h.AliceWallet.NewIssuer().CreateNFT(
-			ctx, entities.NFTSpec{Name: name + "-blocked"},
+			ctx, tapsdk.NFTSpec{Name: name + "-blocked"},
 		)
 		require.Error(t, err)
 		require.True(t, errors.Is(err, tapsdk.ErrMintBatchActive))

@@ -2,21 +2,19 @@ package tapsdk
 
 import (
 	"fmt"
-
-	"github.com/lightninglabs/tap-sdk/entities"
 )
 
-func normaliseSendRecipients(recipients []entities.Recipient,
-	forceExplicit bool) ([]entities.Recipient, error) {
+func normaliseSendRecipients(recipients []Recipient,
+	forceExplicit bool) ([]Recipient, error) {
 
 	if len(recipients) == 0 {
 		return nil, ErrNoRecipients
 	}
 
-	decoded := make([]*entities.Address, len(recipients))
+	decoded := make([]*Address, len(recipients))
 	anyExplicit := false
 	for i, recipient := range recipients {
-		addr, err := entities.DecodeAddress(recipient.Address)
+		addr, err := DecodeAddress(recipient.Address)
 		if err != nil {
 			return nil, err
 		}
@@ -31,7 +29,7 @@ func normaliseSendRecipients(recipients []entities.Recipient,
 	}
 
 	useExplicitAmounts := forceExplicit || anyExplicit
-	normalised := make([]entities.Recipient, len(recipients))
+	normalised := make([]Recipient, len(recipients))
 	for i, recipient := range recipients {
 		amount, hasAmount := recipient.Amount()
 		if hasAmount {
@@ -47,7 +45,7 @@ func normaliseSendRecipients(recipients []entities.Recipient,
 				)
 			}
 
-			normalised[i] = entities.RecipientWithAmount(
+			normalised[i] = RecipientWithAmount(
 				recipient.Address, amount,
 			)
 			continue
@@ -57,11 +55,11 @@ func normaliseSendRecipients(recipients []entities.Recipient,
 			return nil, ErrAmountRequired
 		}
 
-		normalised[i] = entities.RecipientWithEmbeddedAmount(
+		normalised[i] = RecipientWithEmbeddedAmount(
 			recipient.Address,
 		)
 		if useExplicitAmounts {
-			normalised[i] = entities.RecipientWithAmount(
+			normalised[i] = RecipientWithAmount(
 				recipient.Address, decoded[i].Amount,
 			)
 		}

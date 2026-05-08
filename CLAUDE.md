@@ -43,13 +43,12 @@ bleeding-edge tapd does not always have a pre-built image yet. Use plain
 
 ```
 tap-sdk/
-├── Root (wallet.go, tx_builder.go, interactive_tx_builder.go,
-│        clients.go, errors.go)
-│   High-level SDK facade and transaction builders
-├── entities/      Domain types (Asset, Keys, Transfer, Proof, Network)
-├── grpc/          gRPC client implementations (hidden from consumers)
-├── vpsbt/         Virtual PSBT encoding for interactive transfers
-├── codec/         Cryptographic utilities (alt-leaves, STXO derivation)
+├── Root (wallet.go, tx_builder.go, asset.go, clients.go, errors.go)
+│   High-level SDK facade, transaction builders, and public domain types
+├── grpc/          gRPC client implementation
+├── rest/          REST client implementation
+├── internal/vpsbt/ Virtual PSBT encoding for interactive transfers
+├── internal/codec/ Cryptographic utilities (alt-leaves, STXO derivation)
 ├── macaroon/      Authentication helpers
 └── docs/
     └── design/    Architecture decision records
@@ -73,9 +72,10 @@ Client
 
 ### Entity Design
 
-SDK entities are thin wrappers over byte arrays with helper methods
-(String(), parsing). All gRPC types are converted to/from these entities
-at the `grpc/` package boundary.
+SDK business types live in the root package. Identifier types are thin
+wrappers over byte arrays with helper methods (String(), parsing). Transport
+packages convert protocol data to/from these SDK types at their package
+boundaries.
 
 The public entity model is intentionally opinionated:
 - for **fungible assets**, the normal SDK surface should identify the asset
@@ -116,7 +116,7 @@ func (e *Error) IsInvalidArgument() bool
 - Follow Lightning Labs conventions (see `.gemini/styleguide.md`)
 
 **Git commits:** Format as `subsystem: description`
-(e.g., `entities: add new key type`). Keep messages concise — subject
+(e.g., `wallet: add new key type`). Keep messages concise — subject
 under ~70 characters; if a body is needed, 2–4 short sentences, not
 paragraphs. **Commits are not PR descriptions** — design context,
 test plans, rationale walk-throughs go in the PR body, not in every
@@ -149,9 +149,9 @@ return fmt.Errorf("failed to fund transfer with %d "+
 
 When wrapping a new `tapd` RPC, follow this checklist:
 
-1. Define SDK types in `entities/` (request, response, domain objects)
+1. Define SDK types in the root package (request, response, domain objects)
 2. Implement the gRPC call in the appropriate `grpc/` sub-client
-3. Add marshal/unmarshal functions at the `grpc/` boundary
+3. Add marshal/unmarshal functions at the transport boundary
 4. Add the method to the appropriate interface in `clients.go`
 5. Optionally add a convenience method on `Wallet`
 6. Write unit tests with mocks + table-driven patterns
@@ -168,13 +168,13 @@ When wrapping a new `tapd` RPC, follow this checklist:
 
 ### Dependency Boundary
 
-`taprpc` imports are strictly confined to `grpc/`. No exported type,
-function, or method outside `grpc/` may reference `taprpc` types.
-The `grpc/` sub-client structs are unexported, and their internal helpers
-(macaroon auth, raw client access) must also remain unexported so that
-`taprpc` types do not leak through `grpc.Client` struct embedding.
+Wire-format imports are strictly confined to transport packages. No exported
+type, function, or method outside transport packages may reference `taprpc`
+types. The transport sub-client structs are unexported, and their internal
+helpers must also remain unexported so wire types do not leak through
+embedding.
 
-Test files outside `grpc/` must only use `entities/` types. If a mock
+Test files outside transport packages must only use root SDK types. If a mock
 needs to implement a client interface, it should use SDK types, not proto
 types.
 

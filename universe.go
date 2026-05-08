@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"net"
 	"strings"
-
-	"github.com/lightninglabs/tap-sdk/entities"
 )
 
 // Universe is the high-level AssetRef-first universe surface.
@@ -37,17 +35,17 @@ func (s *Wallet) NewUniverse() *Universe {
 type UniverseProofOption func(*universeProofOptions)
 
 type universeProofOptions struct {
-	proofType    entities.ProofType
+	proofType    ProofType
 	proofTypeSet bool
 	offset       int32
 	limit        int32
 	pageSet      bool
-	direction    entities.SortDirection
+	direction    SortDirection
 }
 
 // WithUniverseProofType limits a proof query to issuance or transfer proofs.
 // The default queries all locally known proof types for the AssetRef.
-func WithUniverseProofType(proofType entities.ProofType) UniverseProofOption {
+func WithUniverseProofType(proofType ProofType) UniverseProofOption {
 	return func(o *universeProofOptions) {
 		o.proofType = proofType
 		o.proofTypeSet = true
@@ -67,7 +65,7 @@ func WithUniverseProofPage(offset, limit int32) UniverseProofOption {
 // WithUniverseProofDirection sets the leaf-key sort direction for ListProofs.
 // The default is descending.
 func WithUniverseProofDirection(
-	direction entities.SortDirection) UniverseProofOption {
+	direction SortDirection) UniverseProofOption {
 
 	return func(o *universeProofOptions) {
 		o.direction = direction
@@ -78,11 +76,11 @@ func WithUniverseProofDirection(
 type UniverseSyncOption func(*universeSyncOptions)
 
 type universeSyncOptions struct {
-	mode entities.UniverseSyncMode
+	mode UniverseSyncMode
 }
 
 // WithUniverseSyncMode sets the tapd sync scope. The default is SyncFull.
-func WithUniverseSyncMode(mode entities.UniverseSyncMode) UniverseSyncOption {
+func WithUniverseSyncMode(mode UniverseSyncMode) UniverseSyncOption {
 	return func(o *universeSyncOptions) {
 		o.mode = mode
 	}
@@ -93,7 +91,7 @@ func WithUniverseSyncMode(mode entities.UniverseSyncMode) UniverseSyncOption {
 // successfully reports no roots; RPC and authentication failures are returned
 // as errors.
 func (u *Universe) HasAsset(ctx context.Context,
-	ref entities.AssetRef) (bool, error) {
+	ref AssetRef) (bool, error) {
 
 	ok, err := u.hasAsset(ctx, ref)
 	if err != nil {
@@ -105,7 +103,7 @@ func (u *Universe) HasAsset(ctx context.Context,
 
 // GetRoots returns the locally known universe roots for the AssetRef.
 func (u *Universe) GetRoots(ctx context.Context,
-	ref entities.AssetRef) (*entities.UniverseRoots, error) {
+	ref AssetRef) (*UniverseRoots, error) {
 
 	roots, err := u.getRoots(ctx, ref)
 	if err != nil {
@@ -120,8 +118,8 @@ func (u *Universe) GetRoots(ctx context.Context,
 // to request only issuance or transfer proofs. The method returns one tapd
 // page per queried proof type, not a full auto-paginated scan.
 func (u *Universe) ListProofs(ctx context.Context,
-	ref entities.AssetRef,
-	opts ...UniverseProofOption) ([]*entities.UniverseProof, error) {
+	ref AssetRef,
+	opts ...UniverseProofOption) ([]*UniverseProof, error) {
 
 	proofs, err := u.listProofs(ctx, ref, opts...)
 	if err != nil {
@@ -134,9 +132,9 @@ func (u *Universe) ListProofs(ctx context.Context,
 // GetProof returns one universe proof by AssetRef and leaf key. By default it
 // tries all locally known proof types. Use WithUniverseProofType when the proof
 // type is already known.
-func (u *Universe) GetProof(ctx context.Context, ref entities.AssetRef,
-	leafKey entities.AssetLeafKey,
-	opts ...UniverseProofOption) (*entities.UniverseProof, error) {
+func (u *Universe) GetProof(ctx context.Context, ref AssetRef,
+	leafKey AssetLeafKey,
+	opts ...UniverseProofOption) (*UniverseProof, error) {
 
 	proof, err := u.getProof(ctx, ref, leafKey, opts...)
 	if err != nil {
@@ -150,11 +148,11 @@ func (u *Universe) GetProof(ctx context.Context, ref entities.AssetRef,
 // remote universe server. The host is forwarded to tapd, which currently dials
 // remote universe servers without certificate verification, so it must come
 // from trusted configuration and not direct user input.
-func (u *Universe) SyncAsset(ctx context.Context, ref entities.AssetRef,
-	host string, opts ...UniverseSyncOption) (*entities.UniverseSyncResult,
+func (u *Universe) SyncAsset(ctx context.Context, ref AssetRef,
+	host string, opts ...UniverseSyncOption) (*UniverseSyncResult,
 	error) {
 
-	results, err := u.syncAssets(ctx, []entities.AssetRef{ref}, host, opts...)
+	results, err := u.syncAssets(ctx, []AssetRef{ref}, host, opts...)
 	if err != nil {
 		return nil, wrapErr("SyncAsset", err)
 	}
@@ -166,8 +164,8 @@ func (u *Universe) SyncAsset(ctx context.Context, ref entities.AssetRef,
 // trusted remote universe server. The host is forwarded to tapd, which
 // currently dials remote universe servers without certificate verification, so
 // it must come from trusted configuration and not direct user input.
-func (u *Universe) SyncAssets(ctx context.Context, refs []entities.AssetRef,
-	host string, opts ...UniverseSyncOption) ([]*entities.UniverseSyncResult,
+func (u *Universe) SyncAssets(ctx context.Context, refs []AssetRef,
+	host string, opts ...UniverseSyncOption) ([]*UniverseSyncResult,
 	error) {
 
 	results, err := u.syncAssets(ctx, refs, host, opts...)
@@ -179,7 +177,7 @@ func (u *Universe) SyncAssets(ctx context.Context, refs []entities.AssetRef,
 }
 
 func (u *Universe) hasAsset(ctx context.Context,
-	ref entities.AssetRef) (bool, error) {
+	ref AssetRef) (bool, error) {
 
 	roots, err := u.getRoots(ctx, ref)
 	if errors.Is(err, ErrAssetUnknown) {
@@ -193,20 +191,20 @@ func (u *Universe) hasAsset(ctx context.Context,
 }
 
 func (u *Universe) getRoots(ctx context.Context,
-	ref entities.AssetRef) (*entities.UniverseRoots, error) {
+	ref AssetRef) (*UniverseRoots, error) {
 
 	if err := validateUniverseAssetRef(ref); err != nil {
 		return nil, err
 	}
 
 	roots, err := u.client.QueryAssetRoots(
-		ctx, universeID(ref, entities.ProofTypeIssuance),
+		ctx, universeID(ref, ProofTypeIssuance),
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	result := &entities.UniverseRoots{
+	result := &UniverseRoots{
 		AssetRef: ref,
 	}
 	if roots != nil {
@@ -220,8 +218,8 @@ func (u *Universe) getRoots(ctx context.Context,
 	return result, nil
 }
 
-func (u *Universe) listProofs(ctx context.Context, ref entities.AssetRef,
-	opts ...UniverseProofOption) ([]*entities.UniverseProof, error) {
+func (u *Universe) listProofs(ctx context.Context, ref AssetRef,
+	opts ...UniverseProofOption) ([]*UniverseProof, error) {
 
 	options := applyUniverseProofOptions(opts)
 	if err := validateUniverseListProofOptions(options); err != nil {
@@ -238,10 +236,10 @@ func (u *Universe) listProofs(ctx context.Context, ref entities.AssetRef,
 		return nil, err
 	}
 
-	var proofs []*entities.UniverseProof
+	var proofs []*UniverseProof
 	for _, proofType := range proofTypes {
 		keys, err := u.client.AssetLeafKeys(
-			ctx, &entities.AssetLeafKeysRequest{
+			ctx, &AssetLeafKeysRequest{
 				ID:        *universeID(ref, proofType),
 				Offset:    options.offset,
 				Limit:     options.limit,
@@ -268,9 +266,9 @@ func (u *Universe) listProofs(ctx context.Context, ref entities.AssetRef,
 	return proofs, nil
 }
 
-func (u *Universe) getProof(ctx context.Context, ref entities.AssetRef,
-	leafKey entities.AssetLeafKey,
-	opts ...UniverseProofOption) (*entities.UniverseProof, error) {
+func (u *Universe) getProof(ctx context.Context, ref AssetRef,
+	leafKey AssetLeafKey,
+	opts ...UniverseProofOption) (*UniverseProof, error) {
 
 	options := applyUniverseProofOptions(opts)
 	if err := validateUniverseProofType(options); err != nil {
@@ -314,11 +312,11 @@ func (u *Universe) getProof(ctx context.Context, ref entities.AssetRef,
 	return nil, fmt.Errorf("%w: %s", ErrProofNotFound, ref)
 }
 
-func (u *Universe) queryProof(ctx context.Context, ref entities.AssetRef,
-	proofType entities.ProofType,
-	leafKey entities.AssetLeafKey) (*entities.UniverseProof, error) {
+func (u *Universe) queryProof(ctx context.Context, ref AssetRef,
+	proofType ProofType,
+	leafKey AssetLeafKey) (*UniverseProof, error) {
 
-	resp, err := u.client.QueryProof(ctx, &entities.UniverseKey{
+	resp, err := u.client.QueryProof(ctx, &UniverseKey{
 		ID:      *universeID(ref, proofType),
 		LeafKey: leafKey,
 	})
@@ -329,8 +327,8 @@ func (u *Universe) queryProof(ctx context.Context, ref entities.AssetRef,
 	return universeProofFromResponse(ref, proofType, leafKey, resp), nil
 }
 
-func (u *Universe) syncAssets(ctx context.Context, refs []entities.AssetRef,
-	host string, opts ...UniverseSyncOption) ([]*entities.UniverseSyncResult,
+func (u *Universe) syncAssets(ctx context.Context, refs []AssetRef,
+	host string, opts ...UniverseSyncOption) ([]*UniverseSyncResult,
 	error) {
 
 	if len(refs) == 0 {
@@ -349,21 +347,21 @@ func (u *Universe) syncAssets(ctx context.Context, refs []entities.AssetRef,
 	}
 
 	options := applyUniverseSyncOptions(opts)
-	results := make([]*entities.UniverseSyncResult, 0, len(refs))
-	targets := make([]entities.SyncTarget, 0, len(refs)*2)
+	results := make([]*UniverseSyncResult, 0, len(refs))
+	targets := make([]SyncTarget, 0, len(refs)*2)
 
 	for _, ref := range refs {
-		result := &entities.UniverseSyncResult{AssetRef: ref}
+		result := &UniverseSyncResult{AssetRef: ref}
 		results = append(results, result)
 
 		for _, proofType := range syncProofTypes(options.mode) {
-			targets = append(targets, entities.SyncTarget{
+			targets = append(targets, SyncTarget{
 				ID: *universeID(ref, proofType),
 			})
 		}
 	}
 
-	diffs, err := u.client.SyncUniverse(ctx, &entities.SyncRequest{
+	diffs, err := u.client.SyncUniverse(ctx, &SyncRequest{
 		UniverseHost: host,
 		SyncMode:     options.mode,
 		SyncTargets:  targets,
@@ -385,10 +383,10 @@ func (u *Universe) syncAssets(ctx context.Context, refs []entities.AssetRef,
 		}
 
 		switch proofType {
-		case entities.ProofTypeIssuance:
+		case ProofTypeIssuance:
 			result.Issuance = &diff
 
-		case entities.ProofTypeTransfer:
+		case ProofTypeTransfer:
 			result.Transfer = &diff
 		}
 	}
@@ -396,8 +394,8 @@ func (u *Universe) syncAssets(ctx context.Context, refs []entities.AssetRef,
 	return results, nil
 }
 
-func findUniverseSyncResult(results []*entities.UniverseSyncResult,
-	ref entities.AssetRef) *entities.UniverseSyncResult {
+func findUniverseSyncResult(results []*UniverseSyncResult,
+	ref AssetRef) *UniverseSyncResult {
 
 	for _, result := range results {
 		if result.AssetRef.Equivalent(ref) {
@@ -412,7 +410,7 @@ func applyUniverseProofOptions(
 	opts []UniverseProofOption) universeProofOptions {
 
 	options := universeProofOptions{
-		proofType: entities.ProofTypeUnspecified,
+		proofType: ProofTypeUnspecified,
 	}
 	for _, opt := range opts {
 		opt(&options)
@@ -423,7 +421,7 @@ func applyUniverseProofOptions(
 
 func applyUniverseSyncOptions(opts []UniverseSyncOption) universeSyncOptions {
 	options := universeSyncOptions{
-		mode: entities.SyncFull,
+		mode: SyncFull,
 	}
 	for _, opt := range opts {
 		opt(&options)
@@ -432,7 +430,7 @@ func applyUniverseSyncOptions(opts []UniverseSyncOption) universeSyncOptions {
 	return options
 }
 
-func validateUniverseAssetRef(ref entities.AssetRef) error {
+func validateUniverseAssetRef(ref AssetRef) error {
 	if ref.IsZero() {
 		return ErrNoAssetRef
 	}
@@ -443,7 +441,7 @@ func validateUniverseAssetRef(ref entities.AssetRef) error {
 	return nil
 }
 
-func validateDistinctAssetRefs(refs []entities.AssetRef) error {
+func validateDistinctAssetRefs(refs []AssetRef) error {
 	for i := range refs {
 		for j := i + 1; j < len(refs); j++ {
 			if !refs[i].Equivalent(refs[j]) {
@@ -479,14 +477,14 @@ func validateUniverseSyncHost(host string) error {
 	return nil
 }
 
-func universeID(ref entities.AssetRef,
-	proofType entities.ProofType) *entities.UniverseID {
+func universeID(ref AssetRef,
+	proofType ProofType) *UniverseID {
 
-	id := entities.UniverseIDFromRef(ref, proofType)
+	id := UniverseIDFromRef(ref, proofType)
 	return &id
 }
 
-func nonEmptyUniverseRoot(root *entities.UniverseRoot) *entities.UniverseRoot {
+func nonEmptyUniverseRoot(root *UniverseRoot) *UniverseRoot {
 	if root == nil {
 		return nil
 	}
@@ -497,34 +495,34 @@ func nonEmptyUniverseRoot(root *entities.UniverseRoot) *entities.UniverseRoot {
 	return root
 }
 
-func proofTypesForRoots(roots *entities.UniverseRoots,
-	proofType entities.ProofType) ([]entities.ProofType, error) {
+func proofTypesForRoots(roots *UniverseRoots,
+	proofType ProofType) ([]ProofType, error) {
 
 	switch proofType {
-	case entities.ProofTypeIssuance:
+	case ProofTypeIssuance:
 		if roots.IssuanceRoot == nil {
 			return nil, ErrNoProofs
 		}
 
-		return []entities.ProofType{entities.ProofTypeIssuance}, nil
+		return []ProofType{ProofTypeIssuance}, nil
 
-	case entities.ProofTypeTransfer:
+	case ProofTypeTransfer:
 		if roots.TransferRoot == nil {
 			return nil, ErrNoProofs
 		}
 
-		return []entities.ProofType{entities.ProofTypeTransfer}, nil
+		return []ProofType{ProofTypeTransfer}, nil
 
-	case entities.ProofTypeUnspecified:
-		var proofTypes []entities.ProofType
+	case ProofTypeUnspecified:
+		var proofTypes []ProofType
 		if roots.IssuanceRoot != nil {
 			proofTypes = append(
-				proofTypes, entities.ProofTypeIssuance,
+				proofTypes, ProofTypeIssuance,
 			)
 		}
 		if roots.TransferRoot != nil {
 			proofTypes = append(
-				proofTypes, entities.ProofTypeTransfer,
+				proofTypes, ProofTypeTransfer,
 			)
 		}
 		if len(proofTypes) == 0 {
@@ -545,7 +543,7 @@ func validateUniverseListProofOptions(options universeProofOptions) error {
 	if options.offset < 0 || options.limit < 0 {
 		return ErrInvalidPagination
 	}
-	if options.pageSet && options.proofType == entities.ProofTypeUnspecified {
+	if options.pageSet && options.proofType == ProofTypeUnspecified {
 		return ErrUniverseProofTypeRequired
 	}
 
@@ -554,7 +552,7 @@ func validateUniverseListProofOptions(options universeProofOptions) error {
 
 func validateUniverseProofType(options universeProofOptions) error {
 	if options.proofTypeSet &&
-		options.proofType == entities.ProofTypeUnspecified {
+		options.proofType == ProofTypeUnspecified {
 
 		return ErrUniverseProofTypeRequired
 	}
@@ -562,22 +560,22 @@ func validateUniverseProofType(options universeProofOptions) error {
 	return nil
 }
 
-func syncProofTypes(mode entities.UniverseSyncMode) []entities.ProofType {
-	if mode == entities.SyncIssuanceOnly {
-		return []entities.ProofType{entities.ProofTypeIssuance}
+func syncProofTypes(mode UniverseSyncMode) []ProofType {
+	if mode == SyncIssuanceOnly {
+		return []ProofType{ProofTypeIssuance}
 	}
 
-	return []entities.ProofType{
-		entities.ProofTypeIssuance,
-		entities.ProofTypeTransfer,
+	return []ProofType{
+		ProofTypeIssuance,
+		ProofTypeTransfer,
 	}
 }
 
-func universeProofFromResponse(ref entities.AssetRef,
-	proofType entities.ProofType, leafKey entities.AssetLeafKey,
-	resp *entities.AssetProofResponse) *entities.UniverseProof {
+func universeProofFromResponse(ref AssetRef,
+	proofType ProofType, leafKey AssetLeafKey,
+	resp *AssetProofResponse) *UniverseProof {
 
-	proof := &entities.UniverseProof{
+	proof := &UniverseProof{
 		AssetRef:  ref,
 		ProofType: proofType,
 		LeafKey:   leafKey,
@@ -599,15 +597,15 @@ func universeProofFromResponse(ref entities.AssetRef,
 	return proof
 }
 
-func syncedUniverseID(sync *entities.SyncedUniverse) (
-	entities.AssetRef, entities.ProofType, bool) {
+func syncedUniverseID(sync *SyncedUniverse) (
+	AssetRef, ProofType, bool) {
 
 	root := sync.NewAssetRoot
 	if root == nil {
 		root = sync.OldAssetRoot
 	}
 	if root == nil {
-		return "", entities.ProofTypeUnspecified, false
+		return "", ProofTypeUnspecified, false
 	}
 
 	return root.ID.AssetRef, root.ID.ProofType, true

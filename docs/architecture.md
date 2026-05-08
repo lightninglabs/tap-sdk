@@ -30,11 +30,11 @@ build Taproot Assets applications without direct dependency on the
 │  └───────────────────┬───────────────────────────┘  │
 │                      │                              │
 │  ┌───────────────────┴───────────────────────────┐  │
-│  │          grpc/ (internal boundary)            │  │
-│  │  marshal/unmarshal ←→ taprpc types            │  │
+│  │       grpc/ + rest/ transport boundary        │  │
+│  │  marshal/unmarshal ←→ tapd wire formats       │  │
 │  └───────────────────┬───────────────────────────┘  │
 ├──────────────────────┼──────────────────────────────┤
-│                      │ gRPC + TLS + Macaroons       │
+│                      │ gRPC/REST + TLS + Macaroons  │
 │                      ▼                              │
 │              tapd (daemon)                          │
 └─────────────────────────────────────────────────────┘
@@ -71,15 +71,20 @@ The root package contains the high-level API surface:
   the receiver provides keys directly instead of an address. Handles
   vPSBT construction, funding, signing, and anchoring.
 
+- **Domain types** — Asset, collection, issuance, transfer, proof, key,
+  universe, and request/response types used by the public API. These live in
+  the root package so application code can usually import only
+  `github.com/lightninglabs/tap-sdk`.
+
 - **`Client`** — The composite interface embedding all sub-clients.
 
 - **`Error`** — SDK error type that wraps gRPC errors with operation
   context and convenience methods (`IsNotFound`, `IsUnavailable`, etc.).
 
-### `entities/`
+### Domain Types
 
-Pure Go domain types with no external dependencies beyond `btcsuite/btcd`.
-These are the types that SDK consumers interact with.
+The root package owns the SDK's public business types. They are pure Go types
+with no proto dependencies and no dependency on the transport packages.
 
 Design rules:
 - Fixed-size byte arrays for identifiers (`AssetID [32]byte`,
@@ -94,7 +99,8 @@ Design rules:
 
 ### `grpc/`
 
-The gRPC boundary layer. This is the only package that imports `taprpc`.
+The gRPC boundary layer. This package imports `taprpc` and returns root
+package SDK types.
 
 Responsibilities:
 - Connect to `tapd` with TLS and macaroon authentication
@@ -149,19 +155,19 @@ collection `AssetRef`s because the concrete item is chosen at send time;
 completed send events and transfer history expose the item `AssetRef` once
 tapd has recorded the transfer.
 
-### `vpsbt/`
+### `internal/vpsbt/`
 
-Virtual PSBT (vPSBT) encoding for interactive transfers. This package
+Virtual PSBT (vPSBT) encoding for interactive transfers. This internal package
 constructs the binary vPSBT format that `tapd` expects for the
-`FundVirtualPsbt` RPC.
+`FundVirtualPsbt` RPC. It is not part of the application-facing SDK surface.
 
 Key type: `InteractiveVPacket` — Contains asset ID, amount, receiver keys,
 lock times, and alt-leaves. Encodes to a BIP-174 compatible PSBT with
 Taproot Assets-specific key-value pairs.
 
-### `codec/`
+### `internal/codec/`
 
-Cryptographic utilities:
+Internal cryptographic utilities:
 
 - **Alt-leaves** — TLV encoding for auxiliary Taproot leaves committed
   alongside asset commitments
@@ -174,20 +180,23 @@ Cryptographic utilities:
 Macaroon authentication helpers:
 
 - Load macaroons from files, directories, or hex strings via a
-  typed `Source` (`macaroon.FromPath` / `FromDir` / `FromHex`)
+  typed `Source`. Normal SDK users can use the root helpers
+  (`tapsdk.MacaroonFromPath`, `MacaroonFromDir`, and `MacaroonFromHex`);
+  direct transport callers can use `macaroon.FromPath`, `FromDir`, and
+  `FromHex`.
 - Attach macaroon metadata to gRPC contexts
 - Support per-service macaroon granularity
 
 ## TLS and Authentication
 
-The SDK communicates with `tapd` over gRPC with TLS encryption and
-macaroon-based authentication. Both inputs are supplied as typed
-sources on `Config` — exactly one choice per field, enforced at
-compile time.
+The SDK communicates with `tapd` over TLS with macaroon-based authentication.
+Both inputs are supplied as typed sources on the direct gRPC/REST transport
+configs. Exactly one choice per field is enforced at compile time.
 
 ### TLS Configuration
 
-`grpc.Config.TLS` (and `rest.Config.TLS`) takes a `TLSSource`:
+`grpc.Config.TLS` and `rest.Config.TLS` take transport-specific `TLSSource`
+values:
 
 | Constructor | Behavior |
 |-------------|----------|
@@ -310,15 +319,15 @@ The SDK enforces a strict dependency boundary between consumers and the
 `taproot-assets` ecosystem:
 
 - **No `taprpc` types in public signatures.** Every exported type, function,
-  and method outside the `grpc/` package is defined entirely in terms of
-  `entities/` types and Go/btcsuite primitives. Consumers never need to
-  import `taproot-assets/taprpc` or any of its sub-packages.
+  and method outside transport packages is defined entirely in terms of root
+  SDK types and Go/btcsuite primitives. Consumers never need to import
+  `taproot-assets/taprpc` or any of its sub-packages.
 
-- **`grpc/` is the sole proto consumer.** All proto imports, marshal/unmarshal
-  functions, and raw RPC client types are confined to the `grpc/` package.
-  The sub-client structs (`walletClient`, `proofClient`, etc.) are unexported,
-  and their internal helper methods (macaroon auth, raw client access) are
-  also unexported to prevent taprpc types from leaking through embedding.
+- **Transport packages own wire details.** All proto imports,
+  marshal/unmarshal functions, and raw RPC client types are confined to
+  transport packages. The sub-client structs (`walletClient`,
+  `proofClient`, etc.) are unexported, and their internal helper methods are
+  also unexported to prevent wire types from leaking through embedding.
 
 - **`taproot-assets/taprpc` is a lightweight module.** The `go.mod`
   dependency is on `taproot-assets/taprpc`, which is a standalone Go module
@@ -329,7 +338,7 @@ The SDK enforces a strict dependency boundary between consumers and the
 - **Consumer `go.mod` impact.** When a consumer runs
   `go get github.com/lightninglabs/tap-sdk`, the `taproot-assets/taprpc`
   module appears as an indirect dependency. Consumers who only import the
-  root package or `entities/` never interact with it directly.
+  root package never interact with it directly.
 
 ## Future Directions
 

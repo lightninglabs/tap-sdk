@@ -3,7 +3,7 @@ package rest
 // types.go contains the JSON wire types returned by tapd's gRPC-gateway
 // REST proxy. These are intermediate structures used only within the rest
 // package to unmarshal HTTP responses. They are converted to
-// entities.* types before being returned to callers.
+// tapsdk.* types before being returned to callers.
 //
 // Field names match the proto JSON encoding (snake_case).
 

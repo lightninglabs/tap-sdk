@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/stretchr/testify/require"
 )
 
@@ -37,18 +37,18 @@ func TestMultiTrancheGroup(t *testing.T) {
 		require.Equal(t, uint64(1250), balance)
 
 		assets, err := h.AliceWallet.ListAssets(ctx,
-			&entities.ListAssetsRequest{
+			&tapsdk.ListAssetsRequest{
 				AssetRef: &first.Ref,
 			},
 		)
 		require.NoError(t, err)
 		require.Len(t, assets, 1)
 		require.Equal(t, first.Ref, assets[0].AssetRef)
-		require.Equal(t, entities.AssetTypeNormal, assets[0].Type)
+		require.Equal(t, tapsdk.AssetTypeNormal, assets[0].Type)
 		require.GreaterOrEqual(t, assets[0].Amount, uint64(1250))
 
 		assets, err = h.AliceWallet.ListAssets(ctx,
-			&entities.ListAssetsRequest{
+			&tapsdk.ListAssetsRequest{
 				AssetRef:  &first.Ref,
 				MinAmount: 1250,
 				MaxAmount: 1250,
@@ -60,7 +60,7 @@ func TestMultiTrancheGroup(t *testing.T) {
 		require.Equal(t, uint64(1250), assets[0].Amount)
 
 		assets, err = h.AliceWallet.ListAssets(ctx,
-			&entities.ListAssetsRequest{
+			&tapsdk.ListAssetsRequest{
 				AssetRef:  &first.Ref,
 				MinAmount: 1251,
 			},
@@ -69,7 +69,7 @@ func TestMultiTrancheGroup(t *testing.T) {
 		require.Empty(t, assets)
 
 		issuances, err := h.AliceWallet.ListIssuances(ctx,
-			&entities.ListIssuancesRequest{
+			&tapsdk.ListIssuancesRequest{
 				AssetRef: &first.Ref,
 			},
 		)
@@ -104,7 +104,7 @@ func TestMultiTrancheGroup(t *testing.T) {
 
 // RequireGroup returns the grouped-asset row for a semantic group ref.
 func (h *TestHarness) RequireGroup(t testing.TB, ctx context.Context,
-	ref entities.AssetRef) entities.AssetGroupRecord {
+	ref tapsdk.AssetRef) tapsdk.AssetGroupRecord {
 
 	t.Helper()
 
@@ -118,5 +118,5 @@ func (h *TestHarness) RequireGroup(t testing.TB, ctx context.Context,
 	}
 
 	require.FailNowf(t, "group not found", "ref=%s", ref)
-	return entities.AssetGroupRecord{}
+	return tapsdk.AssetGroupRecord{}
 }

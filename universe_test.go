@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -13,20 +12,20 @@ import (
 
 func TestUniverseHasAssetAndGetRoots(t *testing.T) {
 	ctx := context.Background()
-	ref := entities.AssetRefFromAssetID(universeAssetID(1))
-	root := testUniverseRoot(ref, entities.ProofTypeIssuance)
+	ref := AssetRefFromAssetID(universeAssetID(1))
+	root := testUniverseRoot(ref, ProofTypeIssuance)
 
 	mc := new(mockClient)
 	mc.On("QueryAssetRoots", ctx,
-		universeID(ref, entities.ProofTypeIssuance),
-	).Return(&entities.QueryRootResponse{
+		universeID(ref, ProofTypeIssuance),
+	).Return(&QueryRootResponse{
 		IssuanceRoot: root,
 	}, nil).Twice()
 
-	unknown := entities.AssetRefFromAssetID(universeAssetID(2))
+	unknown := AssetRefFromAssetID(universeAssetID(2))
 	mc.On("QueryAssetRoots", ctx,
-		universeID(unknown, entities.ProofTypeIssuance),
-	).Return(&entities.QueryRootResponse{}, nil).Twice()
+		universeID(unknown, ProofTypeIssuance),
+	).Return(&QueryRootResponse{}, nil).Twice()
 
 	universe := NewUniverse(mc)
 	ok, err := universe.HasAsset(ctx, ref)
@@ -50,11 +49,11 @@ func TestUniverseHasAssetAndGetRoots(t *testing.T) {
 
 func TestUniverseHasAssetPropagatesRPCError(t *testing.T) {
 	ctx := context.Background()
-	ref := entities.AssetRefFromAssetID(universeAssetID(3))
+	ref := AssetRefFromAssetID(universeAssetID(3))
 
 	mc := new(mockClient)
 	mc.On("QueryAssetRoots", ctx,
-		universeID(ref, entities.ProofTypeIssuance),
+		universeID(ref, ProofTypeIssuance),
 	).Return(nil, status.Error(codes.Unauthenticated, "missing macaroon")).
 		Once()
 
@@ -67,13 +66,13 @@ func TestUniverseHasAssetPropagatesRPCError(t *testing.T) {
 
 func TestUniverseGetRootsEmptyRootIsUnknown(t *testing.T) {
 	ctx := context.Background()
-	ref := entities.AssetRefFromAssetID(universeAssetID(4))
+	ref := AssetRefFromAssetID(universeAssetID(4))
 
 	mc := new(mockClient)
 	mc.On("QueryAssetRoots", ctx,
-		universeID(ref, entities.ProofTypeIssuance),
-	).Return(&entities.QueryRootResponse{
-		IssuanceRoot: &entities.UniverseRoot{},
+		universeID(ref, ProofTypeIssuance),
+	).Return(&QueryRootResponse{
+		IssuanceRoot: &UniverseRoot{},
 	}, nil).Once()
 
 	_, err := NewUniverse(mc).GetRoots(ctx, ref)
@@ -84,14 +83,14 @@ func TestUniverseGetRootsEmptyRootIsUnknown(t *testing.T) {
 
 func TestUniverseListAndGetProofs(t *testing.T) {
 	ctx := context.Background()
-	ref := entities.AssetRefFromAssetID(universeAssetID(5))
+	ref := AssetRefFromAssetID(universeAssetID(5))
 	issuanceRoot := testUniverseRoot(
-		ref, entities.ProofTypeIssuance,
+		ref, ProofTypeIssuance,
 	)
 	transferRoot := testUniverseRoot(
-		ref, entities.ProofTypeTransfer,
+		ref, ProofTypeTransfer,
 	)
-	roots := &entities.QueryRootResponse{
+	roots := &QueryRootResponse{
 		IssuanceRoot: issuanceRoot,
 		TransferRoot: transferRoot,
 	}
@@ -100,20 +99,20 @@ func TestUniverseListAndGetProofs(t *testing.T) {
 
 	mc := new(mockClient)
 	mc.On("QueryAssetRoots", ctx,
-		universeID(ref, entities.ProofTypeIssuance),
+		universeID(ref, ProofTypeIssuance),
 	).Return(roots, nil).Twice()
-	mc.On("AssetLeafKeys", ctx, &entities.AssetLeafKeysRequest{
-		ID: *universeID(ref, entities.ProofTypeIssuance),
-	}).Return([]entities.AssetLeafKey{issuanceKey}, nil).Once()
-	mc.On("AssetLeafKeys", ctx, &entities.AssetLeafKeysRequest{
-		ID: *universeID(ref, entities.ProofTypeTransfer),
-	}).Return([]entities.AssetLeafKey{transferKey}, nil).Once()
-	mc.On("QueryProof", ctx, &entities.UniverseKey{
-		ID:      *universeID(ref, entities.ProofTypeIssuance),
+	mc.On("AssetLeafKeys", ctx, &AssetLeafKeysRequest{
+		ID: *universeID(ref, ProofTypeIssuance),
+	}).Return([]AssetLeafKey{issuanceKey}, nil).Once()
+	mc.On("AssetLeafKeys", ctx, &AssetLeafKeysRequest{
+		ID: *universeID(ref, ProofTypeTransfer),
+	}).Return([]AssetLeafKey{transferKey}, nil).Once()
+	mc.On("QueryProof", ctx, &UniverseKey{
+		ID:      *universeID(ref, ProofTypeIssuance),
 		LeafKey: issuanceKey,
 	}).Return(testProofResponse(issuanceKey, issuanceRoot, []byte{1}), nil).Once()
-	mc.On("QueryProof", ctx, &entities.UniverseKey{
-		ID:      *universeID(ref, entities.ProofTypeTransfer),
+	mc.On("QueryProof", ctx, &UniverseKey{
+		ID:      *universeID(ref, ProofTypeTransfer),
 		LeafKey: transferKey,
 	}).Return(testProofResponse(transferKey, transferRoot, []byte{2}), nil).
 		Twice()
@@ -122,17 +121,17 @@ func TestUniverseListAndGetProofs(t *testing.T) {
 	proofs, err := universe.ListProofs(ctx, ref)
 	require.NoError(t, err)
 	require.Len(t, proofs, 2)
-	require.Equal(t, entities.ProofTypeIssuance, proofs[0].ProofType)
+	require.Equal(t, ProofTypeIssuance, proofs[0].ProofType)
 	require.Equal(t, []byte{1}, proofs[0].Proof)
-	require.Equal(t, entities.ProofTypeTransfer, proofs[1].ProofType)
+	require.Equal(t, ProofTypeTransfer, proofs[1].ProofType)
 	require.Equal(t, []byte{2}, proofs[1].Proof)
 
 	proof, err := universe.GetProof(
 		ctx, ref, transferKey,
-		WithUniverseProofType(entities.ProofTypeTransfer),
+		WithUniverseProofType(ProofTypeTransfer),
 	)
 	require.NoError(t, err)
-	require.Equal(t, entities.ProofTypeTransfer, proof.ProofType)
+	require.Equal(t, ProofTypeTransfer, proof.ProofType)
 	require.Equal(t, transferKey, proof.LeafKey)
 
 	mc.AssertExpectations(t)
@@ -140,23 +139,23 @@ func TestUniverseListAndGetProofs(t *testing.T) {
 
 func TestUniverseListProofsKnownAssetNoProofs(t *testing.T) {
 	ctx := context.Background()
-	ref := entities.AssetRefFromAssetID(universeAssetID(6))
+	ref := AssetRefFromAssetID(universeAssetID(6))
 
 	mc := new(mockClient)
 	mc.On("QueryAssetRoots", ctx,
-		universeID(ref, entities.ProofTypeIssuance),
-	).Return(&entities.QueryRootResponse{
+		universeID(ref, ProofTypeIssuance),
+	).Return(&QueryRootResponse{
 		IssuanceRoot: testUniverseRoot(
-			ref, entities.ProofTypeIssuance,
+			ref, ProofTypeIssuance,
 		),
 	}, nil).Once()
-	mc.On("AssetLeafKeys", ctx, &entities.AssetLeafKeysRequest{
-		ID: *universeID(ref, entities.ProofTypeIssuance),
-	}).Return([]entities.AssetLeafKey{}, nil).Once()
+	mc.On("AssetLeafKeys", ctx, &AssetLeafKeysRequest{
+		ID: *universeID(ref, ProofTypeIssuance),
+	}).Return([]AssetLeafKey{}, nil).Once()
 
 	_, err := NewUniverse(mc).ListProofs(
 		ctx, ref,
-		WithUniverseProofType(entities.ProofTypeIssuance),
+		WithUniverseProofType(ProofTypeIssuance),
 	)
 	require.ErrorIs(t, err, ErrNoProofs)
 
@@ -165,70 +164,70 @@ func TestUniverseListProofsKnownAssetNoProofs(t *testing.T) {
 
 func TestUniverseListProofsOptions(t *testing.T) {
 	ctx := context.Background()
-	ref := entities.AssetRefFromAssetID(universeAssetID(7))
-	root := testUniverseRoot(ref, entities.ProofTypeIssuance)
+	ref := AssetRefFromAssetID(universeAssetID(7))
+	root := testUniverseRoot(ref, ProofTypeIssuance)
 	key := testLeafKey(t, 7)
 
 	mc := new(mockClient)
 	mc.On("QueryAssetRoots", ctx,
-		universeID(ref, entities.ProofTypeIssuance),
-	).Return(&entities.QueryRootResponse{
+		universeID(ref, ProofTypeIssuance),
+	).Return(&QueryRootResponse{
 		IssuanceRoot: root,
 	}, nil).Once()
-	mc.On("AssetLeafKeys", ctx, &entities.AssetLeafKeysRequest{
-		ID:        *universeID(ref, entities.ProofTypeIssuance),
+	mc.On("AssetLeafKeys", ctx, &AssetLeafKeysRequest{
+		ID:        *universeID(ref, ProofTypeIssuance),
 		Offset:    2,
 		Limit:     3,
-		Direction: entities.SortAscending,
-	}).Return([]entities.AssetLeafKey{key}, nil).Once()
-	mc.On("QueryProof", ctx, &entities.UniverseKey{
-		ID:      *universeID(ref, entities.ProofTypeIssuance),
+		Direction: SortAscending,
+	}).Return([]AssetLeafKey{key}, nil).Once()
+	mc.On("QueryProof", ctx, &UniverseKey{
+		ID:      *universeID(ref, ProofTypeIssuance),
 		LeafKey: key,
 	}).Return(testProofResponse(key, root, []byte{3}), nil).Once()
 
 	proofs, err := NewUniverse(mc).ListProofs(
 		ctx, ref,
-		WithUniverseProofType(entities.ProofTypeIssuance),
+		WithUniverseProofType(ProofTypeIssuance),
 		WithUniverseProofPage(2, 3),
-		WithUniverseProofDirection(entities.SortAscending),
+		WithUniverseProofDirection(SortAscending),
 	)
 	require.NoError(t, err)
 	require.Len(t, proofs, 1)
-	require.Equal(t, entities.ProofTypeIssuance, proofs[0].ProofType)
+	require.Equal(t, ProofTypeIssuance, proofs[0].ProofType)
 
 	mc.AssertExpectations(t)
 }
 
 func TestUniverseGetProofFallbackToTransfer(t *testing.T) {
 	ctx := context.Background()
-	ref := entities.AssetRefFromAssetID(universeAssetID(8))
+	ref := AssetRefFromAssetID(universeAssetID(8))
 	issuanceRoot := testUniverseRoot(
-		ref, entities.ProofTypeIssuance,
+		ref, ProofTypeIssuance,
 	)
 	transferRoot := testUniverseRoot(
-		ref, entities.ProofTypeTransfer,
+		ref, ProofTypeTransfer,
 	)
 	key := testLeafKey(t, 8)
 
 	mc := new(mockClient)
 	mc.On("QueryAssetRoots", ctx,
-		universeID(ref, entities.ProofTypeIssuance),
-	).Return(&entities.QueryRootResponse{
+		universeID(ref, ProofTypeIssuance),
+	).Return(&QueryRootResponse{
 		IssuanceRoot: issuanceRoot,
 		TransferRoot: transferRoot,
 	}, nil).Once()
-	mc.On("QueryProof", ctx, &entities.UniverseKey{
-		ID:      *universeID(ref, entities.ProofTypeIssuance),
+	mc.On("QueryProof", ctx, &UniverseKey{
+		ID:      *universeID(ref, ProofTypeIssuance),
 		LeafKey: key,
 	}).Return(nil, status.Error(codes.NotFound, "proof missing")).Once()
-	mc.On("QueryProof", ctx, &entities.UniverseKey{
-		ID:      *universeID(ref, entities.ProofTypeTransfer),
+	mc.On("QueryProof", ctx, &UniverseKey{
+		ID:      *universeID(ref, ProofTypeTransfer),
 		LeafKey: key,
 	}).Return(testProofResponse(key, transferRoot, []byte{4}), nil).Once()
 
 	proof, err := NewUniverse(mc).GetProof(ctx, ref, key)
 	require.NoError(t, err)
-	require.Equal(t, entities.ProofTypeTransfer, proof.ProofType)
+	require.Equal(t, ProofTypeTransfer, proof.ProofType)
 	require.Equal(t, []byte{4}, proof.Proof)
 
 	mc.AssertExpectations(t)
@@ -236,7 +235,7 @@ func TestUniverseGetProofFallbackToTransfer(t *testing.T) {
 
 func TestUniverseProofOptionValidation(t *testing.T) {
 	ctx := context.Background()
-	ref := entities.AssetRefFromAssetID(universeAssetID(9))
+	ref := AssetRefFromAssetID(universeAssetID(9))
 	universe := NewUniverse(new(mockClient))
 
 	_, err := universe.ListProofs(ctx, ref, WithUniverseProofPage(1, 2))
@@ -244,37 +243,37 @@ func TestUniverseProofOptionValidation(t *testing.T) {
 
 	_, err = universe.ListProofs(
 		ctx, ref,
-		WithUniverseProofType(entities.ProofTypeIssuance),
+		WithUniverseProofType(ProofTypeIssuance),
 		WithUniverseProofPage(-1, 2),
 	)
 	require.ErrorIs(t, err, ErrInvalidPagination)
 
 	_, err = universe.GetProof(
-		ctx, ref, entities.AssetLeafKey{},
-		WithUniverseProofType(entities.ProofTypeUnspecified),
+		ctx, ref, AssetLeafKey{},
+		WithUniverseProofType(ProofTypeUnspecified),
 	)
 	require.ErrorIs(t, err, ErrUniverseProofTypeRequired)
 }
 
 func TestUniverseSyncAsset(t *testing.T) {
 	ctx := context.Background()
-	ref := entities.AssetRefFromAssetID(universeAssetID(10))
-	root := testUniverseRoot(ref, entities.ProofTypeIssuance)
+	ref := AssetRefFromAssetID(universeAssetID(10))
+	root := testUniverseRoot(ref, ProofTypeIssuance)
 
 	mc := new(mockClient)
 	mc.On("SyncUniverse", ctx, mock.MatchedBy(
-		func(req *entities.SyncRequest) bool {
+		func(req *SyncRequest) bool {
 			return req.UniverseHost == "tapd-alice:10029" &&
-				req.SyncMode == entities.SyncFull &&
+				req.SyncMode == SyncFull &&
 				len(req.SyncTargets) == 2 &&
 				req.SyncTargets[0].ID == *universeID(
-					ref, entities.ProofTypeIssuance,
+					ref, ProofTypeIssuance,
 				) &&
 				req.SyncTargets[1].ID == *universeID(
-					ref, entities.ProofTypeTransfer,
+					ref, ProofTypeTransfer,
 				)
 		},
-	)).Return([]entities.SyncedUniverse{{
+	)).Return([]SyncedUniverse{{
 		NewAssetRoot: root,
 	}}, nil).Once()
 
@@ -292,33 +291,33 @@ func TestUniverseSyncAsset(t *testing.T) {
 
 func TestUniverseSyncAssets(t *testing.T) {
 	ctx := context.Background()
-	ref1 := entities.AssetRefFromAssetID(universeAssetID(11))
-	ref2 := entities.AssetRefFromAssetID(universeAssetID(12))
-	root1 := testUniverseRoot(ref1, entities.ProofTypeIssuance)
-	root2 := testUniverseRoot(ref2, entities.ProofTypeIssuance)
+	ref1 := AssetRefFromAssetID(universeAssetID(11))
+	ref2 := AssetRefFromAssetID(universeAssetID(12))
+	root1 := testUniverseRoot(ref1, ProofTypeIssuance)
+	root2 := testUniverseRoot(ref2, ProofTypeIssuance)
 
 	mc := new(mockClient)
 	mc.On("SyncUniverse", ctx, mock.MatchedBy(
-		func(req *entities.SyncRequest) bool {
+		func(req *SyncRequest) bool {
 			return req.UniverseHost == "tapd-alice:10029" &&
-				req.SyncMode == entities.SyncIssuanceOnly &&
+				req.SyncMode == SyncIssuanceOnly &&
 				len(req.SyncTargets) == 2 &&
 				req.SyncTargets[0].ID == *universeID(
-					ref1, entities.ProofTypeIssuance,
+					ref1, ProofTypeIssuance,
 				) &&
 				req.SyncTargets[1].ID == *universeID(
-					ref2, entities.ProofTypeIssuance,
+					ref2, ProofTypeIssuance,
 				)
 		},
-	)).Return([]entities.SyncedUniverse{{
+	)).Return([]SyncedUniverse{{
 		NewAssetRoot: root2,
 	}, {
 		NewAssetRoot: root1,
 	}}, nil).Once()
 
 	results, err := NewUniverse(mc).SyncAssets(
-		ctx, []entities.AssetRef{ref1, ref2}, "tapd-alice:10029",
-		WithUniverseSyncMode(entities.SyncIssuanceOnly),
+		ctx, []AssetRef{ref1, ref2}, "tapd-alice:10029",
+		WithUniverseSyncMode(SyncIssuanceOnly),
 	)
 	require.NoError(t, err)
 	require.Len(t, results, 2)
@@ -337,22 +336,22 @@ func TestUniverseValidation(t *testing.T) {
 	_, err := universe.GetRoots(ctx, "")
 	require.ErrorIs(t, err, ErrNoAssetRef)
 
-	_, err = universe.GetRoots(ctx, entities.AssetRef("not-a-ref"))
+	_, err = universe.GetRoots(ctx, AssetRef("not-a-ref"))
 	require.ErrorIs(t, err, ErrInvalidAssetRef)
 
 	_, err = universe.GetProof(
-		ctx, entities.AssetRef("not-a-ref"), entities.AssetLeafKey{},
+		ctx, AssetRef("not-a-ref"), AssetLeafKey{},
 	)
 	require.ErrorIs(t, err, ErrInvalidAssetRef)
 
-	_, err = universe.SyncAssets(ctx, []entities.AssetRef{
-		entities.AssetRef("not-a-ref"),
+	_, err = universe.SyncAssets(ctx, []AssetRef{
+		AssetRef("not-a-ref"),
 	}, "tapd-alice:10029")
 	require.ErrorIs(t, err, ErrInvalidAssetRef)
 	require.NotErrorIs(t, err, ErrUniverseHostRequired)
 
-	_, err = universe.SyncAssets(ctx, []entities.AssetRef{
-		entities.AssetRef("not-a-ref"),
+	_, err = universe.SyncAssets(ctx, []AssetRef{
+		AssetRef("not-a-ref"),
 	}, "")
 	require.ErrorIs(t, err, ErrInvalidAssetRef)
 	require.NotErrorIs(t, err, ErrUniverseHostRequired)
@@ -360,9 +359,9 @@ func TestUniverseValidation(t *testing.T) {
 	_, err = universe.SyncAssets(ctx, nil, "tapd-alice:10029")
 	require.ErrorIs(t, err, ErrNoAssetRef)
 
-	ref := entities.AssetRefFromAssetID(universeAssetID(13))
+	ref := AssetRefFromAssetID(universeAssetID(13))
 	_, err = universe.SyncAssets(
-		ctx, []entities.AssetRef{ref, ref}, "tapd-alice:10029",
+		ctx, []AssetRef{ref, ref}, "tapd-alice:10029",
 	)
 	require.ErrorIs(t, err, ErrDuplicateAssetRef)
 
@@ -370,8 +369,8 @@ func TestUniverseValidation(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidUniverseHost)
 }
 
-func universeAssetID(seed byte) entities.AssetID {
-	var id entities.AssetID
+func universeAssetID(seed byte) AssetID {
+	var id AssetID
 	for i := range id {
 		id[i] = seed + byte(i)
 	}
@@ -379,23 +378,23 @@ func universeAssetID(seed byte) entities.AssetID {
 	return id
 }
 
-func testUniverseRoot(ref entities.AssetRef,
-	proofType entities.ProofType) *entities.UniverseRoot {
+func testUniverseRoot(ref AssetRef,
+	proofType ProofType) *UniverseRoot {
 
-	return &entities.UniverseRoot{
+	return &UniverseRoot{
 		ID: *universeID(ref, proofType),
-		MSSMTRoot: &entities.MerkleSumNode{
+		MSSMTRoot: &MerkleSumNode{
 			RootSum: 1,
 		},
 		AssetName: "asset",
 	}
 }
 
-func testLeafKey(t *testing.T, seed byte) entities.AssetLeafKey {
+func testLeafKey(t *testing.T, seed byte) AssetLeafKey {
 	t.Helper()
 
-	return entities.AssetLeafKey{
-		Outpoint: entities.Outpoint{
+	return AssetLeafKey{
+		Outpoint: Outpoint{
 			Txid:  [32]byte(universeAssetID(seed)),
 			Index: uint32(seed),
 		},
@@ -403,16 +402,16 @@ func testLeafKey(t *testing.T, seed byte) entities.AssetLeafKey {
 	}
 }
 
-func testProofResponse(leafKey entities.AssetLeafKey,
-	root *entities.UniverseRoot, proof []byte) *entities.AssetProofResponse {
+func testProofResponse(leafKey AssetLeafKey,
+	root *UniverseRoot, proof []byte) *AssetProofResponse {
 
-	return &entities.AssetProofResponse{
-		Key: entities.UniverseKey{
+	return &AssetProofResponse{
+		Key: UniverseKey{
 			ID:      root.ID,
 			LeafKey: leafKey,
 		},
 		UniverseRoot: root,
-		AssetLeaf: &entities.AssetLeaf{
+		AssetLeaf: &AssetLeaf{
 			Proof: proof,
 		},
 	}

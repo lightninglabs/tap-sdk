@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -37,30 +37,30 @@ const restZeroOutpoint = "00000000000000000000000000000000" +
 	"00000000000000000000000000000000:1"
 
 func TestAssetRecordMatchesRef(t *testing.T) {
-	var assetID entities.AssetID
+	var assetID tapsdk.AssetID
 	copy(assetID[:], restTestAssetID)
-	itemRef := entities.AssetRefFromAssetID(assetID)
+	itemRef := tapsdk.AssetRefFromAssetID(assetID)
 
-	var groupKey entities.PubKey
+	var groupKey tapsdk.PubKey
 	copy(groupKey[:], restTestPubKey)
-	collectionRef := entities.AssetRefFromGroupKey(groupKey)
+	collectionRef := tapsdk.AssetRefFromGroupKey(groupKey)
 
-	var otherID entities.AssetID
+	var otherID tapsdk.AssetID
 	copy(otherID[:], restTestAssetID)
 	otherID[0] ^= 0xff
-	otherRef := entities.AssetRefFromAssetID(otherID)
+	otherRef := tapsdk.AssetRefFromAssetID(otherID)
 
-	record := &entities.AssetRecord{
+	record := &tapsdk.AssetRecord{
 		AssetRef: collectionRef,
-		Genesis: entities.IssuanceGenesis{
+		Genesis: tapsdk.IssuanceGenesis{
 			IssuanceID: assetID,
 		},
 	}
 
 	tests := []struct {
 		name   string
-		record *entities.AssetRecord
-		ref    entities.AssetRef
+		record *tapsdk.AssetRecord
+		ref    tapsdk.AssetRef
 		want   bool
 	}{
 		{
@@ -98,18 +98,18 @@ func TestAssetRecordMatchesRef(t *testing.T) {
 }
 
 func TestListAssetRecordsUsesFilterQuery(t *testing.T) {
-	var groupKey entities.PubKey
+	var groupKey tapsdk.PubKey
 	copy(groupKey[:], restTestPubKey)
-	ref := entities.AssetRefFromGroupKey(groupKey)
+	ref := tapsdk.AssetRefFromGroupKey(groupKey)
 
 	var anchorTxid [32]byte
 	copy(anchorTxid[:], restTestAssetID)
-	anchor := entities.Outpoint{
+	anchor := tapsdk.Outpoint{
 		Txid:  anchorTxid,
 		Index: 7,
 	}
 
-	explicitType := entities.ScriptKeyTypeBurn
+	explicitType := tapsdk.ScriptKeyTypeBurn
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,
 		r *http.Request) {
@@ -155,7 +155,7 @@ func TestListAssetRecordsUsesFilterQuery(t *testing.T) {
 	})
 
 	assets, err := client.ListAssetRecords(
-		context.Background(), &entities.ListAssetsRequest{
+		context.Background(), &tapsdk.ListAssetsRequest{
 			WithWitness:             true,
 			IncludeSpent:            true,
 			IncludeLeased:           true,
@@ -164,7 +164,7 @@ func TestListAssetRecordsUsesFilterQuery(t *testing.T) {
 			MaxAmount:               11,
 			AssetRef:                &ref,
 			AnchorOutpoint:          &anchor,
-			ScriptKeyType: &entities.ScriptKeyTypeQuery{
+			ScriptKeyType: &tapsdk.ScriptKeyTypeQuery{
 				ExplicitType: &explicitType,
 			},
 		},
@@ -174,20 +174,20 @@ func TestListAssetRecordsUsesFilterQuery(t *testing.T) {
 }
 
 func TestListAssetRecordsQueryParams(t *testing.T) {
-	var assetID entities.AssetID
+	var assetID tapsdk.AssetID
 	copy(assetID[:], restTestAssetID)
-	assetIDRef := entities.AssetRefFromAssetID(assetID)
+	assetIDRef := tapsdk.AssetRefFromAssetID(assetID)
 
-	var groupKey entities.PubKey
+	var groupKey tapsdk.PubKey
 	copy(groupKey[:], restTestPubKey)
-	groupRef := entities.AssetRefFromGroupKey(groupKey)
+	groupRef := tapsdk.AssetRefFromGroupKey(groupKey)
 
-	invalidType := entities.ScriptKeyType(99)
+	invalidType := tapsdk.ScriptKeyType(99)
 
 	tests := []struct {
 		name     string
-		req      *entities.ListAssetsRequest
-		wantRef  *entities.AssetRef
+		req      *tapsdk.ListAssetsRequest
+		wantRef  *tapsdk.AssetRef
 		wantErr  string
 		validate func(*testing.T, map[string][]string)
 	}{
@@ -200,7 +200,7 @@ func TestListAssetRecordsQueryParams(t *testing.T) {
 		},
 		{
 			name: "zero amount bounds omitted",
-			req:  &entities.ListAssetsRequest{},
+			req:  &tapsdk.ListAssetsRequest{},
 			validate: func(t *testing.T, values map[string][]string) {
 				require.NotContains(t, values, "min_amount")
 				require.NotContains(t, values, "max_amount")
@@ -208,7 +208,7 @@ func TestListAssetRecordsQueryParams(t *testing.T) {
 		},
 		{
 			name:    "asset ID ref uses local filter only",
-			req:     &entities.ListAssetsRequest{AssetRef: &assetIDRef},
+			req:     &tapsdk.ListAssetsRequest{AssetRef: &assetIDRef},
 			wantRef: &assetIDRef,
 			validate: func(t *testing.T, values map[string][]string) {
 				require.NotContains(t, values, "group_key")
@@ -216,7 +216,7 @@ func TestListAssetRecordsQueryParams(t *testing.T) {
 		},
 		{
 			name:    "group ref uses server filter",
-			req:     &entities.ListAssetsRequest{AssetRef: &groupRef},
+			req:     &tapsdk.ListAssetsRequest{AssetRef: &groupRef},
 			wantRef: &groupRef,
 			validate: func(t *testing.T, values map[string][]string) {
 				require.Equal(
@@ -230,8 +230,8 @@ func TestListAssetRecordsQueryParams(t *testing.T) {
 		},
 		{
 			name: "all script key types",
-			req: &entities.ListAssetsRequest{
-				ScriptKeyType: &entities.ScriptKeyTypeQuery{
+			req: &tapsdk.ListAssetsRequest{
+				ScriptKeyType: &tapsdk.ScriptKeyTypeQuery{
 					AllTypes: true,
 				},
 			},
@@ -244,8 +244,8 @@ func TestListAssetRecordsQueryParams(t *testing.T) {
 		},
 		{
 			name: "unknown script key type",
-			req: &entities.ListAssetsRequest{
-				ScriptKeyType: &entities.ScriptKeyTypeQuery{
+			req: &tapsdk.ListAssetsRequest{
+				ScriptKeyType: &tapsdk.ScriptKeyTypeQuery{
 					ExplicitType: &invalidType,
 				},
 			},
@@ -271,42 +271,42 @@ func TestListAssetRecordsQueryParams(t *testing.T) {
 func TestMarshalScriptKeyType(t *testing.T) {
 	tests := []struct {
 		name          string
-		scriptKeyType entities.ScriptKeyType
+		scriptKeyType tapsdk.ScriptKeyType
 		want          string
 	}{
 		{
 			name:          "unknown",
-			scriptKeyType: entities.ScriptKeyTypeUnknown,
+			scriptKeyType: tapsdk.ScriptKeyTypeUnknown,
 			want:          "SCRIPT_KEY_UNKNOWN",
 		},
 		{
 			name:          "bip86",
-			scriptKeyType: entities.ScriptKeyTypeBIP86,
+			scriptKeyType: tapsdk.ScriptKeyTypeBIP86,
 			want:          "SCRIPT_KEY_BIP86",
 		},
 		{
 			name:          "script path external",
-			scriptKeyType: entities.ScriptKeyTypeScriptPathExternal,
+			scriptKeyType: tapsdk.ScriptKeyTypeScriptPathExternal,
 			want:          "SCRIPT_KEY_SCRIPT_PATH_EXTERNAL",
 		},
 		{
 			name:          "burn",
-			scriptKeyType: entities.ScriptKeyTypeBurn,
+			scriptKeyType: tapsdk.ScriptKeyTypeBurn,
 			want:          "SCRIPT_KEY_BURN",
 		},
 		{
 			name:          "tombstone",
-			scriptKeyType: entities.ScriptKeyTypeTombstone,
+			scriptKeyType: tapsdk.ScriptKeyTypeTombstone,
 			want:          "SCRIPT_KEY_TOMBSTONE",
 		},
 		{
 			name:          "channel",
-			scriptKeyType: entities.ScriptKeyTypeChannel,
+			scriptKeyType: tapsdk.ScriptKeyTypeChannel,
 			want:          "SCRIPT_KEY_CHANNEL",
 		},
 		{
 			name:          "unique pedersen",
-			scriptKeyType: entities.ScriptKeyTypeUniquePedersen,
+			scriptKeyType: tapsdk.ScriptKeyTypeUniquePedersen,
 			want:          "SCRIPT_KEY_UNIQUE_PEDERSEN",
 		},
 	}
@@ -322,21 +322,21 @@ func TestMarshalScriptKeyType(t *testing.T) {
 }
 
 func TestBurnAssetRequestBody(t *testing.T) {
-	var assetID entities.AssetID
+	var assetID tapsdk.AssetID
 	copy(assetID[:], restTestAssetID)
 
-	var groupKey entities.PubKey
+	var groupKey tapsdk.PubKey
 	copy(groupKey[:], restTestPubKey)
 
 	tests := []struct {
 		name     string
-		req      *entities.BurnAssetRequest
+		req      *tapsdk.BurnAssetRequest
 		validate func(*testing.T, map[string]any)
 	}{
 		{
 			name: "asset ID ref uses asset specifier",
-			req: &entities.BurnAssetRequest{
-				AssetRef:         entities.AssetRefFromAssetID(assetID),
+			req: &tapsdk.BurnAssetRequest{
+				AssetRef:         tapsdk.AssetRefFromAssetID(assetID),
 				AmountToBurn:     100,
 				ConfirmationText: "assets will be destroyed",
 				Note:             "test",
@@ -355,8 +355,8 @@ func TestBurnAssetRequestBody(t *testing.T) {
 		},
 		{
 			name: "group key ref uses asset specifier",
-			req: &entities.BurnAssetRequest{
-				AssetRef:     entities.AssetRefFromGroupKey(groupKey),
+			req: &tapsdk.BurnAssetRequest{
+				AssetRef:     tapsdk.AssetRefFromGroupKey(groupKey),
 				AmountToBurn: 200,
 			},
 			validate: func(t *testing.T, body map[string]any) {
@@ -383,9 +383,9 @@ func TestBurnAssetRequestBody(t *testing.T) {
 }
 
 func TestListBurnsUsesTweakedGroupKeyQuery(t *testing.T) {
-	var groupKey entities.PubKey
+	var groupKey tapsdk.PubKey
 	copy(groupKey[:], restTestPubKey)
-	ref := entities.AssetRefFromGroupKey(groupKey)
+	ref := tapsdk.AssetRefFromGroupKey(groupKey)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,
 		r *http.Request) {
@@ -410,7 +410,7 @@ func TestListBurnsUsesTweakedGroupKeyQuery(t *testing.T) {
 	})
 
 	burns, err := client.ListBurns(
-		context.Background(), &entities.ListBurnsRequest{
+		context.Background(), &tapsdk.ListBurnsRequest{
 			AssetRef: &ref,
 		},
 	)
@@ -450,11 +450,11 @@ func TestUnmarshalAssetTransferGroupKey(t *testing.T) {
 	require.NotNil(t, transfer.Inputs[0].GroupKey)
 	require.Equal(t, restTestPubKey, transfer.Inputs[0].GroupKey[:])
 	require.Equal(t,
-		entities.AssetTypeNormal, transfer.Inputs[0].AssetType)
+		tapsdk.AssetTypeNormal, transfer.Inputs[0].AssetType)
 	require.NotNil(t, transfer.Outputs[0].GroupKey)
 	require.Equal(t, restTestPubKey, transfer.Outputs[0].GroupKey[:])
 	require.Equal(t,
-		entities.AssetTypeNormal, transfer.Outputs[0].AssetType)
+		tapsdk.AssetTypeNormal, transfer.Outputs[0].AssetType)
 }
 
 func TestUnmarshalAssetTransferCollectionItem(t *testing.T) {
@@ -484,15 +484,15 @@ func TestUnmarshalAssetTransferCollectionItem(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	var assetID entities.AssetID
+	var assetID tapsdk.AssetID
 	copy(assetID[:], restTestAssetID)
-	wantRef := entities.AssetRefFromAssetID(assetID)
+	wantRef := tapsdk.AssetRefFromAssetID(assetID)
 
-	highLevel := entities.NewTransfer(transfer)
+	highLevel := tapsdk.NewTransfer(transfer)
 	require.True(t, highLevel.Inputs[0].AssetRef.Equivalent(wantRef))
 	require.True(t, highLevel.Outputs[0].AssetRef.Equivalent(wantRef))
 	require.Equal(t,
-		entities.AssetTypeCollectible, highLevel.Inputs[0].Type)
+		tapsdk.AssetTypeCollectible, highLevel.Inputs[0].Type)
 }
 
 func TestUnmarshalAddrCollectionItemUsesAssetID(t *testing.T) {
@@ -513,10 +513,10 @@ func TestUnmarshalAddrCollectionItemUsesAssetID(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	var assetID entities.AssetID
+	var assetID tapsdk.AssetID
 	copy(assetID[:], restTestAssetID)
 	require.True(t,
-		addr.AssetRef.Equivalent(entities.AssetRefFromAssetID(assetID)))
+		addr.AssetRef.Equivalent(tapsdk.AssetRefFromAssetID(assetID)))
 }
 
 func TestUnmarshalAddrCollectionAddressUsesGroupKey(t *testing.T) {
@@ -536,10 +536,10 @@ func TestUnmarshalAddrCollectionAddressUsesGroupKey(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	var groupKey entities.PubKey
+	var groupKey tapsdk.PubKey
 	copy(groupKey[:], restTestPubKey)
 	require.True(t,
-		addr.AssetRef.Equivalent(entities.AssetRefFromGroupKey(groupKey)))
+		addr.AssetRef.Equivalent(tapsdk.AssetRefFromGroupKey(groupKey)))
 }
 
 func TestUnmarshalAddrRejectsMissingAssetRef(t *testing.T) {

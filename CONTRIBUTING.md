@@ -29,10 +29,10 @@ make build
 make unit
 
 # Specific package
-make unit pkg=entities
+make unit pkg=.
 
 # Specific test case
-make unit pkg=entities case=TestParseAssetID
+make unit pkg=. case=TestParseAssetID
 ```
 
 ### Linting
@@ -66,7 +66,7 @@ name and forms a complete sentence.
 // The script key includes both the internal key and the tweaked
 // Taproot output key.
 func (w *Wallet) DeriveScriptKey(ctx context.Context) (
-	*entities.ScriptKey, error) {
+	*ScriptKey, error) {
 ```
 
 ### Wrapping
@@ -132,7 +132,7 @@ func TestParseAssetID(t *testing.T) {
 Format: `subsystem: short description`
 
 - `subsystem` is the package primarily affected
-- Use `+` or `,` for multiple packages: `entities+grpc: add balance types`
+- Use `+` or `,` for multiple packages: `wallet+grpc: add balance types`
 - Use `multi:` for widespread changes
 - Keep subject under 50 characters
 - Use present tense ("add feature", not "added feature")

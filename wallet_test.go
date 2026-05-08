@@ -5,26 +5,33 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
+func TestNewWalletRejectsUnknownNetwork(t *testing.T) {
+	t.Parallel()
+
+	require.PanicsWithError(t, "unsupported network: unknown", func() {
+		_ = NewWallet(nil, Network("unknown"))
+	})
+}
+
 func TestNewReceiveAddress_UsesGroupKeyAndV2(t *testing.T) {
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
-	groupKey := entities.PubKey{2, 1, 2, 3}
-	ref := entities.AssetRefFromGroupKey(groupKey)
-	expectedAddr := &entities.Address{
+	groupKey := PubKey{2, 1, 2, 3}
+	ref := AssetRefFromGroupKey(groupKey)
+	expectedAddr := &Address{
 		Encoded:        "taprt1qqtestaddress",
 		AssetRef:       ref,
-		AddressVersion: entities.AddressVersionV2,
+		AddressVersion: AddressVersionV2,
 	}
 
 	mc.On("NewAddr", ctx, mock.MatchedBy(
-		func(req *entities.NewAddressRequest) bool {
+		func(req *NewAddressRequest) bool {
 			if req == nil ||
 				req.AddressVersion == nil {
 
@@ -34,7 +41,7 @@ func TestNewReceiveAddress_UsesGroupKeyAndV2(t *testing.T) {
 			return req.AssetRef == ref &&
 				req.Amount == 0 &&
 				*req.AddressVersion ==
-					entities.AddressVersionV2
+					AddressVersionV2
 		},
 	)).Return(expectedAddr, nil)
 
@@ -47,11 +54,11 @@ func TestNewReceiveAddress_UsesGroupKeyAndV2(t *testing.T) {
 
 func TestNewReceiveAddress_RPCError(t *testing.T) {
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 	ctx := context.Background()
 
-	groupKey := entities.PubKey{2, 9, 9, 9}
-	ref := entities.AssetRefFromGroupKey(groupKey)
+	groupKey := PubKey{2, 9, 9, 9}
+	ref := AssetRefFromGroupKey(groupKey)
 	expectedErr := errors.New("new address failed")
 
 	mc.On("NewAddr", ctx, mock.Anything).Return(
@@ -72,29 +79,29 @@ func TestNewReceiveAddress_RPCError(t *testing.T) {
 func TestDeriveKeys(t *testing.T) {
 	ctx := context.Background()
 
-	scriptKey := &entities.ScriptKey{
-		PubKey: entities.PubKey{2, 3, 4, 5},
-		KeyDesc: entities.KeyDescriptor{
-			RawKeyBytes: entities.PubKey{2, 6, 7, 8},
-			KeyLocator: entities.KeyLocator{
-				Family: entities.TaprootAssetsKeyFamily,
+	scriptKey := &ScriptKey{
+		PubKey: PubKey{2, 3, 4, 5},
+		KeyDesc: KeyDescriptor{
+			RawKeyBytes: PubKey{2, 6, 7, 8},
+			KeyLocator: KeyLocator{
+				Family: TaprootAssetsKeyFamily,
 				Index:  7,
 			},
 		},
 	}
-	internalKey := &entities.InternalKey{
-		PubKey: entities.PubKey{2, 10, 11, 12},
-		KeyLocator: entities.KeyLocator{
-			Family: entities.TaprootAssetsKeyFamily,
+	internalKey := &InternalKey{
+		PubKey: PubKey{2, 10, 11, 12},
+		KeyLocator: KeyLocator{
+			Family: TaprootAssetsKeyFamily,
 			Index:  8,
 		},
 	}
 
 	tests := []struct {
 		name        string
-		scriptKey   *entities.ScriptKey
+		scriptKey   *ScriptKey
 		scriptErr   error
-		internalKey *entities.InternalKey
+		internalKey *InternalKey
 		internalErr error
 	}{
 		{
@@ -117,7 +124,7 @@ func TestDeriveKeys(t *testing.T) {
 		tc := testCase
 		t.Run(tc.name, func(t *testing.T) {
 			mc := new(mockClient)
-			w := NewWallet(mc, entities.NetworkRegtest)
+			w := NewWallet(mc, NetworkRegtest)
 
 			mc.On("DeriveScriptKey", ctx).Return(
 				tc.scriptKey, tc.scriptErr,
@@ -154,7 +161,7 @@ func TestDeriveKeys(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 				require.Equal(
-					t, &entities.DerivedKeys{
+					t, &DerivedKeys{
 						ScriptKey:   *scriptKey,
 						InternalKey: *internalKey,
 					}, derived,
@@ -168,7 +175,7 @@ func TestDeriveKeys(t *testing.T) {
 
 func TestWalletClose(t *testing.T) {
 	mc := new(mockClient)
-	w := NewWallet(mc, entities.NetworkRegtest)
+	w := NewWallet(mc, NetworkRegtest)
 
 	expectedErr := errors.New("close failed")
 	mc.On("Close").Return(expectedErr)

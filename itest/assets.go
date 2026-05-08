@@ -8,26 +8,26 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/stretchr/testify/require"
 )
 
 // MintResult captures a confirmed mint together with the semantic AssetRef to
 // use for high-level wallet operations.
 type MintResult struct {
-	Asset *entities.AssetRecord
+	Asset *tapsdk.AssetRecord
 
 	// Batch is populated by MintAssetAndConfirm for tests that assert the
 	// low-level mint batch lifecycle.
-	Batch *entities.VerboseMintingBatch
+	Batch *tapsdk.VerboseMintingBatch
 
-	Ref entities.AssetRef
+	Ref tapsdk.AssetRef
 }
 
 // MintAssetAndConfirm adds a low-level asset to a mint batch, finalizes it,
 // mines it, and waits for it to become visible in Alice's wallet.
 func (h *TestHarness) MintAssetAndConfirm(t testing.TB,
-	ctx context.Context, asset *entities.MintAsset) (*MintResult, error) {
+	ctx context.Context, asset *tapsdk.MintAsset) (*MintResult, error) {
 
 	t.Helper()
 
@@ -45,7 +45,7 @@ func (h *TestHarness) MintAssetAndConfirm(t testing.TB,
 	// terminal-state-during-handshake race could lose the event.
 	mintEvents := h.subscribeMintEvents(t, ctx, h.AliceClient)
 
-	batch, err := h.AliceClient.MintAsset(ctx, &entities.MintAssetRequest{
+	batch, err := h.AliceClient.MintAsset(ctx, &tapsdk.MintAssetRequest{
 		Asset:         asset,
 		ShortResponse: true,
 	})
@@ -54,7 +54,7 @@ func (h *TestHarness) MintAssetAndConfirm(t testing.TB,
 	}
 
 	_, err = h.AliceClient.FinalizeBatch(ctx,
-		&entities.FinalizeBatchRequest{ShortResponse: true},
+		&tapsdk.FinalizeBatchRequest{ShortResponse: true},
 	)
 	if err != nil {
 		return nil, err
@@ -103,20 +103,20 @@ func (h *TestHarness) confirmIssuerMint(t testing.TB,
 }
 
 func (h *TestHarness) waitForMintRecord(t testing.TB,
-	ctx context.Context, ref entities.AssetRef, tag string, amount uint64,
-	timeout time.Duration) *entities.AssetRecord {
+	ctx context.Context, ref tapsdk.AssetRef, tag string, amount uint64,
+	timeout time.Duration) *tapsdk.AssetRecord {
 
 	t.Helper()
 
 	var (
-		found      *entities.AssetRecord
+		found      *tapsdk.AssetRecord
 		lastStatus string
 	)
 
 	assetID, hasAssetID := ref.AssetID()
 	require.Eventuallyf(t, func() bool {
 		assets, err := h.AliceClient.ListAssetRecords(ctx,
-			&entities.ListAssetsRequest{
+			&tapsdk.ListAssetsRequest{
 				AssetRef: &ref,
 			},
 		)
@@ -166,10 +166,10 @@ func (h *TestHarness) waitForMintRecord(t testing.TB,
 }
 
 func (h *TestHarness) fetchMintBatch(ctx context.Context,
-	batchKey entities.PubKey) (*entities.VerboseMintingBatch, error) {
+	batchKey tapsdk.PubKey) (*tapsdk.VerboseMintingBatch, error) {
 
 	batches, err := h.AliceClient.ListBatches(ctx,
-		&entities.ListBatchesRequest{
+		&tapsdk.ListBatchesRequest{
 			BatchKey: &batchKey,
 		},
 	)
@@ -188,8 +188,8 @@ func (h *TestHarness) fetchMintBatch(ctx context.Context,
 // minted asset. Fungible assets use the canonical group key exposed by
 // ListAssetGroups, while collectibles keep their issuance asset ID.
 func (h *TestHarness) WaitForSemanticAssetRef(t testing.TB,
-	ctx context.Context, asset *entities.AssetRecord,
-	timeout time.Duration) entities.AssetRef {
+	ctx context.Context, asset *tapsdk.AssetRecord,
+	timeout time.Duration) tapsdk.AssetRef {
 
 	t.Helper()
 
@@ -201,7 +201,7 @@ func (h *TestHarness) WaitForSemanticAssetRef(t testing.TB,
 		return asset.AssetRef
 	}
 
-	var ref entities.AssetRef
+	var ref tapsdk.AssetRef
 	var lastStatus string
 	require.Eventuallyf(t, func() bool {
 		groups, err := h.AliceClient.ListAssetGroups(ctx)
@@ -249,7 +249,7 @@ func (h *TestHarness) CreateFungibleAndConfirm(t testing.TB, ctx context.Context
 	t.Helper()
 
 	asset, err := h.AliceWallet.NewIssuer().CreateFungible(
-		ctx, entities.FungibleAssetSpec{
+		ctx, tapsdk.FungibleAssetSpec{
 			Name:   name,
 			Amount: amount,
 		},
@@ -277,7 +277,7 @@ func (h *TestHarness) CreateNFTAndConfirm(t testing.TB, ctx context.Context,
 	t.Helper()
 
 	asset, err := h.AliceWallet.NewIssuer().CreateNFT(
-		ctx, entities.NFTSpec{Name: name},
+		ctx, tapsdk.NFTSpec{Name: name},
 	)
 	if err != nil {
 		return nil, err
@@ -304,7 +304,7 @@ func (h *TestHarness) CreateCollectionAndConfirm(t testing.TB,
 	t.Helper()
 
 	result, err := h.AliceWallet.NewIssuer().
-		CreateCollection(ctx, entities.NFTSpec{Name: name})
+		CreateCollection(ctx, tapsdk.NFTSpec{Name: name})
 	if err != nil {
 		return nil, err
 	}
@@ -324,13 +324,13 @@ func (h *TestHarness) CreateCollectionAndConfirm(t testing.TB,
 // MintCollectionItemAndConfirm mints another NFT item into an existing
 // collection and returns the concrete item AssetRef.
 func (h *TestHarness) MintCollectionItemAndConfirm(t testing.TB,
-	ctx context.Context, collectionRef entities.AssetRef,
+	ctx context.Context, collectionRef tapsdk.AssetRef,
 	name string) (*MintResult, error) {
 
 	t.Helper()
 
 	asset, err := h.AliceWallet.NewIssuer().MintCollectionItem(
-		ctx, collectionRef, entities.NFTSpec{Name: name},
+		ctx, collectionRef, tapsdk.NFTSpec{Name: name},
 	)
 	if err != nil {
 		return nil, err
@@ -351,7 +351,7 @@ func (h *TestHarness) MintCollectionItemAndConfirm(t testing.TB,
 // IssueFungibleAndConfirm mints another issuance into an existing fungible
 // asset and returns the issuance's concrete wallet record.
 func (h *TestHarness) IssueFungibleAndConfirm(t testing.TB,
-	ctx context.Context, ref entities.AssetRef, amount uint64) (*MintResult,
+	ctx context.Context, ref tapsdk.AssetRef, amount uint64) (*MintResult,
 	error) {
 
 	t.Helper()
@@ -365,7 +365,7 @@ func (h *TestHarness) IssueFungibleAndConfirm(t testing.TB,
 
 	h.confirmIssuerMint(t, ctx)
 
-	issuanceRef := entities.AssetRefFromAssetID(issuance.IssuanceID)
+	issuanceRef := tapsdk.AssetRefFromAssetID(issuance.IssuanceID)
 	record := h.waitForMintRecord(
 		t, ctx, issuanceRef, issuance.Name, amount, defaultWaitTimeout,
 	)
@@ -376,18 +376,18 @@ func (h *TestHarness) IssueFungibleAndConfirm(t testing.TB,
 	}, nil
 }
 
-func mintGroupedAssetSpec(name string, amount uint64) *entities.MintAsset {
-	return &entities.MintAsset{
-		AssetType:     entities.AssetTypeFungible,
+func mintGroupedAssetSpec(name string, amount uint64) *tapsdk.MintAsset {
+	return &tapsdk.MintAsset{
+		AssetType:     tapsdk.AssetTypeFungible,
 		Name:          name,
 		InitialSupply: amount,
 		AllowIssuance: true,
 	}
 }
 
-func mintCollectibleAssetSpec(name string) *entities.MintAsset {
-	return &entities.MintAsset{
-		AssetType:     entities.AssetTypeNFT,
+func mintCollectibleAssetSpec(name string) *tapsdk.MintAsset {
+	return &tapsdk.MintAsset{
+		AssetType:     tapsdk.AssetTypeNFT,
 		Name:          name,
 		InitialSupply: 1,
 	}

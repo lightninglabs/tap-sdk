@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 )
 
@@ -57,71 +57,71 @@ const (
 	proofTypeUnspecified = "PROOF_TYPE_UNSPECIFIED"
 )
 
-// marshalProofType converts an entities.ProofType to the proto enum
+// marshalProofType converts an tapsdk.ProofType to the proto enum
 // string.
-func marshalProofType(pt entities.ProofType) string {
+func marshalProofType(pt tapsdk.ProofType) string {
 	switch pt {
-	case entities.ProofTypeIssuance:
+	case tapsdk.ProofTypeIssuance:
 		return proofTypeIssuance
-	case entities.ProofTypeTransfer:
+	case tapsdk.ProofTypeTransfer:
 		return proofTypeTransfer
 	default:
 		return proofTypeUnspecified
 	}
 }
 
-// marshalSortDirection converts an entities.SortDirection to the proto
+// marshalSortDirection converts an tapsdk.SortDirection to the proto
 // enum string.
-func marshalSortDirection(sd entities.SortDirection) string {
+func marshalSortDirection(sd tapsdk.SortDirection) string {
 	switch sd {
-	case entities.SortAscending:
+	case tapsdk.SortAscending:
 		return "SORT_DIRECTION_ASC"
 	default:
 		return "SORT_DIRECTION_DESC"
 	}
 }
 
-// marshalAssetQuerySort converts an entities.AssetQuerySort to the
+// marshalAssetQuerySort converts an tapsdk.AssetQuerySort to the
 // proto enum string.
-func marshalAssetQuerySort(s entities.AssetQuerySort) string {
+func marshalAssetQuerySort(s tapsdk.AssetQuerySort) string {
 	switch s {
-	case entities.SortByAssetName:
+	case tapsdk.SortByAssetName:
 		return "SORT_BY_ASSET_NAME"
-	case entities.SortByIssuanceID:
+	case tapsdk.SortByIssuanceID:
 		return "SORT_BY_ASSET_ID"
-	case entities.SortByAssetType:
+	case tapsdk.SortByAssetType:
 		return "SORT_BY_ASSET_TYPE"
-	case entities.SortByTotalSyncs:
+	case tapsdk.SortByTotalSyncs:
 		return "SORT_BY_TOTAL_SYNCS"
-	case entities.SortByTotalProofs:
+	case tapsdk.SortByTotalProofs:
 		return "SORT_BY_TOTAL_PROOFS"
-	case entities.SortByGenesisHeight:
+	case tapsdk.SortByGenesisHeight:
 		return "SORT_BY_GENESIS_HEIGHT"
-	case entities.SortByTotalSupply:
+	case tapsdk.SortByTotalSupply:
 		return "SORT_BY_TOTAL_SUPPLY"
 	default:
 		return "SORT_BY_NONE"
 	}
 }
 
-// marshalAssetTypeFilter converts an entities.AssetTypeFilter to the
+// marshalAssetTypeFilter converts an tapsdk.AssetTypeFilter to the
 // proto enum string.
-func marshalAssetTypeFilter(f entities.AssetTypeFilter) string {
+func marshalAssetTypeFilter(f tapsdk.AssetTypeFilter) string {
 	switch f {
-	case entities.FilterAssetNormal:
+	case tapsdk.FilterAssetNormal:
 		return "FILTER_ASSET_NORMAL"
-	case entities.FilterAssetCollectible:
+	case tapsdk.FilterAssetCollectible:
 		return "FILTER_ASSET_COLLECTIBLE"
 	default:
 		return "FILTER_ASSET_NONE"
 	}
 }
 
-// marshalSyncMode converts an entities.UniverseSyncMode to the proto
+// marshalSyncMode converts an tapsdk.UniverseSyncMode to the proto
 // enum string.
-func marshalSyncMode(m entities.UniverseSyncMode) string {
+func marshalSyncMode(m tapsdk.UniverseSyncMode) string {
 	switch m {
-	case entities.SyncFull:
+	case tapsdk.SyncFull:
 		return "SYNC_FULL"
 	default:
 		return "SYNC_ISSUANCE_ONLY"
@@ -131,7 +131,7 @@ func marshalSyncMode(m entities.UniverseSyncMode) string {
 // InsertProof inserts a proof into the local universe.
 func (u *universeClient) InsertProof(ctx context.Context,
 	rawProof []byte,
-	decoded *entities.DecodedProof) error {
+	decoded *tapsdk.DecodedProof) error {
 
 	proofType := proofTypeTransfer
 	if decoded.IsIssuance {
@@ -196,7 +196,7 @@ func splitOutpoint(s string) [2]string {
 	return [2]string{s, "0"}
 }
 
-func universeAssetPath(assetRef entities.AssetRef) (string, string, error) {
+func universeAssetPath(assetRef tapsdk.AssetRef) (string, string, error) {
 	if err := assetRef.Validate(); err != nil {
 		return "", "", err
 	}
@@ -212,7 +212,7 @@ func universeAssetPath(assetRef entities.AssetRef) (string, string, error) {
 	return "", "", fmt.Errorf("asset ref is required")
 }
 
-func universeJSONID(id entities.UniverseID) (*jsonUniverseID, error) {
+func universeJSONID(id tapsdk.UniverseID) (*jsonUniverseID, error) {
 	jsonID := &jsonUniverseID{ProofType: marshalProofType(id.ProofType)}
 
 	if err := id.AssetRef.Validate(); err != nil {
@@ -232,8 +232,8 @@ func universeJSONID(id entities.UniverseID) (*jsonUniverseID, error) {
 
 // AssetRoots returns the known universe roots for all assets.
 func (u *universeClient) AssetRoots(ctx context.Context,
-	req *entities.AssetRootRequest) (
-	map[string]*entities.UniverseRoot, error) {
+	req *tapsdk.AssetRootRequest) (
+	map[string]*tapsdk.UniverseRoot, error) {
 
 	params := ""
 	if req != nil {
@@ -281,7 +281,7 @@ func (u *universeClient) AssetRoots(ctx context.Context,
 		return nil, err
 	}
 
-	result := make(map[string]*entities.UniverseRoot)
+	result := make(map[string]*tapsdk.UniverseRoot)
 	for k, v := range resp.UniverseRoots {
 		root, err := unmarshalUniverseRoot(v)
 		if err != nil {
@@ -298,7 +298,7 @@ func (u *universeClient) AssetRoots(ctx context.Context,
 // QueryAssetRoots queries the issuance and transfer roots for a
 // specific asset.
 func (u *universeClient) QueryAssetRoots(ctx context.Context,
-	id *entities.UniverseID) (*entities.QueryRootResponse,
+	id *tapsdk.UniverseID) (*tapsdk.QueryRootResponse,
 	error) {
 
 	if id == nil {
@@ -337,7 +337,7 @@ func (u *universeClient) QueryAssetRoots(ctx context.Context,
 		return nil, fmt.Errorf("unmarshal transfer root: %w", err)
 	}
 
-	return &entities.QueryRootResponse{
+	return &tapsdk.QueryRootResponse{
 		IssuanceRoot: issuanceRoot,
 		TransferRoot: transferRoot,
 	}, nil
@@ -345,7 +345,7 @@ func (u *universeClient) QueryAssetRoots(ctx context.Context,
 
 // DeleteAssetRoot deletes a universe root and all associated data.
 func (u *universeClient) DeleteAssetRoot(ctx context.Context,
-	id *entities.UniverseID) error {
+	id *tapsdk.UniverseID) error {
 
 	if id == nil {
 		return fmt.Errorf("nil universe ID")
@@ -379,8 +379,8 @@ func (u *universeClient) DeleteAssetRoot(ctx context.Context,
 
 // AssetLeafKeys returns the set of leaf keys for a universe.
 func (u *universeClient) AssetLeafKeys(ctx context.Context,
-	req *entities.AssetLeafKeysRequest) (
-	[]entities.AssetLeafKey, error) {
+	req *tapsdk.AssetLeafKeysRequest) (
+	[]tapsdk.AssetLeafKey, error) {
 
 	if req == nil {
 		return nil, fmt.Errorf("nil request")
@@ -422,7 +422,7 @@ func (u *universeClient) AssetLeafKeys(ctx context.Context,
 		return nil, err
 	}
 
-	result := make([]entities.AssetLeafKey, 0, len(resp.AssetKeys))
+	result := make([]tapsdk.AssetLeafKey, 0, len(resp.AssetKeys))
 	for _, k := range resp.AssetKeys {
 		leafKey, err := unmarshalAssetLeafKey(k)
 		if err != nil {
@@ -438,7 +438,7 @@ func (u *universeClient) AssetLeafKeys(ctx context.Context,
 
 // AssetLeaves returns the set of asset leaves for a universe.
 func (u *universeClient) AssetLeaves(ctx context.Context,
-	id *entities.UniverseID) ([]entities.AssetLeaf, error) {
+	id *tapsdk.UniverseID) ([]tapsdk.AssetLeaf, error) {
 
 	if id == nil {
 		return nil, fmt.Errorf("nil universe ID")
@@ -466,7 +466,7 @@ func (u *universeClient) AssetLeaves(ctx context.Context,
 		return nil, err
 	}
 
-	result := make([]entities.AssetLeaf, 0, len(resp.Leaves))
+	result := make([]tapsdk.AssetLeaf, 0, len(resp.Leaves))
 	for _, l := range resp.Leaves {
 		leaf, err := unmarshalAssetLeaf(l)
 		if err != nil {
@@ -482,7 +482,7 @@ func (u *universeClient) AssetLeaves(ctx context.Context,
 
 // QueryProof queries a specific proof from the universe.
 func (u *universeClient) QueryProof(ctx context.Context,
-	key *entities.UniverseKey) (*entities.AssetProofResponse,
+	key *tapsdk.UniverseKey) (*tapsdk.AssetProofResponse,
 	error) {
 
 	if key == nil {
@@ -523,7 +523,7 @@ func (u *universeClient) QueryProof(ctx context.Context,
 
 // UniverseStats returns aggregate statistics for the universe.
 func (u *universeClient) UniverseStats(
-	ctx context.Context) (*entities.UniverseStats, error) {
+	ctx context.Context) (*tapsdk.UniverseStats, error) {
 
 	var resp jsonUniverseStatsResponse
 	err := u.transport.doGet(
@@ -539,8 +539,8 @@ func (u *universeClient) UniverseStats(
 
 // QueryAssetStats returns per-asset statistics.
 func (u *universeClient) QueryAssetStats(ctx context.Context,
-	req *entities.AssetStatsQuery) (
-	[]entities.AssetStatsSnapshot, error) {
+	req *tapsdk.AssetStatsQuery) (
+	[]tapsdk.AssetStatsSnapshot, error) {
 
 	params := ""
 	if req != nil {
@@ -625,7 +625,7 @@ func (u *universeClient) QueryAssetStats(ctx context.Context,
 	}
 
 	result := make(
-		[]entities.AssetStatsSnapshot, 0, len(resp.AssetStats),
+		[]tapsdk.AssetStatsSnapshot, 0, len(resp.AssetStats),
 	)
 	for _, s := range resp.AssetStats {
 		snapshot, err := unmarshalAssetStatsSnapshot(s)
@@ -642,8 +642,8 @@ func (u *universeClient) QueryAssetStats(ctx context.Context,
 
 // QueryEvents returns daily sync and proof event counts.
 func (u *universeClient) QueryEvents(ctx context.Context,
-	req *entities.QueryEventsRequest) (
-	[]entities.GroupedUniverseEvents, error) {
+	req *tapsdk.QueryEventsRequest) (
+	[]tapsdk.GroupedUniverseEvents, error) {
 
 	params := ""
 	if req != nil {
@@ -664,7 +664,7 @@ func (u *universeClient) QueryEvents(ctx context.Context,
 	}
 
 	result := make(
-		[]entities.GroupedUniverseEvents, 0, len(resp.Events),
+		[]tapsdk.GroupedUniverseEvents, 0, len(resp.Events),
 	)
 	for _, e := range resp.Events {
 		event, err := unmarshalGroupedUniverseEvents(e)
@@ -681,7 +681,7 @@ func (u *universeClient) QueryEvents(ctx context.Context,
 
 // ListFederationServers lists the universe federation peers.
 func (u *universeClient) ListFederationServers(
-	ctx context.Context) ([]entities.FederationServer, error) {
+	ctx context.Context) ([]tapsdk.FederationServer, error) {
 
 	var resp jsonListFederationServersResponse
 	err := u.transport.doGet(
@@ -693,7 +693,7 @@ func (u *universeClient) ListFederationServers(
 	}
 
 	result := make(
-		[]entities.FederationServer, 0, len(resp.Servers),
+		[]tapsdk.FederationServer, 0, len(resp.Servers),
 	)
 	for _, s := range resp.Servers {
 		server, err := unmarshalFederationServer(s)
@@ -710,7 +710,7 @@ func (u *universeClient) ListFederationServers(
 
 // AddFederationServer adds servers to the federation.
 func (u *universeClient) AddFederationServer(ctx context.Context,
-	servers []entities.FederationServer) error {
+	servers []tapsdk.FederationServer) error {
 
 	jsonServers := make(
 		[]*jsonUniverseFederationServer, 0, len(servers),
@@ -742,7 +742,7 @@ func (u *universeClient) AddFederationServer(ctx context.Context,
 
 // DeleteFederationServer removes servers from the federation.
 func (u *universeClient) DeleteFederationServer(ctx context.Context,
-	servers []entities.FederationServer) error {
+	servers []tapsdk.FederationServer) error {
 
 	jsonServers := make(
 		[]*jsonUniverseFederationServer, 0, len(servers),
@@ -776,8 +776,8 @@ func (u *universeClient) DeleteFederationServer(ctx context.Context,
 // SetFederationSyncConfig sets the federation sync configuration.
 func (u *universeClient) SetFederationSyncConfig(
 	ctx context.Context,
-	global []entities.GlobalFederationSyncConfig,
-	asset []entities.AssetFederationSyncConfig) error {
+	global []tapsdk.GlobalFederationSyncConfig,
+	asset []tapsdk.AssetFederationSyncConfig) error {
 
 	jsonGlobal := make(
 		[]*jsonGlobalFederationSyncConfig, 0, len(global),
@@ -832,8 +832,8 @@ func (u *universeClient) SetFederationSyncConfig(
 // QueryFederationSyncConfig queries the federation sync config.
 func (u *universeClient) QueryFederationSyncConfig(
 	ctx context.Context,
-	ids []entities.UniverseID) (
-	*entities.FederationSyncConfig, error) {
+	ids []tapsdk.UniverseID) (
+	*tapsdk.FederationSyncConfig, error) {
 
 	var resp jsonQueryFederationSyncConfigResponse
 	err := u.transport.doGet(
@@ -845,7 +845,7 @@ func (u *universeClient) QueryFederationSyncConfig(
 	}
 
 	globalConfigs := make(
-		[]entities.GlobalFederationSyncConfig, 0,
+		[]tapsdk.GlobalFederationSyncConfig, 0,
 		len(resp.GlobalSyncConfigs),
 	)
 	for _, g := range resp.GlobalSyncConfigs {
@@ -859,7 +859,7 @@ func (u *universeClient) QueryFederationSyncConfig(
 	}
 
 	assetConfigs := make(
-		[]entities.AssetFederationSyncConfig, 0,
+		[]tapsdk.AssetFederationSyncConfig, 0,
 		len(resp.AssetSyncConfigs),
 	)
 	for _, a := range resp.AssetSyncConfigs {
@@ -872,7 +872,7 @@ func (u *universeClient) QueryFederationSyncConfig(
 		assetConfigs = append(assetConfigs, *cfg)
 	}
 
-	return &entities.FederationSyncConfig{
+	return &tapsdk.FederationSyncConfig{
 		GlobalSyncConfigs: globalConfigs,
 		AssetSyncConfigs:  assetConfigs,
 	}, nil
@@ -880,7 +880,7 @@ func (u *universeClient) QueryFederationSyncConfig(
 
 // Info returns basic universe server information.
 func (u *universeClient) Info(
-	ctx context.Context) (*entities.UniverseInfo, error) {
+	ctx context.Context) (*tapsdk.UniverseInfo, error) {
 
 	var resp jsonInfoResponse
 	err := u.transport.doGet(
@@ -896,15 +896,15 @@ func (u *universeClient) Info(
 		return nil, fmt.Errorf("invalid runtime_id: %w", err)
 	}
 
-	return &entities.UniverseInfo{
+	return &tapsdk.UniverseInfo{
 		RuntimeID: runtimeID,
 	}, nil
 }
 
 // SyncUniverse synchronizes with a remote universe server.
 func (u *universeClient) SyncUniverse(ctx context.Context,
-	req *entities.SyncRequest) (
-	[]entities.SyncedUniverse, error) {
+	req *tapsdk.SyncRequest) (
+	[]tapsdk.SyncedUniverse, error) {
 
 	if req == nil {
 		return nil, fmt.Errorf("nil sync request")
@@ -938,7 +938,7 @@ func (u *universeClient) SyncUniverse(ctx context.Context,
 	}
 
 	result := make(
-		[]entities.SyncedUniverse, 0,
+		[]tapsdk.SyncedUniverse, 0,
 		len(resp.SyncedUniverses),
 	)
 	for _, s := range resp.SyncedUniverses {

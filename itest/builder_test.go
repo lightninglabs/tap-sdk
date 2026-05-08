@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
-	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/require"
 )
 
@@ -100,7 +99,7 @@ func TestInteractiveTxBuilderEndToEnd(t *testing.T) {
 
 		proof := h.WaitForProofFile(
 			t, ctx, h.AliceWallet,
-			entities.AssetRefFromAssetID(output.IssuanceID),
+			tapsdk.AssetRefFromAssetID(output.IssuanceID),
 			output.ScriptKey, &output.AnchorOutpoint,
 		)
 		require.NotEmpty(t, proof.RawProofFile)
@@ -156,8 +155,8 @@ func TestInteractiveTxBuilderRejections(t *testing.T) {
 }
 
 func transferOutputForScriptKey(t testing.TB,
-	transfer *entities.AssetTransfer,
-	scriptKey entities.PubKey) entities.TransferOutput {
+	transfer *tapsdk.AssetTransfer,
+	scriptKey tapsdk.PubKey) tapsdk.TransferOutput {
 
 	t.Helper()
 
@@ -168,5 +167,5 @@ func transferOutputForScriptKey(t testing.TB,
 	}
 
 	require.FailNow(t, "receiver output not found")
-	return entities.TransferOutput{}
+	return tapsdk.TransferOutput{}
 }

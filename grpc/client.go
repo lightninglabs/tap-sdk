@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -21,20 +21,20 @@ import (
 // defaultMacaroonDir returns the path under ~/.tapd where tapd stores
 // its per-network macaroons. Used as a fallback when Config.Macaroon
 // is nil.
-func defaultMacaroonDir(network entities.Network) (string, error) {
+func defaultMacaroonDir(network tapsdk.Network) (string, error) {
 	var subDir string
 	switch network {
-	case entities.NetworkTestnet:
+	case tapsdk.NetworkTestnet:
 		subDir = "testnet"
-	case entities.NetworkTestnet4:
+	case tapsdk.NetworkTestnet4:
 		subDir = "testnet4"
-	case entities.NetworkMainnet:
+	case tapsdk.NetworkMainnet:
 		subDir = "mainnet"
-	case entities.NetworkSimnet:
+	case tapsdk.NetworkSimnet:
 		subDir = "simnet"
-	case entities.NetworkSignet:
+	case tapsdk.NetworkSignet:
 		subDir = "signet"
-	case entities.NetworkRegtest:
+	case tapsdk.NetworkRegtest:
 		subDir = "regtest"
 	default:
 		return "", fmt.Errorf("unsupported network: %v", network)

@@ -11,9 +11,7 @@ import (
 	"testing"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
-	"github.com/lightninglabs/tap-sdk/entities"
 	tapgrpc "github.com/lightninglabs/tap-sdk/grpc"
-	"github.com/lightninglabs/tap-sdk/macaroon"
 	taprest "github.com/lightninglabs/tap-sdk/rest"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/stretchr/testify/require"
@@ -52,7 +50,7 @@ func TestReadOnlyMacaroon(t *testing.T) {
 		require.Equal(t, "regtest", info.Network)
 
 		balances, err := readClient.ListBalances(ctx,
-			&entities.ListBalancesRequest{
+			&tapsdk.ListBalancesRequest{
 				AssetRef: &minted.Ref,
 			},
 		)
@@ -61,14 +59,14 @@ func TestReadOnlyMacaroon(t *testing.T) {
 
 		addr := h.CreateGroupedReceiveAddress(t, ctx, minted.Ref)
 		readWallet := tapsdk.NewWallet(
-			readClient, entities.NetworkRegtest,
+			readClient, tapsdk.NetworkRegtest,
 		)
 		_, err = readWallet.Send(
 			ctx, addr.Encoded, tapsdk.WithAmount(1),
 		)
 		requirePermissionDenied(t, err)
 
-		_, err = readClient.BurnAsset(ctx, &entities.BurnAssetRequest{
+		_, err = readClient.BurnAsset(ctx, &tapsdk.BurnAssetRequest{
 			AssetRef:         minted.Ref,
 			AmountToBurn:     1,
 			ConfirmationText: "assets will be destroyed",
@@ -129,9 +127,9 @@ func newAliceClientWithMacHex(t testing.TB, transport Transport,
 	case TransportGRPC:
 		client, err := tapgrpc.NewClient(&tapgrpc.Config{
 			Host:     envOr("TAPD_ALICE_HOST", defaultAliceHost),
-			Network:  entities.NetworkRegtest,
+			Network:  tapsdk.NetworkRegtest,
 			TLS:      tapgrpc.TLSFromPath(tlsPath),
-			Macaroon: macaroon.FromHex(macHex),
+			Macaroon: tapsdk.MacaroonFromHex(macHex),
 		})
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = client.Close() })
@@ -143,9 +141,9 @@ func newAliceClientWithMacHex(t testing.TB, transport Transport,
 			BaseURL: envOr(
 				"TAPD_ALICE_REST", defaultAliceRestHost,
 			),
-			Network:  entities.NetworkRegtest,
+			Network:  tapsdk.NetworkRegtest,
 			TLS:      taprest.TLSFromPath(tlsPath),
-			Macaroon: macaroon.FromHex(macHex),
+			Macaroon: tapsdk.MacaroonFromHex(macHex),
 		})
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = client.Close() })

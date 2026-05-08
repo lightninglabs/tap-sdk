@@ -9,7 +9,6 @@ import (
 	"time"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
-	"github.com/lightninglabs/tap-sdk/entities"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,8 +18,8 @@ type sendCase struct {
 
 	// setup produces the destination address Alice will pay. amount
 	// is the number of units Bob should eventually receive.
-	setup func(h *TestHarness, ctx context.Context, ref entities.AssetRef,
-		amount uint64) *entities.Address
+	setup func(h *TestHarness, ctx context.Context, ref tapsdk.AssetRef,
+		amount uint64) *tapsdk.Address
 
 	// opts are passed to Wallet.Send. If this includes WithAmount,
 	// the test routes through the explicit-amount wire path.
@@ -43,8 +42,8 @@ func TestSend(t *testing.T) {
 		{
 			name: "v2-explicit-amount",
 			setup: func(h *TestHarness, ctx context.Context,
-				ref entities.AssetRef,
-				_ uint64) *entities.Address {
+				ref tapsdk.AssetRef,
+				_ uint64) *tapsdk.Address {
 
 				return h.CreateGroupedReceiveAddress(t, ctx, ref)
 			},
@@ -57,8 +56,8 @@ func TestSend(t *testing.T) {
 		{
 			name: "v2-embedded-amount",
 			setup: func(h *TestHarness, ctx context.Context,
-				ref entities.AssetRef,
-				amount uint64) *entities.Address {
+				ref tapsdk.AssetRef,
+				amount uint64) *tapsdk.Address {
 
 				return h.CreateV2EmbeddedReceiveAddress(
 					t, ctx, ref, amount,
@@ -69,8 +68,8 @@ func TestSend(t *testing.T) {
 		{
 			name: "v2-embedded-amount-echoed",
 			setup: func(h *TestHarness, ctx context.Context,
-				ref entities.AssetRef,
-				amount uint64) *entities.Address {
+				ref tapsdk.AssetRef,
+				amount uint64) *tapsdk.Address {
 
 				return h.CreateV2EmbeddedReceiveAddress(
 					t, ctx, ref, amount,
@@ -147,9 +146,9 @@ func runSendCase(t *testing.T, transport Transport, tc sendCase) {
 type sendMultiCase struct {
 	name string
 
-	// recipients builds the []entities.Recipient for the send. addrs
+	// recipients builds the []tapsdk.Recipient for the send. addrs
 	// is the ordered list of addresses already decoded on Bob's side.
-	recipients func(addrs []*entities.Address) []entities.Recipient
+	recipients func(addrs []*tapsdk.Address) []tapsdk.Recipient
 }
 
 // TestSendMulti exercises Wallet.SendMulti end-to-end:
@@ -163,14 +162,14 @@ func TestSendMulti(t *testing.T) {
 	cases := []sendMultiCase{
 		{
 			name: "all-explicit",
-			recipients: func(addrs []*entities.Address,
-			) []entities.Recipient {
+			recipients: func(addrs []*tapsdk.Address,
+			) []tapsdk.Recipient {
 
-				return []entities.Recipient{
-					entities.RecipientWithAmount(
+				return []tapsdk.Recipient{
+					tapsdk.RecipientWithAmount(
 						addrs[0].Encoded, 100,
 					),
-					entities.RecipientWithAmount(
+					tapsdk.RecipientWithAmount(
 						addrs[1].Encoded, 150,
 					),
 				}
@@ -178,14 +177,14 @@ func TestSendMulti(t *testing.T) {
 		},
 		{
 			name: "all-embedded",
-			recipients: func(addrs []*entities.Address,
-			) []entities.Recipient {
+			recipients: func(addrs []*tapsdk.Address,
+			) []tapsdk.Recipient {
 
-				return []entities.Recipient{
-					entities.RecipientWithEmbeddedAmount(
+				return []tapsdk.Recipient{
+					tapsdk.RecipientWithEmbeddedAmount(
 						addrs[0].Encoded,
 					),
-					entities.RecipientWithEmbeddedAmount(
+					tapsdk.RecipientWithEmbeddedAmount(
 						addrs[1].Encoded,
 					),
 				}
@@ -193,14 +192,14 @@ func TestSendMulti(t *testing.T) {
 		},
 		{
 			name: "mixed-normalised",
-			recipients: func(addrs []*entities.Address,
-			) []entities.Recipient {
+			recipients: func(addrs []*tapsdk.Address,
+			) []tapsdk.Recipient {
 
-				return []entities.Recipient{
-					entities.RecipientWithAmount(
+				return []tapsdk.Recipient{
+					tapsdk.RecipientWithAmount(
 						addrs[0].Encoded, 100,
 					),
-					entities.RecipientWithEmbeddedAmount(
+					tapsdk.RecipientWithEmbeddedAmount(
 						addrs[1].Encoded,
 					),
 				}
@@ -229,16 +228,16 @@ func runSendMultiCase(t *testing.T, transport Transport,
 	// All cases send 100 + 150 = 250 units total. "all-embedded" and
 	// "mixed-normalised" need addresses with embedded amounts, while
 	// "all-explicit" uses amount-less V2 addresses.
-	var addrs []*entities.Address
+	var addrs []*tapsdk.Address
 	switch tc.name {
 	case "all-explicit":
-		addrs = []*entities.Address{
+		addrs = []*tapsdk.Address{
 			h.CreateGroupedReceiveAddress(t, ctx, minted.Ref),
 			h.CreateGroupedReceiveAddress(t, ctx, minted.Ref),
 		}
 
 	case "all-embedded":
-		addrs = []*entities.Address{
+		addrs = []*tapsdk.Address{
 			h.CreateV2EmbeddedReceiveAddress(
 				t, ctx, minted.Ref, 100,
 			),
@@ -248,7 +247,7 @@ func runSendMultiCase(t *testing.T, transport Transport,
 		}
 
 	case "mixed-normalised":
-		addrs = []*entities.Address{
+		addrs = []*tapsdk.Address{
 			h.CreateGroupedReceiveAddress(t, ctx, minted.Ref),
 			h.CreateV2EmbeddedReceiveAddress(
 				t, ctx, minted.Ref, 150,
@@ -257,7 +256,7 @@ func runSendMultiCase(t *testing.T, transport Transport,
 	}
 
 	recvEvents := make(
-		[]*eventSubscription[entities.ReceiveEventRecord], 0,
+		[]*eventSubscription[tapsdk.ReceiveEventRecord], 0,
 		len(addrs),
 	)
 	for _, addr := range addrs {
@@ -336,7 +335,7 @@ func TestSendMultiRejectsMixedAssets(t *testing.T) {
 
 		cases := []struct {
 			name       string
-			secondAddr *entities.Address
+			secondAddr *tapsdk.Address
 			amount     uint64
 		}{
 			{
@@ -355,12 +354,12 @@ func TestSendMultiRejectsMixedAssets(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				_, err := h.AliceWallet.SendMulti(
 					ctx,
-					[]entities.Recipient{
-						entities.RecipientWithAmount(
+					[]tapsdk.Recipient{
+						tapsdk.RecipientWithAmount(
 							firstAddr.Encoded,
 							firstAmount,
 						),
-						entities.RecipientWithAmount(
+						tapsdk.RecipientWithAmount(
 							tc.secondAddr.Encoded,
 							tc.amount,
 						),
@@ -406,8 +405,8 @@ func TestSendRejections(t *testing.T) {
 
 		t.Run("SendMulti/amount-required", func(t *testing.T) {
 			_, err := h.AliceWallet.SendMulti(ctx,
-				[]entities.Recipient{
-					entities.RecipientWithEmbeddedAmount(
+				[]tapsdk.Recipient{
+					tapsdk.RecipientWithEmbeddedAmount(
 						noAmount.Encoded,
 					),
 				},
@@ -417,8 +416,8 @@ func TestSendRejections(t *testing.T) {
 
 		t.Run("SendMulti/amount-mismatch", func(t *testing.T) {
 			_, err := h.AliceWallet.SendMulti(ctx,
-				[]entities.Recipient{
-					entities.RecipientWithAmount(
+				[]tapsdk.Recipient{
+					tapsdk.RecipientWithAmount(
 						embedded.Encoded, 999,
 					),
 				},
@@ -442,7 +441,7 @@ func TestAddressSend(t *testing.T) {
 		bobAddr := h.CreateGroupedReceiveAddress(t, ctx, minted.Ref)
 		require.NotEmpty(t, bobAddr.Encoded)
 		require.Equal(t, minted.Ref, bobAddr.AssetRef)
-		require.Equal(t, entities.AddressVersionV2,
+		require.Equal(t, tapsdk.AddressVersionV2,
 			bobAddr.AddressVersion)
 
 		// Subscribe before the payment: tapd ignores StartTimestamp
@@ -461,7 +460,7 @@ func TestAddressSend(t *testing.T) {
 		// Bob should also be able to look up the address via
 		// QueryAddrs.
 		queried, err := h.BobClient.QueryAddrs(
-			ctx, &entities.AddressQuery{},
+			ctx, &tapsdk.AddressQuery{},
 		)
 		require.NoError(t, err)
 		require.NotEmpty(t, queried)
@@ -501,7 +500,7 @@ func TestAddressSend(t *testing.T) {
 		// ListTransfers must surface the anchor transaction on Alice's
 		// side once confirmed.
 		transfers, err := h.AliceClient.ListTransfers(ctx,
-			&entities.ListTransfersRequest{
+			&tapsdk.ListTransfersRequest{
 				AnchorTxid: transfer.AnchorTxid,
 			},
 		)
@@ -509,11 +508,11 @@ func TestAddressSend(t *testing.T) {
 		require.NotEmpty(t, transfers)
 		requireRawTransferUsesGroupRef(t, transfers[0], minted.Ref)
 		requireRawTransferUsesTypedAssetRef(
-			t, transfers[0], minted.Ref, entities.AssetTypeFungible,
+			t, transfers[0], minted.Ref, tapsdk.AssetTypeFungible,
 		)
 
 		walletTransfers, err := h.AliceWallet.ListTransfers(ctx,
-			&entities.ListTransfersRequest{
+			&tapsdk.ListTransfersRequest{
 				AnchorTxid: transfer.AnchorTxid,
 			},
 		)
@@ -526,7 +525,7 @@ func TestAddressSend(t *testing.T) {
 		// Bob should observe the incoming transfer through
 		// AddrReceives.
 		events, err := h.BobClient.AddrReceives(ctx,
-			&entities.AddressReceivesQuery{},
+			&tapsdk.AddressReceivesQuery{},
 		)
 		require.NoError(t, err)
 		require.NotEmpty(t, events)
@@ -549,8 +548,8 @@ func TestCollectibleAddressSend(t *testing.T) {
 
 		bobAddr := h.CreateReceiveAddress(t, ctx, minted.Ref)
 		require.NotEmpty(t, bobAddr.Encoded)
-		require.Equal(t, entities.AssetTypeCollectible, bobAddr.AssetType)
-		require.Equal(t, entities.AddressVersionV2,
+		require.Equal(t, tapsdk.AssetTypeCollectible, bobAddr.AssetType)
+		require.Equal(t, tapsdk.AddressVersionV2,
 			bobAddr.AddressVersion)
 		require.True(t, bobAddr.AssetRef.Equivalent(minted.Ref))
 
@@ -605,17 +604,17 @@ func TestCollectionItemAddressSend(t *testing.T) {
 		require.NoError(t, err)
 
 		collectionRef := minted.Ref
-		itemRef := entities.AssetRefFromAssetID(
+		itemRef := tapsdk.AssetRefFromAssetID(
 			minted.Asset.Genesis.IssuanceID,
 		)
 		require.True(t, itemRef.IsAssetIDRef())
 		require.True(t, collectionRef.IsGroupRef())
 
 		bobAddr := h.CreateReceiveAddress(t, ctx, collectionRef)
-		require.Equal(t, entities.AssetTypeCollectible, bobAddr.AssetType)
+		require.Equal(t, tapsdk.AssetTypeCollectible, bobAddr.AssetType)
 		require.True(t, bobAddr.AssetRef.Equivalent(collectionRef))
 
-		localDecoded, err := entities.DecodeAddress(bobAddr.Encoded)
+		localDecoded, err := tapsdk.DecodeAddress(bobAddr.Encoded)
 		require.NoError(t, err)
 		require.True(t, localDecoded.AssetRef.Equivalent(collectionRef))
 
@@ -644,23 +643,23 @@ func TestCollectionItemAddressSend(t *testing.T) {
 		waitForReceiveCompleted(t, recvEvents, bobAddr.Encoded,
 			balanceTimeoutFor(itemRef))
 
-		highEvent := entities.NewSendEvent(completedSend)
+		highEvent := tapsdk.NewSendEvent(completedSend)
 		requireAssetRefsContain(t, highEvent.AssetRefs, itemRef)
 		requireTransferUsesAssetRef(t, highEvent.Transfer, itemRef)
 
 		transfers, err := h.AliceClient.ListTransfers(ctx,
-			&entities.ListTransfersRequest{
+			&tapsdk.ListTransfersRequest{
 				AnchorTxid: transfer.AnchorTxid,
 			},
 		)
 		require.NoError(t, err)
 		require.NotEmpty(t, transfers)
 		requireRawTransferUsesTypedAssetRef(
-			t, transfers[0], itemRef, entities.AssetTypeCollectible,
+			t, transfers[0], itemRef, tapsdk.AssetTypeCollectible,
 		)
 
 		walletTransfers, err := h.AliceWallet.ListTransfers(ctx,
-			&entities.ListTransfersRequest{
+			&tapsdk.ListTransfersRequest{
 				AnchorTxid: transfer.AnchorTxid,
 			},
 		)
@@ -703,30 +702,30 @@ func TestAddressRoundTrip(t *testing.T) {
 		require.NoError(t, err)
 		cases := []struct {
 			name      string
-			ref       entities.AssetRef
-			assetType entities.AssetType
+			ref       tapsdk.AssetRef
+			assetType tapsdk.AssetType
 		}{
 			{
 				name:      "fungible-group-ref",
 				ref:       grouped.Ref,
-				assetType: entities.AssetTypeNormal,
+				assetType: tapsdk.AssetTypeNormal,
 			},
 			{
 				name:      "collectible-asset-id-ref",
 				ref:       collectible.Ref,
-				assetType: entities.AssetTypeCollectible,
+				assetType: tapsdk.AssetTypeCollectible,
 			},
 			{
 				name:      "collection-group-ref",
 				ref:       collection.Ref,
-				assetType: entities.AssetTypeCollectible,
+				assetType: tapsdk.AssetTypeCollectible,
 			},
 		}
 
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
 				addr := h.CreateReceiveAddress(t, ctx, tc.ref)
-				require.Equal(t, entities.AddressVersionV2,
+				require.Equal(t, tapsdk.AddressVersionV2,
 					addr.AddressVersion)
 				require.Equal(t, tc.assetType, addr.AssetType)
 				require.True(t, addr.AssetRef.Equivalent(tc.ref))
@@ -744,7 +743,7 @@ func TestAddressRoundTrip(t *testing.T) {
 				require.True(t,
 					decoded.AssetRef.Equivalent(tc.ref))
 
-				localDecoded, err := entities.DecodeAddress(
+				localDecoded, err := tapsdk.DecodeAddress(
 					addr.Encoded,
 				)
 				require.NoError(t, err)

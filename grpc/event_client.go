@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/mintrpc"
@@ -40,8 +40,8 @@ func NewEventClient(conn grpc.ClientConnInterface,
 // an error channel. The error channel receives exactly one value when
 // the stream terminates.
 func (c *eventClient) SubscribeReceiveEvents(ctx context.Context,
-	req *entities.SubscribeReceiveEventsRequest) (
-	<-chan *entities.ReceiveEventRecord, <-chan error, error) {
+	req *tapsdk.SubscribeReceiveEventsRequest) (
+	<-chan *tapsdk.ReceiveEventRecord, <-chan error, error) {
 
 	rpcCtx := c.adminMac.WithMacaroonAuth(ctx)
 
@@ -58,7 +58,7 @@ func (c *eventClient) SubscribeReceiveEvents(ctx context.Context,
 			"events: %w", err)
 	}
 
-	eventCh := make(chan *entities.ReceiveEventRecord)
+	eventCh := make(chan *tapsdk.ReceiveEventRecord)
 	errCh := make(chan error, 1)
 
 	go func() {
@@ -94,8 +94,8 @@ func (c *eventClient) SubscribeReceiveEvents(ctx context.Context,
 // SubscribeSendEvents opens a server-streaming subscription for
 // outgoing asset transfer events.
 func (c *eventClient) SubscribeSendEvents(ctx context.Context,
-	req *entities.SubscribeSendEventsRequest) (
-	<-chan *entities.SendEventRecord, <-chan error, error) {
+	req *tapsdk.SubscribeSendEventsRequest) (
+	<-chan *tapsdk.SendEventRecord, <-chan error, error) {
 
 	rpcCtx := c.adminMac.WithMacaroonAuth(ctx)
 
@@ -113,7 +113,7 @@ func (c *eventClient) SubscribeSendEvents(ctx context.Context,
 			"events: %w", err)
 	}
 
-	eventCh := make(chan *entities.SendEventRecord)
+	eventCh := make(chan *tapsdk.SendEventRecord)
 	errCh := make(chan error, 1)
 
 	go func() {
@@ -149,8 +149,8 @@ func (c *eventClient) SubscribeSendEvents(ctx context.Context,
 // SubscribeMintEvents opens a server-streaming subscription for
 // minting batch lifecycle events.
 func (c *eventClient) SubscribeMintEvents(ctx context.Context,
-	req *entities.SubscribeMintEventsRequest) (
-	<-chan *entities.MintEvent, <-chan error, error) {
+	req *tapsdk.SubscribeMintEventsRequest) (
+	<-chan *tapsdk.MintEvent, <-chan error, error) {
 
 	rpcCtx := c.mintMac.WithMacaroonAuth(ctx)
 
@@ -166,7 +166,7 @@ func (c *eventClient) SubscribeMintEvents(ctx context.Context,
 			"events: %w", err)
 	}
 
-	eventCh := make(chan *entities.MintEvent)
+	eventCh := make(chan *tapsdk.MintEvent)
 	errCh := make(chan error, 1)
 
 	go func() {

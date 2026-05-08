@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/stretchr/testify/require"
 )
 
@@ -139,22 +139,22 @@ func TestParseUint64(t *testing.T) {
 func TestParseAssetTypes(t *testing.T) {
 	tests := []struct {
 		name    string
-		parse   func(string) (entities.AssetType, error)
+		parse   func(string) (tapsdk.AssetType, error)
 		input   string
-		want    entities.AssetType
+		want    tapsdk.AssetType
 		wantErr string
 	}{
 		{
 			name:  "asset normal",
 			parse: parseAssetType,
 			input: assetTypeNormalJSON,
-			want:  entities.AssetTypeFungible,
+			want:  tapsdk.AssetTypeFungible,
 		},
 		{
 			name:  "asset collectible",
 			parse: parseAssetType,
 			input: assetTypeCollectibleJSON,
-			want:  entities.AssetTypeNFT,
+			want:  tapsdk.AssetTypeNFT,
 		},
 		{
 			name:    "asset unknown",
@@ -172,13 +172,13 @@ func TestParseAssetTypes(t *testing.T) {
 			name:  "burn normal",
 			parse: parseBurnAssetType,
 			input: assetTypeNormalJSON,
-			want:  entities.AssetTypeFungible,
+			want:  tapsdk.AssetTypeFungible,
 		},
 		{
 			name:  "burn collectible",
 			parse: parseBurnAssetType,
 			input: assetTypeCollectibleJSON,
-			want:  entities.AssetTypeNFT,
+			want:  tapsdk.AssetTypeNFT,
 		},
 		{
 			name:    "burn empty",
@@ -211,41 +211,41 @@ func TestParseAssetTypes(t *testing.T) {
 
 func TestUnmarshalBurnRecord(t *testing.T) {
 	var (
-		assetID  entities.AssetID
-		groupKey entities.PubKey
+		assetID  tapsdk.AssetID
+		groupKey tapsdk.PubKey
 	)
 	copy(assetID[:], restTestAssetID)
 	copy(groupKey[:], restTestPubKey)
-	collectionRef := entities.AssetRefFromGroupKey(groupKey)
+	collectionRef := tapsdk.AssetRefFromGroupKey(groupKey)
 
 	tests := []struct {
 		name      string
 		groupKey  string
 		assetType string
-		wantRef   entities.AssetRef
-		wantColl  *entities.AssetRef
-		wantType  entities.AssetType
+		wantRef   tapsdk.AssetRef
+		wantColl  *tapsdk.AssetRef
+		wantType  tapsdk.AssetType
 	}{
 		{
 			name:      "fungible group burn",
 			groupKey:  hex.EncodeToString(restTestPubKey),
 			assetType: assetTypeNormalJSON,
-			wantRef:   entities.AssetRefFromGroupKey(groupKey),
-			wantType:  entities.AssetTypeFungible,
+			wantRef:   tapsdk.AssetRefFromGroupKey(groupKey),
+			wantType:  tapsdk.AssetTypeFungible,
 		},
 		{
 			name:      "standalone NFT burn",
 			assetType: assetTypeCollectibleJSON,
-			wantRef:   entities.AssetRefFromAssetID(assetID),
-			wantType:  entities.AssetTypeNFT,
+			wantRef:   tapsdk.AssetRefFromAssetID(assetID),
+			wantType:  tapsdk.AssetTypeNFT,
 		},
 		{
 			name:      "collection item burn",
 			groupKey:  hex.EncodeToString(restTestPubKey),
 			assetType: assetTypeCollectibleJSON,
-			wantRef:   entities.AssetRefFromAssetID(assetID),
+			wantRef:   tapsdk.AssetRefFromAssetID(assetID),
 			wantColl:  &collectionRef,
-			wantType:  entities.AssetTypeNFT,
+			wantType:  tapsdk.AssetTypeNFT,
 		},
 	}
 
@@ -367,7 +367,7 @@ func TestUnmarshalVerifyOwnershipResponse(t *testing.T) {
 	require.True(t, resp.Valid)
 	require.Equal(t, uint32(7), resp.Outpoint.Index)
 	require.Equal(t, txid, resp.Outpoint.Txid)
-	require.Equal(t, entities.Hash(blockHash), resp.BlockHash)
+	require.Equal(t, tapsdk.Hash(blockHash), resp.BlockHash)
 	require.Equal(t, uint32(800000), resp.BlockHeight)
 
 	displayHash := chainhash.Hash(blockHash)
@@ -383,7 +383,7 @@ func TestUnmarshalVerifyOwnershipResponse(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, resp.Valid)
 	require.Equal(t, uint32(3), resp.Outpoint.Index)
-	require.Equal(t, entities.Hash(blockHash), resp.BlockHash)
+	require.Equal(t, tapsdk.Hash(blockHash), resp.BlockHash)
 
 	resp, err = unmarshalVerifyOwnershipResponse(
 		&jsonVerifyOwnershipResponse{
@@ -394,7 +394,7 @@ func TestUnmarshalVerifyOwnershipResponse(t *testing.T) {
 		},
 	)
 	require.NoError(t, err)
-	require.Equal(t, entities.Hash(blockHash), resp.BlockHash)
+	require.Equal(t, tapsdk.Hash(blockHash), resp.BlockHash)
 
 	var fallbackHash [32]byte
 	for i := range fallbackHash {
@@ -411,7 +411,7 @@ func TestUnmarshalVerifyOwnershipResponse(t *testing.T) {
 		},
 	)
 	require.NoError(t, err)
-	require.Equal(t, entities.Hash(fallbackHash), resp.BlockHash)
+	require.Equal(t, tapsdk.Hash(fallbackHash), resp.BlockHash)
 
 	_, err = unmarshalVerifyOwnershipResponse(
 		&jsonVerifyOwnershipResponse{
@@ -470,27 +470,27 @@ func TestParseAddressVersion(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
-		want  entities.AddressVersion
+		want  tapsdk.AddressVersion
 	}{
 		{
 			name:  "v0",
 			input: "ADDR_VERSION_V0",
-			want:  entities.AddressVersionV0,
+			want:  tapsdk.AddressVersionV0,
 		},
 		{
 			name:  "v1",
 			input: "ADDR_VERSION_V1",
-			want:  entities.AddressVersionV1,
+			want:  tapsdk.AddressVersionV1,
 		},
 		{
 			name:  "v2",
 			input: "ADDR_VERSION_V2",
-			want:  entities.AddressVersionV2,
+			want:  tapsdk.AddressVersionV2,
 		},
 		{
 			name:  "unknown defaults to v0",
 			input: "ADDR_VERSION_UNKNOWN",
-			want:  entities.AddressVersionV0,
+			want:  tapsdk.AddressVersionV0,
 		},
 	}
 
@@ -506,27 +506,27 @@ func TestParseBackupMode(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
-		want  entities.BackupMode
+		want  tapsdk.BackupMode
 	}{
 		{
 			name:  "raw",
 			input: "RAW",
-			want:  entities.BackupModeRaw,
+			want:  tapsdk.BackupModeRaw,
 		},
 		{
 			name:  "compact",
 			input: "COMPACT",
-			want:  entities.BackupModeCompact,
+			want:  tapsdk.BackupModeCompact,
 		},
 		{
 			name:  "optimistic",
 			input: "OPTIMISTIC",
-			want:  entities.BackupModeOptimistic,
+			want:  tapsdk.BackupModeOptimistic,
 		},
 		{
 			name:  "unknown defaults to raw",
 			input: "SOMETHING_ELSE",
-			want:  entities.BackupModeRaw,
+			want:  tapsdk.BackupModeRaw,
 		},
 	}
 
@@ -540,27 +540,27 @@ func TestParseBackupMode(t *testing.T) {
 func TestMarshalBackupMode(t *testing.T) {
 	tests := []struct {
 		name string
-		mode entities.BackupMode
+		mode tapsdk.BackupMode
 		want string
 	}{
 		{
 			name: "raw",
-			mode: entities.BackupModeRaw,
+			mode: tapsdk.BackupModeRaw,
 			want: "RAW",
 		},
 		{
 			name: "compact",
-			mode: entities.BackupModeCompact,
+			mode: tapsdk.BackupModeCompact,
 			want: "COMPACT",
 		},
 		{
 			name: "optimistic",
-			mode: entities.BackupModeOptimistic,
+			mode: tapsdk.BackupModeOptimistic,
 			want: "OPTIMISTIC",
 		},
 		{
 			name: "unknown defaults to raw",
-			mode: entities.BackupMode(99),
+			mode: tapsdk.BackupMode(99),
 			want: "RAW",
 		},
 	}
@@ -576,27 +576,27 @@ func TestParseBatchState(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
-		want  entities.BatchState
+		want  tapsdk.BatchState
 	}{
 		{
 			name:  "pending",
 			input: "BATCH_STATE_PENDING",
-			want:  entities.BatchStatePending,
+			want:  tapsdk.BatchStatePending,
 		},
 		{
 			name:  "frozen",
 			input: "BATCH_STATE_FROZEN",
-			want:  entities.BatchStateFrozen,
+			want:  tapsdk.BatchStateFrozen,
 		},
 		{
 			name:  "confirmed",
 			input: "BATCH_STATE_CONFIRMED",
-			want:  entities.BatchStateConfirmed,
+			want:  tapsdk.BatchStateConfirmed,
 		},
 		{
 			name:  "finalized",
 			input: "BATCH_STATE_FINALIZED",
-			want:  entities.BatchStateFinalized,
+			want:  tapsdk.BatchStateFinalized,
 		},
 	}
 
@@ -652,7 +652,7 @@ func TestMarshalAssetVersionJSON(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			got := marshalAssetVersionJSON(
-				entities.AssetVersion(tc.input),
+				tapsdk.AssetVersion(tc.input),
 			)
 			require.Equal(t, tc.want, got)
 		})
@@ -662,22 +662,22 @@ func TestMarshalAssetVersionJSON(t *testing.T) {
 func TestMarshalAddressVersionJSON(t *testing.T) {
 	tests := []struct {
 		name  string
-		input entities.AddressVersion
+		input tapsdk.AddressVersion
 		want  string
 	}{
 		{
 			name:  "v0",
-			input: entities.AddressVersionV0,
+			input: tapsdk.AddressVersionV0,
 			want:  "ADDR_VERSION_V0",
 		},
 		{
 			name:  "v1",
-			input: entities.AddressVersionV1,
+			input: tapsdk.AddressVersionV1,
 			want:  "ADDR_VERSION_V1",
 		},
 		{
 			name:  "v2",
-			input: entities.AddressVersionV2,
+			input: tapsdk.AddressVersionV2,
 			want:  "ADDR_VERSION_V2",
 		},
 	}
@@ -711,7 +711,7 @@ func TestMarshalAssetTypeJSON(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			got := marshalAssetTypeJSON(
-				entities.AssetType(tc.input),
+				tapsdk.AssetType(tc.input),
 			)
 			require.Equal(t, tc.want, got)
 		})

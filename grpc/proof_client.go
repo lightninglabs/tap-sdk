@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/lightninglabs/tap-sdk/codec"
-	"github.com/lightninglabs/tap-sdk/entities"
+	tapsdk "github.com/lightninglabs/tap-sdk"
+	"github.com/lightninglabs/tap-sdk/internal/codec"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"google.golang.org/grpc"
@@ -33,8 +33,8 @@ func NewProofClient(conn grpc.ClientConnInterface, timeout time.Duration,
 
 // ExportProof exports a proof file for a specific asset output.
 func (p *proofClient) ExportProof(ctx context.Context,
-	ref entities.AssetRef, scriptKey entities.PubKey,
-	outpoint *entities.Outpoint) (*entities.ProofFile, error) {
+	ref tapsdk.AssetRef, scriptKey tapsdk.PubKey,
+	outpoint *tapsdk.Outpoint) (*tapsdk.ProofFile, error) {
 
 	if err := ref.Validate(); err != nil {
 		return nil, err
@@ -67,13 +67,13 @@ func (p *proofClient) ExportProof(ctx context.Context,
 		return nil, err
 	}
 
-	proofFile := &entities.ProofFile{
+	proofFile := &tapsdk.ProofFile{
 		RawProofFile: resp.RawProofFile,
 	}
 
 	// GenesisPoint is optional - only parse if provided.
 	if resp.GenesisPoint != "" {
-		genesisPoint, err := entities.NewOutpointFromStr(resp.GenesisPoint)
+		genesisPoint, err := tapsdk.NewOutpointFromStr(resp.GenesisPoint)
 		if err != nil {
 			return nil, fmt.Errorf("invalid genesis point: %v", err)
 		}
@@ -103,7 +103,7 @@ func (p *proofClient) UnpackProofFile(ctx context.Context,
 
 // DecodeProof decodes a raw proof and returns details about it.
 func (p *proofClient) DecodeProof(ctx context.Context,
-	rawProof []byte) (*entities.DecodedProof, error) {
+	rawProof []byte) (*tapsdk.DecodedProof, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
@@ -125,7 +125,7 @@ func (p *proofClient) DecodeProof(ctx context.Context,
 	decoded := resp.DecodedProof
 	asset := decoded.Asset
 
-	result := &entities.DecodedProof{
+	result := &tapsdk.DecodedProof{
 		ProofAtDepth:   decoded.ProofAtDepth,
 		NumberOfProofs: decoded.NumberOfProofs,
 		IsIssuance:     decoded.GenesisReveal != nil,
@@ -145,7 +145,7 @@ func (p *proofClient) DecodeProof(ctx context.Context,
 
 	// Get outpoint from chain anchor.
 	if asset.ChainAnchor != nil {
-		op, err := entities.NewOutpointFromStr(asset.ChainAnchor.AnchorOutpoint)
+		op, err := tapsdk.NewOutpointFromStr(asset.ChainAnchor.AnchorOutpoint)
 		if err != nil {
 			return nil, fmt.Errorf("invalid anchor outpoint: %v", err)
 		}
@@ -155,19 +155,19 @@ func (p *proofClient) DecodeProof(ctx context.Context,
 	// Get group key if present.
 	if asset.AssetGroup != nil {
 		if len(asset.AssetGroup.TweakedGroupKey) > 0 {
-			groupKey, err := entities.ParsePubKey(
+			groupKey, err := tapsdk.ParsePubKey(
 				asset.AssetGroup.TweakedGroupKey,
 			)
 			if err != nil {
 				return nil, fmt.Errorf("invalid group key: %w", err)
 			}
 
-			result.AssetRef = entities.AssetRefFromGroupKey(groupKey)
+			result.AssetRef = tapsdk.AssetRefFromGroupKey(groupKey)
 		}
 	}
 
 	if result.AssetRef.IsZero() {
-		result.AssetRef = entities.AssetRefFromAssetID(
+		result.AssetRef = tapsdk.AssetRefFromAssetID(
 			result.IssuanceID,
 		)
 	}
@@ -185,7 +185,7 @@ func (p *proofClient) DecodeProof(ctx context.Context,
 
 	// Populate prev IDs if present.
 	if len(asset.PrevWitnesses) > 0 {
-		prevIDs := make([]entities.PrevID, 0, len(asset.PrevWitnesses))
+		prevIDs := make([]tapsdk.PrevID, 0, len(asset.PrevWitnesses))
 		for idx, witness := range asset.PrevWitnesses {
 			if witness == nil || witness.PrevId == nil {
 				return nil, fmt.Errorf("missing prev_id for witness %d",
@@ -193,7 +193,7 @@ func (p *proofClient) DecodeProof(ctx context.Context,
 			}
 
 			prev := witness.PrevId
-			prevOutpoint, err := entities.NewOutpointFromStr(
+			prevOutpoint, err := tapsdk.NewOutpointFromStr(
 				prev.AnchorPoint,
 			)
 			if err != nil {
@@ -213,7 +213,7 @@ func (p *proofClient) DecodeProof(ctx context.Context,
 					idx, len(prev.ScriptKey))
 			}
 
-			var decodedPrev entities.PrevID
+			var decodedPrev tapsdk.PrevID
 			decodedPrev.Outpoint = prevOutpoint
 			copy(decodedPrev.IssuanceID[:], prev.AssetId)
 			copy(decodedPrev.ScriptKey[:], prev.ScriptKey)
@@ -230,12 +230,12 @@ func (p *proofClient) DecodeProof(ctx context.Context,
 // RegisterTransfer registers an inbound transfer for an interactive send.
 // The proof must already be in the local universe before calling this.
 func (p *proofClient) RegisterTransfer(ctx context.Context,
-	assetRef entities.AssetRef, scriptKey entities.PubKey,
-	outpoint entities.Outpoint) (
-	*entities.RegisteredAsset, error) {
+	assetRef tapsdk.AssetRef, scriptKey tapsdk.PubKey,
+	outpoint tapsdk.Outpoint) (
+	*tapsdk.RegisteredAsset, error) {
 
 	return p.registerTransfer(
-		ctx, assetRef, entities.AssetID{}, scriptKey, outpoint,
+		ctx, assetRef, tapsdk.AssetID{}, scriptKey, outpoint,
 	)
 }
 
@@ -243,17 +243,17 @@ func (p *proofClient) RegisterTransfer(ctx context.Context,
 // facing asset ref is a group key and tapd still needs the concrete issuance
 // ID from the imported proof.
 func (p *proofClient) RegisterTransferWithIssuance(ctx context.Context,
-	assetRef entities.AssetRef, issuanceID entities.AssetID,
-	scriptKey entities.PubKey, outpoint entities.Outpoint) (
-	*entities.RegisteredAsset, error) {
+	assetRef tapsdk.AssetRef, issuanceID tapsdk.AssetID,
+	scriptKey tapsdk.PubKey, outpoint tapsdk.Outpoint) (
+	*tapsdk.RegisteredAsset, error) {
 
 	return p.registerTransfer(ctx, assetRef, issuanceID, scriptKey, outpoint)
 }
 
 func (p *proofClient) registerTransfer(ctx context.Context,
-	assetRef entities.AssetRef, issuanceID entities.AssetID,
-	scriptKey entities.PubKey, outpoint entities.Outpoint) (
-	*entities.RegisteredAsset, error) {
+	assetRef tapsdk.AssetRef, issuanceID tapsdk.AssetID,
+	scriptKey tapsdk.PubKey, outpoint tapsdk.Outpoint) (
+	*tapsdk.RegisteredAsset, error) {
 
 	rpcCtx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
@@ -275,7 +275,7 @@ func (p *proofClient) registerTransfer(ctx context.Context,
 		rpcReq.AssetId = assetID[:]
 	}
 
-	if assetRef.IsGroupRef() && issuanceID != (entities.AssetID{}) {
+	if assetRef.IsGroupRef() && issuanceID != (tapsdk.AssetID{}) {
 		rpcReq.AssetId = issuanceID[:]
 	}
 
@@ -293,7 +293,7 @@ func (p *proofClient) registerTransfer(ctx context.Context,
 	}
 
 	asset := resp.RegisteredAsset
-	result := &entities.RegisteredAsset{
+	result := &tapsdk.RegisteredAsset{
 		Amount:   asset.Amount,
 		AssetRef: assetRef,
 	}
@@ -310,7 +310,7 @@ func (p *proofClient) registerTransfer(ctx context.Context,
 
 	// Get outpoint from chain anchor.
 	if asset.ChainAnchor != nil {
-		op, err := entities.NewOutpointFromStr(asset.ChainAnchor.AnchorOutpoint)
+		op, err := tapsdk.NewOutpointFromStr(asset.ChainAnchor.AnchorOutpoint)
 		if err != nil {
 			return nil, fmt.Errorf("invalid anchor outpoint: %v", err)
 		}
