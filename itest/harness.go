@@ -616,20 +616,6 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
-// requireTapdMain skips the current test unless TAP_SDK_TAPD_MAIN=1. Use
-// this for scenarios that depend on unreleased tapd features — the CI
-// workflow runs against the pinned upstream image and must not run them.
-func requireTapdMain(t testing.TB) {
-	t.Helper()
-
-	if os.Getenv("TAP_SDK_TAPD_MAIN") != "1" {
-		t.Skip(
-			"skipping: requires a tapd built from " +
-				"taproot-assets main (set TAP_SDK_TAPD_MAIN=1)",
-		)
-	}
-}
-
 // extractDockerFile copies a file from a running Docker container to a
 // temporary directory and returns the local path. The temp file is cleaned up
 // when the test finishes. It retries a few times with a short delay to handle

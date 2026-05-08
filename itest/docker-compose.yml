@@ -70,7 +70,7 @@ services:
 
   # ---------- tapd Alice ----------
   tapd-alice:
-    image: lightninglabs/taproot-assets:v0.8.0-rc1
+    image: lightninglabs/taproot-assets:v0.8.0-rc2
     container_name: tap-sdk-tapd-alice
     restart: unless-stopped
     depends_on:
@@ -91,7 +91,7 @@ services:
 
   # ---------- tapd Bob ----------
   tapd-bob:
-    image: lightninglabs/taproot-assets:v0.8.0-rc1
+    image: lightninglabs/taproot-assets:v0.8.0-rc2
     container_name: tap-sdk-tapd-bob
     restart: unless-stopped
     depends_on:

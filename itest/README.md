@@ -43,9 +43,8 @@ The pinned compose stack uses the tapd image in
 [`docker-compose.local.yml`](docker-compose.local.yml) rebuilds tapd from the
 upstream `taproot-assets` `main` branch.
 
-Use `make itest-main` while SDK `main` is ahead of the latest released tapd
-image. Some tests are gated by `TAP_SDK_TAPD_MAIN=1` when they require daemon
-features that are not in the pinned image yet.
+Use `make itest-main` when SDK `main` is ahead of the latest released tapd
+image and you need to validate behavior against unreleased daemon changes.
 
 ## Useful Knobs
 
