@@ -5,10 +5,10 @@ with code in this repository.
 
 ## Project Overview
 
-**tap-sdk** is the official Go SDK for building applications on the Taproot
-Assets protocol. It wraps the `tapd` (Taproot Assets daemon) gRPC interface,
-enabling developers to create, sign, and publish asset transfers without
-dealing with low-level protobuf types.
+**tap-sdk** is the Go source-of-truth implementation of the Taproot Assets
+application SDK. It exposes typed wallet, issuer, universe, proof, burn, and
+transfer surfaces over `tapd` without requiring application developers to deal
+with low-level protobuf types.
 
 **Status:** Pre-v1.0 (breaking API changes possible).
 See DEVELOPMENT_CYCLE.md.
@@ -51,7 +51,7 @@ tap-sdk/
 ├── internal/codec/ Cryptographic utilities (alt-leaves, STXO derivation)
 ├── macaroon/      Authentication helpers
 └── docs/
-    └── design/    Architecture decision records
+    └── design/    Durable design decisions
 ```
 
 ### Client Interface Hierarchy
@@ -156,7 +156,8 @@ When wrapping a new `tapd` RPC, follow this checklist:
 5. Optionally add a convenience method on `Wallet`
 6. Write unit tests with mocks + table-driven patterns
 7. Write integration tests if applicable
-8. Update CHANGELOG.md
+8. Update README or docs pages when the public surface changes
+9. Update CHANGELOG.md only when preparing a public release
 
 ## External Dependencies
 
@@ -180,10 +181,10 @@ types.
 
 ## Design Documents
 
-Create a design document under `docs/design/` before implementation only for
-non-trivial design work, architecture decisions, or public API redesigns.
-Straightforward low-level RPC wrappers do not need a dedicated design doc if
-no new user-facing design is being introduced.
+Create a design document under `docs/design/` only for durable API,
+architecture, or package-boundary decisions. Do not use `docs/design/` for
+short-lived implementation plans. Straightforward low-level RPC wrappers do
+not need a dedicated design doc if no new user-facing design is introduced.
 
 ## Testing
 

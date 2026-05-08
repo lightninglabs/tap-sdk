@@ -1,351 +1,214 @@
 # Architecture
 
-This document describes the architecture of `tap-sdk`, the official Go SDK
-for the Taproot Assets protocol.
+`tap-sdk` is a client-side SDK for applications that talk to `tapd`, the
+Taproot Assets daemon. The root package exposes the business API; transport
+packages own wire formats and connection setup.
 
-## Overview
+The current Go implementation is the source of truth for the public API model,
+but the design is intentionally language-portable. Future TypeScript, Rust,
+Python, Kotlin, and Swift SDKs should expose the same business concepts even if
+their package layout differs.
 
-`tap-sdk` is a client-side SDK that communicates with a running `tapd`
-(Taproot Assets daemon) instance over gRPC. It provides typed Go interfaces
-that encapsulate all protobuf types and gRPC details, enabling developers to
-build Taproot Assets applications without direct dependency on the
-`taproot-assets` repository.
-
-```
-┌─────────────────────────────────────────────────────┐
-│                   Application                       │
-│                                                     │
-│  Uses: Wallet, Issuer, Universe, TxBuilder, etc.    │
-├─────────────────────────────────────────────────────┤
-│                    tap-sdk                           │
-│                                                     │
-│  ┌────────┐ ┌────────┐ ┌──────────┐ ┌───────────┐ │
-│  │ Wallet │ │ Issuer │ │ Universe │ │ TxBuilder │ │
-│  └───┬────┘ └───┬────┘ └────┬─────┘ └─────┬─────┘ │
-│      │          │           │             │       │
-│  ┌───┴──────────┴───────────┴─────────────┴────┐  │
-│  │              Client Interfaces                │  │
-│  │  WalletClient | WalletKitClient | ProofClient │  │
-│  │                UniverseClient                 │  │
-│  └───────────────────┬───────────────────────────┘  │
-│                      │                              │
-│  ┌───────────────────┴───────────────────────────┐  │
-│  │       grpc/ + rest/ transport boundary        │  │
-│  │  marshal/unmarshal ←→ tapd wire formats       │  │
-│  └───────────────────┬───────────────────────────┘  │
-├──────────────────────┼──────────────────────────────┤
-│                      │ gRPC/REST + TLS + Macaroons  │
-│                      ▼                              │
-│              tapd (daemon)                          │
-└─────────────────────────────────────────────────────┘
-```
-
-## Package Structure
-
-### Root Package (`tapsdk`)
-
-The root package contains the high-level API surface:
-
-- **`Wallet`** — The primary entrypoint. Wraps a `Client` and provides
-  focused high-level methods for common operations (receive addresses, key
-  derivation, proof import, ownership proofs, asset listing, send, burn, and
-  transfer history).
-  Raw RPC-shaped operations remain available through `Wallet.Client()`.
-
-- **`Issuer`** — High-level minting surface returned by `Wallet.NewIssuer()`.
-  Creates fungible assets, issues more fungible supply, creates standalone
-  NFTs, creates NFT collections, and mints collection items without exposing
-  tapd mint batch control to application code.
-
-- **`Universe`** — High-level universe surface returned by
-  `Wallet.NewUniverse()`. Provides `AssetRef`-first known-asset checks, root
-  lookup, proof listing, proof lookup, and targeted sync helpers. Raw
-  protocol-shaped universe RPCs remain on `UniverseClient`.
-
-- **`TxBuilder`** — Builder pattern for address-based asset transfers.
-  Guides users through the Fund → Sign → Commit → Finish pipeline, with
-  explicit recipient methods for sender-chosen amounts and address-embedded
-  amounts.
-
-- **`InteractiveTxBuilder`** — Builder for interactive transfers where
-  the receiver provides keys directly instead of an address. Handles
-  vPSBT construction, funding, signing, and anchoring.
-
-- **Domain types** — Asset, collection, issuance, transfer, proof, key,
-  universe, and request/response types used by the public API. These live in
-  the root package so application code can usually import only
-  `github.com/lightninglabs/tap-sdk`.
-
-- **`Client`** — The composite interface embedding all sub-clients.
-
-- **`Error`** — SDK error type that wraps gRPC errors with operation
-  context and convenience methods (`IsNotFound`, `IsUnavailable`, etc.).
-
-### Domain Types
-
-The root package owns the SDK's public business types. They are pure Go types
-with no proto dependencies and no dependency on the transport packages.
-
-Design rules:
-- Fixed-size byte arrays for identifiers (`AssetID [32]byte`,
-  `PubKey [33]byte`, `XOnlyPubKey [32]byte`)
-- Helper methods for parsing and string conversion
-- Request/response structs for API operations
-- No proto imports, no gRPC dependencies
-- High-level APIs must preserve the SDK's semantic asset model:
-  fungible assets, NFT items, and collections are passed around by
-  `AssetRef`; raw group keys and concrete issuance asset IDs are protocol
-  details for low-level records and diagnostics.
-
-### `grpc/`
-
-The gRPC boundary layer. This package imports `taprpc` and returns root
-package SDK types.
-
-Responsibilities:
-- Connect to `tapd` with TLS and macaroon authentication
-- Implement all `Client` interface methods via gRPC calls
-- Marshal SDK types → proto requests
-- Unmarshal proto responses → SDK types
-- Apply timeouts and context propagation
-
-Each sub-client wraps a specific gRPC service:
-
-| Sub-client | gRPC Service | Macaroon |
-|------------|-------------|----------|
-| `walletClient` | `TaprootAssets` | admin |
-| `walletKitClient` | `AssetWallet` | walletkit |
-| `proofClient` | `TaprootAssets` | proof |
-| `universeClient` | `Universe` | universe |
-| `mintClient` | `Mint` | mint |
-| `eventClient` | `TaprootAssets`, `Mint` | admin, mint |
-
-### Event Subscriptions
-
-`EventClient` exposes the three server-streaming RPCs (`SubscribeReceive`,
-`SubscribeSend`, `SubscribeMint`) as typed channels that deliver SDK
-entities until the caller's context is cancelled.
-
-- The **gRPC** client consumes the native server-streaming RPCs directly.
-- The **REST** client dials the grpc-gateway WebSocket bridge
-  (`wss://.../v1/taproot-assets/events/*?method=POST`), writes the JSON
-  request as the first frame, and decodes each incoming
-  `{"result": ...}` envelope into an SDK event. Errors arrive inside
-  `{"error": ...}` envelopes and surface as `*APIError` on the error
-  channel so callers can use the same `status`/`codes` helpers they use
-  for unary calls.
-
-The high-level `tapsdk.EventListener` sits on top of `EventClient` and
-adds reconnect/backoff, so the two transports share reconnection
-behavior.
-
-`EventClient.SubscribeSendEvents` / `SubscribeReceiveEvents` deliver raw
-records (`SendEventRecord`, `ReceiveEventRecord`) for advanced consumers
-that need PSBTs, virtual packets, or other protocol-shaped fields. The
-high-level `EventListener` projects these records into the AssetRef-keyed
-`SendEvent` and `ReceiveEvent` shapes before invoking handlers, so
-application code stays on the same semantic asset handles used by the
-rest of the Wallet API.
-
-Transfer records include tapd's asset type for each input and output. The
-SDK uses it when projecting raw transfer rows so grouped fungibles stay keyed
-by their group `AssetRef`, while NFT collection items stay keyed by their
-concrete item `AssetRef`. Receive addresses for NFT collections are still
-collection `AssetRef`s because the concrete item is chosen at send time;
-completed send events and transfer history expose the item `AssetRef` once
-tapd has recorded the transfer.
-
-### `internal/vpsbt/`
-
-Virtual PSBT (vPSBT) encoding for interactive transfers. This internal package
-constructs the binary vPSBT format that `tapd` expects for the
-`FundVirtualPsbt` RPC. It is not part of the application-facing SDK surface.
-
-Key type: `InteractiveVPacket` — Contains asset ID, amount, receiver keys,
-lock times, and alt-leaves. Encodes to a BIP-174 compatible PSBT with
-Taproot Assets-specific key-value pairs.
-
-### `internal/codec/`
-
-Internal cryptographic utilities:
-
-- **Alt-leaves** — TLV encoding for auxiliary Taproot leaves committed
-  alongside asset commitments
-- **STXO derivation** — Deriving provably unspendable burn keys by
-  tweaking a NUMS point
-- **VarInt** — BIP-174/TLV compact integer encoding
-
-### `macaroon/`
-
-Macaroon authentication helpers:
-
-- Load macaroons from files, directories, or hex strings via a
-  typed `Source`. Normal SDK users can use the root helpers
-  (`tapsdk.MacaroonFromPath`, `MacaroonFromDir`, and `MacaroonFromHex`);
-  direct transport callers can use `macaroon.FromPath`, `FromDir`, and
-  `FromHex`.
-- Attach macaroon metadata to gRPC contexts
-- Support per-service macaroon granularity
-
-## TLS and Authentication
-
-The SDK communicates with `tapd` over TLS with macaroon-based authentication.
-Both inputs are supplied as typed sources on the direct gRPC/REST transport
-configs. Exactly one choice per field is enforced at compile time.
-
-### TLS Configuration
-
-`grpc.Config.TLS` and `rest.Config.TLS` take transport-specific `TLSSource`
-values:
-
-| Constructor | Behavior |
-|-------------|----------|
-| (nil) | Load cert from tapd default path (`~/.tapd/tls.cert`) |
-| `TLSFromPath(path)` | Load cert from a custom file path |
-| `TLSFromData(pem)` | Use PEM-encoded certificate data directly |
-| `TLSSystemCert()` | Trust the system certificate pool |
-| `TLSInsecure()` | Skip TLS verification (testing only) |
-
-Since `TLS` is a single field, conflicting combinations cannot be
-expressed — previously-runtime errors like `ErrTLSConflict` are
-replaced by a type-checked choice.
-
-### TLS Hardening
-
-**Minimum version floor.** The SDK enforces TLS 1.2 as the minimum
-protocol version. This is configurable via `Config.TLSMinVersion`
-(use `crypto/tls` constants). Go's TLS implementation already
-defaults to 1.2, but the SDK is explicit to prevent regressions.
-
-**Certificate pinning.** Set `Config.TLSPinnedCertFingerprint` to
-a hex-encoded SHA-256 digest of the expected server leaf certificate.
-When set, the SDK rejects connections to any server presenting a
-different certificate. The fingerprint can use colons as separators
-(e.g. `aa:bb:cc:...`).
-
-To obtain a fingerprint from an existing `tapd` TLS certificate:
-
-```bash
-openssl x509 -in ~/.tapd/tls.cert -outform DER | \
-  sha256sum | awk '{print $1}'
-```
-
-### Macaroon Authentication
-
-Each gRPC sub-client uses a service-specific macaroon:
-
-| Sub-client | Macaroon |
-|------------|----------|
-| walletClient | `admin.macaroon` |
-| walletKitClient | `walletkit.macaroon` |
-| proofClient | `proof.macaroon` |
-| universeClient | `universe.macaroon` |
-| mintClient | `mint.macaroon` |
-
-Macaroons can be loaded from a directory, a specific file path, or
-hex-encoded data.
-
-## Transfer Flows
-
-### Address-Based Send
-
-The normal address-based receive flow should prefer V2 addresses. Older
-address versions remain available for advanced compatibility use through the
-lower-level client surface, but they are not the default UX the SDK should
-promote.
+## System View
 
 ```
-Sender                             tapd
-  │                                  │
-  ├─ TxBuilder.AddRecipient(addr, amount)
-  │  or AddTapAddress(addr) ──────►│
-  ├─ TxBuilder.Fund() ──────────►│ FundVirtualPsbt
-  ├─ TxBuilder.Sign() ──────────►│ SignVirtualPsbt
-  ├─ TxBuilder.Commit() ────────►│ CommitVirtualPsbts
-  ├─ TxBuilder.Finish() ────────►│ PublishAndLogTransfer
-  │                                  │
-  │  (proof courier delivers proof)  │
+Application
+  │
+  │ uses AssetRef, Wallet, Issuer, Universe, TxBuilder
+  ▼
+tap-sdk root package
+  │
+  │ Client interface
+  ▼
+grpc/ or rest/
+  │
+  │ tapd RPC over TLS + macaroons
+  ▼
+tapd
+  │
+  ├─ lnd wallet/signing backend
+  └─ Taproot Assets state, proofs, universe, mint batches
 ```
 
-### Interactive Send
+## Package Boundaries
 
-```
-Receiver                Sender                      tapd
-  │                       │                           │
-  ├─ DeriveKeys() ──────►│                           │
-  │  (share keys)         │                           │
-  │                       ├─ SetAsset(id, amt) ──────►│
-  │                       ├─ SetReceiverKeys(keys) ──►│
-  │                       ├─ Execute() ──────────────►│
-  │                       │   (build vPSBT internally)│
-  │                       │   FundInteractivePsbt ───►│
-  │                       │   SignVirtualPsbt ────────►│
-  │                       │   AnchorVirtualPsbts ─────►│
-  │                       │                           │
-  │  (sender delivers     │                           │
-  │   proof out-of-band)  │                           │
-  │                       │                           │
-  ├─ ImportProofFile() ──►│                           │
-  │   UnpackProofFile ────┼──────────────────────────►│
-  │   InsertProof (×N) ──┼──────────────────────────►│
-  │   RegisterTransfer ──┼──────────────────────────►│
-```
+| Package | Boundary |
+|---------|----------|
+| `tapsdk` | Business API, domain types, high-level wallet/issuer/universe surfaces, builders, errors |
+| `grpc` | Native gRPC client, TLS setup, macaroon auth, proto marshal/unmarshal |
+| `rest` | REST client, TLS setup, macaroon auth, JSON marshal/unmarshal, WebSocket event streams |
+| `macaroon` | Low-level macaroon source helpers shared by transports |
+| `internal/anchor` | Anchor PSBT helpers |
+| `internal/codec` | Internal TLV/alt-leaf/STXO encoding helpers |
+| `internal/vpsbt` | Virtual PSBT encoding for interactive transfers |
 
-## Error Strategy
+The root package must not import transport packages. Transports import the
+root package and return root SDK types. That one-way dependency keeps the
+business API stable even if the repo layout changes later.
 
-The SDK uses a single `Error` type that wraps all failures:
+## Domain Model
+
+The SDK separates user-facing business concepts from tapd protocol details.
+
+| Concept | Meaning |
+|---------|---------|
+| `AssetRef` | Opaque, storable handle for an asset in the SDK API |
+| `Asset` | A fungible token or one NFT item |
+| `Collection` | A group of NFT items |
+| `Issuance` | One concrete protocol issuance/tranche of a fungible asset |
+| `AssetRecord` | Low-level wallet row that still exposes protocol details |
+| `Balance` | Confirmed balance for one semantic `AssetRef` |
+| `Transfer` / `Burn` | Asset movement or destruction keyed by `AssetRef` |
+
+Grouped fungibles are keyed by group `AssetRef`. Standalone NFTs and NFT
+collection items are keyed by asset-ID `AssetRef`. Collections are keyed by
+group `AssetRef`, but a collection is not itself an asset.
+
+See [Asset Model](asset-model.md) for more detail.
+
+## High-Level Surfaces
+
+### Wallet
+
+`Wallet` is the primary application surface. It wraps a `Client` and exposes
+common operations using `AssetRef`:
+
+- receive addresses
+- sends and multi-sends
+- balances, assets, issuances, collections, transfers
+- proof import/export
+- burns
+- ownership proofs
+- transaction builders
+- event listeners
+- access to `Issuer` and `Universe`
+
+Low-level RPC-shaped methods remain available through `wallet.Client()` for
+advanced callers.
+
+### Issuer
+
+`Issuer` hides tapd mint batch mechanics behind business actions:
+
+- `CreateFungible`
+- `IssueFungible`
+- `CreateNFT`
+- `CreateCollection`
+- `MintCollectionItem`
+
+The issuer serializes its own mint operations because tapd has one active mint
+batch per daemon. If a mint result times out while resolving, callers should
+inspect wallet assets or batches before retrying to avoid duplicate issuance.
+
+### Universe
+
+`Universe` is the high-level discovery and proof surface:
+
+- `HasAsset`
+- `GetRoots`
+- `ListProofs`
+- `GetProof`
+- `SyncAsset`
+- `SyncAssets`
+
+The high-level API takes `AssetRef`. The low-level `UniverseClient` remains
+available for direct protocol-shaped universe operations.
+
+## Transport Model
+
+Both transports satisfy the same root `Client` interface.
 
 ```go
-type Error struct {
-    Op  string  // Operation that failed
-    Err error   // Underlying error (often gRPC status)
+type Client interface {
+    WalletClient
+    WalletKitClient
+    ProofClient
+    UniverseClient
+    MintClient
+    EventClient
+    Close() error
 }
 ```
 
-Classification methods check the underlying gRPC status code:
-- `IsNotFound()` — resource doesn't exist
-- `IsUnavailable()` — `tapd` is unreachable
-- `IsInvalidArgument()` — bad input
+The gRPC transport consumes native server-streaming RPCs. The REST transport
+uses tapd's grpc-gateway JSON endpoints and WebSocket bridge for event streams.
+Both transports map tapd responses to the same root SDK types and error
+surface.
 
-Sentinel errors exist for builder state violations:
-- `ErrBuilderFinished` — builder already executed
-- `ErrNotFunded` — attempted to sign before funding
-- `ErrNotSigned` — attempted to commit before signing
-- `ErrNoRecipients` — no recipients configured
+## TLS and Macaroons
 
-## Dependency Boundary
+Transport configs accept typed TLS and macaroon sources:
 
-The SDK enforces a strict dependency boundary between consumers and the
-`taproot-assets` ecosystem:
+```go
+client, err := tapgrpc.NewClient(&tapgrpc.Config{
+    Host:     "localhost:10029",
+    Network:  tapsdk.NetworkRegtest,
+    TLS:      tapgrpc.TLSFromPath("/path/to/tls.cert"),
+    Macaroon: tapsdk.MacaroonFromPath("/path/to/admin.macaroon"),
+})
+```
 
-- **No `taprpc` types in public signatures.** Every exported type, function,
-  and method outside transport packages is defined entirely in terms of root
-  SDK types and Go/btcsuite primitives. Consumers never need to import
-  `taproot-assets/taprpc` or any of its sub-packages.
+TLS supports:
 
-- **Transport packages own wire details.** All proto imports,
-  marshal/unmarshal functions, and raw RPC client types are confined to
-  transport packages. The sub-client structs (`walletClient`,
-  `proofClient`, etc.) are unexported, and their internal helper methods are
-  also unexported to prevent wire types from leaking through embedding.
+- default tapd certificate path
+- certificate file
+- certificate PEM data
+- system certificate pool
+- explicit insecure mode for local tests
+- minimum TLS version
+- optional SHA-256 certificate pinning
 
-- **`taproot-assets/taprpc` is a lightweight module.** The `go.mod`
-  dependency is on `taproot-assets/taprpc`, which is a standalone Go module
-  containing only protobuf definitions. It does NOT pull the full
-  `taproot-assets` repository with its heavy dependencies (bbolt, neutrino,
-  btcwallet, etc.).
+Macaroons can be loaded from one file, a directory of per-service macaroons,
+or one hex-encoded macaroon.
 
-- **Consumer `go.mod` impact.** When a consumer runs
-  `go get github.com/lightninglabs/tap-sdk`, the `taproot-assets/taprpc`
-  module appears as an indirect dependency. Consumers who only import the
-  root package never interact with it directly.
+See [Transports and Auth](transports.md).
 
-## Future Directions
+## Events
 
-1. **Complete RPC coverage** — Wrap remaining `tapd` RPCs where low-level
-   access is still useful, without turning the public SDK surface into a thin
-   `taprpc` mirror
-2. **Asset minting** — High-level mint workflows via the Mint service,
-   redesigned around fungible/non-fungible concepts instead of raw RPC shape
-3. **Multi-language bindings** — WASM, Python, mobile via FFI
-4. **Integration test suite** — Regtest-based tests against a real `tapd`
+The low-level `EventClient` streams tapd event records. The high-level
+`EventListener` projects those records into SDK business events:
+
+- `MintEvent`
+- `SendEvent`
+- `ReceiveEvent`
+
+Transfer rows include tapd asset type data. The SDK uses that field to keep
+grouped fungibles keyed by group `AssetRef` while NFT collection items stay
+keyed by concrete item `AssetRef`.
+
+## Error Surface
+
+SDK methods wrap failures in `*tapsdk.Error` where possible:
+
+```go
+type Error struct {
+    Op  string
+    Err error
+}
+```
+
+Errors preserve the underlying gRPC status when available, including REST
+responses that originate from grpc-gateway. Common conditions also map to
+sentinel errors such as `ErrAssetUnknown`, `ErrInsufficientBalance`,
+`ErrProofNotFound`, `ErrPermissionDenied`, and `ErrUnsupportedByTapd`.
+
+## Compatibility Boundary
+
+The SDK targets tapd v0.8.0 or newer. Older versions do not expose enough
+asset type data for the SDK to reliably distinguish grouped fungibles from NFT
+collection items across transfers, burns, and events.
+
+See [Compatibility](compatibility.md).
+
+## Design Principles
+
+1. **Developer-facing first.** The SDK should expose business operations, not
+   raw tapd nouns, unless a caller intentionally drops to the low-level client.
+2. **`AssetRef` everywhere.** Application code should store and pass one asset
+   handle across wallet, issuer, proof, burn, event, and universe flows.
+3. **Honest names.** Assets, collections, and issuances are distinct concepts.
+   The SDK should not hide that distinction behind a generic type.
+4. **Transport parity.** gRPC and REST should return the same SDK types and
+   comparable errors.
+5. **Portable API model.** Go package layout should not leak into the long-term
+   SDK model intended for other languages.

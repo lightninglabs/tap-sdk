@@ -1,28 +1,35 @@
 ---
 name: Enhancement request
-about: Request a new feature or change to an existing feature
+about: Request a new SDK feature or API improvement
 title: ''
-labels: 'enhancement'
+labels: enhancement
 assignees: ''
 ---
 
-**Describe the enhancement**  
-<!-- A clear and concise description of what you would like added or changed. -->
+## Summary
 
-**Use case**  
-<!-- Tell us how you or others will use this new feature or change to an existing feature. -->
+<!-- What should be added or improved? -->
 
-**Impact**
-- [ ] Blocking production usage
-- [ ] Nice-to-have / UX improvement
-- [ ] Developer experience / maintainability
+## Use Case
 
-**Are you using Tap SDK in a production project?**
-- [ ] Yes
-- [ ] No
-- [ ] Not yet, but planning to
+<!-- What are you building, and how would this help? -->
 
-**Project or organization (optional)**
+## Proposed API
 
-**Additional context**
-<!-- Add any other context, links, or design thoughts here. -->
+<!-- Optional sketch. Prefer AssetRef-first APIs where possible. -->
+
+## Scope
+
+- [ ] Wallet
+- [ ] Issuer / minting
+- [ ] Universe
+- [ ] Proofs
+- [ ] Burns
+- [ ] Events
+- [ ] TxBuilder
+- [ ] Transport / auth
+- [ ] Documentation
+
+## Additional Context
+
+<!-- Links, examples from tapd, or related issues. -->

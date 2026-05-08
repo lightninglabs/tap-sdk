@@ -1,162 +1,88 @@
-# Contributing to tap-sdk
+# Contributing
 
-## Getting Started
+Thanks for helping improve `tap-sdk`. The project is pre-v1, so API changes
+are still possible, but they should be intentional and backed by tests.
 
-1. Fork the repository
-2. Clone your fork
-3. Create a feature branch from `main`
-4. Make your changes
-5. Submit a pull request
+## Setup
 
-## Development Setup
-
-### Prerequisites
+Requirements:
 
 - Go 1.25.7+
-- Docker (for linting)
-- A running `tapd` instance (for integration tests)
+- Docker and Docker Compose
+- A local `tapd` only when running manual tests outside the regtest stack
 
-### Building
+Useful commands:
 
 ```bash
 make build
-```
-
-### Running Tests
-
-```bash
-# All unit tests
-make unit
-
-# Specific package
-make unit pkg=.
-
-# Specific test case
-make unit pkg=. case=TestParseAssetID
-```
-
-### Linting
-
-```bash
-make lint
-```
-
-### Formatting
-
-```bash
 make fmt
+make unit
+make lint workers=4
 ```
 
-## Code Style
+Integration tests:
 
-This project follows Lightning Labs coding conventions. The full style guide
-is in `.gemini/styleguide.md`. Key points:
-
-### Line Length
-
-Lines MUST NOT exceed 80 characters. Tabs count as 8 spaces.
-
-### Function Comments
-
-Every exported function must have a comment that starts with the function
-name and forms a complete sentence.
-
-```go
-// DeriveScriptKey derives a new script key for receiving assets.
-// The script key includes both the internal key and the tweaked
-// Taproot output key.
-func (w *Wallet) DeriveScriptKey(ctx context.Context) (
-	*ScriptKey, error) {
+```bash
+make itest       # pinned tapd image
+make itest-main  # tapd built from taproot-assets main
 ```
 
-### Wrapping
+Prefer `make itest-main` while SDK `main` depends on unreleased tapd v0.8
+features.
 
-If a function call exceeds 80 characters, place the closing parenthesis on
-its own line:
+## Development Principles
 
-```go
-value, err := bar(
-	a, b, c,
-)
+- Keep the high-level API `AssetRef`-first.
+- Preserve the distinction between `Asset`, `Collection`, and `Issuance`.
+- Put SDK business types in the root package.
+- Keep tapd wire details inside `grpc` and `rest`.
+- Do not expose `taprpc` types in public signatures outside transport
+  packages.
+- Add integration tests for user-facing workflows, not just marshal helpers.
+
+Read:
+
+- [Architecture](docs/architecture.md)
+- [Asset Model](docs/asset-model.md)
+- [Design Decisions](docs/design/README.md)
+- [Integration Tests](itest/README.md)
+
+## Style
+
+Follow Lightning Labs Go conventions:
+
+- 80 character line limit where practical
+- exported declarations have comments starting with the declaration name
+- comments explain useful context, not obvious code mechanics
+- table-driven tests with `require`
+- `make fmt` for imports and formatting
+
+## Commits
+
+Format:
+
+```text
+subsystem: short description
 ```
 
-### Error Messages
+Examples:
 
-Keep error and log messages compact:
+- `wallet: add ownership proof helper`
+- `grpc: map burn asset type`
+- `docs: refresh public README`
 
-```go
-return fmt.Errorf("failed to fund transfer with %d "+
-	"recipients", len(recipients))
-```
-
-### Tests
-
-Use table-driven tests with `require` assertions:
-
-```go
-func TestParseAssetID(t *testing.T) {
-	tests := []struct {
-		name    string
-		input   []byte
-		want    AssetID
-		wantErr bool
-	}{
-		{
-			name:  "valid 32 bytes",
-			input: bytes.Repeat([]byte{0xab}, 32),
-			want:  func() AssetID { /* ... */ }(),
-		},
-		{
-			name:    "too short",
-			input:   []byte{0x01},
-			wantErr: true,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := ParseAssetID(tc.input)
-			if tc.wantErr {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-			require.Equal(t, tc.want, got)
-		})
-	}
-}
-```
-
-## Commit Messages
-
-Format: `subsystem: short description`
-
-- `subsystem` is the package primarily affected
-- Use `+` or `,` for multiple packages: `wallet+grpc: add balance types`
-- Use `multi:` for widespread changes
-- Keep subject under 50 characters
-- Use present tense ("add feature", not "added feature")
-- Body explains "what" and "why", wrapped at 72 characters
+Commit subjects should be concise. Body lines should be wrapped to roughly 72
+characters when a body is useful.
 
 ## Pull Requests
 
-### Before Submitting
+Before opening or updating a PR:
 
-- [ ] All tests pass (`make unit`)
-- [ ] Linting passes (`make lint`)
-- [ ] Code is formatted (`make fmt`)
-- [ ] Commits are granular and logical (not incremental)
-- [ ] New features have tests
-- [ ] New features have documentation
-- [ ] CHANGELOG.md is updated
+- run `make fmt`
+- run `make unit`
+- run `make lint workers=4`
+- run focused itests when the change touches SDK workflows
+- update docs when the public API changes
 
-### Design Documents
-
-For non-trivial changes (new RPC wrappers, architecture changes, new
-packages), create a design document under `docs/design/` before
-implementing. This ensures alignment before code is written.
-
-## Architecture
-
-See [AGENTS.md](AGENTS.md) for architecture overview and
-[docs/architecture.md](docs/architecture.md) for detailed design.
+Use a design document under `docs/design/` for durable API or architecture
+decisions. Do not add implementation plans to `docs/design/`.
