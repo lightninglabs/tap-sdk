@@ -1,6 +1,6 @@
 # Local-only override that rebuilds tapd from taproot-assets `main` each
-# time the stack is brought up. Use it when you need unreleased features
-# (e.g. burn by group key) that are not yet in the pinned upstream image.
+# time the stack is brought up. Use it when you need to validate SDK changes
+# against unreleased tapd behavior before the next release candidate image.
 #
 # Usage:
 #   docker compose \
@@ -8,7 +8,7 @@
 #     -f itest/docker-compose.local.yml \
 #     up -d --build
 #
-#   TAP_SDK_TAPD_MAIN=1 go test -tags=itest -timeout=20m ./itest/...
+#   go test -tags=itest -timeout=20m ./itest/...
 #
 # CI does not use this file — it keeps the pinned image so the workflow
 # stays reproducible until the next tapd release.

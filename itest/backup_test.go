@@ -13,11 +13,8 @@ import (
 )
 
 // TestBackupRestore verifies that SDK backup blobs round-trip through tapd and
-// surface restored assets through the normal ListAssets API. The backup RPCs
-// are tapd-main only relative to the pinned CI image.
+// surface restored assets through the normal ListAssets API.
 func TestBackupRestore(t *testing.T) {
-	requireTapdMain(t)
-
 	runForTransports(t, func(t *testing.T, transport Transport) {
 		h, ctx := newFundedHarnessFor(t, transport)
 

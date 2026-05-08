@@ -148,12 +148,8 @@ func TestBurnAsset(t *testing.T) {
 	})
 }
 
-// TestBurnAssetByGroupKey burns units selected through a group-key
-// AssetRef. The underlying RPC gained group-key support after v0.7.2, so
-// this test is gated on a tapd main build.
+// TestBurnAssetByGroupKey burns units selected through a group-key AssetRef.
 func TestBurnAssetByGroupKey(t *testing.T) {
-	requireTapdMain(t)
-
 	runForTransports(t, func(t *testing.T, transport Transport) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
@@ -194,8 +190,6 @@ func TestBurnAssetByGroupKey(t *testing.T) {
 // TestBurnCollectionItemUsesItemAssetRef verifies a burnt collection item is
 // keyed by the NFT item AssetRef, not the collection AssetRef.
 func TestBurnCollectionItemUsesItemAssetRef(t *testing.T) {
-	requireTapdMain(t)
-
 	runForTransports(t, func(t *testing.T, transport Transport) {
 		h, ctx := newFundedHarnessFor(t, transport)
 

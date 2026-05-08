@@ -168,7 +168,7 @@ itest-up-main:
 	@bash itest/scripts/wait-healthy.sh
 
 itest-down-main:
-	@$(call print, "Stopping itest stack (main build).")
+	@$(call print, "Stopping itest stack (tapd main).")
 	$(DOCKER) compose -f $(ITEST_COMPOSE_MAIN) down -v
 
 itest-run:
@@ -176,8 +176,8 @@ itest-run:
 	$(ITEST_GOTEST) -tags=itest -timeout=$(ITEST_TIMEOUT) $(ITEST_RUN_FLAG) $(ITEST_ARGS) ./itest/...
 
 itest-run-main:
-	@$(call print, "Running itest Go suite including tapd-main gated tests.")
-	TAP_SDK_TAPD_MAIN=1 $(ITEST_GOTEST) -tags=itest -timeout=$(ITEST_TIMEOUT) $(ITEST_RUN_FLAG) $(ITEST_ARGS) ./itest/...
+	@$(call print, "Running itest Go suite against tapd main.")
+	$(ITEST_GOTEST) -tags=itest -timeout=$(ITEST_TIMEOUT) $(ITEST_RUN_FLAG) $(ITEST_ARGS) ./itest/...
 
 itest: itest-up
 	@set -e; \

@@ -25,8 +25,6 @@ import (
 // TestReadOnlyMacaroon validates the SDK behavior with a custom macaroon that
 // can read daemon and asset state but cannot mutate assets.
 func TestReadOnlyMacaroon(t *testing.T) {
-	requireTapdMain(t)
-
 	tlsPath := extractDockerFile(t, "tap-sdk-tapd-alice",
 		"/root/.tapd/tls.cert")
 	adminMacPath := extractDockerFile(t, "tap-sdk-tapd-alice",
