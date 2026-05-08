@@ -1,33 +1,14 @@
-<!-- You can erase any parts of this template not applicable to your Pull Request. -->
+## Summary
 
-### Description
+<!-- What changed and why? -->
 
-<!-- Describe the purpose of this PR, what's being adding and/or fixed -->
+## Notes for Reviewers
 
-### Notes to the reviewers
+<!-- API decisions, tapd dependencies, tradeoffs, or follow-up work. -->
 
-<!-- In this section you can include notes directed to the reviewers, like explaining why some parts
-of the PR were done in a specific way -->
+## Checklist
 
-### Changelog notice
-
-<!-- Notice the release manager should include in the release tag message changelog -->
-<!-- See https://keepachangelog.com/en/1.0.0/ for examples -->
-
-### Checklists
-
-#### All Submissions:
-
-* [ ] I've signed all my commits
-* [ ] I followed the [contribution guidelines](https://github.com/lightninglabs/tap-sdk/blob/master/CONTRIBUTING.md)
-
-#### New Features:
-
-* [ ] I've added tests for the new feature
-* [ ] I've added docs for the new feature
-
-#### Bug Fixes:
-
-* [ ] This pull request breaks the existing API
-* [ ] I've added tests to reproduce the issue which are now passing
-* [ ] I'm linking the issue being fixed by this PR
+- [ ] Commits are signed
+- [ ] Public API changes are reflected in docs
+- [ ] New user-facing behavior has unit tests or itests
+- [ ] Relevant checks were run locally

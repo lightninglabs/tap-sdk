@@ -1,31 +1,39 @@
 ---
 name: Bug report
-about: Create a report to help us improve
+about: Report a problem with tap-sdk
 title: ''
-labels: 'bug'
+labels: bug
 assignees: ''
-
 ---
 
-**Describe the bug**  
-<!-- A clear and concise description of what the bug is. -->
+## Summary
 
-**To Reproduce**  
-<!-- Steps or code to reproduce the behavior. -->
+<!-- What happened? -->
 
-**Expected behavior**  
-<!-- A clear and concise description of what you expected to happen. -->
+## Reproduction
 
-**Build environment**  
-- Tapd version: <!-- e.g. v0.7.0 --> 
-- LND version: <!-- e.g. v0.20.0 --> 
-- OS + version: <!-- e.g. ubuntu 20.04.01, macOS 12.0.1, windows -->  
+<!-- Minimal code, command, or itest-style flow that reproduces the problem. -->
 
-**Is this blocking production use?**
-- [ ] Yes
-- [ ] No
+## Expected Behavior
 
-**Project or organization (optional)**  
+<!-- What should have happened? -->
 
-**Additional context**  
-<!-- Add any other context, logs, or error messages here. -->
+## Environment
+
+- tap-sdk version or commit:
+- tapd / Taproot Assets version: <!-- v0.8.0 or newer -->
+- lnd version:
+- Transport: <!-- grpc, rest, or both -->
+- Network: <!-- mainnet, testnet, signet, regtest, simnet -->
+- OS:
+
+## Impact
+
+- [ ] Blocking production usage
+- [ ] Incorrect asset/proof/balance behavior
+- [ ] Developer experience issue
+- [ ] Documentation issue
+
+## Additional Context
+
+<!-- Logs, errors, links, screenshots, or related taproot-assets issues. -->

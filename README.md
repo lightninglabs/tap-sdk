@@ -1,37 +1,62 @@
-# tap-sdk
+<div align="center">
+  <h1>tap-sdk</h1>
 
-The official Go SDK for building applications on the
-[Taproot Assets](https://github.com/lightninglabs/taproot-assets) protocol.
+  <p>
+    <strong>Build Taproot Assets applications without speaking raw tapd RPC.</strong>
+  </p>
 
-`tap-sdk` wraps the `tapd` gRPC interface and provides typed Go APIs for
-common Taproot Assets workflows without exposing `taprpc` types in the public
-surface.
+  <p>
+    <a href="https://pkg.go.dev/github.com/lightninglabs/tap-sdk"><img alt="Go Reference" src="https://pkg.go.dev/badge/github.com/lightninglabs/tap-sdk.svg"/></a>
+    <a href="https://github.com/lightninglabs/tap-sdk/actions"><img alt="CI" src="https://github.com/lightninglabs/tap-sdk/actions/workflows/main.yml/badge.svg"/></a>
+    <a href="LICENSE"><img alt="MIT Licensed" src="https://img.shields.io/badge/license-MIT-blue.svg"/></a>
+    <a href="go.mod"><img alt="Go 1.25.7+" src="https://img.shields.io/badge/go-1.25.7%2B-lightgrey.svg"/></a>
+  </p>
+</div>
 
-## Status
+`tap-sdk` is the application SDK for
+[Taproot Assets](https://github.com/lightninglabs/taproot-assets). It wraps a
+running `tapd` node with a typed, developer-facing API for issuing, receiving,
+sending, proving, burning, and discovering assets.
 
-**Pre-v1.0**. The API is evolving.
+The SDK intentionally does not mirror tapd one-to-one. It exposes the asset
+model developers usually want:
 
-The current SDK surface requires `tapd` from Taproot Assets v0.8.0 or newer.
-Older daemons are unsupported because wallet transfers must include per-row
-asset type data for correct `AssetRef` projection, especially for NFT
-collections.
+- `AssetRef` as the stable handle for assets across wallet, issuer, proof,
+  burn, balance, event, and universe flows.
+- `Asset`, `Collection`, and `Issuance` as distinct business concepts.
+- High-level `Wallet`, `Issuer`, and `Universe` surfaces for common workflows.
+- Direct `grpc` and `rest` transport packages for connection setup and advanced
+  RPC-shaped access.
 
-## Installation
+The Go package is the first implementation. The API model is designed to be
+portable to TypeScript, Rust, Python, Kotlin, and Swift bindings over time.
+
+## Install
 
 ```bash
 go get github.com/lightninglabs/tap-sdk
 ```
 
-## Quick Start
+## Compatibility
 
-### Connect to tapd
+| tap-sdk | tapd / Taproot Assets | lnd | Go |
+|---------|------------------------|-----|----|
+| `main` / first public release line | v0.8.0 or newer | v0.20.x | 1.25.7+ |
+
+Older `tapd` versions are unsupported. The SDK relies on v0.8 wallet and event
+fields to map grouped fungibles, standalone NFTs, NFT collection items, burns,
+and transfers onto the correct `AssetRef`.
+
+During release-candidate development, use `tapd` `main` or the latest v0.8 RC.
+See [Compatibility](docs/compatibility.md) for the detailed matrix.
+
+## Quick Start
 
 ```go
 package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
@@ -39,9 +64,13 @@ import (
 )
 
 func main() {
+	ctx := context.Background()
+
 	client, err := tapgrpc.NewClient(&tapgrpc.Config{
-		Host:    "localhost:10029",
-		Network: tapsdk.NetworkRegtest,
+		Host:     "localhost:10029",
+		Network:  tapsdk.NetworkRegtest,
+		TLS:      tapgrpc.TLSFromPath("/path/to/tls.cert"),
+		Macaroon: tapsdk.MacaroonFromPath("/path/to/admin.macaroon"),
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -49,184 +78,62 @@ func main() {
 	defer client.Close()
 
 	wallet := tapsdk.NewWallet(client, tapsdk.NetworkRegtest)
+	issuer := wallet.NewIssuer()
 
-	ctx := context.Background()
-	info, err := wallet.Client().GetInfo(ctx)
+	token, err := issuer.CreateFungible(ctx, tapsdk.FungibleAssetSpec{
+		Name:   "example-token",
+		Amount: 1_000_000,
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("tapd %s on %s (block %d)\n",
-		info.Version, info.Network, info.BlockHeight)
-}
-```
-
-### Address-based wallet operations
-
-```go
-transfer, err := wallet.Send(ctx, recipientAddr, tapsdk.WithAmount(100))
-if err != nil {
-	log.Fatal(err)
-}
-
-fmt.Printf("Anchor tx: %s\n", transfer.AnchorTxid)
-
-batch, err := wallet.SendMulti(ctx, []tapsdk.Recipient{
-	tapsdk.RecipientWithAmount(firstRecipientAddr, 100),
-	tapsdk.RecipientWithEmbeddedAmount(secondRecipientAddr),
-})
-if err != nil {
-	log.Fatal(err)
-}
-
-fmt.Printf("Batch anchor tx: %s\n", batch.AnchorTxid)
-
-burn, err := wallet.Burn(ctx, assetRef, 10, tapsdk.WithBurnNote("cleanup"))
-if err != nil {
-	log.Fatal(err)
-}
-
-fmt.Printf("Burned %d units of %s\n", burn.Amount, burn.AssetRef)
-
-transfers, err := wallet.ListTransfers(ctx, nil)
-if err != nil {
-	log.Fatal(err)
-}
-
-fmt.Printf("wallet has %d outgoing transfers\n", len(transfers))
-```
-
-### Issue assets
-
-`Wallet.NewIssuer()` is the preferred minting entrypoint. It hides tapd's
-mint batch details and returns SDK business entities keyed by `AssetRef`.
-Use `Wallet.Client().MintAsset` and `MintIssuance` only when you need direct
-batch control.
-
-```go
-issuer := wallet.NewIssuer()
-
-token, err := issuer.CreateFungible(ctx, tapsdk.FungibleAssetSpec{
-	Name:   "example-token",
-	Amount: 1_000_000,
-})
-if err != nil {
-	log.Fatal(err)
-}
-
-_, err = issuer.IssueFungible(ctx, token.AssetRef, 500_000)
-if err != nil {
-	log.Fatal(err)
-}
-
-created, err := issuer.CreateCollection(ctx, tapsdk.NFTSpec{
-	Name: "example-collection-001",
-})
-if err != nil {
-	log.Fatal(err)
-}
-
-_, err = issuer.MintCollectionItem(ctx, created.Collection.AssetRef, tapsdk.NFTSpec{
-	Name: "example-collection-002",
-})
-if err != nil {
-	log.Fatal(err)
-}
-
-fmt.Printf("first item: %s\n", created.FirstItem.AssetRef)
-```
-
-### Universe proofs and sync
-
-`Wallet.NewUniverse()` is the preferred universe entrypoint. It accepts the
-same `AssetRef` values returned by wallet and issuer calls.
-
-```go
-universe := wallet.NewUniverse()
-
-known, err := universe.HasAsset(ctx, token.AssetRef)
-if err != nil {
-	log.Fatal(err)
-}
-if !known {
-	log.Fatal("asset is not known to the local universe")
-}
-
-proofs, err := universe.ListProofs(ctx, token.AssetRef)
-if err != nil {
-	log.Fatal(err)
-}
-
-fmt.Printf("local universe has %d proofs\n", len(proofs))
-
-// Use a trusted universe host from configuration. Current tapd versions dial
-// remote universe servers without certificate verification during sync.
-_, err = universe.SyncAsset(ctx, token.AssetRef, "tapd.example:10029")
-if err != nil {
-	log.Fatal(err)
-}
-```
-
-### Ownership proofs
-
-`Wallet.ProveOwnership()` accepts the same `AssetRef` handles used by the rest
-of the wallet API. It resolves the concrete issuance ID, script key, and anchor
-outpoint internally before calling tapd's low-level ownership RPC.
-
-```go
-challenge := make([]byte, 32)
-if _, err := rand.Read(challenge); err != nil {
-	log.Fatal(err)
-}
-
-proofs, err := wallet.ProveOwnership(ctx, token.AssetRef,
-	tapsdk.WithOwnershipChallenge(challenge),
-	tapsdk.WithOwnershipAmount(100),
-)
-if err != nil {
-	log.Fatal(err)
-}
-
-for _, proof := range proofs.Proofs {
-	verified, err := wallet.VerifyOwnership(ctx, proof.ProofWithWitness,
-		tapsdk.WithOwnershipChallenge(challenge),
-	)
+	balance, err := wallet.GetBalance(ctx, token.AssetRef)
 	if err != nil {
 		log.Fatal(err)
 	}
-	if !verified.Valid {
-		log.Fatal("invalid ownership proof")
-	}
+
+	log.Printf("asset=%s balance=%d", token.AssetRef, balance)
 }
 ```
 
-### Interactive receive
+## Packages
 
-```go
-registered, err := wallet.ImportProof(ctx, proofBundle)
-if err != nil {
-	log.Fatal(err)
-}
+| Package | Role |
+|---------|------|
+| `github.com/lightninglabs/tap-sdk` | Public asset model, `Wallet`, `Issuer`, `Universe`, builders, errors, and all business types |
+| `github.com/lightninglabs/tap-sdk/grpc` | gRPC transport, TLS config, macaroon auth, tapd marshal/unmarshal |
+| `github.com/lightninglabs/tap-sdk/rest` | REST transport, TLS config, macaroon auth, WebSocket event streams |
+| `github.com/lightninglabs/tap-sdk/macaroon` | Low-level macaroon source helpers |
 
-fmt.Printf("Imported %d proof entries\n", len(registered))
-```
+Most application code imports the root package plus one transport package.
+Advanced integrations can use `wallet.Client()` to reach low-level methods
+without importing `taprpc`.
+
+## What You Can Build Today
+
+- Wallet apps that issue, receive, send, burn, and list Taproot Assets.
+- Services that mint fungibles, standalone NFTs, and NFT collections.
+- Indexing and discovery tools backed by universe roots and proofs.
+- Proof import/export flows for out-of-band delivery.
+- Ownership proof flows for proving wallet control of assets.
+- Regtest-backed test suites that exercise both gRPC and REST transports.
+
+Lightning-native Taproot Assets flows such as RFQ, price oracles, asset
+channels, and Portfolio Pilot are intentionally outside the current SDK
+surface.
 
 ## Documentation
 
-- [CHANGELOG.md](CHANGELOG.md)
-- [CONTRIBUTING.md](CONTRIBUTING.md)
-- [docs/architecture.md](docs/architecture.md)
-- [DEVELOPMENT_CYCLE.md](DEVELOPMENT_CYCLE.md)
-
-## Development
-
-```bash
-make build
-make unit
-make lint
-make fmt
-```
+- [Getting Started](docs/getting-started.md)
+- [Asset Model](docs/asset-model.md)
+- [Transports and Auth](docs/transports.md)
+- [Compatibility](docs/compatibility.md)
+- [Architecture](docs/architecture.md)
+- [Design Decisions](docs/design/README.md)
+- [Integration Tests](itest/README.md)
+- [Contributing](CONTRIBUTING.md)
 
 ## License
 
-See [LICENSE](LICENSE).
+Licensed under the [MIT License](LICENSE).

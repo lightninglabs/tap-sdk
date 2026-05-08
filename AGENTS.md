@@ -2,13 +2,13 @@
 
 ## Project Overview
 
-`tap-sdk` is the official Go SDK for building applications on the Taproot
-Assets protocol. It wraps the `tapd` (Taproot Assets daemon) gRPC interface,
-enabling developers to create, manage, and transfer Taproot Assets without
-dealing with low-level protobuf types.
+`tap-sdk` is the Go source-of-truth implementation of the Taproot Assets
+application SDK. It exposes typed wallet, issuer, universe, proof, burn, and
+transfer surfaces over `tapd` without requiring application developers to deal
+with low-level protobuf types.
 
 **Repository:** `github.com/lightninglabs/tap-sdk`
-**Language:** Go (source of truth)
+**Language:** Go (source of truth for future language SDKs)
 **Status:** Pre-v1.0 (breaking API changes possible)
 
 ## Architecture
@@ -27,8 +27,8 @@ tap-sdk/
 ├── internal/vpsbt/            — Virtual PSBT encoding
 ├── internal/codec/            — Cryptographic utilities (alt-leaves, STXO)
 ├── macaroon/                  — Authentication helpers
-└── docs/                      — Design documents
-    └── design/                — Architecture decision records
+└── docs/                      — User and contributor documentation
+    └── design/                — Durable design decisions
 ```
 
 ### Key Design Principles
@@ -43,6 +43,8 @@ tap-sdk/
    structs are discoverable from the main `tapsdk` import.
 5. **The SDK is opinionated.** The public surface should not blindly mirror
    raw `taprpc` semantics when a cleaner Taproot Assets model exists.
+6. **Design docs are durable.** `docs/design/` captures accepted API and
+   architecture decisions, not short-lived implementation plans.
 
 ### Asset Identity Model
 
@@ -144,11 +146,13 @@ When wrapping a new `tapd` RPC:
 4. Add the method to the appropriate interface in `clients.go`
 5. Optionally add a convenience method on `Wallet`
 6. Write unit tests with mocks + table-driven patterns
-7. Update CHANGELOG.md
+7. Add or extend integration tests when the flow is user-visible
+8. Update README or docs pages when the public surface changes
+9. Update CHANGELOG.md only when preparing a public release
 
 ## Dependencies
 
-- **tapd** — Taproot Assets daemon (gRPC over TLS + macaroons)
+- **tapd** — Taproot Assets daemon (gRPC/REST over TLS + macaroons)
 - **taproot-assets/taprpc** — gRPC service definitions (proto, lightweight module)
 - **btcsuite/btcd** — Bitcoin primitives (PSBT, keys, crypto)
 
