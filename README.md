@@ -2,7 +2,7 @@
   <h1>tap-sdk</h1>
 
   <p>
-    <strong>Build Taproot Assets applications without speaking raw tapd RPC.</strong>
+    <strong>Build Taproot Assets applications</strong>
   </p>
 
   <p>
@@ -25,8 +25,7 @@ model developers usually want:
   burn, balance, event, and universe flows.
 - `Asset`, `Collection`, and `Issuance` as distinct business concepts.
 - High-level `Wallet`, `Issuer`, and `Universe` surfaces for common workflows.
-- Direct `grpc` and `rest` transport packages for connection setup and advanced
-  RPC-shaped access.
+- Direct `grpc` and `rest` transport packages for connection setup and advanced RPC-shaped access.
 
 The Go package is the first implementation. The API model is designed to be
 portable to TypeScript, Rust, Python, Kotlin, and Swift bindings over time.
@@ -43,12 +42,7 @@ go get github.com/lightninglabs/tap-sdk
 |---------|------------------------|-----|----|
 | `main` / first public release line | v0.8.0 or newer | v0.20.x | 1.25.7+ |
 
-Older `tapd` versions are unsupported. The SDK relies on v0.8 wallet and event
-fields to map grouped fungibles, standalone NFTs, NFT collection items, burns,
-and transfers onto the correct `AssetRef`.
-
-During release-candidate development, use `tapd` `main` or the latest v0.8 RC.
-See [Compatibility](docs/compatibility.md) for the detailed matrix.
+Older `tapd` versions are unsupported. See [Compatibility](docs/compatibility.md) for the detailed matrix.
 
 ## Quick Start
 
