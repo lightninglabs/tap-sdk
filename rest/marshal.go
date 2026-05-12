@@ -985,6 +985,220 @@ func unmarshalPendingMintAsset(
 	return asset, nil
 }
 
+// unmarshalUnsealedMintAsset converts a JSON unsealed asset to
+// tapsdk.UnsealedMintAsset.
+func unmarshalUnsealedMintAsset(
+	a *jsonUnsealedAsset) (*tapsdk.UnsealedMintAsset, error) {
+
+	if a == nil {
+		return nil, fmt.Errorf("nil unsealed mint asset")
+	}
+
+	asset := &tapsdk.UnsealedMintAsset{
+		GroupVirtualPSBT: a.GroupVirtualPSBT,
+	}
+
+	if a.Asset != nil {
+		pendingAsset, err := unmarshalPendingMintAsset(a.Asset)
+		if err != nil {
+			return nil, err
+		}
+
+		asset.Asset = pendingAsset
+	}
+
+	if a.GroupKeyRequest != nil {
+		groupKeyRequest, err := unmarshalGroupKeyRequest(
+			a.GroupKeyRequest,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		asset.GroupKeyRequest = groupKeyRequest
+	}
+
+	if a.GroupVirtualTx != nil {
+		groupVirtualTx, err := unmarshalGroupVirtualTx(
+			a.GroupVirtualTx,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		asset.GroupVirtualTx = groupVirtualTx
+	}
+
+	return asset, nil
+}
+
+func unmarshalGroupKeyRequest(
+	r *jsonGroupKeyRequest) (*tapsdk.GroupKeyRequest, error) {
+
+	if r == nil {
+		return nil, fmt.Errorf("nil group key request")
+	}
+
+	tapscriptRoot, err := parseHexBytes(r.TapscriptRoot)
+	if err != nil {
+		return nil, fmt.Errorf("invalid tapscript root: %w", err)
+	}
+
+	newAsset, err := parseHexBytes(r.NewAsset)
+	if err != nil {
+		return nil, fmt.Errorf("invalid new asset: %w", err)
+	}
+
+	request := &tapsdk.GroupKeyRequest{
+		TapscriptRoot: tapscriptRoot,
+		NewAsset:      newAsset,
+	}
+
+	if r.RawKey != nil {
+		rawKey, err := unmarshalKeyDescriptor(r.RawKey)
+		if err != nil {
+			return nil, fmt.Errorf("invalid raw key: %w", err)
+		}
+
+		request.RawKey = rawKey
+	}
+
+	if r.AnchorGenesis != nil {
+		anchorGenesis, err := unmarshalGenesisInfo(r.AnchorGenesis)
+		if err != nil {
+			return nil, err
+		}
+
+		request.AnchorGenesis = anchorGenesis
+	}
+
+	if r.ExternalKey != nil {
+		externalKey, err := unmarshalExternalKey(r.ExternalKey)
+		if err != nil {
+			return nil, err
+		}
+
+		request.ExternalKey = externalKey
+	}
+
+	return request, nil
+}
+
+func unmarshalExternalKey(k *jsonExternalKey) (*tapsdk.ExternalKey, error) {
+	if k == nil {
+		return nil, fmt.Errorf("nil external key")
+	}
+
+	fingerprint, err := parseHexBytes(k.MasterFingerprint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid master fingerprint: %w", err)
+	}
+	if len(fingerprint) != 4 {
+		return nil, fmt.Errorf("invalid master fingerprint length: %d",
+			len(fingerprint))
+	}
+
+	key := &tapsdk.ExternalKey{
+		XPub:           k.XPub,
+		DerivationPath: k.DerivationPath,
+	}
+	copy(key.MasterFingerprint[:], fingerprint)
+
+	return key, nil
+}
+
+func unmarshalGenesisInfo(
+	g *jsonGenesisInfo) (*tapsdk.GenesisInfo, error) {
+
+	if g == nil {
+		return nil, fmt.Errorf("nil genesis info")
+	}
+
+	metaHash, err := tapsdk.ParseHashHex(g.MetaHash)
+	if err != nil {
+		return nil, fmt.Errorf("invalid genesis meta hash: %w", err)
+	}
+
+	issuanceID, err := tapsdk.ParseAssetIDHex(g.AssetID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid genesis issuance ID: %w", err)
+	}
+
+	assetType, err := parseAssetType(g.AssetType)
+	if err != nil {
+		return nil, err
+	}
+
+	return &tapsdk.GenesisInfo{
+		GenesisPoint: g.GenesisPoint,
+		Name:         g.Name,
+		MetaHash:     metaHash,
+		IssuanceID:   issuanceID,
+		AssetType:    assetType,
+		OutputIndex:  g.OutputIndex,
+	}, nil
+}
+
+func unmarshalGroupVirtualTx(
+	tx *jsonGroupVirtualTx) (*tapsdk.GroupVirtualTx, error) {
+
+	if tx == nil {
+		return nil, fmt.Errorf("nil group virtual tx")
+	}
+
+	transaction, err := parseHexBytes(tx.Transaction)
+	if err != nil {
+		return nil, fmt.Errorf("invalid group virtual tx: %w", err)
+	}
+
+	groupTx := &tapsdk.GroupVirtualTx{
+		Transaction: transaction,
+	}
+
+	if tx.PrevOut != nil {
+		value, err := parseInt64(tx.PrevOut.Value)
+		if err != nil {
+			return nil, fmt.Errorf("invalid prev out value: %w", err)
+		}
+
+		pkScript, err := parseHexBytes(tx.PrevOut.PkScript)
+		if err != nil {
+			return nil, fmt.Errorf("invalid prev out script: %w", err)
+		}
+
+		groupTx.PrevOut = &tapsdk.TxOut{
+			Value:    value,
+			PkScript: pkScript,
+		}
+	}
+
+	if tx.GenesisID != "" {
+		genesisID, err := tapsdk.ParseAssetIDHex(tx.GenesisID)
+		if err != nil {
+			return nil, fmt.Errorf("invalid group tx genesis ID: %w",
+				err)
+		}
+
+		groupTx.GenesisID = genesisID
+	}
+
+	if tx.TweakedKey != "" {
+		tweakedKeyBytes, err := parseHexBytes(tx.TweakedKey)
+		if err != nil {
+			return nil, fmt.Errorf("invalid tweaked key: %w", err)
+		}
+
+		tweakedKey, err := tapsdk.ParsePubKey(tweakedKeyBytes)
+		if err != nil {
+			return nil, fmt.Errorf("invalid tweaked key: %w", err)
+		}
+
+		groupTx.TweakedKey = &tweakedKey
+	}
+
+	return groupTx, nil
+}
+
 // unmarshalAssetMeta converts a JSON asset meta to
 // tapsdk.AssetMeta.
 func unmarshalAssetMeta(

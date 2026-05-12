@@ -362,6 +362,30 @@ var (
 	// wallet state before retrying.
 	ErrMintResultNotFound = errors.New("mint result could not be mapped")
 
+	// ErrExternalIssuanceKeyRequired is returned when an issuer call needs an
+	// external issuance signature but no external key descriptor was provided.
+	ErrExternalIssuanceKeyRequired = errors.New(
+		"external issuance key is required",
+	)
+
+	// ErrExternalIssuanceSignerRequired is returned when an external issuance
+	// key is configured but no signer was provided to complete the mint.
+	ErrExternalIssuanceSignerRequired = errors.New(
+		"external issuance signer is required",
+	)
+
+	// ErrExternalIssuanceRequestNotFound is returned when tapd does not return
+	// an issuance signing payload after an external signer was configured.
+	ErrExternalIssuanceRequestNotFound = errors.New(
+		"external issuance signing request not found",
+	)
+
+	// ErrExternalIssuanceSignatureRequired is returned when an external signer
+	// did not return a signed issuance PSBT.
+	ErrExternalIssuanceSignatureRequired = errors.New(
+		"external issuance signature is required",
+	)
+
 	// ErrUniverseHostRequired is returned when a universe sync request does
 	// not specify the remote universe host.
 	ErrUniverseHostRequired = errors.New("universe host is required")
@@ -417,6 +441,10 @@ var knownSentinelErrors = []error{
 	ErrAssetNotIssuable,
 	ErrMintResolveTimeout,
 	ErrMintResultNotFound,
+	ErrExternalIssuanceKeyRequired,
+	ErrExternalIssuanceSignerRequired,
+	ErrExternalIssuanceRequestNotFound,
+	ErrExternalIssuanceSignatureRequired,
 	ErrUniverseHostRequired,
 	ErrInvalidUniverseHost,
 	ErrDuplicateAssetRef,

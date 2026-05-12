@@ -62,6 +62,130 @@ func TestIssuerCreateFungibleMintsGroupedAsset(t *testing.T) {
 	client.AssertExpectations(t)
 }
 
+func TestIssuerCreateFungibleSignsExternalIssuance(t *testing.T) {
+	ctx := context.Background()
+	client := &mockClient{}
+	issuer := NewIssuer(client)
+
+	externalKey := ExternalKey{
+		XPub:           "tpub-external",
+		DerivationPath: "m/86'/1'/0'/0/0",
+		MasterFingerprint: [4]byte{
+			0xde, 0xad, 0xbe, 0xef,
+		},
+	}
+	groupKey := testKey(t, 2)
+	groupRef := AssetRefFromGroupKey(groupKey)
+	scriptKey := &ScriptKey{PubKey: testKey(t, 30)}
+	issuanceID := issuerAssetID(31)
+	record := issuerAssetRecord(
+		issuanceID, groupRef, AssetTypeFungible, "token", 100,
+	)
+	batchKey := testKey(t, 3)
+	unsignedPsbt := "unsigned-issuance-psbt"
+	signedPsbt := "signed-issuance-psbt"
+
+	signer := &recordingIssuanceSigner{
+		signedPsbt: signedPsbt,
+	}
+
+	client.On("ListBatches", ctx, mock.Anything).Return(
+		[]*VerboseMintingBatch{}, nil,
+	).Once()
+	client.On("ListAssetRecords", ctx, includeUnconfirmed(nil)).Return(
+		[]*AssetRecord{}, nil,
+	).Once()
+	client.On("MintAsset", ctx, mock.MatchedBy(
+		func(req *MintAssetRequest) bool {
+			return req != nil &&
+				req.ShortResponse &&
+				req.Asset != nil &&
+				req.Asset.AssetType == AssetTypeFungible &&
+				req.Asset.Name == "token" &&
+				req.Asset.InitialSupply == 100 &&
+				req.Asset.AllowIssuance &&
+				req.Asset.ExternalGroupKey != nil &&
+				req.Asset.ExternalGroupKey.XPub == externalKey.XPub
+		},
+	)).Return(&MintingBatch{BatchKey: batchKey}, nil).Once()
+	client.On("FundBatch", ctx, mock.MatchedBy(
+		func(req *FundBatchRequest) bool {
+			return req != nil && req.FeeRate == 250
+		},
+	)).Return(&VerboseMintingBatch{
+		Batch: MintingBatch{BatchKey: batchKey},
+		UnsealedAssets: []UnsealedMintAsset{
+			{
+				Asset: &PendingMintAsset{
+					AssetType: AssetTypeFungible,
+					Name:      "token",
+					Amount:    100,
+					ScriptKey: scriptKey,
+				},
+				GroupKeyRequest: &GroupKeyRequest{
+					AnchorGenesis: &GenesisInfo{
+						GenesisPoint: "genesis:0",
+						Name:         "token",
+						IssuanceID:   issuanceID,
+						AssetType:    AssetTypeFungible,
+					},
+					ExternalKey: &externalKey,
+				},
+				GroupVirtualTx: &GroupVirtualTx{
+					GenesisID:  issuanceID,
+					TweakedKey: &groupKey,
+				},
+				GroupVirtualPSBT: unsignedPsbt,
+			},
+		},
+	}, nil).Once()
+	client.On("SealBatch", ctx, mock.MatchedBy(
+		func(req *SealBatchRequest) bool {
+			return req != nil &&
+				req.ShortResponse &&
+				len(req.SignedGroupVirtualPSBTs) == 1 &&
+				req.SignedGroupVirtualPSBTs[0] == signedPsbt
+		},
+	)).Return(&MintingBatch{BatchKey: batchKey}, nil).Once()
+	client.On("FinalizeBatch", ctx, mock.MatchedBy(
+		func(req *FinalizeBatchRequest) bool {
+			return req != nil &&
+				req.ShortResponse &&
+				req.FeeRate == 0
+		},
+	)).Return(&MintingBatch{BatchKey: batchKey}, nil).Once()
+	client.On("ListAssetRecords", ctx, includeUnconfirmed(nil)).Return(
+		[]*AssetRecord{record}, nil,
+	).Once()
+
+	asset, err := issuer.CreateFungible(
+		ctx, FungibleAssetSpec{
+			Name:      "token",
+			Amount:    100,
+			ScriptKey: scriptKey,
+		},
+		WithMintFeeRate(250),
+		WithExternalIssuanceKey(externalKey),
+		WithExternalIssuanceSigner(signer),
+	)
+	require.NoError(t, err)
+	require.Equal(t, groupRef, asset.AssetRef)
+	require.Len(t, signer.requests, 1)
+
+	req := signer.requests[0]
+	require.Equal(t, IssuanceOperationCreateAsset, req.Operation)
+	require.Equal(t, groupRef, req.AssetRef)
+	require.Equal(t, "token", req.Name)
+	require.Equal(t, uint64(100), req.Amount)
+	require.Equal(t, unsignedPsbt, req.VirtualPSBT)
+	require.Equal(t, externalKey, req.ExternalKey)
+	require.Equal(t, scriptKey, req.ScriptKey)
+	require.NotNil(t, req.AnchorGenesis)
+	require.Equal(t, issuanceID, req.AnchorGenesis.IssuanceID)
+
+	client.AssertExpectations(t)
+}
+
 func TestIssuerIssueFungibleRejectsNFTCollection(t *testing.T) {
 	ctx := context.Background()
 	client := &mockClient{}
@@ -84,6 +208,19 @@ func TestIssuerIssueFungibleRejectsNFTCollection(t *testing.T) {
 	require.ErrorIs(t, err, ErrWrongAssetType)
 
 	client.AssertExpectations(t)
+}
+
+type recordingIssuanceSigner struct {
+	signedPsbt string
+	requests   []IssuanceSigningRequest
+}
+
+func (s *recordingIssuanceSigner) SignIssuance(_ context.Context,
+	req IssuanceSigningRequest) (SignedIssuance, error) {
+
+	s.requests = append(s.requests, req)
+
+	return SignedIssuance{VirtualPSBT: s.signedPsbt}, nil
 }
 
 func TestIssuerIssueFungibleMintsIssuance(t *testing.T) {
