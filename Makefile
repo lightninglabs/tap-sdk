@@ -189,6 +189,16 @@ itest-main: itest-up-main
 	trap '$(MAKE) itest-down-main' EXIT; \
 	$(MAKE) itest-run-main
 
+clean:
+	@$(call print, "Cleaning generated artifacts.")
+	go clean -cache -testcache
+	go clean ./...
+	$(RM) tap-sdk
+	find . -name '*.test' -type f -delete
+	find . -name '*.out' -type f -delete
+	find . -name '*.log' -type f -delete
+	find . -name 'coverage.*' -type f -delete
+
 # =========
 # UTILITIES
 # =========
@@ -220,4 +230,5 @@ lint-fix: docker-tools
 	itest-run-main \
 	fmt \
 	lint \
-	lint-fix
+	lint-fix \
+	clean
