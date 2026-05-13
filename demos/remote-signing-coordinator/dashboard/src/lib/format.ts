@@ -35,6 +35,10 @@ export function statusLabel(status: SessionStatus): string {
       return "Waiting for signature";
     case "signature_submitted":
       return "Signature submitted";
+    case "waiting_confirmation":
+      return "Waiting for confirmation";
+    case "mining":
+      return "Mining blocks";
     case "finalized":
       return "Finalized";
     case "failed":

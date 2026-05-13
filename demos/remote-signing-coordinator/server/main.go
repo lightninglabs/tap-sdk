@@ -18,8 +18,11 @@ func main() {
 
 	wallet := tapsdk.NewWallet(client, cfg.network)
 	api := &apiServer{
-		cfg:         cfg,
-		coordinator: newCoordinator(wallet.NewIssuer()),
+		cfg: cfg,
+		coordinator: newCoordinator(
+			wallet.NewIssuer(), client, newBlockMiner(cfg),
+			cfg.regtestMineBlocks,
+		),
 	}
 
 	log.Printf("remote signing coordinator listening on http://%s",

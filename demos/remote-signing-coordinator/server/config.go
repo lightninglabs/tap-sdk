@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
@@ -22,6 +23,13 @@ type config struct {
 	tlsPath      string
 	macaroonPath string
 	tlsInsecure  bool
+
+	regtestAutoMine    bool
+	regtestMineBlocks  int
+	bitcoindContainer  string
+	bitcoindRPCUser    string
+	bitcoindRPCPass    string
+	regtestMinerWallet string
 }
 
 func loadConfig() config {
@@ -60,6 +68,24 @@ func loadConfig() config {
 	flag.BoolVar(&cfg.tlsInsecure, "tls-insecure", configBool(
 		values, "TAPD_TLS_INSECURE",
 	), "disable TLS verification")
+	flag.BoolVar(&cfg.regtestAutoMine, "regtest-auto-mine", configBoolDefault(
+		values, "REGTEST_AUTO_MINE", true,
+	), "mine regtest blocks after an Issuance is broadcast")
+	flag.IntVar(&cfg.regtestMineBlocks, "regtest-mine-blocks", configInt(
+		values, "REGTEST_MINE_BLOCKS", 6,
+	), "number of regtest blocks to mine after an Issuance")
+	flag.StringVar(&cfg.bitcoindContainer, "bitcoind-container", configValue(
+		values, "BITCOIND_CONTAINER", "tap-sdk-bitcoind",
+	), "regtest bitcoind Docker container")
+	flag.StringVar(&cfg.bitcoindRPCUser, "bitcoind-rpc-user", configValue(
+		values, "BITCOIND_USER", "devuser",
+	), "regtest bitcoind RPC user")
+	flag.StringVar(&cfg.bitcoindRPCPass, "bitcoind-rpc-pass", configValue(
+		values, "BITCOIND_PASS", "devpass",
+	), "regtest bitcoind RPC password")
+	flag.StringVar(&cfg.regtestMinerWallet, "regtest-miner-wallet",
+		configValue(values, "REGTEST_MINER_WALLET", "miner"),
+		"regtest bitcoind wallet used for mining")
 	flag.Parse()
 
 	parsedNetwork, err := parseNetwork(network)
@@ -69,8 +95,17 @@ func loadConfig() config {
 	cfg.network = parsedNetwork
 	cfg.tlsPath = resolveDemoPath(demoDir, cfg.tlsPath)
 	cfg.macaroonPath = resolveDemoPath(demoDir, cfg.macaroonPath)
+	if cfg.regtestMineBlocks < 0 {
+		log.Fatal("REGTEST_MINE_BLOCKS must be zero or greater")
+	}
 
 	return cfg
+}
+
+func (c config) miningEnabled() bool {
+	return c.network == tapsdk.NetworkRegtest &&
+		c.regtestAutoMine &&
+		c.regtestMineBlocks > 0
 }
 
 func parseNetwork(network string) (tapsdk.Network, error) {
@@ -170,12 +205,34 @@ func configValue(values map[string]string, key string, fallback string) string {
 }
 
 func configBool(values map[string]string, key string) bool {
+	return configBoolDefault(values, key, false)
+}
+
+func configBoolDefault(values map[string]string, key string,
+	fallback bool) bool {
+
 	switch strings.ToLower(configValue(values, key, "")) {
 	case "1", "true", "yes", "y":
 		return true
-	default:
+	case "0", "false", "no", "n":
 		return false
+	default:
+		return fallback
 	}
+}
+
+func configInt(values map[string]string, key string, fallback int) int {
+	value := configValue(values, key, "")
+	if value == "" {
+		return fallback
+	}
+
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		log.Fatalf("%s must be an integer: %v", key, err)
+	}
+
+	return parsed
 }
 
 func resolveDemoPath(demoDir string, path string) string {

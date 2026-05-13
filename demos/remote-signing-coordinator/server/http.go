@@ -45,10 +45,12 @@ func (s *apiServer) writeConfig(w http.ResponseWriter) {
 		target = s.cfg.tapdBaseURL
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{
-		"network":   string(s.cfg.network),
-		"transport": s.cfg.transport,
-		"tapd":      target,
+	writeJSON(w, http.StatusOK, map[string]any{
+		"network":     string(s.cfg.network),
+		"transport":   s.cfg.transport,
+		"tapd":        target,
+		"auto_mine":   s.cfg.miningEnabled(),
+		"mine_blocks": s.cfg.regtestMineBlocks,
 	})
 }
 

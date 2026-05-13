@@ -9,6 +9,7 @@
     "server": "cd .. && ./scripts/ensure-env.sh && go run ./server",
     "server:build": "cd .. && go build -o ./server/remote-signing-coordinator ./server",
     "regtest": "cd ../../.. && make itest-up && cd demos/remote-signing-coordinator && ./scripts/fund-regtest-wallet.sh && ./scripts/export-tapd-creds.sh",
+    "regtest:mine": "cd .. && ./scripts/mine-regtest-blocks.sh",
     "regtest:down": "cd ../../.. && make itest-down",
     "build": "next build",
     "start": "cd .. && ./scripts/ensure-env.sh && cd dashboard && dotenv -e ../.env -- next start -p 3000",

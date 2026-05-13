@@ -25,19 +25,29 @@ type issuer interface {
 
 type coordinator struct {
 	issuer issuer
+	events mintEventSubscriber
+	miner  blockMiner
+
+	mineBlocks int
 
 	mu       sync.Mutex
+	mintMu   sync.Mutex
 	sessions map[string]*session
 	now      func() time.Time
 	newID    func() (string, error)
 }
 
-func newCoordinator(issuer issuer) *coordinator {
+func newCoordinator(issuer issuer, events mintEventSubscriber,
+	miner blockMiner, mineBlocks int) *coordinator {
+
 	return &coordinator{
-		issuer:   issuer,
-		sessions: make(map[string]*session),
-		now:      time.Now,
-		newID:    randomID,
+		issuer:     issuer,
+		events:     events,
+		miner:      miner,
+		mineBlocks: mineBlocks,
+		sessions:   make(map[string]*session),
+		now:        time.Now,
+		newID:      randomID,
 	}
 }
 
@@ -166,6 +176,16 @@ func (c *coordinator) runSession(ctx context.Context, id string,
 	req startSessionRequest, assetRef tapsdk.AssetRef,
 	externalKey tapsdk.ExternalKey) {
 
+	c.mintMu.Lock()
+	defer c.mintMu.Unlock()
+
+	watcher, err := c.startMintFinalityWatcher(ctx, id)
+	if err != nil {
+		c.failSession(id, fmt.Errorf("subscribe mint events: %w", err))
+		return
+	}
+	defer watcher.Stop()
+
 	signer := sessionSigner{
 		coordinator: c,
 		sessionID:   id,
@@ -191,11 +211,11 @@ func (c *coordinator) runSession(ctx context.Context, id string,
 			return
 		}
 
-		c.completeSession(id, sessionResult{
+		c.confirmSession(id, sessionResult{
 			AssetRef: asset.AssetRef.String(),
 			Name:     asset.Name,
 			Amount:   asset.Amount,
-		})
+		}, watcher)
 
 	case operationIssueAsset:
 		issuance, err := c.issuer.IssueFungible(
@@ -206,12 +226,12 @@ func (c *coordinator) runSession(ctx context.Context, id string,
 			return
 		}
 
-		c.completeSession(id, sessionResult{
+		c.confirmSession(id, sessionResult{
 			AssetRef:    issuance.AssetRef.String(),
 			IssuanceRef: issuance.Ref().String(),
 			Name:        issuance.Name,
 			Amount:      issuance.Amount,
-		})
+		}, watcher)
 	}
 }
 
@@ -242,7 +262,73 @@ func (c *coordinator) awaitSignature(ctx context.Context, id string,
 	}
 }
 
-func (c *coordinator) completeSession(id string, result sessionResult) {
+func (c *coordinator) confirmSession(id string, result sessionResult,
+	watcher *mintFinalityWatcher) {
+
+	c.acceptSession(id, result)
+
+	if c.miner != nil && c.mineBlocks > 0 {
+		c.startMining(id)
+		err := c.miner.MineBlocks(context.Background(), c.mineBlocks)
+		if err != nil {
+			c.failSession(id, fmt.Errorf("mine regtest blocks: %w", err))
+			return
+		}
+		c.finishMining(id, c.mineBlocks)
+	}
+
+	_, err := watcher.Wait(context.Background())
+	if err != nil {
+		c.failSession(id, fmt.Errorf("wait for mint finalization: %w",
+			err))
+		return
+	}
+
+	c.completeSession(id)
+}
+
+func (c *coordinator) acceptSession(id string, result sessionResult) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	session, ok := c.sessions[id]
+	if !ok {
+		return
+	}
+
+	session.Status = statusWaitingConfirm
+	session.Result = &result
+	session.UpdatedAt = c.now()
+}
+
+func (c *coordinator) startMining(id string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	session, ok := c.sessions[id]
+	if !ok {
+		return
+	}
+
+	session.Status = statusMining
+	session.UpdatedAt = c.now()
+}
+
+func (c *coordinator) finishMining(id string, blocks int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	session, ok := c.sessions[id]
+	if !ok {
+		return
+	}
+
+	session.MinedBlocks += blocks
+	session.Status = statusWaitingConfirm
+	session.UpdatedAt = c.now()
+}
+
+func (c *coordinator) completeSession(id string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -252,7 +338,6 @@ func (c *coordinator) completeSession(id string, result sessionResult) {
 	}
 
 	session.Status = statusFinalized
-	session.Result = &result
 	session.UpdatedAt = c.now()
 }
 
@@ -267,6 +352,30 @@ func (c *coordinator) failSession(id string, err error) {
 
 	session.Status = statusFailed
 	session.Error = err.Error()
+	session.UpdatedAt = c.now()
+}
+
+func (c *coordinator) observeMintEvent(id string, event *tapsdk.MintEvent) {
+	if event == nil || event.Batch == nil {
+		return
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	session, ok := c.sessions[id]
+	if !ok {
+		return
+	}
+
+	session.BatchKey = event.Batch.BatchKey.String()
+	session.BatchState = event.BatchState.String()
+	session.AnchorTxID = event.Batch.BatchTxid
+	if event.BatchState == tapsdk.BatchStateBroadcast &&
+		session.Status == statusSignatureSubmitted {
+
+		session.Status = statusWaitingConfirm
+	}
 	session.UpdatedAt = c.now()
 }
 

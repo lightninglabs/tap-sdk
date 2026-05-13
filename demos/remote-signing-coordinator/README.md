@@ -40,7 +40,9 @@ http://127.0.0.1:3000
 
 `yarn regtest` starts the repository integration-test regtest stack, funds
 Alice's LND wallet, and exports Alice and Bob `tapd` credentials into `.tapd/`.
-The default `.env` values point the coordinator at Alice on regtest.
+The default `.env` values point the coordinator at Alice on regtest. The
+coordinator auto-mines six regtest blocks after each accepted Issuance and
+waits for the mint batch to reach `finalized`.
 
 Stop the regtest stack with:
 
@@ -58,6 +60,7 @@ Run from `dashboard/`:
 | `yarn server` | Run only the Go coordinator |
 | `yarn dashboard` | Run only the Next.js dashboard |
 | `yarn regtest` | Start the pinned regtest stack, fund Alice, and export creds |
+| `yarn regtest:mine` | Mine the configured number of regtest blocks |
 | `yarn regtest:down` | Stop the pinned regtest stack |
 | `yarn test` | Typecheck, lint, build dashboard, build server |
 
@@ -77,9 +80,15 @@ that file if it does not exist.
 | `TAPD_TLS_PATH` | `.tapd/alice/tls.cert` |
 | `TAPD_MACAROON_PATH` | `.tapd/alice/admin.macaroon` |
 | `TAPD_TLS_INSECURE` | `false` |
+| `REGTEST_AUTO_MINE` | `true` |
+| `REGTEST_MINE_BLOCKS` | `6` |
+| `REGTEST_MINER_WALLET` | `miner` |
+| `BITCOIND_CONTAINER` | `tap-sdk-bitcoind` |
+| `BITCOIND_USER` | `devuser` |
+| `BITCOIND_PASS` | `devpass` |
 
 Relative paths are resolved from this demo directory, so the default credential
-paths work after `corepack yarn regtest`.
+paths work after `yarn regtest`.
 
 ## Flow
 
@@ -102,6 +111,9 @@ paths work after `corepack yarn regtest`.
    - the anchor outpoint that commits the Issuance
 6. Sign the virtual PSBT externally.
 7. Paste the signed virtual PSBT into the dashboard.
-8. The SDK submits the signature, seals the batch, and finalizes the Issuance.
+8. The SDK submits the signature, seals the batch, and broadcasts the anchor
+   transaction.
+9. On regtest, the coordinator mines the configured number of blocks and waits
+   for the mint event stream to report the finalized batch.
 
 Coordinator runs are kept in memory. Restarting the Go coordinator clears them.

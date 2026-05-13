@@ -222,6 +222,12 @@ export default function Dashboard() {
               icon={<Server className="h-4 w-4" aria-hidden />}
               label={config ? `${config.transport} ${config.tapd}` : "tapd"}
             />
+            {config?.auto_mine && (
+              <StatusPill
+                icon={<Cpu className="h-4 w-4" aria-hidden />}
+                label={`auto-mines ${config.mine_blocks} regtest blocks`}
+              />
+            )}
             <button
               className="inline-flex h-10 items-center gap-2 rounded-md border border-white/10 bg-zinc-900 px-3 text-sm text-zinc-200 transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={refreshing}
@@ -716,7 +722,7 @@ function SigningWorkspace({
       )}
 
       {session.result && (
-        <ResultPanel result={session.result} onCopyError={onCopyError} />
+        <ResultPanel session={session} onCopyError={onCopyError} />
       )}
     </div>
   );
@@ -823,20 +829,36 @@ function RequestReview({
 
 function ResultPanel({
   onCopyError,
-  result,
+  session,
 }: {
   onCopyError: (error: string | null) => void;
-  result: Session["result"];
+  session: Session;
 }) {
+  const result = session.result;
   if (!result) {
     return null;
   }
+  const finalized = session.status === "finalized";
 
   return (
-    <div className="rounded-md border border-emerald-400/30 bg-emerald-400/10 p-4">
-      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-emerald-100">
-        <CheckCircle2 className="h-4 w-4" aria-hidden />
-        Finalized
+    <div
+      className={`rounded-md border p-4 ${
+        finalized
+          ? "border-emerald-400/30 bg-emerald-400/10"
+          : "border-orange-400/30 bg-orange-400/10"
+      }`}
+    >
+      <div
+        className={`mb-3 flex items-center gap-2 text-sm font-semibold ${
+          finalized ? "text-emerald-100" : "text-orange-100"
+        }`}
+      >
+        {finalized ? (
+          <CheckCircle2 className="h-4 w-4" aria-hidden />
+        ) : (
+          <Clock className="h-4 w-4" aria-hidden />
+        )}
+        {finalized ? "Finalized" : "Waiting for batch confirmation"}
       </div>
       <div className="grid gap-3 md:grid-cols-3">
         <ReviewFact
@@ -861,6 +883,36 @@ function ResultPanel({
           value={formatAmount(result.amount)}
         />
       </div>
+      {(session.batch_state || session.batch_key || session.anchor_txid) && (
+        <div className="mt-3 grid gap-3 md:grid-cols-3">
+          <ReviewFact
+            icon={<Clock className="h-4 w-4" aria-hidden />}
+            label="Mint batch state"
+            value={session.batch_state ?? "pending"}
+          />
+          <ReviewFact
+            copyValue={session.batch_key}
+            icon={<KeyRound className="h-4 w-4" aria-hidden />}
+            label="Mint batch"
+            onCopyError={onCopyError}
+            value={shortValue(session.batch_key, 12, 10)}
+            title={session.batch_key}
+          />
+          <ReviewFact
+            copyValue={session.anchor_txid}
+            icon={<Hash className="h-4 w-4" aria-hidden />}
+            label="Anchor txid"
+            onCopyError={onCopyError}
+            value={shortValue(session.anchor_txid, 12, 10)}
+            title={session.anchor_txid}
+          />
+        </div>
+      )}
+      {session.mined_blocks ? (
+        <div className="mt-3 text-xs text-zinc-400">
+          Mined {session.mined_blocks} regtest blocks for confirmation.
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -912,23 +964,24 @@ function SessionList({
 }
 
 function StatusStepper({ status }: { status: SessionStatus }) {
-  const steps: Array<{ key: SessionStatus; label: string }> = [
-    { key: "staging", label: "Stage" },
-    { key: "waiting_signature", label: "Review" },
-    { key: "signature_submitted", label: "Submit" },
-    { key: "finalized", label: "Finalize" },
+  const steps: Array<{ keys: SessionStatus[]; label: string }> = [
+    { keys: ["staging"], label: "Stage" },
+    { keys: ["waiting_signature"], label: "Review" },
+    { keys: ["signature_submitted"], label: "Submit" },
+    { keys: ["waiting_confirmation", "mining"], label: "Confirm" },
+    { keys: ["finalized"], label: "Finalize" },
   ];
-  const activeIndex = steps.findIndex((step) => step.key === status);
+  const activeIndex = steps.findIndex((step) => step.keys.includes(status));
 
   return (
-    <div className="mt-5 grid grid-cols-4 gap-2">
+    <div className="mt-5 grid grid-cols-5 gap-2">
       {steps.map((step, index) => {
         const active =
           status === "failed"
             ? index <= Math.max(activeIndex, 0)
             : index <= activeIndex;
         return (
-          <div key={step.key}>
+          <div key={step.label}>
             <div
               className={`h-1.5 rounded-full ${
                 active ? "bg-orange-400" : "bg-zinc-800"

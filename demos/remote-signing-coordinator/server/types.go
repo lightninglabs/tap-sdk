@@ -15,6 +15,8 @@ const (
 	statusStaging            sessionStatus = "staging"
 	statusWaitingSignature   sessionStatus = "waiting_signature"
 	statusSignatureSubmitted sessionStatus = "signature_submitted"
+	statusWaitingConfirm     sessionStatus = "waiting_confirmation"
+	statusMining             sessionStatus = "mining"
 	statusFinalized          sessionStatus = "finalized"
 	statusFailed             sessionStatus = "failed"
 )
@@ -64,6 +66,10 @@ type session struct {
 	Status        sessionStatus   `json:"status"`
 	Request       *signingRequest `json:"request,omitempty"`
 	Result        *sessionResult  `json:"result,omitempty"`
+	BatchKey      string          `json:"batch_key,omitempty"`
+	BatchState    string          `json:"batch_state,omitempty"`
+	AnchorTxID    string          `json:"anchor_txid,omitempty"`
+	MinedBlocks   int             `json:"mined_blocks,omitempty"`
 	Error         string          `json:"error,omitempty"`
 	CreatedAt     time.Time       `json:"created_at"`
 	UpdatedAt     time.Time       `json:"updated_at"`

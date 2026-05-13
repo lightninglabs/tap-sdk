@@ -4,6 +4,8 @@ export type SessionStatus =
   | "staging"
   | "waiting_signature"
   | "signature_submitted"
+  | "waiting_confirmation"
+  | "mining"
   | "finalized"
   | "failed";
 
@@ -48,6 +50,10 @@ export type Session = {
   status: SessionStatus;
   request?: SigningRequest;
   result?: SessionResult;
+  batch_key?: string;
+  batch_state?: string;
+  anchor_txid?: string;
+  mined_blocks?: number;
   error?: string;
   created_at: string;
   updated_at: string;
@@ -57,4 +63,6 @@ export type CoordinatorConfig = {
   network: string;
   transport: string;
   tapd: string;
+  auto_mine: boolean;
+  mine_blocks: number;
 };
