@@ -26,7 +26,7 @@ import {
   WalletCards,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   ApiError,
@@ -44,6 +44,7 @@ import {
 } from "@/lib/softwareDevice";
 import type {
   CoordinatorConfig,
+  ExternalKey,
   Operation,
   Session,
   SessionStatus,
@@ -66,6 +67,7 @@ type KnownAsset = {
   name: string;
   supply: number;
   updatedAt: string;
+  externalKey?: ExternalKey;
 };
 
 const initialForm: FormState = {
@@ -329,17 +331,23 @@ function SoftwareDevicePanel({
   const [index, setIndex] = useState("0");
   const [mnemonic, setMnemonic] = useState("");
   const [busy, setBusy] = useState(false);
+  const loadID = useRef(0);
 
-  async function createDevice(nextMnemonic?: string) {
+  async function createDevice(nextMnemonic?: string, nextIndex = index) {
+    const currentLoadID = loadID.current + 1;
+    loadID.current = currentLoadID;
     setBusy(true);
     onError(null);
 
     try {
       const nextDevice = await createSoftwareDevice({
-        index: Number(index || "0"),
+        index: Number(nextIndex || "0"),
         mnemonic: nextMnemonic,
         network: config,
       });
+      if (currentLoadID !== loadID.current) {
+        return;
+      }
       onDevice(nextDevice);
       setMnemonic(nextDevice.mnemonic);
       onForm({
@@ -351,8 +359,19 @@ function SoftwareDevicePanel({
     } catch (err) {
       onError(errorMessage(err));
     } finally {
-      setBusy(false);
+      if (currentLoadID === loadID.current) {
+        setBusy(false);
+      }
     }
+  }
+
+  function handleIndexChange(nextIndex: string) {
+    setIndex(nextIndex);
+    if (!device || !mnemonic.trim()) {
+      return;
+    }
+
+    void createDevice(mnemonic, nextIndex);
   }
 
   async function sign() {
@@ -385,7 +404,7 @@ function SoftwareDevicePanel({
         />
         <Field
           label="Index"
-          onChange={setIndex}
+          onChange={handleIndexChange}
           type="number"
           value={index}
         />
@@ -519,7 +538,25 @@ function IssuanceForm({
             <SelectField
               label="Existing Asset"
               value={form.assetRef}
-              onChange={(assetRef) => onChange({ ...form, assetRef })}
+              onChange={(assetRef) => {
+                const knownAsset = knownAssets.find(
+                  (asset) => asset.assetRef === assetRef,
+                );
+                const externalKey = knownAsset?.externalKey;
+
+                onChange({
+                  ...form,
+                  assetRef,
+                  ...(externalKey
+                    ? {
+                        xpub: externalKey.xpub,
+                        masterFingerprint:
+                          externalKey.master_fingerprint,
+                        derivationPath: externalKey.derivation_path,
+                      }
+                    : {}),
+                });
+              }}
             >
               <option value="">Paste AssetRef</option>
               {knownAssets.map((asset) => (
@@ -1263,6 +1300,7 @@ function summarizeAssets(sessions: Session[]): KnownAsset[] {
     const current = byRef.get(assetRef);
     byRef.set(assetRef, {
       assetRef,
+      externalKey: session.request?.external_key ?? current?.externalKey,
       name: session.result.name || current?.name || "",
       supply: (current?.supply ?? 0) + session.result.amount,
       updatedAt: newerTimestamp(current?.updatedAt, session.updated_at),
