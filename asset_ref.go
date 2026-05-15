@@ -17,7 +17,7 @@ const (
 )
 
 const (
-	assetRefHRP           = "assetref"
+	assetRefHRP           = "tapr"
 	assetRefFormatVersion = 0
 )
 
