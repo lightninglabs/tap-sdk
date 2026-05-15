@@ -49,7 +49,7 @@ projection.
 
 ## AssetRef Encoding
 
-`AssetRef` uses a bech32m string with HRP `assetref`.
+`AssetRef` uses a bech32m string with HRP `tapr`.
 
 Payload:
 
