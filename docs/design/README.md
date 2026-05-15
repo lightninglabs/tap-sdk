@@ -10,3 +10,5 @@ changes and future SDKs in other languages.
 - [Package and Transport Boundaries](package-and-transport-boundaries.md):
   keep business types in the root package and wire details in transport
   packages.
+- [Fee Rate API](fee-rate-api.md): represent on-chain fee rates as a typed
+  fixed-point value while keeping sat/vB as the user-facing unit.
