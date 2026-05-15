@@ -1,0 +1,8 @@
+.next/
+node_modules/
+out/
+dist/
+build/
+.yarn/
+!.yarn/releases/
+*.tsbuildinfo
