@@ -221,8 +221,8 @@ func TestUnmarshalSendEvent(t *testing.T) {
 					e.AnchorTransaction.ChainFeesSats,
 				)
 				require.Equal(t,
-					int32(12500),
-					e.AnchorTransaction.TargetFeeRateSatKw,
+					uint64(50000),
+					e.AnchorTransaction.TargetFeeRate.SatPerKVByte(),
 				)
 				require.Len(t, e.AnchorTransaction.LndLockedUtxos, 1)
 				require.Equal(t,
@@ -325,7 +325,8 @@ func TestUnmarshalAnchorTransaction(t *testing.T) {
 				require.Equal(t, int32(2), tx.ChangeOutputIndex)
 				require.Equal(t, int64(1000), tx.ChainFeesSats)
 				require.Equal(t,
-					int32(25000), tx.TargetFeeRateSatKw,
+					uint64(100000),
+					tx.TargetFeeRate.SatPerKVByte(),
 				)
 				require.Len(t, tx.LndLockedUtxos, 2)
 				require.Equal(t,

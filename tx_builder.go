@@ -45,7 +45,7 @@ type TxBuilder struct {
 
 	recipients []Recipient
 	inputs     []PrevID
-	feeRate    uint64
+	feeRate    FeeRate
 
 	fundedPsbt   []byte
 	passivePsbts [][]byte
@@ -59,9 +59,11 @@ type TxBuilder struct {
 
 // newTxBuilder creates a new TxBuilder instance.
 func newTxBuilder(wallet WalletKitClient) *TxBuilder {
+	feeRate, _ := NewFeeRateSatPerVByte(1)
+
 	return &TxBuilder{
 		walletKit: wallet,
-		feeRate:   1,
+		feeRate:   feeRate,
 	}
 }
 
@@ -93,9 +95,9 @@ func (b *TxBuilder) AddInput(input PrevID) *TxBuilder {
 	return b
 }
 
-// SetFeeRate sets the fee rate in sat/vbyte. Default is 1 sat/vB.
-func (b *TxBuilder) SetFeeRate(satPerVByte uint64) *TxBuilder {
-	b.feeRate = satPerVByte
+// SetFeeRate sets the fee rate. Default is 1 sat/vB.
+func (b *TxBuilder) SetFeeRate(feeRate FeeRate) *TxBuilder {
+	b.feeRate = feeRate
 	return b
 }
 

@@ -152,11 +152,13 @@ func unmarshalAnchorTransaction(
 	}
 
 	tx := &tapsdk.AnchorTransaction{
-		AnchorPsbt:         anchorPsbt,
-		ChangeOutputIndex:  a.ChangeOutputIndex,
-		ChainFeesSats:      chainFees,
-		TargetFeeRateSatKw: a.TargetFeeRateSatKw,
-		FinalTx:            finalTx,
+		AnchorPsbt:        anchorPsbt,
+		ChangeOutputIndex: a.ChangeOutputIndex,
+		ChainFeesSats:     chainFees,
+		TargetFeeRate: feeRateFromSatPerKWeight(
+			a.TargetFeeRateSatKw,
+		),
+		FinalTx: finalTx,
 	}
 
 	for _, op := range a.LndLockedUtxos {

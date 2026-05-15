@@ -508,8 +508,8 @@ type FundBatchRequest struct {
 	// ShortResponse asks the daemon to omit batch asset details.
 	ShortResponse bool
 
-	// FeeRate is the optional fee rate in sat/kw.
-	FeeRate uint32
+	// FeeRate is the optional fee rate. Zero uses the daemon default.
+	FeeRate FeeRate
 
 	// BatchSibling is the optional tapscript sibling for the batch output.
 	BatchSibling *BatchSibling
@@ -532,8 +532,8 @@ type FinalizeBatchRequest struct {
 	// ShortResponse asks the daemon to omit batch asset details.
 	ShortResponse bool
 
-	// FeeRate is the optional fee rate in sat/kw.
-	FeeRate uint32
+	// FeeRate is the optional fee rate. Zero uses the daemon default.
+	FeeRate FeeRate
 
 	// BatchSibling is the optional tapscript sibling for the batch output.
 	BatchSibling *BatchSibling

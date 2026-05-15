@@ -459,7 +459,12 @@ func (w *walletClient) SendAsset(ctx context.Context,
 
 	body := &jsonSendAssetRequest{}
 	if req != nil {
-		body.FeeRate = req.FeeRate
+		feeRate, err := feeRateSatPerKWeight(req.FeeRate)
+		if err != nil {
+			return nil, err
+		}
+
+		body.FeeRate = feeRate
 		body.Label = req.Label
 		body.SkipProofCourierPing = req.SkipProofCourierPingCheck
 

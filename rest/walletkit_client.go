@@ -296,7 +296,7 @@ type jsonCommitVirtualPsbtsRequest struct {
 // CommitVirtualPsbts commits virtual transactions.
 func (w *walletKitClient) CommitVirtualPsbts(ctx context.Context,
 	virtualPsbts [][]byte, passivePsbts [][]byte,
-	feeRate uint64) (*tapsdk.CommittedTransfer, error) {
+	feeRate tapsdk.FeeRate) (*tapsdk.CommittedTransfer, error) {
 
 	anchorPsbt, err := anchor.PreparePsbt(virtualPsbts, passivePsbts)
 	if err != nil {
@@ -323,8 +323,9 @@ func (w *walletKitClient) CommitVirtualPsbts(ctx context.Context,
 		VirtualPsbts:      vPsbts,
 		PassiveAssetPsbts: pPsbts,
 		AnchorPsbt:        hex.EncodeToString(anchorPsbt),
-		SatPerVByte:       fmt.Sprintf("%d", feeRate),
-		Add:               true,
+		SatPerVByte: fmt.Sprintf("%d",
+			feeRate.SatPerVByteCeil()),
+		Add: true,
 	}
 
 	var resp jsonCommitVirtualPsbtsResponse

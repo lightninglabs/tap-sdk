@@ -38,9 +38,9 @@ func (m *MockWalletKitClient) SignVirtualPsbt(ctx context.Context,
 
 func (m *MockWalletKitClient) CommitVirtualPsbts(ctx context.Context,
 	virtualPsbts [][]byte, passivePsbts [][]byte,
-	satPerVByte uint64) (*CommittedTransfer, error) {
+	feeRate FeeRate) (*CommittedTransfer, error) {
 
-	args := m.Called(ctx, virtualPsbts, passivePsbts, satPerVByte)
+	args := m.Called(ctx, virtualPsbts, passivePsbts, feeRate)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -204,7 +204,7 @@ func TestTxBuilder_Execute(t *testing.T) {
 	ctx := context.Background()
 	addr := encodeV2NoAmount(t)
 	amount := uint64(100)
-	feeRate := uint64(50)
+	feeRate := mustFeeRateSatPerVByte(t, 50)
 	fundedPsbt := []byte("funded_psbt")
 	signedPsbt := []byte("signed_psbt")
 	anchorPsbt := []byte("anchor_psbt")
@@ -280,6 +280,7 @@ func TestTxBuilder_StateInjection(t *testing.T) {
 	anchorPsbt := []byte("anchor_psbt")
 	finalAnchorTx := []byte("final_anchor_tx")
 	passivePsbts := [][]byte{[]byte("passive_psbt")}
+	defaultFeeRate := mustFeeRateSatPerVByte(t, 1)
 
 	// Inject externally produced PSBTs to skip earlier steps.
 	builder := newTxBuilder(mockWalletKit)
@@ -288,7 +289,7 @@ func TestTxBuilder_StateInjection(t *testing.T) {
 		SetPassivePsbts(passivePsbts)
 
 	mockWalletKit.On("CommitVirtualPsbts", ctx, [][]byte{signedPsbt},
-		passivePsbts, uint64(1)).Return(
+		passivePsbts, defaultFeeRate).Return(
 		&CommittedTransfer{
 			AnchorPsbt:        anchorPsbt,
 			VirtualPsbts:      [][]byte{signedPsbt},
@@ -337,7 +338,7 @@ func TestTxBuilder_ExecuteWithSkipBroadcast(t *testing.T) {
 		signedPsbt, nil)
 
 	mockWalletKit.On("CommitVirtualPsbts", ctx, [][]byte{signedPsbt},
-		mock.Anything, uint64(1)).Return(
+		mock.Anything, mustFeeRateSatPerVByte(t, 1)).Return(
 		&CommittedTransfer{
 			AnchorPsbt:   anchorPsbt,
 			VirtualPsbts: [][]byte{signedPsbt},
@@ -377,7 +378,7 @@ func TestTxBuilder_AnchorSigning(t *testing.T) {
 	)
 
 	mockWalletKit.On("CommitVirtualPsbts", ctx, [][]byte{signedPsbt},
-		mock.Anything, uint64(1)).Return(
+		mock.Anything, mustFeeRateSatPerVByte(t, 1)).Return(
 		&CommittedTransfer{
 			AnchorPsbt:   anchorPsbt,
 			VirtualPsbts: [][]byte{signedPsbt},

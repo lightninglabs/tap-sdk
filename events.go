@@ -62,8 +62,8 @@ type AnchorTransaction struct {
 	// ChainFeesSats is the total on-chain fees paid in satoshis.
 	ChainFeesSats int64
 
-	// TargetFeeRateSatKw is the target fee rate in sat/kWU.
-	TargetFeeRateSatKw int32
+	// TargetFeeRate is the target fee rate.
+	TargetFeeRate FeeRate
 
 	// LndLockedUtxos lists the UTXO lock leases acquired from lnd.
 	LndLockedUtxos []Outpoint

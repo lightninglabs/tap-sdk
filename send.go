@@ -23,9 +23,9 @@ type SendAssetRequest struct {
 	// Recipients is the list of send destinations.
 	Recipients []Recipient
 
-	// FeeRate is the optional target fee rate in sat/kw for the
-	// anchor transaction.
-	FeeRate uint32
+	// FeeRate is the optional target fee rate for the anchor transaction.
+	// Zero uses the daemon default.
+	FeeRate FeeRate
 
 	// Label is an optional short label for tracking the send.
 	Label string
