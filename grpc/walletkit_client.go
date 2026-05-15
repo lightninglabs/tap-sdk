@@ -116,7 +116,8 @@ func (m *walletKitClient) SignVirtualPsbt(ctx context.Context,
 
 // CommitVirtualPsbts commits virtual transactions.
 func (m *walletKitClient) CommitVirtualPsbts(ctx context.Context,
-	virtualPsbts [][]byte, passivePsbts [][]byte, satPerVByte uint64) (
+	virtualPsbts [][]byte, passivePsbts [][]byte,
+	feeRate tapsdk.FeeRate) (
 	*tapsdk.CommittedTransfer, error) {
 
 	anchorPsbt, err := anchor.PreparePsbt(virtualPsbts, passivePsbts)
@@ -129,7 +130,7 @@ func (m *walletKitClient) CommitVirtualPsbts(ctx context.Context,
 		PassiveAssetPsbts: passivePsbts,
 		AnchorPsbt:        anchorPsbt,
 		Fees: &assetwalletrpc.CommitVirtualPsbtsRequest_SatPerVbyte{
-			SatPerVbyte: satPerVByte,
+			SatPerVbyte: feeRate.SatPerVByteCeil(),
 		},
 		AnchorChangeOutput: &assetwalletrpc.CommitVirtualPsbtsRequest_Add{
 			Add: true,

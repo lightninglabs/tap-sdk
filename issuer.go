@@ -53,9 +53,9 @@ type MintOption func(*MintOptions)
 
 // MintOptions contains optional parameters for high-level issuer calls.
 type MintOptions struct {
-	// feeRate is the target fee rate in sat/kw for the genesis transaction.
-	// Zero uses the daemon default.
-	feeRate uint32
+	// feeRate is the target fee rate for the genesis transaction. Zero uses
+	// the daemon default.
+	feeRate FeeRate
 
 	// resolveTimeout is how long high-level issuer calls wait for tapd's
 	// wallet projection to expose the accepted mint result.
@@ -69,9 +69,9 @@ type MintOptions struct {
 	externalIssuanceSigner ExternalIssuanceSigner
 }
 
-// WithMintFeeRate sets the target fee rate in sat/kw for the genesis
-// transaction. A zero value uses tapd's daemon default.
-func WithMintFeeRate(feeRate uint32) MintOption {
+// WithMintFeeRate sets the target fee rate for the genesis transaction. A
+// zero value uses tapd's daemon default.
+func WithMintFeeRate(feeRate FeeRate) MintOption {
 	return func(o *MintOptions) {
 		o.feeRate = feeRate
 	}

@@ -98,8 +98,7 @@ paths work after `yarn regtest`.
    The included software device can generate this descriptor from a browser
    mnemonic using BDK-WASM.
 2. Start either a new Asset or a new Issuance for an existing AssetRef. The
-   dashboard accepts the anchor fee rate in sat/vB and converts it to the
-   SDK's sat/kWU fee-rate option.
+   dashboard accepts the anchor fee rate in sat/vB.
 3. The server calls the SDK issuer with an external signer callback.
 4. The SDK stages and funds the Issuance, then returns a signing request.
 5. The dashboard presents the SDK review fields:

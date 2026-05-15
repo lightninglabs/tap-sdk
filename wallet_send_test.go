@@ -225,7 +225,7 @@ func (m *mockClient) SignVirtualPsbt(ctx context.Context,
 
 func (m *mockClient) CommitVirtualPsbts(ctx context.Context,
 	virtualPsbts [][]byte, passivePsbts [][]byte,
-	feeRate uint64) (*CommittedTransfer, error) {
+	feeRate FeeRate) (*CommittedTransfer, error) {
 
 	args := m.Called(ctx, virtualPsbts, passivePsbts, feeRate)
 	if args.Get(0) == nil {
@@ -847,7 +847,7 @@ func TestSend_WithAmount(t *testing.T) {
 
 	addr := encodeV2NoAmount(t)
 	amount := uint64(500)
-	feeRate := uint32(25)
+	feeRate := mustFeeRateSatPerVByte(t, 25)
 	label := "test-send"
 
 	expectedTransfer := &AssetTransfer{
@@ -1096,7 +1096,7 @@ func TestSendMulti_WithOptions(t *testing.T) {
 
 	mc.On("SendAsset", ctx, mock.MatchedBy(
 		func(req *SendAssetRequest) bool {
-			return req.FeeRate == 10 &&
+			return req.FeeRate == mustFeeRateSatPerVByte(t, 10) &&
 				req.Label == "batch-payment" &&
 				req.SkipProofCourierPingCheck
 		}),
@@ -1104,7 +1104,7 @@ func TestSendMulti_WithOptions(t *testing.T) {
 
 	transfer, err := w.SendMulti(
 		ctx, recipients,
-		WithFeeRate(10),
+		WithFeeRate(mustFeeRateSatPerVByte(t, 10)),
 		WithLabel("batch-payment"),
 		WithSkipProofCourierPingCheck(),
 	)

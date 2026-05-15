@@ -8,9 +8,9 @@ type SendOptions struct {
 	// address with no caller-supplied amount.
 	amount uint64
 
-	// feeRate is the target fee rate in sat/kw for the anchor transaction.
-	// Zero uses the daemon default.
-	feeRate uint32
+	// feeRate is the target fee rate for the anchor transaction. Zero uses
+	// the daemon default.
+	feeRate FeeRate
 
 	// label is an optional short label for tracking the send.
 	label string
@@ -34,8 +34,8 @@ func WithAmount(amount uint64) SendOption {
 	}
 }
 
-// WithFeeRate sets the target fee rate in sat/kw for the anchor transaction.
-func WithFeeRate(feeRate uint32) SendOption {
+// WithFeeRate sets the target fee rate for the anchor transaction.
+func WithFeeRate(feeRate FeeRate) SendOption {
 	return func(o *SendOptions) {
 		o.feeRate = feeRate
 	}

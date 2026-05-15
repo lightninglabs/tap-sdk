@@ -163,7 +163,7 @@ export default function Dashboard() {
         asset_ref:
           form.operation === "issue_asset" ? form.assetRef.trim() : "",
         amount: Number(form.amount),
-        fee_rate_sat_kw: feeRateSatVByteToSatKw(form.feeRateSatVByte),
+        fee_rate_sat_vbyte: feeRateSatVByteValue(form.feeRateSatVByte),
         external_key: {
           xpub: form.xpub.trim(),
           master_fingerprint: form.masterFingerprint.trim(),
@@ -493,11 +493,13 @@ function IssuanceForm({
   onChange: (form: FormState) => void;
   onStart: () => void;
 }) {
-  const feeRateSatVByte = Number(form.feeRateSatVByte || "0");
-  const feeRateSatKw = feeRateSatVByteToSatKw(form.feeRateSatVByte);
+  const feeRateInput = form.feeRateSatVByte.trim();
+  const rawFeeRateSatVByte = Number(feeRateInput || "0");
+  const feeRateSatKw = feeRateSatVByteToSatKw(feeRateInput);
   const feeRateInvalid =
-    Number.isNaN(feeRateSatVByte) ||
-    feeRateSatVByte < 0 ||
+    !isFeeRateSatVByteInput(feeRateInput) ||
+    !Number.isFinite(rawFeeRateSatVByte) ||
+    rawFeeRateSatVByte < 0 ||
     (feeRateSatKw > 0 && feeRateSatKw < minManualFeeRateSatKw);
   const disabled =
     loading ||
@@ -587,7 +589,7 @@ function IssuanceForm({
           label="Fee rate (sat/vB)"
           min="0"
           placeholder="tapd default"
-          step="0.1"
+          step="0.001"
           type="number"
           value={form.feeRateSatVByte}
           onChange={(feeRateSatVByte) =>
@@ -599,9 +601,9 @@ function IssuanceForm({
         {feeRateSatKw === 0 ? (
           "Using tapd's default anchor fee rate"
         ) : feeRateSatKw < minManualFeeRateSatKw ? (
-          "Minimum manual fee rate is 1.02 sat/vB"
+          "Minimum manual fee rate is 1.012 sat/vB"
         ) : (
-          `${feeRateSatKw} sat/kWU sent to the SDK`
+          `${feeRateSatVByteValue(form.feeRateSatVByte)} sat/vB anchor fee rate`
         )}
       </div>
 
@@ -1324,13 +1326,35 @@ function newerTimestamp(a = "", b = ""): string {
   return new Date(a).getTime() > new Date(b).getTime() ? a : b;
 }
 
+function feeRateSatVByteValue(value: string): string {
+  const feeRateSatVByte = value.trim();
+  const numericFeeRate = Number(feeRateSatVByte || "0");
+  if (
+    !isFeeRateSatVByteInput(feeRateSatVByte) ||
+    !Number.isFinite(numericFeeRate) ||
+    numericFeeRate <= 0
+  ) {
+    return "0";
+  }
+
+  return feeRateSatVByte;
+}
+
 function feeRateSatVByteToSatKw(value: string): number {
-  const feeRateSatVByte = Number(value || "0");
+  const feeRateSatVByte = Number(feeRateSatVByteValue(value));
   if (!Number.isFinite(feeRateSatVByte) || feeRateSatVByte <= 0) {
     return 0;
   }
 
   return Math.ceil(feeRateSatVByte * feeRateSatKwPerSatVByte);
+}
+
+function isFeeRateSatVByteInput(value: string): boolean {
+  if (value === "") {
+    return true;
+  }
+
+  return /^\d+(\.\d{0,3})?$/.test(value);
 }
 
 function errorMessage(err: unknown): string {

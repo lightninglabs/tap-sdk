@@ -154,7 +154,7 @@ func (m *refMockClient) SignVirtualPsbt(ctx context.Context,
 
 func (m *refMockClient) CommitVirtualPsbts(ctx context.Context,
 	virtualPsbts [][]byte, passivePsbts [][]byte,
-	feeRate uint64) (*CommittedTransfer, error) {
+	feeRate FeeRate) (*CommittedTransfer, error) {
 
 	panic("CommitVirtualPsbts: unexpected call")
 }

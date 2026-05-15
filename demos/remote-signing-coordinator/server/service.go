@@ -13,7 +13,11 @@ import (
 	tapsdk "github.com/lightninglabs/tap-sdk"
 )
 
-const minManualFeeRateSatKw = 253
+const minManualFeeRateSatKWeight uint64 = 253
+
+var minManualFeeRate = tapsdk.NewFeeRateSatPerKVByte(
+	minManualFeeRateSatKWeight * 4,
+)
 
 type issuer interface {
 	CreateFungible(context.Context, tapsdk.FungibleAssetSpec,
@@ -65,11 +69,9 @@ func (c *coordinator) startSession(_ context.Context,
 	if req.Amount == 0 {
 		return nil, tapsdk.ErrZeroAmount
 	}
-	if req.FeeRateSatKw > 0 && req.FeeRateSatKw < minManualFeeRateSatKw {
-		return nil, fmt.Errorf(
-			"fee rate must be at least %d sat/kWU, about %.2f sat/vB",
-			minManualFeeRateSatKw, float64(minManualFeeRateSatKw)/250,
-		)
+	feeRate, err := parseFeeRate(req.FeeRateSatVByte)
+	if err != nil {
+		return nil, err
 	}
 
 	var assetRef tapsdk.AssetRef
@@ -102,7 +104,7 @@ func (c *coordinator) startSession(_ context.Context,
 	c.mu.Unlock()
 
 	go c.runSession(
-		context.Background(), id, req, assetRef, externalKey,
+		context.Background(), id, req, assetRef, externalKey, feeRate,
 	)
 
 	return session.clone(), nil
@@ -186,7 +188,7 @@ func (c *coordinator) submitSignature(id string,
 
 func (c *coordinator) runSession(ctx context.Context, id string,
 	req startSessionRequest, assetRef tapsdk.AssetRef,
-	externalKey tapsdk.ExternalKey) {
+	externalKey tapsdk.ExternalKey, feeRate tapsdk.FeeRate) {
 
 	c.mintMu.Lock()
 	defer c.mintMu.Unlock()
@@ -206,8 +208,8 @@ func (c *coordinator) runSession(ctx context.Context, id string,
 		tapsdk.WithExternalIssuanceKey(externalKey),
 		tapsdk.WithExternalIssuanceSigner(signer),
 	}
-	if req.FeeRateSatKw != 0 {
-		opts = append(opts, tapsdk.WithMintFeeRate(req.FeeRateSatKw))
+	if !feeRate.IsZero() {
+		opts = append(opts, tapsdk.WithMintFeeRate(feeRate))
 	}
 
 	switch req.Operation {
@@ -246,6 +248,29 @@ func (c *coordinator) runSession(ctx context.Context, id string,
 			Amount:      issuance.Amount,
 		}, watcher)
 	}
+}
+
+func parseFeeRate(value string) (tapsdk.FeeRate, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return tapsdk.FeeRate{}, nil
+	}
+
+	feeRate, err := tapsdk.ParseFeeRateSatPerVByte(value)
+	if err != nil {
+		return tapsdk.FeeRate{}, err
+	}
+
+	if !feeRate.IsZero() &&
+		feeRate.SatPerKWeight() < minManualFeeRateSatKWeight {
+
+		return tapsdk.FeeRate{}, fmt.Errorf(
+			"fee rate must be at least %s",
+			minManualFeeRate,
+		)
+	}
+
+	return feeRate, nil
 }
 
 func (c *coordinator) awaitSignature(ctx context.Context, id string,

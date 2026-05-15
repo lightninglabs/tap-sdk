@@ -20,7 +20,7 @@ export type StartSessionRequest = {
   name: string;
   asset_ref: string;
   amount: number;
-  fee_rate_sat_kw: number;
+  fee_rate_sat_vbyte: string;
   external_key: ExternalKey;
 };
 

@@ -22,11 +22,13 @@ func TestTxBuilderEndToEnd(t *testing.T) {
 		require.NoError(t, err)
 
 		addr := h.CreateGroupedReceiveAddress(t, ctx, minted.Ref)
+		feeRate, err := tapsdk.NewFeeRateSatPerVByte(2)
+		require.NoError(t, err)
 
 		const amount = uint64(125)
 		builder := h.AliceWallet.NewTxBuilder().
 			AddRecipient(addr.Encoded, amount).
-			SetFeeRate(2).
+			SetFeeRate(feeRate).
 			SetAnchorSigner(newAliceLndAnchorSigner(t))
 
 		funded, err := builder.Fund(ctx)
