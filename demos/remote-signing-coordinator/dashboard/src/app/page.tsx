@@ -876,6 +876,7 @@ function ResultPanel({
     return null;
   }
   const finalized = session.status === "finalized";
+  const issuanceRef = result.issuance_ref ?? session.request?.issuance_ref;
 
   return (
     <div
@@ -907,12 +908,18 @@ function ResultPanel({
           title={result.asset_ref}
         />
         <ReviewFact
-          copyValue={result.issuance_ref}
+          copyValue={issuanceRef}
           icon={<FileSignature className="h-4 w-4" aria-hidden />}
-          label="Issuance"
+          label="Issuance Ref"
           onCopyError={onCopyError}
-          value={shortValue(result.issuance_ref, 12, 10)}
-          title={result.issuance_ref}
+          value={
+            issuanceRef
+              ? shortValue(issuanceRef, 12, 10)
+              : finalized
+                ? "Complete"
+                : "pending"
+          }
+          title={issuanceRef}
         />
         <ReviewFact
           icon={<Database className="h-4 w-4" aria-hidden />}

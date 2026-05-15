@@ -40,6 +40,7 @@ type signingRequest struct {
 	Operation      string      `json:"operation"`
 	Statement      string      `json:"statement"`
 	AssetRef       string      `json:"asset_ref"`
+	IssuanceRef    string      `json:"issuance_ref,omitempty"`
 	Name           string      `json:"name"`
 	Amount         uint64      `json:"amount"`
 	AssetType      string      `json:"asset_type"`

@@ -132,6 +132,18 @@ func (c *coordinator) getSession(id string) (*session, bool) {
 	return session.clone(), true
 }
 
+func (c *coordinator) sessionIssuanceRef(id string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	session, ok := c.sessions[id]
+	if !ok || session.Request == nil {
+		return ""
+	}
+
+	return session.Request.IssuanceRef
+}
+
 func (c *coordinator) submitSignature(id string,
 	signedPSBT string) (*session, error) {
 
@@ -212,9 +224,10 @@ func (c *coordinator) runSession(ctx context.Context, id string,
 		}
 
 		c.confirmSession(id, sessionResult{
-			AssetRef: asset.AssetRef.String(),
-			Name:     asset.Name,
-			Amount:   asset.Amount,
+			AssetRef:    asset.AssetRef.String(),
+			IssuanceRef: c.sessionIssuanceRef(id),
+			Name:        asset.Name,
+			Amount:      asset.Amount,
 		}, watcher)
 
 	case operationIssueAsset:
@@ -427,6 +440,7 @@ func signingRequestFromSDK(req tapsdk.IssuanceSigningRequest) *signingRequest {
 		Operation:   req.Operation.String(),
 		Statement:   statementFor(req.Operation),
 		AssetRef:    req.AssetRef.String(),
+		IssuanceRef: issuanceRefFromSDK(req),
 		Name:        req.Name,
 		Amount:      req.Amount,
 		AssetType:   assetTypeLabel(req.AssetType),
@@ -442,6 +456,16 @@ func signingRequestFromSDK(req tapsdk.IssuanceSigningRequest) *signingRequest {
 	}
 
 	return result
+}
+
+func issuanceRefFromSDK(req tapsdk.IssuanceSigningRequest) string {
+	if req.AnchorGenesis == nil || req.AnchorGenesis.IssuanceID.IsZero() {
+		return ""
+	}
+
+	return tapsdk.AssetRefFromAssetID(
+		req.AnchorGenesis.IssuanceID,
+	).String()
 }
 
 func externalKeyFromSDK(key tapsdk.ExternalKey) externalKey {

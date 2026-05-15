@@ -28,6 +28,7 @@ export type SigningRequest = {
   operation: string;
   statement: string;
   asset_ref: string;
+  issuance_ref?: string;
   name: string;
   amount: number;
   asset_type: string;
