@@ -298,7 +298,34 @@ func unmarshalRESTVerboseBatch(
 		return nil, err
 	}
 
-	return &tapsdk.VerboseMintingBatch{Batch: *batch}, nil
+	verboseBatch := &tapsdk.VerboseMintingBatch{Batch: *batch}
+	verboseBatch.UnsealedAssets = make(
+		[]tapsdk.UnsealedMintAsset, 0, len(b.UnsealedAssets),
+	)
+	for _, jsonAsset := range b.UnsealedAssets {
+		asset, err := unmarshalUnsealedMintAsset(jsonAsset)
+		if err != nil {
+			return nil, err
+		}
+
+		verboseBatch.UnsealedAssets = append(
+			verboseBatch.UnsealedAssets, *asset,
+		)
+	}
+
+	return verboseBatch, nil
+}
+
+func marshalExternalKeyJSON(key *tapsdk.ExternalKey) *jsonExternalKey {
+	if key == nil {
+		return nil
+	}
+
+	return &jsonExternalKey{
+		XPub:              key.XPub,
+		MasterFingerprint: hex.EncodeToString(key.MasterFingerprint[:]),
+		DerivationPath:    key.DerivationPath,
+	}
 }
 
 func mintAssetRequestFromMintAsset(
@@ -397,6 +424,10 @@ func marshalMintAssetJSON(asset *mintAsset) *jsonMintAsset {
 
 		EnableSupplyCommitments: asset.enableSupplyCommitments,
 	}
+
+	rpcAsset.ExternalGroupKey = marshalExternalKeyJSON(
+		asset.externalGroupKey,
+	)
 
 	if asset.GroupKey != nil {
 		rpcAsset.GroupKey = hex.EncodeToString(

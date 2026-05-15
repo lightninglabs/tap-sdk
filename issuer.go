@@ -60,6 +60,13 @@ type MintOptions struct {
 	// resolveTimeout is how long high-level issuer calls wait for tapd's
 	// wallet projection to expose the accepted mint result.
 	resolveTimeout time.Duration
+
+	// externalIssuanceKey is the externally managed key descriptor used for
+	// issuance authorization.
+	externalIssuanceKey *ExternalKey
+
+	// externalIssuanceSigner signs issuance authorization payloads.
+	externalIssuanceSigner ExternalIssuanceSigner
 }
 
 // WithMintFeeRate sets the target fee rate in sat/kw for the genesis
@@ -77,6 +84,25 @@ func WithMintFeeRate(feeRate uint32) MintOption {
 func WithMintResolveTimeout(timeout time.Duration) MintOption {
 	return func(o *MintOptions) {
 		o.resolveTimeout = timeout
+	}
+}
+
+// WithExternalIssuanceKey configures an externally managed issuance key for
+// high-level issuer calls. It maps to tapd's external group key at the
+// transport boundary while keeping application code on the SDK Asset,
+// Collection, and Issuance model.
+func WithExternalIssuanceKey(key ExternalKey) MintOption {
+	return func(o *MintOptions) {
+		keyCopy := key
+		o.externalIssuanceKey = &keyCopy
+	}
+}
+
+// WithExternalIssuanceSigner configures the signer used when the issuer needs
+// an external issuance authorization signature.
+func WithExternalIssuanceSigner(signer ExternalIssuanceSigner) MintOption {
+	return func(o *MintOptions) {
+		o.externalIssuanceSigner = signer
 	}
 }
 
@@ -255,6 +281,7 @@ func (i *Issuer) issueFungible(ctx context.Context,
 		AssetType: AssetTypeFungible,
 		Amount:    amount,
 	}
+	applyExternalIssuanceKeyToIssuance(stage, mintOpts)
 
 	err = i.mintAndFinalize(ctx, func() (*MintingBatch,
 		error) {
@@ -265,7 +292,10 @@ func (i *Issuer) issueFungible(ctx context.Context,
 				ShortResponse: true,
 			},
 		)
-	}, mintOpts)
+	}, mintOpts, issuanceSigningContext{
+		operation: IssuanceOperationIssueAsset,
+		assetRef:  base.AssetRef,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -391,6 +421,7 @@ func (i *Issuer) mintCollectionItem(ctx context.Context,
 		AssetVersion: item.AssetVersion,
 		ScriptKey:    item.ScriptKey,
 	}
+	applyExternalIssuanceKeyToIssuance(stage, mintOpts)
 
 	err = i.mintAndFinalize(ctx, func() (*MintingBatch,
 		error) {
@@ -401,7 +432,10 @@ func (i *Issuer) mintCollectionItem(ctx context.Context,
 				ShortResponse: true,
 			},
 		)
-	}, mintOpts)
+	}, mintOpts, issuanceSigningContext{
+		operation: IssuanceOperationMintCollectionItem,
+		assetRef:  collection.AssetRef,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -486,6 +520,13 @@ func (i *Issuer) mintAssetAndResolve(ctx context.Context,
 	opts []MintOption) (*AssetRecord, error) {
 
 	mintOpts := applyMintOptions(opts)
+	signingOperation := signingOperationForMintAsset(stage)
+	if mintOpts.externalIssuanceSigner != nil &&
+		signingOperation == IssuanceOperationUnknown {
+
+		return nil, ErrAssetNotIssuable
+	}
+
 	if err := i.ensureReady(ctx); err != nil {
 		return nil, err
 	}
@@ -495,6 +536,8 @@ func (i *Issuer) mintAssetAndResolve(ctx context.Context,
 		return nil, err
 	}
 
+	applyExternalIssuanceKeyToAsset(stage, mintOpts)
+
 	err = i.mintAndFinalize(ctx, func() (*MintingBatch,
 		error) {
 
@@ -502,7 +545,9 @@ func (i *Issuer) mintAssetAndResolve(ctx context.Context,
 			Asset:         stage,
 			ShortResponse: true,
 		})
-	}, mintOpts)
+	}, mintOpts, issuanceSigningContext{
+		operation: signingOperation,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -515,7 +560,7 @@ func (i *Issuer) mintAssetAndResolve(ctx context.Context,
 
 func (i *Issuer) mintAndFinalize(ctx context.Context,
 	stage func() (*MintingBatch, error),
-	opts *MintOptions) error {
+	opts *MintOptions, signingContext issuanceSigningContext) error {
 
 	if i == nil || i.client == nil {
 		return fmt.Errorf("issuer client is nil")
@@ -524,7 +569,29 @@ func (i *Issuer) mintAndFinalize(ctx context.Context,
 		opts = &MintOptions{}
 	}
 
+	if opts.externalIssuanceKey != nil &&
+		opts.externalIssuanceSigner == nil {
+
+		return ErrExternalIssuanceSignerRequired
+	}
+	if opts.externalIssuanceSigner != nil &&
+		opts.externalIssuanceKey == nil {
+
+		return ErrExternalIssuanceKeyRequired
+	}
+
 	if _, err := stage(); err != nil {
+		return err
+	}
+
+	if opts.externalIssuanceSigner != nil {
+		err := i.signAndFinalizeExternalIssuance(
+			ctx, opts, signingContext,
+		)
+		if err != nil {
+			i.cancelBatchBestEffort()
+		}
+
 		return err
 	}
 
@@ -541,6 +608,153 @@ func (i *Issuer) mintAndFinalize(ctx context.Context,
 	i.cancelBatchBestEffort()
 
 	return err
+}
+
+type issuanceSigningContext struct {
+	operation IssuanceOperation
+	assetRef  AssetRef
+}
+
+func (i *Issuer) signAndFinalizeExternalIssuance(ctx context.Context,
+	opts *MintOptions, signingContext issuanceSigningContext) error {
+
+	if opts.externalIssuanceKey == nil {
+		return ErrExternalIssuanceKeyRequired
+	}
+
+	funded, err := i.client.FundBatch(ctx, &FundBatchRequest{
+		FeeRate: opts.feeRate,
+	})
+	if err != nil {
+		return err
+	}
+
+	requests, err := issuanceSigningRequests(
+		funded, opts.externalIssuanceKey, signingContext,
+	)
+	if err != nil {
+		return err
+	}
+
+	signedPsbts := make([]string, 0, len(requests))
+	for _, req := range requests {
+		signed, err := opts.externalIssuanceSigner.SignIssuance(
+			ctx, req,
+		)
+		if err != nil {
+			return err
+		}
+		if signed.VirtualPSBT == "" {
+			return ErrExternalIssuanceSignatureRequired
+		}
+
+		signedPsbts = append(signedPsbts, signed.VirtualPSBT)
+	}
+
+	_, err = i.client.SealBatch(ctx, &SealBatchRequest{
+		ShortResponse:           true,
+		SignedGroupVirtualPSBTs: signedPsbts,
+	})
+	if err != nil {
+		return err
+	}
+
+	_, err = i.client.FinalizeBatch(ctx, &FinalizeBatchRequest{
+		ShortResponse: true,
+	})
+
+	return err
+}
+
+func issuanceSigningRequests(batch *VerboseMintingBatch,
+	externalKey *ExternalKey,
+	signingContext issuanceSigningContext) ([]IssuanceSigningRequest, error) {
+
+	if batch == nil {
+		return nil, fmt.Errorf("nil funded minting batch")
+	}
+	if externalKey == nil {
+		return nil, ErrExternalIssuanceKeyRequired
+	}
+
+	requests := make([]IssuanceSigningRequest, 0, len(batch.UnsealedAssets))
+	for _, unsealed := range batch.UnsealedAssets {
+		if unsealed.GroupVirtualPSBT == "" {
+			continue
+		}
+
+		req := IssuanceSigningRequest{
+			Operation:   signingContext.operation,
+			AssetRef:    signingContext.assetRef,
+			ExternalKey: *externalKey,
+			VirtualPSBT: unsealed.GroupVirtualPSBT,
+			VirtualTx:   unsealed.GroupVirtualTx,
+		}
+
+		if unsealed.Asset != nil {
+			req.Name = unsealed.Asset.Name
+			req.AssetType = unsealed.Asset.AssetType
+			req.Amount = unsealed.Asset.Amount
+			req.ScriptKey = unsealed.Asset.ScriptKey
+		}
+		if unsealed.GroupKeyRequest != nil {
+			req.AnchorGenesis = unsealed.GroupKeyRequest.AnchorGenesis
+			if unsealed.GroupKeyRequest.ExternalKey != nil {
+				req.ExternalKey = *unsealed.GroupKeyRequest.ExternalKey
+			}
+		}
+		if req.AssetRef.IsZero() && unsealed.GroupVirtualTx != nil &&
+			unsealed.GroupVirtualTx.TweakedKey != nil {
+
+			req.AssetRef = AssetRefFromGroupKey(
+				*unsealed.GroupVirtualTx.TweakedKey,
+			)
+		}
+
+		requests = append(requests, req)
+	}
+
+	if len(requests) == 0 {
+		return nil, ErrExternalIssuanceRequestNotFound
+	}
+
+	return requests, nil
+}
+
+func applyExternalIssuanceKeyToAsset(stage *MintAsset, opts *MintOptions) {
+	if stage == nil || opts == nil || opts.externalIssuanceKey == nil {
+		return
+	}
+	if !stage.AllowIssuance {
+		return
+	}
+
+	stage.ExternalGroupKey = opts.externalIssuanceKey
+}
+
+func applyExternalIssuanceKeyToIssuance(stage *MintIssuance,
+	opts *MintOptions) {
+
+	if stage == nil || opts == nil {
+		return
+	}
+
+	stage.ExternalGroupKey = opts.externalIssuanceKey
+}
+
+func signingOperationForMintAsset(stage *MintAsset) IssuanceOperation {
+	if stage == nil || !stage.AllowIssuance {
+		return IssuanceOperationUnknown
+	}
+
+	switch stage.AssetType {
+	case AssetTypeFungible:
+		return IssuanceOperationCreateAsset
+	case AssetTypeNFT:
+		return IssuanceOperationCreateCollection
+	default:
+		return IssuanceOperationUnknown
+	}
 }
 
 func (i *Issuer) cancelBatchBestEffort() {

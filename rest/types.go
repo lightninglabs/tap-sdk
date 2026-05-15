@@ -278,6 +278,13 @@ type jsonKeyLocator struct {
 	KeyIndex  int32 `json:"key_index"`
 }
 
+// jsonExternalKey is the JSON shape of taprpc.ExternalKey.
+type jsonExternalKey struct {
+	XPub              string `json:"xpub"`
+	MasterFingerprint string `json:"master_fingerprint"`
+	DerivationPath    string `json:"derivation_path"`
+}
+
 // jsonNextScriptKeyResponse is the JSON shape of
 // assetwalletrpc.NextScriptKeyResponse.
 type jsonNextScriptKeyResponse struct {
@@ -351,6 +358,7 @@ type jsonMintAsset struct {
 	DecimalDisplay   uint32             `json:"decimal_display"`
 	AssetMeta        *jsonAssetMeta     `json:"asset_meta"`
 	GroupInternalKey *jsonKeyDescriptor `json:"group_internal_key"`
+	ExternalGroupKey *jsonExternalKey   `json:"external_group_key"`
 
 	EnableSupplyCommitments bool `json:"enable_supply_commitments"` //nolint:lll
 }
@@ -368,6 +376,37 @@ type jsonPendingAsset struct {
 	AssetMeta          *jsonAssetMeta     `json:"asset_meta"`
 	ScriptKey          *jsonScriptKey     `json:"script_key"`
 	GroupInternalKey   *jsonKeyDescriptor `json:"group_internal_key"`
+}
+
+// jsonTxOut is the JSON shape of wire.TxOut.
+type jsonTxOut struct {
+	Value    string `json:"value"`
+	PkScript string `json:"pk_script"`
+}
+
+// jsonGroupKeyRequest is the JSON shape of taprpc.GroupKeyRequest.
+type jsonGroupKeyRequest struct {
+	RawKey        *jsonKeyDescriptor `json:"raw_key"`
+	AnchorGenesis *jsonGenesisInfo   `json:"anchor_genesis"`
+	TapscriptRoot string             `json:"tapscript_root"`
+	NewAsset      string             `json:"new_asset"`
+	ExternalKey   *jsonExternalKey   `json:"external_key"`
+}
+
+// jsonGroupVirtualTx is the JSON shape of taprpc.GroupVirtualTx.
+type jsonGroupVirtualTx struct {
+	Transaction string     `json:"transaction"`
+	PrevOut     *jsonTxOut `json:"prev_out"`
+	GenesisID   string     `json:"genesis_id"`
+	TweakedKey  string     `json:"tweaked_key"`
+}
+
+// jsonUnsealedAsset is the JSON shape of mintrpc.UnsealedAsset.
+type jsonUnsealedAsset struct {
+	Asset            *jsonPendingAsset    `json:"asset"`
+	GroupKeyRequest  *jsonGroupKeyRequest `json:"group_key_request"`
+	GroupVirtualTx   *jsonGroupVirtualTx  `json:"group_virtual_tx"`
+	GroupVirtualPSBT string               `json:"group_virtual_psbt"`
 }
 
 // jsonMintingBatch is the JSON shape of mintrpc.MintingBatch.
@@ -389,7 +428,8 @@ type jsonMintAssetResponse struct {
 
 // jsonVerboseBatch is the JSON shape of mintrpc.VerboseBatch.
 type jsonVerboseBatch struct {
-	Batch *jsonMintingBatch `json:"batch"`
+	Batch          *jsonMintingBatch    `json:"batch"`
+	UnsealedAssets []*jsonUnsealedAsset `json:"unsealed_assets"`
 }
 
 // jsonFundBatchResponse is the JSON shape of

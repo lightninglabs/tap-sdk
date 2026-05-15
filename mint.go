@@ -1,5 +1,7 @@
 package tapsdk
 
+import "context"
+
 // The mint entities in this file include the high-level issuer specs and the
 // low-level batch minting types exposed by MintClient.
 
@@ -13,6 +15,99 @@ type ExternalKey struct {
 
 	// DerivationPath is the full child derivation path.
 	DerivationPath string
+}
+
+// IssuanceOperation identifies the high-level issuer action that needs an
+// external signature.
+type IssuanceOperation uint8
+
+const (
+	// IssuanceOperationUnknown means the signing operation was not classified.
+	IssuanceOperationUnknown IssuanceOperation = 0
+
+	// IssuanceOperationCreateAsset creates the first issuance of a fungible
+	// Asset.
+	IssuanceOperationCreateAsset IssuanceOperation = 1
+
+	// IssuanceOperationIssueAsset creates another Issuance for an existing
+	// fungible Asset.
+	IssuanceOperationIssueAsset IssuanceOperation = 2
+
+	// IssuanceOperationCreateCollection creates the first item in a new
+	// Collection.
+	IssuanceOperationCreateCollection IssuanceOperation = 3
+
+	// IssuanceOperationMintCollectionItem creates another item in an existing
+	// Collection.
+	IssuanceOperationMintCollectionItem IssuanceOperation = 4
+)
+
+// String returns the stable name for an issuance operation.
+func (o IssuanceOperation) String() string {
+	switch o {
+	case IssuanceOperationCreateAsset:
+		return "create_asset"
+	case IssuanceOperationIssueAsset:
+		return "issue_asset"
+	case IssuanceOperationCreateCollection:
+		return "create_collection"
+	case IssuanceOperationMintCollectionItem:
+		return "mint_collection_item"
+	default:
+		return "unknown"
+	}
+}
+
+// IssuanceSigningRequest describes the SDK-level issuance authorization that
+// needs an external Taproot signature.
+type IssuanceSigningRequest struct {
+	// Operation is the high-level issuer action being authorized.
+	Operation IssuanceOperation
+
+	// AssetRef is the stable SDK identifier for the Asset or Collection. For a
+	// first issuance this is inferred from the funded signing payload.
+	AssetRef AssetRef
+
+	// Name is the Asset or Collection item name.
+	Name string
+
+	// AssetType is the kind of asset being issued.
+	AssetType AssetType
+
+	// Amount is the number of units this signing request authorizes.
+	Amount uint64
+
+	// ScriptKey is the asset-level spending key for the issued units.
+	ScriptKey *ScriptKey
+
+	// ExternalKey is the external key descriptor that should sign.
+	ExternalKey ExternalKey
+
+	// AnchorGenesis is the concrete genesis information committed by the funded
+	// mint batch.
+	AnchorGenesis *GenesisInfo
+
+	// VirtualPSBT is the base64 PSBT that must be signed externally.
+	VirtualPSBT string
+
+	// VirtualTx is the decoded virtual transaction metadata for review.
+	VirtualTx *GroupVirtualTx
+}
+
+// SignedIssuance is the external signature result for one issuance signing
+// request.
+type SignedIssuance struct {
+	// VirtualPSBT is the signed base64 PSBT returned by the external signer.
+	VirtualPSBT string
+}
+
+// ExternalIssuanceSigner signs issuance authorization payloads with an
+// externally managed key.
+type ExternalIssuanceSigner interface {
+	// SignIssuance reviews and signs one issuance authorization request.
+	SignIssuance(context.Context, IssuanceSigningRequest) (
+		SignedIssuance, error,
+	)
 }
 
 // PendingMintAsset represents an asset staged in a minting batch.
