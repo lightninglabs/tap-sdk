@@ -125,6 +125,17 @@ Examples:
 - `wallet: add high-level balance query method`
 - `multi: fix lint issues across packages`
 
+### Publishing
+
+Do not include AI/tool attribution in branch names, PR titles, PR bodies, or
+commit messages. In particular, never use `codex/` branch prefixes or
+`[codex]` PR title prefixes.
+
+Use normal repository style instead:
+- Branch: plain descriptive name, e.g. `standardize-fee-rates-sat-vb`
+- Commit: subsystem style, e.g. `multi: standardize fee rates on sat/vB`
+- PR title: subsystem style, e.g. `multi: standardize fee rates on sat/vB`
+
 ### PR Workflow
 
 1. Create or update a design doc under `docs/design/` only for non-trivial
