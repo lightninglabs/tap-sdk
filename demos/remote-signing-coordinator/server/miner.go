@@ -84,6 +84,7 @@ func (m regtestMiner) bitcoinCLI(ctx context.Context,
 		"-rpcuser=" + m.user,
 		"-rpcpassword=" + m.password,
 	}
+	//nolint:gosec // Demo intentionally shells out to local Docker.
 	cmd := exec.CommandContext(ctx, "docker", append(baseArgs, args...)...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
