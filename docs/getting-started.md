@@ -211,6 +211,28 @@ _, err = universe.SyncAsset(ctx, token.AssetRef, "tapd.example:10029")
 Current tapd versions perform the remote universe dial. Do not pass direct user
 input as the sync host.
 
+## Workflow References
+
+The integration suite doubles as executable workflow documentation. Use these
+tests when a flow needs a funded regtest stack instead of a short snippet:
+
+- Connect and inspect node info: [`itest/info_test.go`](../itest/info_test.go).
+- Issue fungibles, NFTs, and collection items:
+  [`itest/issuer_test.go`](../itest/issuer_test.go) and
+  [`itest/mint_test.go`](../itest/mint_test.go).
+- Receive and send assets: [`itest/send_test.go`](../itest/send_test.go).
+- Build interactive transfers and VPSBTs:
+  [`itest/builder_test.go`](../itest/builder_test.go).
+- Export, import, and verify proofs:
+  [`itest/proof_test.go`](../itest/proof_test.go).
+- Query universe roots and proofs:
+  [`itest/universe_test.go`](../itest/universe_test.go).
+- Burn assets and inspect protocol records:
+  [`itest/wallet_surface_test.go`](../itest/wallet_surface_test.go).
+
+The [integration test guide](../itest/README.md) explains how to start the
+regtest stack and run individual workflow tests.
+
 ## Next Steps
 
 - Read the [Asset Model](asset-model.md).
