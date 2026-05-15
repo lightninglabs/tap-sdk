@@ -117,6 +117,12 @@ Lightning-native Taproot Assets flows such as RFQ, price oracles, asset
 channels, and Portfolio Pilot are intentionally outside the current SDK
 surface.
 
+## Demos
+
+- [Remote Signing Coordinator](demos/remote-signing-coordinator/README.md) -
+  runnable regtest demo for reviewing and signing external Issuance requests
+  through a Go coordinator and Next.js dashboard.
+
 ## Documentation
 
 - [Getting Started](docs/getting-started.md)
