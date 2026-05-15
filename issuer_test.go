@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testFungibleAssetName = "token"
+
 func TestIssuerCreateFungibleMintsGroupedAsset(t *testing.T) {
 	ctx := context.Background()
 	client := &mockClient{}
@@ -18,7 +20,7 @@ func TestIssuerCreateFungibleMintsGroupedAsset(t *testing.T) {
 	groupRef := AssetRefFromGroupKey(testKey(t, 2))
 	record := issuerAssetRecord(
 		issuerAssetID(1), groupRef, AssetTypeFungible,
-		"token", 100,
+		testFungibleAssetName, 100,
 	)
 	batchKey := testKey(t, 3)
 
@@ -34,7 +36,7 @@ func TestIssuerCreateFungibleMintsGroupedAsset(t *testing.T) {
 				req.ShortResponse &&
 				req.Asset != nil &&
 				req.Asset.AssetType == AssetTypeFungible &&
-				req.Asset.Name == "token" &&
+				req.Asset.Name == testFungibleAssetName &&
 				req.Asset.InitialSupply == 100 &&
 				req.Asset.AllowIssuance
 		},
@@ -51,7 +53,7 @@ func TestIssuerCreateFungibleMintsGroupedAsset(t *testing.T) {
 	).Once()
 
 	asset, err := issuer.CreateFungible(ctx, FungibleAssetSpec{
-		Name:   "token",
+		Name:   testFungibleAssetName,
 		Amount: 100,
 	}, WithMintFeeRate(250))
 	require.NoError(t, err)
@@ -79,7 +81,8 @@ func TestIssuerCreateFungibleSignsExternalIssuance(t *testing.T) {
 	scriptKey := &ScriptKey{PubKey: testKey(t, 30)}
 	issuanceID := issuerAssetID(31)
 	record := issuerAssetRecord(
-		issuanceID, groupRef, AssetTypeFungible, "token", 100,
+		issuanceID, groupRef, AssetTypeFungible, testFungibleAssetName,
+		100,
 	)
 	batchKey := testKey(t, 3)
 	unsignedPsbt := "unsigned-issuance-psbt"
@@ -101,7 +104,7 @@ func TestIssuerCreateFungibleSignsExternalIssuance(t *testing.T) {
 				req.ShortResponse &&
 				req.Asset != nil &&
 				req.Asset.AssetType == AssetTypeFungible &&
-				req.Asset.Name == "token" &&
+				req.Asset.Name == testFungibleAssetName &&
 				req.Asset.InitialSupply == 100 &&
 				req.Asset.AllowIssuance &&
 				req.Asset.ExternalGroupKey != nil &&
@@ -118,14 +121,14 @@ func TestIssuerCreateFungibleSignsExternalIssuance(t *testing.T) {
 			{
 				Asset: &PendingMintAsset{
 					AssetType: AssetTypeFungible,
-					Name:      "token",
+					Name:      testFungibleAssetName,
 					Amount:    100,
 					ScriptKey: scriptKey,
 				},
 				GroupKeyRequest: &GroupKeyRequest{
 					AnchorGenesis: &GenesisInfo{
 						GenesisPoint: "genesis:0",
-						Name:         "token",
+						Name:         testFungibleAssetName,
 						IssuanceID:   issuanceID,
 						AssetType:    AssetTypeFungible,
 					},
@@ -160,7 +163,7 @@ func TestIssuerCreateFungibleSignsExternalIssuance(t *testing.T) {
 
 	asset, err := issuer.CreateFungible(
 		ctx, FungibleAssetSpec{
-			Name:      "token",
+			Name:      testFungibleAssetName,
 			Amount:    100,
 			ScriptKey: scriptKey,
 		},
@@ -175,7 +178,7 @@ func TestIssuerCreateFungibleSignsExternalIssuance(t *testing.T) {
 	req := signer.requests[0]
 	require.Equal(t, IssuanceOperationCreateAsset, req.Operation)
 	require.Equal(t, groupRef, req.AssetRef)
-	require.Equal(t, "token", req.Name)
+	require.Equal(t, testFungibleAssetName, req.Name)
 	require.Equal(t, uint64(100), req.Amount)
 	require.Equal(t, unsignedPsbt, req.VirtualPSBT)
 	require.Equal(t, externalKey, req.ExternalKey)
@@ -231,11 +234,11 @@ func TestIssuerIssueFungibleMintsIssuance(t *testing.T) {
 	groupRef := AssetRefFromGroupKey(testKey(t, 8))
 	first := issuerAssetRecord(
 		issuerAssetID(8), groupRef, AssetTypeFungible,
-		"token", 100,
+		testFungibleAssetName, 100,
 	)
 	second := issuerAssetRecord(
 		issuerAssetID(9), groupRef, AssetTypeFungible,
-		"token", 50,
+		testFungibleAssetName, 50,
 	)
 	batchKey := testKey(t, 9)
 
@@ -255,7 +258,7 @@ func TestIssuerIssueFungibleMintsIssuance(t *testing.T) {
 				req.Issuance != nil &&
 				req.Issuance.AssetRef == groupRef &&
 				req.Issuance.AssetType == AssetTypeFungible &&
-				req.Issuance.Name == "token" &&
+				req.Issuance.Name == testFungibleAssetName &&
 				req.Issuance.Amount == 50
 		},
 	)).Return(&MintingBatch{BatchKey: batchKey}, nil).Once()

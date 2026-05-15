@@ -666,7 +666,8 @@ func (i *Issuer) signAndFinalizeExternalIssuance(ctx context.Context,
 	return err
 }
 
-func issuanceSigningRequests(batch *VerboseMintingBatch, externalKey *ExternalKey,
+func issuanceSigningRequests(batch *VerboseMintingBatch,
+	externalKey *ExternalKey,
 	signingContext issuanceSigningContext) ([]IssuanceSigningRequest, error) {
 
 	if batch == nil {
@@ -731,7 +732,9 @@ func applyExternalIssuanceKeyToAsset(stage *MintAsset, opts *MintOptions) {
 	stage.ExternalGroupKey = opts.externalIssuanceKey
 }
 
-func applyExternalIssuanceKeyToIssuance(stage *MintIssuance, opts *MintOptions) {
+func applyExternalIssuanceKeyToIssuance(stage *MintIssuance,
+	opts *MintOptions) {
+
 	if stage == nil || opts == nil {
 		return
 	}
