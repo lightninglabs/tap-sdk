@@ -983,7 +983,8 @@ func (s *Wallet) Send(ctx context.Context, addr string,
 
 	req := &SendAssetRequest{
 		Recipients:                []Recipient{recipient},
-		FeeRate:                   o.feeRate,
+		FeeRateSatPerVByte:        o.feeRateSatPerVByte,
+		FeeRateSatPerKWeight:      o.feeRateSatPerKWeight,
 		Label:                     o.label,
 		SkipProofCourierPingCheck: o.skipProofCourierPingCheck,
 	}
@@ -1041,7 +1042,8 @@ func (s *Wallet) SendMulti(ctx context.Context,
 	o := applySendOptions(opts)
 	req := &SendAssetRequest{
 		Recipients:                normalised,
-		FeeRate:                   o.feeRate,
+		FeeRateSatPerVByte:        o.feeRateSatPerVByte,
+		FeeRateSatPerKWeight:      o.feeRateSatPerKWeight,
 		Label:                     o.label,
 		SkipProofCourierPingCheck: o.skipProofCourierPingCheck,
 	}

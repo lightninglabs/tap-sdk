@@ -23,8 +23,21 @@ type SendAssetRequest struct {
 	// Recipients is the list of send destinations.
 	Recipients []Recipient
 
-	// FeeRate is the optional target fee rate in sat/kw for the
-	// anchor transaction.
+	// Set at most one fee-rate field. If none are set, tapd uses its
+	// daemon default.
+	//
+	// FeeRateSatPerVByte is the optional target fee rate in sat/vB for
+	// the anchor transaction.
+	FeeRateSatPerVByte uint32
+
+	// FeeRateSatPerKWeight is the optional target fee rate in sat/kWU for
+	// the anchor transaction.
+	FeeRateSatPerKWeight uint32
+
+	// FeeRate is the optional target fee rate in sat/kWU for the anchor
+	// transaction.
+	//
+	// Deprecated: use FeeRateSatPerVByte or FeeRateSatPerKWeight instead.
 	FeeRate uint32
 
 	// Label is an optional short label for tracking the send.

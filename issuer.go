@@ -53,9 +53,14 @@ type MintOption func(*MintOptions)
 
 // MintOptions contains optional parameters for high-level issuer calls.
 type MintOptions struct {
-	// feeRate is the target fee rate in sat/kw for the genesis transaction.
-	// Zero uses the daemon default.
-	feeRate uint32
+	// feeRateSatPerVByte is the target fee rate in sat/vB for the genesis
+	// transaction. Zero uses the daemon default.
+	feeRateSatPerVByte uint32
+
+	// feeRateSatPerKWeight is the target fee rate in sat/kWU for the
+	// genesis transaction. It is only needed when callers need the
+	// daemon's native fee-rate precision.
+	feeRateSatPerKWeight uint32
 
 	// resolveTimeout is how long high-level issuer calls wait for tapd's
 	// wallet projection to expose the accepted mint result.
@@ -69,11 +74,22 @@ type MintOptions struct {
 	externalIssuanceSigner ExternalIssuanceSigner
 }
 
-// WithMintFeeRate sets the target fee rate in sat/kw for the genesis
+// WithMintFeeRate sets the target fee rate in sat/vB for the genesis
 // transaction. A zero value uses tapd's daemon default.
-func WithMintFeeRate(feeRate uint32) MintOption {
+func WithMintFeeRate(satPerVByte uint32) MintOption {
 	return func(o *MintOptions) {
-		o.feeRate = feeRate
+		o.feeRateSatPerVByte = satPerVByte
+		o.feeRateSatPerKWeight = 0
+	}
+}
+
+// WithMintFeeRateSatPerKWeight sets the target fee rate in sat/kWU for the
+// genesis transaction. Prefer WithMintFeeRate unless the daemon-native unit is
+// needed.
+func WithMintFeeRateSatPerKWeight(satPerKWeight uint32) MintOption {
+	return func(o *MintOptions) {
+		o.feeRateSatPerKWeight = satPerKWeight
+		o.feeRateSatPerVByte = 0
 	}
 }
 
@@ -597,8 +613,9 @@ func (i *Issuer) mintAndFinalize(ctx context.Context,
 
 	_, err := i.client.FinalizeBatch(ctx,
 		&FinalizeBatchRequest{
-			ShortResponse: true,
-			FeeRate:       opts.feeRate,
+			ShortResponse:        true,
+			FeeRateSatPerVByte:   opts.feeRateSatPerVByte,
+			FeeRateSatPerKWeight: opts.feeRateSatPerKWeight,
 		},
 	)
 	if err == nil {
@@ -623,7 +640,8 @@ func (i *Issuer) signAndFinalizeExternalIssuance(ctx context.Context,
 	}
 
 	funded, err := i.client.FundBatch(ctx, &FundBatchRequest{
-		FeeRate: opts.feeRate,
+		FeeRateSatPerVByte:   opts.feeRateSatPerVByte,
+		FeeRateSatPerKWeight: opts.feeRateSatPerKWeight,
 	})
 	if err != nil {
 		return err

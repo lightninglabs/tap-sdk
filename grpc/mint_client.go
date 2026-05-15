@@ -335,12 +335,20 @@ func marshalFundBatchRequest(
 		return &mintrpc.FundBatchRequest{}, nil
 	}
 
-	rpcReq := &mintrpc.FundBatchRequest{
-		ShortResponse: req.ShortResponse,
-		FeeRate:       req.FeeRate,
+	feeRate, err := feeRateSatPerKWeight(
+		req.FeeRateSatPerVByte, req.FeeRateSatPerKWeight,
+		req.FeeRate,
+	)
+	if err != nil {
+		return nil, err
 	}
 
-	err := marshalBatchSibling(req.BatchSibling, func(fullTree *taprpc.
+	rpcReq := &mintrpc.FundBatchRequest{
+		ShortResponse: req.ShortResponse,
+		FeeRate:       feeRate,
+	}
+
+	err = marshalBatchSibling(req.BatchSibling, func(fullTree *taprpc.
 		TapscriptFullTree) {
 
 		rpcReq.BatchSibling = &mintrpc.FundBatchRequest_FullTree{
@@ -393,12 +401,20 @@ func marshalFinalizeBatchRequest(
 		return &mintrpc.FinalizeBatchRequest{}, nil
 	}
 
-	rpcReq := &mintrpc.FinalizeBatchRequest{
-		ShortResponse: req.ShortResponse,
-		FeeRate:       req.FeeRate,
+	feeRate, err := feeRateSatPerKWeight(
+		req.FeeRateSatPerVByte, req.FeeRateSatPerKWeight,
+		req.FeeRate,
+	)
+	if err != nil {
+		return nil, err
 	}
 
-	err := marshalBatchSibling(req.BatchSibling, func(fullTree *taprpc.
+	rpcReq := &mintrpc.FinalizeBatchRequest{
+		ShortResponse: req.ShortResponse,
+		FeeRate:       feeRate,
+	}
+
+	err = marshalBatchSibling(req.BatchSibling, func(fullTree *taprpc.
 		TapscriptFullTree) {
 
 		rpcReq.BatchSibling = &mintrpc.FinalizeBatchRequest_FullTree{

@@ -860,7 +860,7 @@ func TestSend_WithAmount(t *testing.T) {
 			return len(req.Recipients) == 1 &&
 				req.Recipients[0].Address == addr &&
 				recipientAmountIs(req.Recipients[0], amount) &&
-				req.FeeRate == feeRate &&
+				req.FeeRateSatPerVByte == feeRate &&
 				req.Label == label
 		}),
 	).Return(expectedTransfer, nil)
@@ -1096,7 +1096,7 @@ func TestSendMulti_WithOptions(t *testing.T) {
 
 	mc.On("SendAsset", ctx, mock.MatchedBy(
 		func(req *SendAssetRequest) bool {
-			return req.FeeRate == 10 &&
+			return req.FeeRateSatPerVByte == 10 &&
 				req.Label == "batch-payment" &&
 				req.SkipProofCourierPingCheck
 		}),
@@ -1110,6 +1110,32 @@ func TestSendMulti_WithOptions(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Equal(t, expectedTransfer, transfer)
+
+	mc.AssertExpectations(t)
+}
+
+func TestSendMulti_WithFeeRateSatPerKWeight(t *testing.T) {
+	mc := new(mockClient)
+	w := NewWallet(mc, NetworkRegtest)
+	ctx := context.Background()
+
+	addr := encodeV2NoAmount(t)
+	recipients := []Recipient{
+		RecipientWithAmount(addr, 50),
+	}
+
+	mc.On("SendAsset", ctx, mock.MatchedBy(
+		func(req *SendAssetRequest) bool {
+			return req.FeeRateSatPerKWeight == 253 &&
+				req.FeeRateSatPerVByte == 0
+		}),
+	).Return(&AssetTransfer{}, nil)
+
+	_, err := w.SendMulti(
+		ctx, recipients,
+		WithFeeRateSatPerKWeight(253),
+	)
+	require.NoError(t, err)
 
 	mc.AssertExpectations(t)
 }

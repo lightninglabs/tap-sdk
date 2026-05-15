@@ -336,8 +336,8 @@ func TestMarshalSendAssetRequest(t *testing.T) {
 						"tap1second",
 					),
 				},
-				FeeRate: 250,
-				Label:   "batch-send",
+				FeeRateSatPerVByte: 2,
+				Label:              "batch-send",
 			},
 			validate: func(t *testing.T, rpcReq *taprpc.SendAssetRequest) {
 				require.Equal(
@@ -345,9 +345,23 @@ func TestMarshalSendAssetRequest(t *testing.T) {
 					[]string{"tap1first", "tap1second"},
 					rpcReq.TapAddrs,
 				)
-				require.Equal(t, uint32(250), rpcReq.FeeRate)
+				require.Equal(t, uint32(500), rpcReq.FeeRate)
 				require.Equal(t, "batch-send", rpcReq.Label)
 				require.Empty(t, rpcReq.AddressesWithAmounts)
+			},
+		},
+		{
+			name: "sat per kweight fee rate",
+			req: &tapsdk.SendAssetRequest{
+				Recipients: []tapsdk.Recipient{
+					tapsdk.RecipientWithEmbeddedAmount(
+						"tap1first",
+					),
+				},
+				FeeRateSatPerKWeight: 321,
+			},
+			validate: func(t *testing.T, rpcReq *taprpc.SendAssetRequest) {
+				require.Equal(t, uint32(321), rpcReq.FeeRate)
 			},
 		},
 		{

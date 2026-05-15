@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -65,7 +66,11 @@ func (c *coordinator) startSession(_ context.Context,
 	if req.Amount == 0 {
 		return nil, tapsdk.ErrZeroAmount
 	}
-	if req.FeeRateSatKw > 0 && req.FeeRateSatKw < minManualFeeRateSatKw {
+	feeRateSatKw, err := feeRateSatVByteToSatKw(req.FeeRateSatVByte)
+	if err != nil {
+		return nil, err
+	}
+	if feeRateSatKw > 0 && feeRateSatKw < minManualFeeRateSatKw {
 		return nil, fmt.Errorf(
 			"fee rate must be at least %d sat/kWU, about %.2f sat/vB",
 			minManualFeeRateSatKw, float64(minManualFeeRateSatKw)/250,
@@ -103,6 +108,7 @@ func (c *coordinator) startSession(_ context.Context,
 
 	go c.runSession(
 		context.Background(), id, req, assetRef, externalKey,
+		feeRateSatKw,
 	)
 
 	return session.clone(), nil
@@ -186,7 +192,7 @@ func (c *coordinator) submitSignature(id string,
 
 func (c *coordinator) runSession(ctx context.Context, id string,
 	req startSessionRequest, assetRef tapsdk.AssetRef,
-	externalKey tapsdk.ExternalKey) {
+	externalKey tapsdk.ExternalKey, feeRateSatKw uint32) {
 
 	c.mintMu.Lock()
 	defer c.mintMu.Unlock()
@@ -206,8 +212,10 @@ func (c *coordinator) runSession(ctx context.Context, id string,
 		tapsdk.WithExternalIssuanceKey(externalKey),
 		tapsdk.WithExternalIssuanceSigner(signer),
 	}
-	if req.FeeRateSatKw != 0 {
-		opts = append(opts, tapsdk.WithMintFeeRate(req.FeeRateSatKw))
+	if feeRateSatKw != 0 {
+		opts = append(opts,
+			tapsdk.WithMintFeeRateSatPerKWeight(feeRateSatKw),
+		)
 	}
 
 	switch req.Operation {
@@ -509,6 +517,30 @@ func assetTypeLabel(assetType tapsdk.AssetType) string {
 	default:
 		return "Unknown"
 	}
+}
+
+func feeRateSatVByteToSatKw(satPerVByte float64) (uint32, error) {
+	switch {
+	case satPerVByte < 0 || math.IsNaN(satPerVByte) ||
+		math.IsInf(satPerVByte, 0):
+
+		return 0, fmt.Errorf("invalid fee rate: %.8f sat/vB",
+			satPerVByte)
+
+	case satPerVByte == 0:
+		return 0, nil
+	}
+
+	satPerKWeight := math.Ceil(
+		satPerVByte *
+			float64(tapsdk.SatPerKWeightPerSatPerVByte),
+	)
+	if satPerKWeight > float64(^uint32(0)) {
+		return 0, fmt.Errorf("fee rate %.8f sat/vB overflows sat/kWU",
+			satPerVByte)
+	}
+
+	return uint32(satPerKWeight), nil
 }
 
 func randomID() (string, error) {

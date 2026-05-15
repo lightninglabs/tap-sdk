@@ -8,9 +8,14 @@ type SendOptions struct {
 	// address with no caller-supplied amount.
 	amount uint64
 
-	// feeRate is the target fee rate in sat/kw for the anchor transaction.
-	// Zero uses the daemon default.
-	feeRate uint32
+	// feeRateSatPerVByte is the target fee rate in sat/vB for the
+	// anchor transaction. Zero uses the daemon default.
+	feeRateSatPerVByte uint32
+
+	// feeRateSatPerKWeight is the target fee rate in sat/kWU for the
+	// anchor transaction. It is only needed when callers need the
+	// daemon's native fee-rate precision.
+	feeRateSatPerKWeight uint32
 
 	// label is an optional short label for tracking the send.
 	label string
@@ -34,10 +39,20 @@ func WithAmount(amount uint64) SendOption {
 	}
 }
 
-// WithFeeRate sets the target fee rate in sat/kw for the anchor transaction.
-func WithFeeRate(feeRate uint32) SendOption {
+// WithFeeRate sets the target fee rate in sat/vB for the anchor transaction.
+func WithFeeRate(satPerVByte uint32) SendOption {
 	return func(o *SendOptions) {
-		o.feeRate = feeRate
+		o.feeRateSatPerVByte = satPerVByte
+		o.feeRateSatPerKWeight = 0
+	}
+}
+
+// WithFeeRateSatPerKWeight sets the target fee rate in sat/kWU for the anchor
+// transaction. Prefer WithFeeRate unless the daemon-native unit is needed.
+func WithFeeRateSatPerKWeight(satPerKWeight uint32) SendOption {
+	return func(o *SendOptions) {
+		o.feeRateSatPerKWeight = satPerKWeight
+		o.feeRateSatPerVByte = 0
 	}
 }
 

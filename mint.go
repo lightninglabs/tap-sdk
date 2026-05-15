@@ -508,7 +508,18 @@ type FundBatchRequest struct {
 	// ShortResponse asks the daemon to omit batch asset details.
 	ShortResponse bool
 
-	// FeeRate is the optional fee rate in sat/kw.
+	// Set at most one fee-rate field. If none are set, tapd uses its
+	// daemon default.
+	//
+	// FeeRateSatPerVByte is the optional fee rate in sat/vB.
+	FeeRateSatPerVByte uint32
+
+	// FeeRateSatPerKWeight is the optional fee rate in sat/kWU.
+	FeeRateSatPerKWeight uint32
+
+	// FeeRate is the optional fee rate in sat/kWU.
+	//
+	// Deprecated: use FeeRateSatPerVByte or FeeRateSatPerKWeight instead.
 	FeeRate uint32
 
 	// BatchSibling is the optional tapscript sibling for the batch output.
@@ -532,7 +543,18 @@ type FinalizeBatchRequest struct {
 	// ShortResponse asks the daemon to omit batch asset details.
 	ShortResponse bool
 
-	// FeeRate is the optional fee rate in sat/kw.
+	// Set at most one fee-rate field. If none are set, tapd uses its
+	// daemon default.
+	//
+	// FeeRateSatPerVByte is the optional fee rate in sat/vB.
+	FeeRateSatPerVByte uint32
+
+	// FeeRateSatPerKWeight is the optional fee rate in sat/kWU.
+	FeeRateSatPerKWeight uint32
+
+	// FeeRate is the optional fee rate in sat/kWU.
+	//
+	// Deprecated: use FeeRateSatPerVByte or FeeRateSatPerKWeight instead.
 	FeeRate uint32
 
 	// BatchSibling is the optional tapscript sibling for the batch output.

@@ -163,7 +163,7 @@ export default function Dashboard() {
         asset_ref:
           form.operation === "issue_asset" ? form.assetRef.trim() : "",
         amount: Number(form.amount),
-        fee_rate_sat_kw: feeRateSatVByteToSatKw(form.feeRateSatVByte),
+        fee_rate_sat_vbyte: feeRateSatVByteValue(form.feeRateSatVByte),
         external_key: {
           xpub: form.xpub.trim(),
           master_fingerprint: form.masterFingerprint.trim(),
@@ -493,11 +493,12 @@ function IssuanceForm({
   onChange: (form: FormState) => void;
   onStart: () => void;
 }) {
-  const feeRateSatVByte = Number(form.feeRateSatVByte || "0");
+  const rawFeeRateSatVByte = Number(form.feeRateSatVByte || "0");
+  const feeRateSatVByte = feeRateSatVByteValue(form.feeRateSatVByte);
   const feeRateSatKw = feeRateSatVByteToSatKw(form.feeRateSatVByte);
   const feeRateInvalid =
-    Number.isNaN(feeRateSatVByte) ||
-    feeRateSatVByte < 0 ||
+    !Number.isFinite(rawFeeRateSatVByte) ||
+    rawFeeRateSatVByte < 0 ||
     (feeRateSatKw > 0 && feeRateSatKw < minManualFeeRateSatKw);
   const disabled =
     loading ||
@@ -601,7 +602,7 @@ function IssuanceForm({
         ) : feeRateSatKw < minManualFeeRateSatKw ? (
           "Minimum manual fee rate is 1.02 sat/vB"
         ) : (
-          `${feeRateSatKw} sat/kWU sent to the SDK`
+          `${feeRateSatVByte} sat/vB anchor fee rate`
         )}
       </div>
 
@@ -1324,9 +1325,18 @@ function newerTimestamp(a = "", b = ""): string {
   return new Date(a).getTime() > new Date(b).getTime() ? a : b;
 }
 
-function feeRateSatVByteToSatKw(value: string): number {
+function feeRateSatVByteValue(value: string): number {
   const feeRateSatVByte = Number(value || "0");
   if (!Number.isFinite(feeRateSatVByte) || feeRateSatVByte <= 0) {
+    return 0;
+  }
+
+  return feeRateSatVByte;
+}
+
+function feeRateSatVByteToSatKw(value: string): number {
+  const feeRateSatVByte = feeRateSatVByteValue(value);
+  if (feeRateSatVByte === 0) {
     return 0;
   }
 

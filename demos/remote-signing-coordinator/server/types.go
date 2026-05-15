@@ -28,12 +28,12 @@ type externalKey struct {
 }
 
 type startSessionRequest struct {
-	Operation    operation   `json:"operation"`
-	Name         string      `json:"name"`
-	AssetRef     string      `json:"asset_ref"`
-	Amount       uint64      `json:"amount"`
-	FeeRateSatKw uint32      `json:"fee_rate_sat_kw"`
-	ExternalKey  externalKey `json:"external_key"`
+	Operation       operation   `json:"operation"`
+	Name            string      `json:"name"`
+	AssetRef        string      `json:"asset_ref"`
+	Amount          uint64      `json:"amount"`
+	FeeRateSatVByte float64     `json:"fee_rate_sat_vbyte"`
+	ExternalKey     externalKey `json:"external_key"`
 }
 
 type signingRequest struct {

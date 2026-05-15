@@ -104,8 +104,16 @@ func (m *mintClient) FundBatch(ctx context.Context,
 
 	body := &jsonFundBatchRequest{}
 	if req != nil {
+		feeRate, err := feeRateSatPerKWeight(
+			req.FeeRateSatPerVByte, req.FeeRateSatPerKWeight,
+			req.FeeRate,
+		)
+		if err != nil {
+			return nil, err
+		}
+
 		body.ShortResponse = req.ShortResponse
-		body.FeeRate = req.FeeRate
+		body.FeeRate = feeRate
 	}
 
 	var resp jsonFundBatchResponse
@@ -184,8 +192,16 @@ func (m *mintClient) FinalizeBatch(ctx context.Context,
 
 	body := &jsonFinalizeBatchRequest{}
 	if req != nil {
+		feeRate, err := feeRateSatPerKWeight(
+			req.FeeRateSatPerVByte, req.FeeRateSatPerKWeight,
+			req.FeeRate,
+		)
+		if err != nil {
+			return nil, err
+		}
+
 		body.ShortResponse = req.ShortResponse
-		body.FeeRate = req.FeeRate
+		body.FeeRate = feeRate
 	}
 
 	var resp jsonFinalizeBatchResponse

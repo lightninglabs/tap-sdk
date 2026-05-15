@@ -813,8 +813,16 @@ func marshalSendAssetRequest(
 		return &taprpc.SendAssetRequest{}, nil
 	}
 
+	feeRate, err := feeRateSatPerKWeight(
+		req.FeeRateSatPerVByte, req.FeeRateSatPerKWeight,
+		req.FeeRate,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	rpcReq := &taprpc.SendAssetRequest{
-		FeeRate:                   req.FeeRate,
+		FeeRate:                   feeRate,
 		Label:                     req.Label,
 		SkipProofCourierPingCheck: req.SkipProofCourierPingCheck,
 	}

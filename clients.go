@@ -155,7 +155,8 @@ type WalletKitClient interface {
 	// SignVirtualPsbt signs a virtual transaction.
 	SignVirtualPsbt(ctx context.Context, fundedPsbt []byte) ([]byte, error)
 
-	// CommitVirtualPsbts commits virtual transactions.
+	// CommitVirtualPsbts commits virtual transactions using a sat/vB
+	// anchor fee rate.
 	CommitVirtualPsbts(ctx context.Context, virtualPsbts [][]byte,
 		passivePsbts [][]byte, feeRate uint64) (*CommittedTransfer,
 		error)

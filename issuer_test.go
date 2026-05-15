@@ -45,7 +45,7 @@ func TestIssuerCreateFungibleMintsGroupedAsset(t *testing.T) {
 		func(req *FinalizeBatchRequest) bool {
 			return req != nil &&
 				req.ShortResponse &&
-				req.FeeRate == 250
+				req.FeeRateSatPerVByte == 1
 		},
 	)).Return(&MintingBatch{BatchKey: batchKey}, nil).Once()
 	client.On("ListAssetRecords", ctx, includeUnconfirmed(nil)).Return(
@@ -55,7 +55,7 @@ func TestIssuerCreateFungibleMintsGroupedAsset(t *testing.T) {
 	asset, err := issuer.CreateFungible(ctx, FungibleAssetSpec{
 		Name:   testFungibleAssetName,
 		Amount: 100,
-	}, WithMintFeeRate(250))
+	}, WithMintFeeRate(1))
 	require.NoError(t, err)
 	require.Equal(t, groupRef, asset.AssetRef)
 	require.Equal(t, AssetTypeFungible, asset.Type)
@@ -113,7 +113,7 @@ func TestIssuerCreateFungibleSignsExternalIssuance(t *testing.T) {
 	)).Return(&MintingBatch{BatchKey: batchKey}, nil).Once()
 	client.On("FundBatch", ctx, mock.MatchedBy(
 		func(req *FundBatchRequest) bool {
-			return req != nil && req.FeeRate == 250
+			return req != nil && req.FeeRateSatPerKWeight == 250
 		},
 	)).Return(&VerboseMintingBatch{
 		Batch: MintingBatch{BatchKey: batchKey},
@@ -154,7 +154,8 @@ func TestIssuerCreateFungibleSignsExternalIssuance(t *testing.T) {
 		func(req *FinalizeBatchRequest) bool {
 			return req != nil &&
 				req.ShortResponse &&
-				req.FeeRate == 0
+				req.FeeRateSatPerVByte == 0 &&
+				req.FeeRateSatPerKWeight == 0
 		},
 	)).Return(&MintingBatch{BatchKey: batchKey}, nil).Once()
 	client.On("ListAssetRecords", ctx, includeUnconfirmed(nil)).Return(
@@ -167,7 +168,7 @@ func TestIssuerCreateFungibleSignsExternalIssuance(t *testing.T) {
 			Amount:    100,
 			ScriptKey: scriptKey,
 		},
-		WithMintFeeRate(250),
+		WithMintFeeRateSatPerKWeight(250),
 		WithExternalIssuanceKey(externalKey),
 		WithExternalIssuanceSigner(signer),
 	)

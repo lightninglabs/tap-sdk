@@ -93,7 +93,7 @@ func (b *TxBuilder) AddInput(input PrevID) *TxBuilder {
 	return b
 }
 
-// SetFeeRate sets the fee rate in sat/vbyte. Default is 1 sat/vB.
+// SetFeeRate sets the fee rate in sat/vB. Default is 1 sat/vB.
 func (b *TxBuilder) SetFeeRate(satPerVByte uint64) *TxBuilder {
 	b.feeRate = satPerVByte
 	return b

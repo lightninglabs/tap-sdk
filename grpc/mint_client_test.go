@@ -174,8 +174,8 @@ func TestMarshalFinalizeBatchRequest(t *testing.T) {
 		{
 			name: "full tree sibling",
 			req: &tapsdk.FinalizeBatchRequest{
-				ShortResponse: true,
-				FeeRate:       321,
+				ShortResponse:      true,
+				FeeRateSatPerVByte: 2,
 				BatchSibling: &tapsdk.BatchSibling{
 					FullTree: &tapsdk.TapscriptFullTree{
 						Leaves: []tapsdk.TapLeaf{
@@ -189,7 +189,7 @@ func TestMarshalFinalizeBatchRequest(t *testing.T) {
 				rpcReq *mintrpc.FinalizeBatchRequest) {
 
 				require.True(t, rpcReq.ShortResponse)
-				require.Equal(t, uint32(321), rpcReq.FeeRate)
+				require.Equal(t, uint32(500), rpcReq.FeeRate)
 				require.NotNil(t, rpcReq.GetFullTree())
 				require.Len(t, rpcReq.GetFullTree().AllLeaves, 2)
 				require.Equal(t, []byte{0x51},
@@ -400,8 +400,8 @@ func TestMarshalFundBatchRequest(t *testing.T) {
 		{
 			name: "full tree sibling",
 			req: &tapsdk.FundBatchRequest{
-				ShortResponse: true,
-				FeeRate:       321,
+				ShortResponse:      true,
+				FeeRateSatPerVByte: 2,
 				BatchSibling: &tapsdk.BatchSibling{
 					FullTree: &tapsdk.TapscriptFullTree{
 						Leaves: []tapsdk.TapLeaf{{Script: []byte{0x51}}},
@@ -412,7 +412,7 @@ func TestMarshalFundBatchRequest(t *testing.T) {
 				rpcReq *mintrpc.FundBatchRequest) {
 
 				require.True(t, rpcReq.ShortResponse)
-				require.Equal(t, uint32(321), rpcReq.FeeRate)
+				require.Equal(t, uint32(500), rpcReq.FeeRate)
 				require.NotNil(t, rpcReq.GetFullTree())
 				require.Len(t, rpcReq.GetFullTree().AllLeaves, 1)
 			},
