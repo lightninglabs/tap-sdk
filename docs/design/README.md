@@ -12,3 +12,7 @@ changes and future SDKs in other languages.
   packages.
 - [Fee Rate API](fee-rate-api.md): represent on-chain fee rates as a typed
   fixed-point value while keeping sat/vB as the user-facing unit.
+- [Advanced Custom-Anchor Transactions][advanced-custom-anchor]: define
+  the advanced builder, runtime, and transport boundary model.
+
+[advanced-custom-anchor]: advanced-custom-anchor-transactions.md
