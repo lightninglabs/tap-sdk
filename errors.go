@@ -3,10 +3,17 @@ package tapsdk
 import (
 	"errors"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+)
+
+var feeRateTooLowPattern = regexp.MustCompile(
+	`(?i)(?:fee_rate|requested)=([0-9]+)\s*sat/kw.*` +
+		`(?:floor|minimum|min_relay_fee)=([0-9]+)\s*sat/kw`,
 )
 
 // Error represents an SDK-specific error that wraps underlying RPC errors
@@ -17,6 +24,31 @@ type Error struct {
 
 	// Err is the underlying error.
 	Err error
+}
+
+// FeeRateTooLowError describes a tapd fee-floor rejection with structured
+// fee-rate values callers can render in wallet UX.
+type FeeRateTooLowError struct {
+	RequestedSatKw uint32
+	MinimumSatKw   uint32
+}
+
+// Error implements the error interface.
+func (e *FeeRateTooLowError) Error() string {
+	if e == nil {
+		return "fee rate below minimum"
+	}
+
+	return fmt.Sprintf(
+		"fee rate below minimum: requested %d sat/kw, "+
+			"minimum %d sat/kw",
+		e.RequestedSatKw, e.MinimumSatKw,
+	)
+}
+
+// Unwrap returns the SDK sentinel error for fee-floor rejections.
+func (e *FeeRateTooLowError) Unwrap() error {
+	return ErrFeeRateTooLow
 }
 
 // Error implements the error interface.
@@ -139,8 +171,19 @@ func normalizeErr(op string, err error) error {
 			sentinel = ErrTapdPrecondition
 		}
 
+	case codes.ResourceExhausted:
+		msg := strings.ToLower(st.Message())
+		if isInsufficientAnchorFundsMessage(msg) {
+			sentinel = ErrInsufficientAnchorFunds
+		} else {
+			sentinel = ErrTapdPrecondition
+		}
+
 	case codes.FailedPrecondition:
 		sentinel = ErrTapdPrecondition
+
+	case codes.Unavailable:
+		sentinel = ErrTapdUnavailable
 
 	case codes.Unimplemented:
 		sentinel = ErrUnsupportedByTapd
@@ -165,6 +208,9 @@ func wrapsKnownErr(err error) bool {
 
 func matchErrorMessage(op, msg string) error {
 	lower := strings.ToLower(msg)
+	if feeErr := matchFeeRateTooLow(msg, lower); feeErr != nil {
+		return feeErr
+	}
 
 	switch {
 	case strings.Contains(
@@ -175,10 +221,34 @@ func matchErrorMessage(op, msg string) error {
 	case strings.Contains(lower, "invalid asset ref"):
 		return ErrInvalidAssetRef
 
+	case strings.Contains(lower, "asset ref") &&
+		(strings.Contains(lower, "not issuable") ||
+			strings.Contains(lower, "non-issuable")):
+
+		return ErrAssetNotIssuable
+
+	case isInsufficientAnchorFundsMessage(lower):
+		return ErrInsufficientAnchorFunds
+
 	case strings.Contains(lower, "insufficient") &&
 		strings.Contains(lower, "balance"):
 
 		return ErrInsufficientBalance
+
+	case strings.Contains(lower, "mint batch") &&
+		(strings.Contains(lower, "already active") ||
+			strings.Contains(lower, "already pending") ||
+			strings.Contains(lower, "non-terminal")):
+
+		return ErrMintBatchActive
+
+	case strings.Contains(lower, "external issuance") &&
+		(strings.Contains(lower, "signing request") ||
+			strings.Contains(lower, "signing payload")) &&
+		(strings.Contains(lower, "not found") ||
+			strings.Contains(lower, "missing")):
+
+		return ErrExternalIssuanceRequestNotFound
 
 	case isProofOp(op) && strings.Contains(lower, "proof") &&
 		(strings.Contains(lower, "not found") ||
@@ -202,9 +272,59 @@ func matchErrorMessage(op, msg string) error {
 		strings.Contains(lower, "unsupported"):
 
 		return ErrUnsupportedByTapd
+
+	case strings.Contains(lower, "backend unavailable") ||
+		strings.Contains(lower, "wallet unavailable") ||
+		(strings.Contains(lower, "chain backend") &&
+			strings.Contains(lower, "not available")):
+
+		return ErrTapdUnavailable
 	}
 
 	return nil
+}
+
+func matchFeeRateTooLow(msg, lower string) error {
+	if !strings.Contains(lower, "fee rate below") {
+		return nil
+	}
+
+	matches := feeRateTooLowPattern.FindStringSubmatch(msg)
+	if len(matches) != 3 {
+		return ErrFeeRateTooLow
+	}
+
+	requested, err := strconv.ParseUint(matches[1], 10, 32)
+	if err != nil {
+		return ErrFeeRateTooLow
+	}
+
+	minimum, err := strconv.ParseUint(matches[2], 10, 32)
+	if err != nil {
+		return ErrFeeRateTooLow
+	}
+
+	return &FeeRateTooLowError{
+		RequestedSatKw: uint32(requested),
+		MinimumSatKw:   uint32(minimum),
+	}
+}
+
+func isInsufficientAnchorFundsMessage(lower string) bool {
+	hasShortfall := strings.Contains(lower, "insufficient") ||
+		strings.Contains(lower, "not enough")
+	if !hasShortfall {
+		return false
+	}
+
+	return strings.Contains(lower, "anchor") ||
+		strings.Contains(lower, "chain") ||
+		strings.Contains(lower, "fund") ||
+		strings.Contains(lower, "utxo") ||
+		strings.Contains(lower, "wallet balance") ||
+		strings.Contains(lower, "btc") ||
+		strings.Contains(lower, "sats") ||
+		strings.Contains(lower, "satosh")
 }
 
 func isProofOp(op string) bool {
@@ -256,33 +376,48 @@ var (
 	// operation.
 	ErrInsufficientBalance = errors.New("insufficient asset balance")
 
+	// ErrInsufficientAnchorFunds is returned when tapd or lnd cannot
+	// select enough on-chain wallet funds for anchor or issuance funding.
+	ErrInsufficientAnchorFunds = errors.New("insufficient anchor funds")
+
 	// ErrInvalidAssetRef is returned when an AssetRef is malformed or is
 	// rejected by tapd as an invalid asset identifier.
 	ErrInvalidAssetRef = errors.New("invalid asset ref")
 
-	// ErrPermissionDenied is returned when tapd rejects an operation because
-	// the macaroon or user credentials do not have enough permissions.
+	// ErrPermissionDenied is returned when tapd rejects an operation
+	// because the macaroon or user credentials do not have enough
+	// permissions.
 	ErrPermissionDenied = errors.New("permission denied")
 
 	// ErrUnauthenticated is returned when tapd rejects an operation because
 	// authentication is missing or invalid.
 	ErrUnauthenticated = errors.New("unauthenticated")
 
-	// ErrProofNotFound is returned when tapd cannot locate a requested asset
-	// proof.
+	// ErrProofNotFound is returned when tapd cannot locate a requested
+	// asset proof.
 	ErrProofNotFound = errors.New("proof not found")
 
 	// ErrTapdPrecondition is returned when tapd rejects a request because a
 	// daemon-side precondition is not satisfied.
 	ErrTapdPrecondition = errors.New("tapd precondition failed")
 
+	// ErrTapdUnavailable is returned when tapd, its wallet, or its chain
+	// backend is temporarily unavailable.
+	ErrTapdUnavailable = errors.New(
+		"tapd wallet or chain backend unavailable",
+	)
+
+	// ErrFeeRateTooLow is returned when tapd rejects a request because its
+	// requested on-chain fee rate is below the daemon's minimum.
+	ErrFeeRateTooLow = errors.New("fee rate below minimum")
+
 	// ErrUnsupportedByTapd is returned when the connected tapd version does
 	// not support the requested operation.
 	ErrUnsupportedByTapd = errors.New("operation unsupported by tapd")
 
 	// ErrMixedAssetBatchUnsupported is returned when one high-level send
-	// request contains recipients for multiple logical assets. Wallet.SendMulti
-	// sends one logical asset in one tapd request.
+	// request contains recipients for multiple logical assets.
+	// Wallet.SendMulti sends one logical asset in one tapd request.
 	ErrMixedAssetBatchUnsupported = errors.New(
 		"mixed-asset send batch unsupported",
 	)
@@ -347,41 +482,47 @@ var (
 
 	// ErrAssetNotIssuable is returned when an operation requires a grouped
 	// asset but the AssetRef resolves to a standalone issuance.
-	ErrAssetNotIssuable = errors.New("asset ref is not an issuable grouped asset")
+	ErrAssetNotIssuable = errors.New(
+		"asset ref is not an issuable grouped asset",
+	)
 
 	// ErrMintResolveTimeout is returned when tapd accepted a high-level
-	// issuer mint request but the SDK timed out before the wallet projection
-	// exposed the resulting entity. This does not mean the mint failed. Callers
-	// must inspect wallet assets, issuances, collections, or mint batches
-	// before retrying to avoid duplicate issuance.
+	// issuer mint request but the SDK timed out before the wallet
+	// projection exposed the resulting entity. This does not mean the
+	// mint failed. Callers must inspect wallet assets, issuances,
+	// collections, or mint batches before retrying to avoid duplicate
+	// issuance.
 	ErrMintResolveTimeout = errors.New("mint result resolution timed out")
 
-	// ErrMintResultNotFound is returned when the SDK resolved a wallet row for
-	// an accepted mint but could not map it into the requested high-level
-	// entity. This does not mean tapd rejected the mint; callers should inspect
-	// wallet state before retrying.
+	// ErrMintResultNotFound is returned when the SDK resolved a wallet
+	// row for an accepted mint but could not map it into the requested
+	// high-level entity. This does not mean tapd rejected the mint;
+	// callers should inspect wallet state before retrying.
 	ErrMintResultNotFound = errors.New("mint result could not be mapped")
 
-	// ErrExternalIssuanceKeyRequired is returned when an issuer call needs an
-	// external issuance signature but no external key descriptor was provided.
+	// ErrExternalIssuanceKeyRequired is returned when an issuer call
+	// needs an external issuance signature but no external key descriptor
+	// was provided.
 	ErrExternalIssuanceKeyRequired = errors.New(
 		"external issuance key is required",
 	)
 
-	// ErrExternalIssuanceSignerRequired is returned when an external issuance
-	// key is configured but no signer was provided to complete the mint.
+	// ErrExternalIssuanceSignerRequired is returned when an external
+	// issuance key is configured but no signer was provided to complete
+	// the mint.
 	ErrExternalIssuanceSignerRequired = errors.New(
 		"external issuance signer is required",
 	)
 
-	// ErrExternalIssuanceRequestNotFound is returned when tapd does not return
-	// an issuance signing payload after an external signer was configured.
+	// ErrExternalIssuanceRequestNotFound is returned when tapd does not
+	// return an issuance signing payload after an external signer was
+	// configured.
 	ErrExternalIssuanceRequestNotFound = errors.New(
 		"external issuance signing request not found",
 	)
 
-	// ErrExternalIssuanceSignatureRequired is returned when an external signer
-	// did not return a signed issuance PSBT.
+	// ErrExternalIssuanceSignatureRequired is returned when an external
+	// signer did not return a signed issuance PSBT.
 	ErrExternalIssuanceSignatureRequired = errors.New(
 		"external issuance signature is required",
 	)
@@ -404,7 +545,8 @@ var (
 		"universe proof type is required",
 	)
 
-	// ErrInvalidPagination is returned when pagination options are malformed.
+	// ErrInvalidPagination is returned when pagination options are
+	// malformed.
 	ErrInvalidPagination = errors.New("invalid pagination")
 )
 
@@ -419,11 +561,14 @@ var knownSentinelErrors = []error{
 	ErrZeroAmount,
 	ErrGroupKeyNotSupported,
 	ErrInsufficientBalance,
+	ErrInsufficientAnchorFunds,
 	ErrInvalidAssetRef,
 	ErrPermissionDenied,
 	ErrUnauthenticated,
 	ErrProofNotFound,
 	ErrTapdPrecondition,
+	ErrTapdUnavailable,
+	ErrFeeRateTooLow,
 	ErrUnsupportedByTapd,
 	ErrMixedAssetBatchUnsupported,
 	ErrAmountRequired,

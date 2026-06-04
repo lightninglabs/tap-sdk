@@ -54,13 +54,31 @@ func TestWrapErrNormalizesGRPCStatus(t *testing.T) {
 			target: ErrAssetUnknown,
 		},
 		{
-			name:   "invalid argument",
-			err:    status.Error(codes.InvalidArgument, "bad field"),
+			name: "invalid argument",
+			err: status.Error(
+				codes.InvalidArgument, "bad field",
+			),
 			target: ErrTapdPrecondition,
 		},
 		{
-			name:   "unimplemented",
-			err:    status.Error(codes.Unimplemented, "missing rpc"),
+			name: "resource exhausted",
+			err: status.Error(
+				codes.ResourceExhausted,
+				"not enough funds to create funding "+
+					"transaction",
+			),
+			target: ErrInsufficientAnchorFunds,
+		},
+		{
+			name:   "unavailable",
+			err:    status.Error(codes.Unavailable, "wallet down"),
+			target: ErrTapdUnavailable,
+		},
+		{
+			name: "unimplemented",
+			err: status.Error(
+				codes.Unimplemented, "missing rpc",
+			),
 			target: ErrUnsupportedByTapd,
 		},
 	}
@@ -94,15 +112,17 @@ func TestWrapErrNormalizesRESTStatus(t *testing.T) {
 
 func TestWrapErrNormalizesTapdUnknownMessages(t *testing.T) {
 	tests := []struct {
-		name   string
-		op     string
-		msg    string
-		target error
+		name        string
+		op          string
+		msg         string
+		target      error
+		wantFeeRate *FeeRateTooLowError
 	}{
 		{
-			name:   "mixed send",
-			op:     "SendMulti",
-			msg:    "all addrs must be of the same asset ID or group key",
+			name: "mixed send",
+			op:   "SendMulti",
+			msg: "all addrs must be of the same asset ID " +
+				"or group key",
 			target: ErrMixedAssetBatchUnsupported,
 		},
 		{
@@ -112,10 +132,64 @@ func TestWrapErrNormalizesTapdUnknownMessages(t *testing.T) {
 			target: ErrInsufficientBalance,
 		},
 		{
+			name: "insufficient anchor funds",
+			op:   "FundBatch",
+			msg: "not enough funds to create funding " +
+				"transaction",
+			target: ErrInsufficientAnchorFunds,
+		},
+		{
+			name:   "insufficient wallet balance",
+			op:     "CommitVirtualPsbts",
+			msg:    "insufficient wallet balance for anchor tx",
+			target: ErrInsufficientAnchorFunds,
+		},
+		{
 			name:   "proof missing",
 			op:     "ExportProof",
 			msg:    "proof not found in archive",
 			target: ErrProofNotFound,
+		},
+		{
+			name: "fee rate too low",
+			op:   "CreateFungible",
+			msg: "manual fee rate below floor: " +
+				"(fee_rate=2 sat/kw, floor=253 sat/kw)",
+			target: ErrFeeRateTooLow,
+			wantFeeRate: &FeeRateTooLowError{
+				RequestedSatKw: 2,
+				MinimumSatKw:   253,
+			},
+		},
+		{
+			name:   "fee rate too low without structured values",
+			op:     "CreateFungible",
+			msg:    "fee rate below minimum relay policy",
+			target: ErrFeeRateTooLow,
+		},
+		{
+			name:   "mint batch active",
+			op:     "CreateNFT",
+			msg:    "mint batch already active for key abc",
+			target: ErrMintBatchActive,
+		},
+		{
+			name:   "external issuance request missing",
+			op:     "CreateFungible",
+			msg:    "external issuance signing request missing",
+			target: ErrExternalIssuanceRequestNotFound,
+		},
+		{
+			name:   "asset ref not issuable",
+			op:     "IssueFungible",
+			msg:    "asset ref is not issuable",
+			target: ErrAssetNotIssuable,
+		},
+		{
+			name:   "chain backend unavailable",
+			op:     "FundBatch",
+			msg:    "wallet chain backend unavailable",
+			target: ErrTapdUnavailable,
 		},
 	}
 
@@ -125,6 +199,14 @@ func TestWrapErrNormalizesTapdUnknownMessages(t *testing.T) {
 				tc.op, status.Error(codes.Unknown, tc.msg),
 			)
 			require.ErrorIs(t, err, tc.target)
+
+			if tc.wantFeeRate == nil {
+				return
+			}
+
+			var feeErr *FeeRateTooLowError
+			require.ErrorAs(t, err, &feeErr)
+			require.Equal(t, tc.wantFeeRate, feeErr)
 		})
 	}
 }
