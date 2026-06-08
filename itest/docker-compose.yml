@@ -32,7 +32,7 @@ services:
 
   # ---------- LND Alice ----------
   lnd-alice:
-    image: lightninglabs/lnd:v0.20.1-beta
+    image: lightninglabs/lnd:v0.21.0-beta
     container_name: tap-sdk-lnd-alice
     restart: unless-stopped
     depends_on:
@@ -51,7 +51,7 @@ services:
 
   # ---------- LND Bob ----------
   lnd-bob:
-    image: lightninglabs/lnd:v0.20.1-beta
+    image: lightninglabs/lnd:v0.21.0-beta
     container_name: tap-sdk-lnd-bob
     restart: unless-stopped
     depends_on:
@@ -70,7 +70,7 @@ services:
 
   # ---------- tapd Alice ----------
   tapd-alice:
-    image: lightninglabs/taproot-assets:v0.8.0-rc2
+    image: lightninglabs/taproot-assets:v0.8.0
     container_name: tap-sdk-tapd-alice
     restart: unless-stopped
     depends_on:
@@ -91,7 +91,7 @@ services:
 
   # ---------- tapd Bob ----------
   tapd-bob:
-    image: lightninglabs/taproot-assets:v0.8.0-rc2
+    image: lightninglabs/taproot-assets:v0.8.0
     container_name: tap-sdk-tapd-bob
     restart: unless-stopped
     depends_on:
