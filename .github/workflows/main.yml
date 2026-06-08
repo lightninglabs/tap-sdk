@@ -20,7 +20,7 @@ env:
   # work here.
   GOPATH: /home/runner/work/go
 
-  GO_VERSION: '1.25.7'
+  GO_VERSION: '1.25.10'
 
 jobs:
   # Run the lint suite for static analysis coverage.

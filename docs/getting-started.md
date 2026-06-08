@@ -5,7 +5,7 @@ and send them, inspect balances, export proofs, and query the universe.
 
 ## Prerequisites
 
-- Go 1.25.7+
+- Go 1.25.10+
 - `tapd` v0.8.0 or newer
 - TLS certificate and macaroon for the `tapd` node
 

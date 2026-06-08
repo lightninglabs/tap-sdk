@@ -9,7 +9,7 @@
     <a href="https://pkg.go.dev/github.com/lightninglabs/tap-sdk"><img alt="Go Reference" src="https://pkg.go.dev/badge/github.com/lightninglabs/tap-sdk.svg"/></a>
     <a href="https://github.com/lightninglabs/tap-sdk/actions"><img alt="CI" src="https://github.com/lightninglabs/tap-sdk/actions/workflows/main.yml/badge.svg"/></a>
     <a href="LICENSE"><img alt="MIT Licensed" src="https://img.shields.io/badge/license-MIT-blue.svg"/></a>
-    <a href="go.mod"><img alt="Go 1.25.7+" src="https://img.shields.io/badge/go-1.25.7%2B-lightgrey.svg"/></a>
+    <a href="go.mod"><img alt="Go 1.25.10+" src="https://img.shields.io/badge/go-1.25.10%2B-lightgrey.svg"/></a>
   </p>
 </div>
 
@@ -40,9 +40,15 @@ go get github.com/lightninglabs/tap-sdk
 
 | tap-sdk | tapd / Taproot Assets | lnd | Go |
 |---------|------------------------|-----|----|
-| `main` / first public release line | v0.8.0 or newer | v0.20.x | 1.25.7+ |
+| `main` | tapd `main` after v0.8.0 | v0.21.0-beta or newer | 1.25.10+ |
+| `v0.1.x` planned first public release line | v0.8.0 or newer | v0.21.0-beta or newer | 1.25.10+ |
 
 Older `tapd` versions are unsupported. See [Compatibility](docs/compatibility.md) for the detailed matrix.
+
+The first public SDK tag is planned as `v0.1.0`. The SDK remains pre-v1
+because some Taproot Assets workflows are intentionally still outside the
+current surface and the API has not yet been broadly exercised by external
+developers.
 
 ## Quick Start
 

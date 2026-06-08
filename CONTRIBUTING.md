@@ -7,7 +7,7 @@ are still possible, but they should be intentional and backed by tests.
 
 Requirements:
 
-- Go 1.25.7+
+- Go 1.25.10+
 - Docker and Docker Compose
 - A local `tapd` only when running manual tests outside the regtest stack
 
@@ -27,8 +27,8 @@ make itest       # pinned tapd image
 make itest-main  # tapd built from taproot-assets main
 ```
 
-Prefer `make itest-main` while SDK `main` depends on unreleased tapd v0.8
-features.
+Prefer `make itest-main` only when SDK `main` intentionally depends on
+unreleased tapd behavior.
 
 ## Development Principles
 
