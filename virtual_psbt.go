@@ -3,7 +3,7 @@ package tapsdk
 import "fmt"
 
 // AnchorChangeOutputMode identifies how anchor change should be handled while
-// funding a custom anchor PSBT.
+// funding an anchor PSBT.
 type AnchorChangeOutputMode uint8
 
 const (
@@ -60,7 +60,7 @@ type AnchorFee struct {
 	TargetConf uint32
 }
 
-// AnchorFundingPlan describes backend funding options for a custom anchor PSBT.
+// AnchorFundingPlan describes backend funding options for an anchor PSBT.
 type AnchorFundingPlan struct {
 	// ChangeOutput selects how the backend handles anchor change.
 	ChangeOutput AnchorChangeOutput
@@ -78,9 +78,8 @@ type AnchorFundingPlan struct {
 	SkipFunding bool
 }
 
-// CommitCustomAnchorRequest commits virtual PSBTs into a caller-supplied anchor
-// PSBT template.
-type CommitCustomAnchorRequest struct {
+// CommitVirtualPsbtsRequest commits virtual PSBTs into an anchor PSBT template.
+type CommitVirtualPsbtsRequest struct {
 	// AnchorPsbt is the caller-supplied BTC-level anchor PSBT template.
 	AnchorPsbt []byte
 
@@ -95,10 +94,10 @@ type CommitCustomAnchorRequest struct {
 	Funding AnchorFundingPlan
 }
 
-// Validate checks that a custom-anchor commit request can be sent.
-func (r *CommitCustomAnchorRequest) Validate() error {
+// Validate checks that a virtual PSBT commit request can be sent.
+func (r *CommitVirtualPsbtsRequest) Validate() error {
 	if r == nil {
-		return fmt.Errorf("nil custom anchor commit request")
+		return fmt.Errorf("nil commit virtual PSBTs request")
 	}
 	if len(r.AnchorPsbt) == 0 {
 		return fmt.Errorf("anchor PSBT is required")
@@ -118,9 +117,9 @@ func (r *CommitCustomAnchorRequest) Validate() error {
 	return r.Funding.Fee.validate()
 }
 
-// CommitCustomAnchorResponse is the result of committing virtual PSBTs into a
-// caller-supplied anchor PSBT template.
-type CommitCustomAnchorResponse struct {
+// CommitVirtualPsbtsResponse is the result of committing virtual PSBTs into an
+// anchor PSBT template.
+type CommitVirtualPsbtsResponse struct {
 	// AnchorPsbt is the funded BTC-level anchor PSBT with asset commitments.
 	AnchorPsbt []byte
 
@@ -139,9 +138,9 @@ type CommitCustomAnchorResponse struct {
 	LockedUTXOs []Outpoint
 }
 
-// PublishAndLogCustomAnchorRequest publishes a finalized custom anchor PSBT and
-// logs the corresponding asset transfer.
-type PublishAndLogCustomAnchorRequest struct {
+// PublishAndLogTransferRequest publishes a finalized anchor PSBT and logs the
+// corresponding asset transfer.
+type PublishAndLogTransferRequest struct {
 	// AnchorPsbt is the finalized BTC-level anchor PSBT.
 	AnchorPsbt []byte
 
@@ -151,10 +150,10 @@ type PublishAndLogCustomAnchorRequest struct {
 	// PassiveAssetPsbts are passive virtual asset PSBTs committed to the anchor.
 	PassiveAssetPsbts [][]byte
 
-	// ChangeOutputIndex is the change index returned by CommitCustomAnchor.
+	// ChangeOutputIndex is the change index returned by CommitVirtualPsbts.
 	ChangeOutputIndex int32
 
-	// LockedUTXOs are the lnd wallet locks returned by CommitCustomAnchor.
+	// LockedUTXOs are the lnd wallet locks returned by CommitVirtualPsbts.
 	LockedUTXOs []Outpoint
 
 	// SkipAnchorTxBroadcast leaves the finalized anchor transaction
@@ -165,10 +164,10 @@ type PublishAndLogCustomAnchorRequest struct {
 	Label string
 }
 
-// Validate checks that a custom-anchor publish request can be sent.
-func (r *PublishAndLogCustomAnchorRequest) Validate() error {
+// Validate checks that a publish-and-log transfer request can be sent.
+func (r *PublishAndLogTransferRequest) Validate() error {
 	if r == nil {
-		return fmt.Errorf("nil custom anchor publish request")
+		return fmt.Errorf("nil publish and log transfer request")
 	}
 	if len(r.AnchorPsbt) == 0 {
 		return fmt.Errorf("anchor PSBT is required")

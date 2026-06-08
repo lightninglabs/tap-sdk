@@ -127,11 +127,11 @@ func TestVerifyOwnershipResponseUnmarshal(t *testing.T) {
 	}
 }
 
-func TestMarshalCommitCustomAnchorRequest(t *testing.T) {
+func TestMarshalCommitVirtualPsbtsRequest(t *testing.T) {
 	feeRate, err := tapsdk.NewFeeRateSatPerVByte(12)
 	require.NoError(t, err)
 
-	req := &tapsdk.CommitCustomAnchorRequest{
+	req := &tapsdk.CommitVirtualPsbtsRequest{
 		AnchorPsbt:        []byte("anchor"),
 		VirtualPsbts:      [][]byte{[]byte("virtual")},
 		PassiveAssetPsbts: [][]byte{[]byte("passive")},
@@ -149,7 +149,7 @@ func TestMarshalCommitCustomAnchorRequest(t *testing.T) {
 		},
 	}
 
-	rpcReq, err := marshalCommitCustomAnchorRequest(req)
+	rpcReq, err := marshalCommitVirtualPsbtsRequest(req)
 	require.NoError(t, err)
 	require.Equal(t, []byte("anchor"), rpcReq.AnchorPsbt)
 	require.Equal(t, [][]byte{[]byte("virtual")}, rpcReq.VirtualPsbts)
@@ -162,8 +162,8 @@ func TestMarshalCommitCustomAnchorRequest(t *testing.T) {
 	require.Equal(t, uint64(42), rpcReq.LockExpirationSeconds)
 }
 
-func TestMarshalCommitCustomAnchorNoNewChange(t *testing.T) {
-	req := &tapsdk.CommitCustomAnchorRequest{
+func TestMarshalCommitVirtualPsbtsNoNewChange(t *testing.T) {
+	req := &tapsdk.CommitVirtualPsbtsRequest{
 		AnchorPsbt:   []byte("anchor"),
 		VirtualPsbts: [][]byte{[]byte("virtual")},
 		Funding: tapsdk.AnchorFundingPlan{
@@ -177,7 +177,7 @@ func TestMarshalCommitCustomAnchorNoNewChange(t *testing.T) {
 		},
 	}
 
-	rpcReq, err := marshalCommitCustomAnchorRequest(req)
+	rpcReq, err := marshalCommitVirtualPsbtsRequest(req)
 	require.NoError(t, err)
 	require.IsType(
 		t, &assetwalletrpc.CommitVirtualPsbtsRequest_Add{},
@@ -187,7 +187,7 @@ func TestMarshalCommitCustomAnchorNoNewChange(t *testing.T) {
 	require.Equal(t, uint32(6), rpcReq.GetTargetConf())
 }
 
-func TestUnmarshalCommitCustomAnchorResponse(t *testing.T) {
+func TestUnmarshalCommitVirtualPsbtsResponse(t *testing.T) {
 	resp := &assetwalletrpc.CommitVirtualPsbtsResponse{
 		AnchorPsbt:        []byte("anchor"),
 		VirtualPsbts:      [][]byte{[]byte("virtual")},
@@ -199,7 +199,7 @@ func TestUnmarshalCommitCustomAnchorResponse(t *testing.T) {
 		}},
 	}
 
-	result, err := unmarshalCommitCustomAnchorResponse(resp)
+	result, err := unmarshalCommitVirtualPsbtsResponse(resp)
 	require.NoError(t, err)
 	require.Equal(t, []byte("anchor"), result.AnchorPsbt)
 	require.Equal(t, [][]byte{[]byte("virtual")}, result.VirtualPsbts)
@@ -212,12 +212,12 @@ func TestUnmarshalCommitCustomAnchorResponse(t *testing.T) {
 	require.Equal(t, uint32(7), result.LockedUTXOs[0].Index)
 }
 
-func TestMarshalPublishAndLogCustomAnchorRequest(t *testing.T) {
+func TestMarshalPublishAndLogTransferRequest(t *testing.T) {
 	var outpoint tapsdk.Outpoint
 	copy(outpoint.Txid[:], testAssetID)
 	outpoint.Index = 5
 
-	req := &tapsdk.PublishAndLogCustomAnchorRequest{
+	req := &tapsdk.PublishAndLogTransferRequest{
 		AnchorPsbt:            []byte("anchor"),
 		VirtualPsbts:          [][]byte{[]byte("virtual")},
 		PassiveAssetPsbts:     [][]byte{[]byte("passive")},
@@ -227,7 +227,7 @@ func TestMarshalPublishAndLogCustomAnchorRequest(t *testing.T) {
 		Label:                 "custom-label",
 	}
 
-	rpcReq, err := marshalPublishAndLogCustomAnchorRequest(req)
+	rpcReq, err := marshalPublishAndLogTransferRequest(req)
 	require.NoError(t, err)
 	require.Equal(t, []byte("anchor"), rpcReq.AnchorPsbt)
 	require.Equal(t, int32(0), rpcReq.ChangeOutputIndex)

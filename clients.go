@@ -155,17 +155,10 @@ type WalletKitClient interface {
 	// SignVirtualPsbt signs a virtual transaction.
 	SignVirtualPsbt(ctx context.Context, fundedPsbt []byte) ([]byte, error)
 
-	// CommitVirtualPsbts commits virtual transactions using an anchor fee
-	// rate.
-	CommitVirtualPsbts(ctx context.Context, virtualPsbts [][]byte,
-		passivePsbts [][]byte, feeRate FeeRate) (*CommittedTransfer,
+	// CommitVirtualPsbts commits virtual transactions into an anchor PSBT.
+	CommitVirtualPsbts(ctx context.Context,
+		req *CommitVirtualPsbtsRequest) (*CommitVirtualPsbtsResponse,
 		error)
-
-	// CommitCustomAnchor commits virtual transactions into a caller-supplied
-	// anchor PSBT template.
-	CommitCustomAnchor(ctx context.Context,
-		req *CommitCustomAnchorRequest) (
-		*CommitCustomAnchorResponse, error)
 
 	// AnchorVirtualPsbts anchors signed virtual PSBTs in a single call.
 	// This combines committing and publishing into one operation.
@@ -174,15 +167,8 @@ type WalletKitClient interface {
 
 	// PublishAndLogTransfer publishes the anchor transaction and logs the
 	// transfer.
-	PublishAndLogTransfer(ctx context.Context, anchorPsbt []byte,
-		virtualPsbts [][]byte, passivePsbts [][]byte,
-		skipAnchorTxBroadcast bool) (*AssetPacket, error)
-
-	// PublishAndLogCustomAnchor publishes a finalized custom anchor PSBT and
-	// logs the corresponding asset transfer.
-	PublishAndLogCustomAnchor(ctx context.Context,
-		req *PublishAndLogCustomAnchorRequest) (
-		*AssetPacket, error)
+	PublishAndLogTransfer(ctx context.Context,
+		req *PublishAndLogTransferRequest) (*AssetPacket, error)
 
 	// QueryInternalKey looks up an internal key by its raw public key
 	// bytes. The input can be 32-byte x-only or 33-byte compressed.
