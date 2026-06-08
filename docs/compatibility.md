@@ -9,7 +9,7 @@ the data needed for correct business-level `AssetRef` mapping.
 | tap-sdk line | tapd / Taproot Assets | lnd | Go | Status |
 |--------------|------------------------|-----|----|--------|
 | `main` | tapd `main` after v0.8.0 | v0.21.0-beta or newer | 1.25.10+ | Development |
-| `v0.1.x` | v0.8.0 or newer | v0.21.0-beta or newer | 1.25.10+ | First public release line |
+| `v0.1.x` | v0.8.0 or newer | v0.21.0-beta or newer | 1.25.10+ | Current release line |
 | unsupported | v0.7.x and older | any | any | Unsupported |
 
 The lnd column tracks the SDK's validated integration-test target and the
