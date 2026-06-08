@@ -3,6 +3,8 @@ package tapsdk
 import (
 	"context"
 	"sync"
+
+	"github.com/lightninglabs/tap-sdk/internal/anchor"
 )
 
 // AnchorSigner signs and finalizes the BTC anchor PSBT returned by tapd after
@@ -217,26 +219,14 @@ func (b *TxBuilder) Commit(ctx context.Context) (
 		return nil, ErrNotSigned
 	}
 
-	resp, err := b.walletKit.CommitVirtualPsbts(
-		ctx, [][]byte{b.signedPsbt}, b.passivePsbts, b.feeRate,
-	)
+	resp, err := b.commitVirtualPsbts(ctx)
 	if err != nil {
 		return nil, wrapErr("Commit", err)
 	}
 
-	b.anchorPsbt = append([]byte(nil), resp.AnchorPsbt...)
-	b.changeOutputIndex = resp.ChangeOutputIndex
-	b.lockedUTXOs = append([]Outpoint(nil), resp.LockedUTXOs...)
+	b.applyCommitResponse(resp)
 
-	if len(resp.VirtualPsbts) > 0 {
-		b.signedPsbt = append([]byte(nil), resp.VirtualPsbts[0]...)
-	}
-
-	if len(resp.PassiveAssetPsbts) > 0 {
-		b.passivePsbts = clone2Dimensional(resp.PassiveAssetPsbts)
-	}
-
-	return resp, nil
+	return committedTransferFromResponse(resp), nil
 }
 
 // Finish publishes the transaction and returns the finalized packet.
@@ -309,23 +299,12 @@ func (b *TxBuilder) Execute(ctx context.Context, opts ...TxBuilderOption) (
 	b.signedPsbt = append([]byte(nil), signedPsbt...)
 
 	// Commit.
-	commitResp, err := b.walletKit.CommitVirtualPsbts(
-		ctx, [][]byte{b.signedPsbt}, b.passivePsbts, b.feeRate,
-	)
+	commitResp, err := b.commitVirtualPsbts(ctx)
 	if err != nil {
 		return nil, wrapErr("Commit", err)
 	}
 
-	b.anchorPsbt = append([]byte(nil), commitResp.AnchorPsbt...)
-	b.changeOutputIndex = commitResp.ChangeOutputIndex
-	b.lockedUTXOs = append([]Outpoint(nil), commitResp.LockedUTXOs...)
-
-	if len(commitResp.VirtualPsbts) > 0 {
-		b.signedPsbt = append([]byte(nil), commitResp.VirtualPsbts[0]...)
-	}
-	if len(commitResp.PassiveAssetPsbts) > 0 {
-		b.passivePsbts = clone2Dimensional(commitResp.PassiveAssetPsbts)
-	}
+	b.applyCommitResponse(commitResp)
 
 	if err := b.signAnchor(ctx); err != nil {
 		return nil, wrapErr("Finish", err)
@@ -346,8 +325,8 @@ func (b *TxBuilder) Execute(ctx context.Context, opts ...TxBuilderOption) (
 func (b *TxBuilder) publishAndLog(ctx context.Context,
 	skipBroadcast bool) (*AssetPacket, error) {
 
-	return b.walletKit.PublishAndLogCustomAnchor(
-		ctx, &PublishAndLogCustomAnchorRequest{
+	return b.walletKit.PublishAndLogTransfer(
+		ctx, &PublishAndLogTransferRequest{
 			AnchorPsbt:            b.anchorPsbt,
 			VirtualPsbts:          [][]byte{b.signedPsbt},
 			PassiveAssetPsbts:     b.passivePsbts,
@@ -356,6 +335,58 @@ func (b *TxBuilder) publishAndLog(ctx context.Context,
 			SkipAnchorTxBroadcast: skipBroadcast,
 		},
 	)
+}
+
+func (b *TxBuilder) commitVirtualPsbts(ctx context.Context) (
+	*CommitVirtualPsbtsResponse, error) {
+
+	virtualPsbts := [][]byte{b.signedPsbt}
+	anchorPsbt, err := anchor.PreparePsbt(virtualPsbts, b.passivePsbts)
+	if err != nil {
+		return nil, err
+	}
+
+	return b.walletKit.CommitVirtualPsbts(
+		ctx, &CommitVirtualPsbtsRequest{
+			AnchorPsbt:        anchorPsbt,
+			VirtualPsbts:      virtualPsbts,
+			PassiveAssetPsbts: b.passivePsbts,
+			Funding: AnchorFundingPlan{
+				ChangeOutput: AnchorChangeOutput{
+					Mode: AnchorChangeOutputAdd,
+				},
+				Fee: AnchorFee{
+					Mode:    AnchorFeeSatPerVByte,
+					FeeRate: b.feeRate,
+				},
+			},
+		},
+	)
+}
+
+func (b *TxBuilder) applyCommitResponse(resp *CommitVirtualPsbtsResponse) {
+	b.anchorPsbt = append([]byte(nil), resp.AnchorPsbt...)
+	b.changeOutputIndex = resp.ChangeOutputIndex
+	b.lockedUTXOs = append([]Outpoint(nil), resp.LockedUTXOs...)
+
+	if len(resp.VirtualPsbts) > 0 {
+		b.signedPsbt = append([]byte(nil), resp.VirtualPsbts[0]...)
+	}
+	if len(resp.PassiveAssetPsbts) > 0 {
+		b.passivePsbts = clone2Dimensional(resp.PassiveAssetPsbts)
+	}
+}
+
+func committedTransferFromResponse(
+	resp *CommitVirtualPsbtsResponse) *CommittedTransfer {
+
+	return &CommittedTransfer{
+		AnchorPsbt:        resp.AnchorPsbt,
+		VirtualPsbts:      resp.VirtualPsbts,
+		PassiveAssetPsbts: resp.PassiveAssetPsbts,
+		ChangeOutputIndex: resp.ChangeOutputIndex,
+		LockedUTXOs:       resp.LockedUTXOs,
+	}
 }
 
 func (b *TxBuilder) signAnchor(ctx context.Context) error {

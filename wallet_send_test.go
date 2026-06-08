@@ -224,26 +224,14 @@ func (m *mockClient) SignVirtualPsbt(ctx context.Context,
 }
 
 func (m *mockClient) CommitVirtualPsbts(ctx context.Context,
-	virtualPsbts [][]byte, passivePsbts [][]byte,
-	feeRate FeeRate) (*CommittedTransfer, error) {
-
-	args := m.Called(ctx, virtualPsbts, passivePsbts, feeRate)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-
-	return args.Get(0).(*CommittedTransfer), args.Error(1)
-}
-
-func (m *mockClient) CommitCustomAnchor(ctx context.Context,
-	req *CommitCustomAnchorRequest) (*CommitCustomAnchorResponse, error) {
+	req *CommitVirtualPsbtsRequest) (*CommitVirtualPsbtsResponse, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 
-	return args.Get(0).(*CommitCustomAnchorResponse), args.Error(1)
+	return args.Get(0).(*CommitVirtualPsbtsResponse), args.Error(1)
 }
 
 func (m *mockClient) AnchorVirtualPsbts(ctx context.Context,
@@ -258,20 +246,7 @@ func (m *mockClient) AnchorVirtualPsbts(ctx context.Context,
 }
 
 func (m *mockClient) PublishAndLogTransfer(ctx context.Context,
-	anchorPsbt []byte, virtualPsbts [][]byte, passivePsbts [][]byte,
-	skipAnchorTxBroadcast bool) (*AssetPacket, error) {
-
-	args := m.Called(ctx, anchorPsbt, virtualPsbts, passivePsbts,
-		skipAnchorTxBroadcast)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-
-	return args.Get(0).(*AssetPacket), args.Error(1)
-}
-
-func (m *mockClient) PublishAndLogCustomAnchor(ctx context.Context,
-	req *PublishAndLogCustomAnchorRequest) (*AssetPacket, error) {
+	req *PublishAndLogTransferRequest) (*AssetPacket, error) {
 
 	args := m.Called(ctx, req)
 	if args.Get(0) == nil {

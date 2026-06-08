@@ -285,26 +285,35 @@ for _, req := range signing.ScriptPath {
 }
 ```
 
-A transport-backed client method should take one SDK request type rather than a
-long positional argument list. For example:
+A transport-backed client method should mirror the backend operation names and
+take one SDK request type rather than a long positional argument list. The
+advanced builder can wrap these primitives without introducing custom-anchor
+terminology at the WalletKit transport boundary. For example:
 
 ```go
-type CommitCustomAnchorRequest struct {
-    PlanID             string
+type CommitVirtualPsbtsRequest struct {
     AnchorPSBT         []byte
     VirtualPSBTs       [][]byte
     PassiveAssetPSBTs  [][]byte
     Funding            AnchorFundingPlan
 }
 
-type CommitCustomAnchorResponse struct {
+type CommitVirtualPsbtsResponse struct {
     AnchorPSBT         []byte
     VirtualPSBTs       [][]byte
     PassiveAssetPSBTs  [][]byte
     ChangeOutputIndex  int32
-    Outputs            []CommittedAssetOutput
-    ProofUpdates       []ProofUpdate
     LockedUTXOs        []LockedUTXO
+}
+
+type PublishAndLogTransferRequest struct {
+    AnchorPSBT            []byte
+    VirtualPSBTs          [][]byte
+    PassiveAssetPSBTs     [][]byte
+    ChangeOutputIndex     int32
+    LockedUTXOs           []LockedUTXO
+    SkipAnchorTxBroadcast bool
+    Label                 string
 }
 
 type VerifyCustomAnchorResult struct {

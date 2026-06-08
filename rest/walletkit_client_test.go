@@ -158,7 +158,7 @@ func TestProveAssetOwnershipPreservesRequestMetadata(t *testing.T) {
 	require.Equal(t, proof, resp.ProofWithWitness)
 }
 
-func TestCommitCustomAnchorSendsAdvancedFields(t *testing.T) {
+func TestCommitVirtualPsbtsSendsAdvancedFields(t *testing.T) {
 	feeRate, err := tapsdk.NewFeeRateSatPerVByte(11)
 	require.NoError(t, err)
 
@@ -231,8 +231,8 @@ func TestCommitCustomAnchorSendsAdvancedFields(t *testing.T) {
 		macaroons: macaroon.Pouch{},
 	})
 
-	resp, err := client.CommitCustomAnchor(
-		context.Background(), &tapsdk.CommitCustomAnchorRequest{
+	resp, err := client.CommitVirtualPsbts(
+		context.Background(), &tapsdk.CommitVirtualPsbtsRequest{
 			AnchorPsbt:        []byte("anchor"),
 			VirtualPsbts:      [][]byte{[]byte("virtual")},
 			PassiveAssetPsbts: [][]byte{[]byte("passive")},
@@ -259,7 +259,7 @@ func TestCommitCustomAnchorSendsAdvancedFields(t *testing.T) {
 	require.Equal(t, []tapsdk.Outpoint{locked}, resp.LockedUTXOs)
 }
 
-func TestPublishAndLogCustomAnchorSendsAdvancedFields(t *testing.T) {
+func TestPublishAndLogTransferSendsAdvancedFields(t *testing.T) {
 	var locked tapsdk.Outpoint
 	for i := range locked.Txid {
 		locked.Txid[i] = byte(i + 2)
@@ -333,8 +333,8 @@ func TestPublishAndLogCustomAnchorSendsAdvancedFields(t *testing.T) {
 		macaroons: macaroon.Pouch{},
 	})
 
-	resp, err := client.PublishAndLogCustomAnchor(
-		context.Background(), &tapsdk.PublishAndLogCustomAnchorRequest{
+	resp, err := client.PublishAndLogTransfer(
+		context.Background(), &tapsdk.PublishAndLogTransferRequest{
 			AnchorPsbt:            []byte("anchor"),
 			VirtualPsbts:          [][]byte{[]byte("virtual")},
 			PassiveAssetPsbts:     [][]byte{[]byte("passive")},

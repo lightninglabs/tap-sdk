@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
-	"github.com/lightninglabs/tap-sdk/internal/anchor"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 )
 
@@ -300,50 +299,10 @@ type jsonCommitVirtualPsbtsRequest struct {
 
 // CommitVirtualPsbts commits virtual transactions.
 func (w *walletKitClient) CommitVirtualPsbts(ctx context.Context,
-	virtualPsbts [][]byte, passivePsbts [][]byte,
-	feeRate tapsdk.FeeRate) (*tapsdk.CommittedTransfer, error) {
+	req *tapsdk.CommitVirtualPsbtsRequest) (
+	*tapsdk.CommitVirtualPsbtsResponse, error) {
 
-	anchorPsbt, err := anchor.PreparePsbt(virtualPsbts, passivePsbts)
-	if err != nil {
-		return nil, fmt.Errorf("prepare anchor PSBT: %w", err)
-	}
-
-	resp, err := w.CommitCustomAnchor(
-		ctx, &tapsdk.CommitCustomAnchorRequest{
-			AnchorPsbt:        anchorPsbt,
-			VirtualPsbts:      virtualPsbts,
-			PassiveAssetPsbts: passivePsbts,
-			Funding: tapsdk.AnchorFundingPlan{
-				ChangeOutput: tapsdk.AnchorChangeOutput{
-					Mode: tapsdk.AnchorChangeOutputAdd,
-				},
-				Fee: tapsdk.AnchorFee{
-					Mode:    tapsdk.AnchorFeeSatPerVByte,
-					FeeRate: feeRate,
-				},
-			},
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return &tapsdk.CommittedTransfer{
-		AnchorPsbt:        resp.AnchorPsbt,
-		VirtualPsbts:      resp.VirtualPsbts,
-		PassiveAssetPsbts: resp.PassiveAssetPsbts,
-		ChangeOutputIndex: resp.ChangeOutputIndex,
-		LockedUTXOs:       resp.LockedUTXOs,
-	}, nil
-}
-
-// CommitCustomAnchor commits virtual transactions into a caller-supplied anchor
-// PSBT template.
-func (w *walletKitClient) CommitCustomAnchor(ctx context.Context,
-	req *tapsdk.CommitCustomAnchorRequest) (
-	*tapsdk.CommitCustomAnchorResponse, error) {
-
-	body, err := marshalCommitCustomAnchorRequest(req)
+	body, err := marshalCommitVirtualPsbtsRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -358,11 +317,11 @@ func (w *walletKitClient) CommitCustomAnchor(ctx context.Context,
 		return nil, err
 	}
 
-	return unmarshalCommitCustomAnchorResponse(&resp)
+	return unmarshalCommitVirtualPsbtsResponse(&resp)
 }
 
-func marshalCommitCustomAnchorRequest(
-	req *tapsdk.CommitCustomAnchorRequest) (
+func marshalCommitVirtualPsbtsRequest(
+	req *tapsdk.CommitVirtualPsbtsRequest) (
 	*jsonCommitVirtualPsbtsRequest, error) {
 
 	if err := req.Validate(); err != nil {
@@ -417,12 +376,12 @@ func marshalCommitCustomAnchorRequest(
 	return body, nil
 }
 
-func unmarshalCommitCustomAnchorResponse(
+func unmarshalCommitVirtualPsbtsResponse(
 	resp *jsonCommitVirtualPsbtsResponse) (
-	*tapsdk.CommitCustomAnchorResponse, error) {
+	*tapsdk.CommitVirtualPsbtsResponse, error) {
 
 	if resp == nil {
-		return nil, fmt.Errorf("nil custom anchor commit response")
+		return nil, fmt.Errorf("nil commit virtual PSBTs response")
 	}
 
 	respAnchorPsbt, err := parseHexBytes(resp.AnchorPsbt)
@@ -468,7 +427,7 @@ func unmarshalCommitCustomAnchorResponse(
 		lockedUTXOs = append(lockedUTXOs, outpoint)
 	}
 
-	return &tapsdk.CommitCustomAnchorResponse{
+	return &tapsdk.CommitVirtualPsbtsResponse{
 		AnchorPsbt:        respAnchorPsbt,
 		VirtualPsbts:      vPsbtBytes,
 		PassiveAssetPsbts: pPsbtBytes,
@@ -529,29 +488,10 @@ type jsonPublishAndLogRequest struct {
 // PublishAndLogTransfer publishes the anchor transaction and logs
 // the transfer.
 func (w *walletKitClient) PublishAndLogTransfer(ctx context.Context,
-	anchorPsbt []byte, virtualPsbts [][]byte,
-	passivePsbts [][]byte,
-	skipAnchorTxBroadcast bool) (
+	req *tapsdk.PublishAndLogTransferRequest) (
 	*tapsdk.AssetPacket, error) {
 
-	return w.PublishAndLogCustomAnchor(
-		ctx, &tapsdk.PublishAndLogCustomAnchorRequest{
-			AnchorPsbt:            anchorPsbt,
-			VirtualPsbts:          virtualPsbts,
-			PassiveAssetPsbts:     passivePsbts,
-			ChangeOutputIndex:     -1,
-			SkipAnchorTxBroadcast: skipAnchorTxBroadcast,
-		},
-	)
-}
-
-// PublishAndLogCustomAnchor publishes a finalized custom anchor PSBT and logs
-// the corresponding asset transfer.
-func (w *walletKitClient) PublishAndLogCustomAnchor(ctx context.Context,
-	req *tapsdk.PublishAndLogCustomAnchorRequest) (
-	*tapsdk.AssetPacket, error) {
-
-	body, err := marshalPublishAndLogCustomAnchorRequest(req)
+	body, err := marshalPublishAndLogTransferRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -586,8 +526,8 @@ func (w *walletKitClient) PublishAndLogCustomAnchor(ctx context.Context,
 	}, nil
 }
 
-func marshalPublishAndLogCustomAnchorRequest(
-	req *tapsdk.PublishAndLogCustomAnchorRequest) (
+func marshalPublishAndLogTransferRequest(
+	req *tapsdk.PublishAndLogTransferRequest) (
 	*jsonPublishAndLogRequest, error) {
 
 	if err := req.Validate(); err != nil {
