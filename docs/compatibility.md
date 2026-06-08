@@ -8,9 +8,14 @@ the data needed for correct business-level `AssetRef` mapping.
 
 | tap-sdk line | tapd / Taproot Assets | lnd | Go | Status |
 |--------------|------------------------|-----|----|--------|
-| `main` | tapd `main` or latest v0.8 release candidate | v0.20.x | 1.25.7+ | Development |
-| first public release line | v0.8.0 or newer | v0.20.x | 1.25.7+ | Target |
+| `main` | tapd `main` after v0.8.0 | v0.21.0-beta or newer | 1.25.10+ | Development |
+| `v0.1.x` | v0.8.0 or newer | v0.21.0-beta or newer | 1.25.10+ | First public release line |
 | unsupported | v0.7.x and older | any | any | Unsupported |
+
+The lnd column tracks the SDK's validated integration-test target and the
+released Taproot Assets v0.8.0 module graph. Taproot Assets v0.8.0 documents
+runtime support for lnd v0.20.0-beta or newer, but this SDK release line is
+validated against v0.21.0-beta.
 
 ## Why v0.8 Is Required
 
@@ -28,18 +33,24 @@ group-key-aware burn and transfer records. Without those fields, the SDK cannot
 reliably tell whether a grouped row represents a fungible asset or an NFT
 collection item. Returning a best guess would make the public API unsafe.
 
-## Release Candidate Policy
+## Development Policy
 
-During v0.8 release-candidate development, local integration tests should run
-against tapd `main`:
+Release branches and release validation should run against the pinned tapd
+image:
+
+```bash
+make itest
+```
+
+When SDK `main` intentionally depends on unreleased tapd behavior, local
+integration tests can run against tapd `main`:
 
 ```bash
 make itest-main
 ```
 
-The pinned integration-test image may lag until a new public RC image is
-available. When in doubt, treat tapd `main` as the compatibility target for
-SDK `main`.
+The pinned integration-test image remains the compatibility target for release
+branches.
 
 ## Feature Scope
 

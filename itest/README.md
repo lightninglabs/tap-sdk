@@ -7,7 +7,7 @@ lock-step.
 ## Prerequisites
 
 - Docker and Docker Compose
-- Go 1.25.7+
+- Go 1.25.10+
 - `curl` for bitcoind RPC fallback when `bitcoin-cli` is unavailable
 
 ## Run the Suite
@@ -38,13 +38,13 @@ make itest-down-main
 
 ## Version Targets
 
-The pinned compose stack uses the tapd image in
+The pinned compose stack uses the tapd and lnd images in
 [`docker-compose.yml`](docker-compose.yml). The local override
 [`docker-compose.local.yml`](docker-compose.local.yml) rebuilds tapd from the
 upstream `taproot-assets` `main` branch.
 
-Use `make itest-main` when SDK `main` is ahead of the latest released tapd
-image and you need to validate behavior against unreleased daemon changes.
+Use `make itest-main` when SDK `main` intentionally depends on unreleased tapd
+behavior.
 
 ## Useful Knobs
 

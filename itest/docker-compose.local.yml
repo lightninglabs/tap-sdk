@@ -1,6 +1,6 @@
 # Local-only override that rebuilds tapd from taproot-assets `main` each
 # time the stack is brought up. Use it when you need to validate SDK changes
-# against unreleased tapd behavior before the next release candidate image.
+# against unreleased tapd behavior before the next tapd release image.
 #
 # Usage:
 #   docker compose \
