@@ -2,6 +2,7 @@ package tapsdk
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/mock"
@@ -48,12 +49,34 @@ func (m *MockWalletKitClient) CommitVirtualPsbts(ctx context.Context,
 	return args.Get(0).(*CommittedTransfer), args.Error(1)
 }
 
+func (m *MockWalletKitClient) CommitCustomAnchor(ctx context.Context,
+	req *CommitCustomAnchorRequest) (*CommitCustomAnchorResponse, error) {
+
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*CommitCustomAnchorResponse), args.Error(1)
+}
+
 func (m *MockWalletKitClient) PublishAndLogTransfer(ctx context.Context,
 	anchorPsbt []byte, virtualPsbts [][]byte, passivePsbts [][]byte,
 	skipAnchorTxBroadcast bool) (*AssetPacket, error) {
 
 	args := m.Called(ctx, anchorPsbt, virtualPsbts, passivePsbts,
 		skipAnchorTxBroadcast)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*AssetPacket), args.Error(1)
+}
+
+func (m *MockWalletKitClient) PublishAndLogCustomAnchor(ctx context.Context,
+	req *PublishAndLogCustomAnchorRequest) (*AssetPacket, error) {
+
+	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -197,6 +220,20 @@ func (m *MockWalletKitClient) ImportBackup(ctx context.Context,
 	return uint32(args.Int(0)), args.Error(1)
 }
 
+func publishCustomAnchorReq(anchorPsbt []byte, virtualPsbts [][]byte,
+	passivePsbts [][]byte, changeOutputIndex int32,
+	lockedUTXOs []Outpoint, skipBroadcast bool) any {
+
+	return mock.MatchedBy(func(req *PublishAndLogCustomAnchorRequest) bool {
+		return reflect.DeepEqual(req.AnchorPsbt, anchorPsbt) &&
+			reflect.DeepEqual(req.VirtualPsbts, virtualPsbts) &&
+			reflect.DeepEqual(req.PassiveAssetPsbts, passivePsbts) &&
+			req.ChangeOutputIndex == changeOutputIndex &&
+			reflect.DeepEqual(req.LockedUTXOs, lockedUTXOs) &&
+			req.SkipAnchorTxBroadcast == skipBroadcast
+	})
+}
+
 func TestTxBuilder_Execute(t *testing.T) {
 	mockWalletKit := new(MockWalletKitClient)
 
@@ -209,6 +246,7 @@ func TestTxBuilder_Execute(t *testing.T) {
 	signedPsbt := []byte("signed_psbt")
 	anchorPsbt := []byte("anchor_psbt")
 	finalAnchorTx := []byte("final_anchor_tx")
+	lockedUTXOs := []Outpoint{{Index: 7}}
 
 	// 1. Fund
 	mockWalletKit.On("FundTransfer", ctx, mock.MatchedBy(
@@ -228,8 +266,10 @@ func TestTxBuilder_Execute(t *testing.T) {
 	mockWalletKit.On("CommitVirtualPsbts", ctx, [][]byte{signedPsbt},
 		mock.Anything, feeRate).Return(
 		&CommittedTransfer{
-			AnchorPsbt:   anchorPsbt,
-			VirtualPsbts: [][]byte{signedPsbt},
+			AnchorPsbt:        anchorPsbt,
+			VirtualPsbts:      [][]byte{signedPsbt},
+			ChangeOutputIndex: 2,
+			LockedUTXOs:       lockedUTXOs,
 		}, nil)
 
 	// 4. Finish
@@ -237,9 +277,10 @@ func TestTxBuilder_Execute(t *testing.T) {
 		AnchorTransaction:   finalAnchorTx,
 		VirtualTransactions: [][]byte{signedPsbt},
 	}
-	mockWalletKit.On("PublishAndLogTransfer", ctx, anchorPsbt,
-		[][]byte{signedPsbt}, mock.Anything, false).Return(
-		expectedPacket, nil)
+	mockWalletKit.On("PublishAndLogCustomAnchor", ctx,
+		publishCustomAnchorReq(anchorPsbt, [][]byte{signedPsbt},
+			nil, 2, lockedUTXOs, false)).Return(expectedPacket,
+		nil)
 
 	// Execute all steps manually.
 	builder := newTxBuilder(mockWalletKit)
@@ -281,6 +322,7 @@ func TestTxBuilder_StateInjection(t *testing.T) {
 	finalAnchorTx := []byte("final_anchor_tx")
 	passivePsbts := [][]byte{[]byte("passive_psbt")}
 	defaultFeeRate := mustFeeRateSatPerVByte(t, 1)
+	lockedUTXOs := []Outpoint{{Index: 9}}
 
 	// Inject externally produced PSBTs to skip earlier steps.
 	builder := newTxBuilder(mockWalletKit)
@@ -294,14 +336,17 @@ func TestTxBuilder_StateInjection(t *testing.T) {
 			AnchorPsbt:        anchorPsbt,
 			VirtualPsbts:      [][]byte{signedPsbt},
 			PassiveAssetPsbts: passivePsbts,
+			ChangeOutputIndex: 3,
+			LockedUTXOs:       lockedUTXOs,
 		}, nil)
 
 	expectedPacket := &AssetPacket{
 		AnchorTransaction:   finalAnchorTx,
 		VirtualTransactions: [][]byte{signedPsbt},
 	}
-	mockWalletKit.On("PublishAndLogTransfer", ctx, anchorPsbt,
-		[][]byte{signedPsbt}, mock.Anything, false).Return(
+	mockWalletKit.On("PublishAndLogCustomAnchor", ctx,
+		publishCustomAnchorReq(anchorPsbt, [][]byte{signedPsbt},
+			passivePsbts, 3, lockedUTXOs, false)).Return(
 		expectedPacket, nil)
 
 	_, err := builder.Commit(ctx)
@@ -340,17 +385,18 @@ func TestTxBuilder_ExecuteWithSkipBroadcast(t *testing.T) {
 	mockWalletKit.On("CommitVirtualPsbts", ctx, [][]byte{signedPsbt},
 		mock.Anything, mustFeeRateSatPerVByte(t, 1)).Return(
 		&CommittedTransfer{
-			AnchorPsbt:   anchorPsbt,
-			VirtualPsbts: [][]byte{signedPsbt},
+			AnchorPsbt:        anchorPsbt,
+			VirtualPsbts:      [][]byte{signedPsbt},
+			ChangeOutputIndex: -1,
 		}, nil)
 
 	expectedPacket := &AssetPacket{
 		AnchorTransaction:   finalAnchorTx,
 		VirtualTransactions: [][]byte{signedPsbt},
 	}
-	mockWalletKit.On("PublishAndLogTransfer", ctx, anchorPsbt,
-		[][]byte{signedPsbt}, mock.Anything, true).Return(
-		expectedPacket, nil)
+	mockWalletKit.On("PublishAndLogCustomAnchor", ctx,
+		publishCustomAnchorReq(anchorPsbt, [][]byte{signedPsbt},
+			nil, -1, nil, true)).Return(expectedPacket, nil)
 
 	builder := newTxBuilder(mockWalletKit).AddRecipient(addr, amount)
 	packet, err := builder.Execute(ctx, WithSkipBroadcast())
@@ -368,6 +414,7 @@ func TestTxBuilder_AnchorSigning(t *testing.T) {
 	anchorPsbt := []byte("anchor_psbt")
 	signedAnchorPsbt := []byte("signed_anchor_psbt")
 	finalAnchorTx := []byte("final_anchor_tx")
+	lockedUTXOs := []Outpoint{{Index: 11}}
 
 	builder := newTxBuilder(mockWalletKit)
 	builder.SetSignedPsbt(signedPsbt).SetAnchorSigner(
@@ -380,17 +427,20 @@ func TestTxBuilder_AnchorSigning(t *testing.T) {
 	mockWalletKit.On("CommitVirtualPsbts", ctx, [][]byte{signedPsbt},
 		mock.Anything, mustFeeRateSatPerVByte(t, 1)).Return(
 		&CommittedTransfer{
-			AnchorPsbt:   anchorPsbt,
-			VirtualPsbts: [][]byte{signedPsbt},
+			AnchorPsbt:        anchorPsbt,
+			VirtualPsbts:      [][]byte{signedPsbt},
+			ChangeOutputIndex: 4,
+			LockedUTXOs:       lockedUTXOs,
 		}, nil)
 
 	expectedPacket := &AssetPacket{
 		AnchorTransaction:   finalAnchorTx,
 		VirtualTransactions: [][]byte{signedPsbt},
 	}
-	mockWalletKit.On("PublishAndLogTransfer", ctx, signedAnchorPsbt,
-		[][]byte{signedPsbt}, mock.Anything, false).Return(
-		expectedPacket, nil)
+	mockWalletKit.On("PublishAndLogCustomAnchor", ctx,
+		publishCustomAnchorReq(signedAnchorPsbt,
+			[][]byte{signedPsbt}, nil, 4, lockedUTXOs,
+			false)).Return(expectedPacket, nil)
 
 	_, err := builder.Commit(ctx)
 	require.NoError(t, err)
@@ -417,9 +467,9 @@ func TestTxBuilder_AnchorPsbtInjection(t *testing.T) {
 		AnchorTransaction:   finalAnchorTx,
 		VirtualTransactions: [][]byte{signedPsbt},
 	}
-	mockWalletKit.On("PublishAndLogTransfer", ctx, anchorPsbt,
-		[][]byte{signedPsbt}, mock.Anything, true).Return(
-		expectedPacket, nil)
+	mockWalletKit.On("PublishAndLogCustomAnchor", ctx,
+		publishCustomAnchorReq(anchorPsbt, [][]byte{signedPsbt},
+			nil, -1, nil, true)).Return(expectedPacket, nil)
 
 	packet, err := builder.Finish(ctx, WithSkipBroadcast())
 	require.NoError(t, err)

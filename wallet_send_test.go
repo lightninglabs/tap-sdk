@@ -235,6 +235,17 @@ func (m *mockClient) CommitVirtualPsbts(ctx context.Context,
 	return args.Get(0).(*CommittedTransfer), args.Error(1)
 }
 
+func (m *mockClient) CommitCustomAnchor(ctx context.Context,
+	req *CommitCustomAnchorRequest) (*CommitCustomAnchorResponse, error) {
+
+	args := m.Called(ctx, req)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*CommitCustomAnchorResponse), args.Error(1)
+}
+
 func (m *mockClient) AnchorVirtualPsbts(ctx context.Context,
 	signedPsbts [][]byte) (*AssetTransfer, error) {
 
@@ -252,6 +263,17 @@ func (m *mockClient) PublishAndLogTransfer(ctx context.Context,
 
 	args := m.Called(ctx, anchorPsbt, virtualPsbts, passivePsbts,
 		skipAnchorTxBroadcast)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*AssetPacket), args.Error(1)
+}
+
+func (m *mockClient) PublishAndLogCustomAnchor(ctx context.Context,
+	req *PublishAndLogCustomAnchorRequest) (*AssetPacket, error) {
+
+	args := m.Called(ctx, req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}

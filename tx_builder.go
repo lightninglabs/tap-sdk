@@ -52,6 +52,9 @@ type TxBuilder struct {
 	signedPsbt   []byte
 	anchorPsbt   []byte
 
+	changeOutputIndex int32
+	lockedUTXOs       []Outpoint
+
 	anchorSigner AnchorSigner
 	finished     bool
 	mu           sync.Mutex
@@ -62,8 +65,9 @@ func newTxBuilder(wallet WalletKitClient) *TxBuilder {
 	feeRate, _ := NewFeeRateSatPerVByte(1)
 
 	return &TxBuilder{
-		walletKit: wallet,
-		feeRate:   feeRate,
+		walletKit:         wallet,
+		feeRate:           feeRate,
+		changeOutputIndex: -1,
 	}
 }
 
@@ -221,6 +225,8 @@ func (b *TxBuilder) Commit(ctx context.Context) (
 	}
 
 	b.anchorPsbt = append([]byte(nil), resp.AnchorPsbt...)
+	b.changeOutputIndex = resp.ChangeOutputIndex
+	b.lockedUTXOs = append([]Outpoint(nil), resp.LockedUTXOs...)
 
 	if len(resp.VirtualPsbts) > 0 {
 		b.signedPsbt = append([]byte(nil), resp.VirtualPsbts[0]...)
@@ -252,10 +258,7 @@ func (b *TxBuilder) Finish(ctx context.Context, opts ...TxBuilderOption) (
 	}
 
 	o := applyTxBuilderOptions(opts)
-	resp, err := b.walletKit.PublishAndLogTransfer(
-		ctx, b.anchorPsbt, [][]byte{b.signedPsbt}, b.passivePsbts,
-		o.skipBroadcast,
-	)
+	resp, err := b.publishAndLog(ctx, o.skipBroadcast)
 	if err != nil {
 		return nil, wrapErr("Finish", err)
 	}
@@ -314,6 +317,9 @@ func (b *TxBuilder) Execute(ctx context.Context, opts ...TxBuilderOption) (
 	}
 
 	b.anchorPsbt = append([]byte(nil), commitResp.AnchorPsbt...)
+	b.changeOutputIndex = commitResp.ChangeOutputIndex
+	b.lockedUTXOs = append([]Outpoint(nil), commitResp.LockedUTXOs...)
+
 	if len(commitResp.VirtualPsbts) > 0 {
 		b.signedPsbt = append([]byte(nil), commitResp.VirtualPsbts[0]...)
 	}
@@ -327,10 +333,7 @@ func (b *TxBuilder) Execute(ctx context.Context, opts ...TxBuilderOption) (
 
 	// Finish.
 	o := applyTxBuilderOptions(opts)
-	resp, err := b.walletKit.PublishAndLogTransfer(
-		ctx, b.anchorPsbt, [][]byte{b.signedPsbt}, b.passivePsbts,
-		o.skipBroadcast,
-	)
+	resp, err := b.publishAndLog(ctx, o.skipBroadcast)
 	if err != nil {
 		return nil, wrapErr("Finish", err)
 	}
@@ -338,6 +341,21 @@ func (b *TxBuilder) Execute(ctx context.Context, opts ...TxBuilderOption) (
 	b.finished = true
 
 	return resp, nil
+}
+
+func (b *TxBuilder) publishAndLog(ctx context.Context,
+	skipBroadcast bool) (*AssetPacket, error) {
+
+	return b.walletKit.PublishAndLogCustomAnchor(
+		ctx, &PublishAndLogCustomAnchorRequest{
+			AnchorPsbt:            b.anchorPsbt,
+			VirtualPsbts:          [][]byte{b.signedPsbt},
+			PassiveAssetPsbts:     b.passivePsbts,
+			ChangeOutputIndex:     b.changeOutputIndex,
+			LockedUTXOs:           b.lockedUTXOs,
+			SkipAnchorTxBroadcast: skipBroadcast,
+		},
+	)
 }
 
 func (b *TxBuilder) signAnchor(ctx context.Context) error {

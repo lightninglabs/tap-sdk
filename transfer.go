@@ -27,6 +27,14 @@ type CommittedTransfer struct {
 
 	// PassiveAssetPsbts are the updated passive asset PSBTs.
 	PassiveAssetPsbts [][]byte
+
+	// ChangeOutputIndex is the index of the anchor change output or -1 if
+	// no change output was added.
+	ChangeOutputIndex int32
+
+	// LockedUTXOs are the lnd wallet outpoints locked while funding the
+	// anchor transaction.
+	LockedUTXOs []Outpoint
 }
 
 // Recipient represents a recipient of an asset transfer.
