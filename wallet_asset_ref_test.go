@@ -159,6 +159,12 @@ func (m *refMockClient) CommitVirtualPsbts(ctx context.Context,
 	panic("CommitVirtualPsbts: unexpected call")
 }
 
+func (m *refMockClient) CommitCustomAnchor(ctx context.Context,
+	req *CommitCustomAnchorRequest) (*CommitCustomAnchorResponse, error) {
+
+	panic("CommitCustomAnchor: unexpected call")
+}
+
 func (m *refMockClient) AnchorVirtualPsbts(ctx context.Context,
 	signedPsbts [][]byte) (*AssetTransfer, error) {
 
@@ -170,6 +176,12 @@ func (m *refMockClient) PublishAndLogTransfer(ctx context.Context,
 	skipAnchorTxBroadcast bool) (*AssetPacket, error) {
 
 	panic("PublishAndLogTransfer: unexpected call")
+}
+
+func (m *refMockClient) PublishAndLogCustomAnchor(ctx context.Context,
+	req *PublishAndLogCustomAnchorRequest) (*AssetPacket, error) {
+
+	panic("PublishAndLogCustomAnchor: unexpected call")
 }
 
 // --- UniverseClient ---

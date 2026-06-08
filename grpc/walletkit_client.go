@@ -125,20 +125,20 @@ func (m *walletKitClient) CommitVirtualPsbts(ctx context.Context,
 		return nil, fmt.Errorf("prepare anchor PSBT: %w", err)
 	}
 
-	req := &assetwalletrpc.CommitVirtualPsbtsRequest{
+	resp, err := m.CommitCustomAnchor(ctx, &tapsdk.CommitCustomAnchorRequest{
+		AnchorPsbt:        anchorPsbt,
 		VirtualPsbts:      virtualPsbts,
 		PassiveAssetPsbts: passivePsbts,
-		AnchorPsbt:        anchorPsbt,
-		Fees: &assetwalletrpc.CommitVirtualPsbtsRequest_SatPerVbyte{
-			SatPerVbyte: feeRate.SatPerVByteCeil(),
+		Funding: tapsdk.AnchorFundingPlan{
+			ChangeOutput: tapsdk.AnchorChangeOutput{
+				Mode: tapsdk.AnchorChangeOutputAdd,
+			},
+			Fee: tapsdk.AnchorFee{
+				Mode:    tapsdk.AnchorFeeSatPerVByte,
+				FeeRate: feeRate,
+			},
 		},
-		AnchorChangeOutput: &assetwalletrpc.CommitVirtualPsbtsRequest_Add{
-			Add: true,
-		},
-	}
-
-	authCtx, client := m.rawClientWithMacAuth(ctx)
-	resp, err := client.CommitVirtualPsbts(authCtx, req)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +147,29 @@ func (m *walletKitClient) CommitVirtualPsbts(ctx context.Context,
 		AnchorPsbt:        resp.AnchorPsbt,
 		VirtualPsbts:      resp.VirtualPsbts,
 		PassiveAssetPsbts: resp.PassiveAssetPsbts,
+		ChangeOutputIndex: resp.ChangeOutputIndex,
+		LockedUTXOs:       resp.LockedUTXOs,
 	}, nil
+}
+
+// CommitCustomAnchor commits virtual transactions into a caller-supplied anchor
+// PSBT template.
+func (m *walletKitClient) CommitCustomAnchor(ctx context.Context,
+	req *tapsdk.CommitCustomAnchorRequest) (
+	*tapsdk.CommitCustomAnchorResponse, error) {
+
+	rpcReq, err := marshalCommitCustomAnchorRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	authCtx, client := m.rawClientWithMacAuth(ctx)
+	resp, err := client.CommitVirtualPsbts(authCtx, rpcReq)
+	if err != nil {
+		return nil, err
+	}
+
+	return unmarshalCommitCustomAnchorResponse(resp)
 }
 
 // PublishAndLogTransfer publishes the anchor transaction and logs the transfer.
@@ -155,23 +177,153 @@ func (m *walletKitClient) PublishAndLogTransfer(ctx context.Context,
 	anchorPsbt []byte, virtualPsbts [][]byte, passivePsbts [][]byte,
 	skipAnchorTxBroadcast bool) (*tapsdk.AssetPacket, error) {
 
-	req := &assetwalletrpc.PublishAndLogRequest{
-		AnchorPsbt:            anchorPsbt,
-		VirtualPsbts:          virtualPsbts,
-		PassiveAssetPsbts:     passivePsbts,
-		SkipAnchorTxBroadcast: skipAnchorTxBroadcast,
-	}
+	return m.PublishAndLogCustomAnchor(
+		ctx, &tapsdk.PublishAndLogCustomAnchorRequest{
+			AnchorPsbt:            anchorPsbt,
+			VirtualPsbts:          virtualPsbts,
+			PassiveAssetPsbts:     passivePsbts,
+			ChangeOutputIndex:     -1,
+			SkipAnchorTxBroadcast: skipAnchorTxBroadcast,
+		},
+	)
+}
 
-	authCtx, client := m.rawClientWithMacAuth(ctx)
-	resp, err := client.PublishAndLogTransfer(authCtx, req)
+// PublishAndLogCustomAnchor publishes a finalized custom anchor PSBT and logs
+// the corresponding asset transfer.
+func (m *walletKitClient) PublishAndLogCustomAnchor(ctx context.Context,
+	req *tapsdk.PublishAndLogCustomAnchorRequest) (
+	*tapsdk.AssetPacket, error) {
+
+	rpcReq, err := marshalPublishAndLogCustomAnchorRequest(req)
 	if err != nil {
 		return nil, err
 	}
 
+	authCtx, client := m.rawClientWithMacAuth(ctx)
+	resp, err := client.PublishAndLogTransfer(authCtx, rpcReq)
+	if err != nil {
+		return nil, err
+	}
+	if resp == nil || resp.Transfer == nil {
+		return nil, fmt.Errorf("invalid transfer response")
+	}
+
 	return &tapsdk.AssetPacket{
 		AnchorTransaction:        resp.Transfer.AnchorTx,
-		VirtualTransactions:      virtualPsbts,
-		PassiveAssetTransactions: passivePsbts,
+		VirtualTransactions:      req.VirtualPsbts,
+		PassiveAssetTransactions: req.PassiveAssetPsbts,
+	}, nil
+}
+
+func marshalCommitCustomAnchorRequest(
+	req *tapsdk.CommitCustomAnchorRequest) (
+	*assetwalletrpc.CommitVirtualPsbtsRequest, error) {
+
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	rpcReq := &assetwalletrpc.CommitVirtualPsbtsRequest{
+		VirtualPsbts:          req.VirtualPsbts,
+		PassiveAssetPsbts:     req.PassiveAssetPsbts,
+		AnchorPsbt:            req.AnchorPsbt,
+		CustomLockId:          req.Funding.CustomLockID,
+		LockExpirationSeconds: req.Funding.LockExpirationSeconds,
+		SkipFunding:           req.Funding.SkipFunding,
+	}
+
+	if req.Funding.SkipFunding {
+		return rpcReq, nil
+	}
+
+	switch change := req.Funding.ChangeOutput; change.Mode {
+	case tapsdk.AnchorChangeOutputAdd:
+		rpcReq.AnchorChangeOutput =
+			&assetwalletrpc.CommitVirtualPsbtsRequest_Add{
+				Add: true,
+			}
+
+	case tapsdk.AnchorChangeOutputNoNew:
+		rpcReq.AnchorChangeOutput =
+			&assetwalletrpc.CommitVirtualPsbtsRequest_Add{
+				Add: false,
+			}
+
+	case tapsdk.AnchorChangeOutputExisting:
+		rpcReq.AnchorChangeOutput =
+			&assetwalletrpc.CommitVirtualPsbtsRequest_ExistingOutputIndex{
+				ExistingOutputIndex: change.ExistingOutputIndex,
+			}
+	}
+
+	switch fee := req.Funding.Fee; fee.Mode {
+	case tapsdk.AnchorFeeSatPerVByte:
+		rpcReq.Fees =
+			&assetwalletrpc.CommitVirtualPsbtsRequest_SatPerVbyte{
+				SatPerVbyte: fee.FeeRate.SatPerVByteCeil(),
+			}
+
+	case tapsdk.AnchorFeeTargetConf:
+		rpcReq.Fees =
+			&assetwalletrpc.CommitVirtualPsbtsRequest_TargetConf{
+				TargetConf: fee.TargetConf,
+			}
+	}
+
+	return rpcReq, nil
+}
+
+func unmarshalCommitCustomAnchorResponse(
+	resp *assetwalletrpc.CommitVirtualPsbtsResponse) (
+	*tapsdk.CommitCustomAnchorResponse, error) {
+
+	if resp == nil {
+		return nil, fmt.Errorf("nil custom anchor commit response")
+	}
+
+	lockedUTXOs := make([]tapsdk.Outpoint, 0, len(resp.LndLockedUtxos))
+	for _, rpcOutpoint := range resp.LndLockedUtxos {
+		outpoint, err := unmarshalOutPoint(rpcOutpoint)
+		if err != nil {
+			return nil, fmt.Errorf("invalid locked utxo: %w", err)
+		}
+
+		lockedUTXOs = append(lockedUTXOs, outpoint)
+	}
+
+	return &tapsdk.CommitCustomAnchorResponse{
+		AnchorPsbt:        resp.AnchorPsbt,
+		VirtualPsbts:      resp.VirtualPsbts,
+		PassiveAssetPsbts: resp.PassiveAssetPsbts,
+		ChangeOutputIndex: resp.ChangeOutputIndex,
+		LockedUTXOs:       lockedUTXOs,
+	}, nil
+}
+
+func marshalPublishAndLogCustomAnchorRequest(
+	req *tapsdk.PublishAndLogCustomAnchorRequest) (
+	*assetwalletrpc.PublishAndLogRequest, error) {
+
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	rpcLockedUTXOs := make([]*taprpc.OutPoint, 0, len(req.LockedUTXOs))
+	for _, outpoint := range req.LockedUTXOs {
+		rpcLockedUTXOs = append(rpcLockedUTXOs, &taprpc.OutPoint{
+			Txid:        outpoint.Txid[:],
+			OutputIndex: outpoint.Index,
+		})
+	}
+
+	return &assetwalletrpc.PublishAndLogRequest{
+		AnchorPsbt:            req.AnchorPsbt,
+		VirtualPsbts:          req.VirtualPsbts,
+		PassiveAssetPsbts:     req.PassiveAssetPsbts,
+		ChangeOutputIndex:     req.ChangeOutputIndex,
+		LndLockedUtxos:        rpcLockedUTXOs,
+		SkipAnchorTxBroadcast: req.SkipAnchorTxBroadcast,
+		Label:                 req.Label,
 	}, nil
 }
 

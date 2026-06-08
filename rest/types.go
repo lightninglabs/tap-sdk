@@ -313,9 +313,11 @@ type jsonSignVirtualPsbtResponse struct {
 // jsonCommitVirtualPsbtsResponse is the JSON shape of
 // assetwalletrpc.CommitVirtualPsbtsResponse.
 type jsonCommitVirtualPsbtsResponse struct {
-	AnchorPsbt        string   `json:"anchor_psbt"`
-	VirtualPsbts      []string `json:"virtual_psbts"`
-	PassiveAssetPsbts []string `json:"passive_asset_psbts"`
+	AnchorPsbt        string          `json:"anchor_psbt"`
+	VirtualPsbts      []string        `json:"virtual_psbts"`
+	PassiveAssetPsbts []string        `json:"passive_asset_psbts"`
+	ChangeOutputIndex int32           `json:"change_output_index"`
+	LndLockedUtxos    []*jsonOutpoint `json:"lnd_locked_utxos"`
 }
 
 // jsonPublishAndLogResponse is the JSON shape of
