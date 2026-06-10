@@ -15,6 +15,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestCustomAnchorCapabilities(t *testing.T) {
+	client := newWalletKitClient(&transport{
+		baseURL:   "http://example.invalid",
+		client:    http.DefaultClient,
+		timeout:   time.Second,
+		macaroons: macaroon.Pouch{},
+	})
+
+	caps, err := client.CustomAnchorCapabilities(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, tapsdk.DefaultTapdCustomAnchorCapabilities(), *caps)
+}
+
 func TestVerifyAssetOwnershipSendsChallenge(t *testing.T) {
 	proof := []byte("proof")
 	challenge := make([]byte, 32)

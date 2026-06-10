@@ -19,6 +19,19 @@ func newWalletKitClient(tp *transport) *walletKitClient {
 	return &walletKitClient{transport: tp}
 }
 
+// CustomAnchorCapabilities reports the static tapd custom-anchor capability
+// profile known by this SDK transport.
+func (w *walletKitClient) CustomAnchorCapabilities(
+	ctx context.Context) (*tapsdk.CustomAnchorCapabilities, error) {
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	caps := tapsdk.DefaultTapdCustomAnchorCapabilities()
+	return &caps, nil
+}
+
 type jsonExportAssetWalletBackupRequest struct {
 	Mode string `json:"mode"`
 }

@@ -367,6 +367,12 @@ reaches a signing step. Capabilities should cover at least custom-anchor commit,
 skip-broadcast publish/log, skip-funding commit, P2A or external fee-bump
 support, proof registration, and local-vs-backend verification support.
 
+Capability discovery should use SDK-owned DTOs with three states: supported,
+unsupported, and unknown. Builders must treat unsupported and unknown as
+unavailable before asking the caller to sign. Until tapd exposes a live
+capability RPC, SDK transports can return a static tapd profile and use the
+structured error when a requested capability is not explicitly supported.
+
 Tests should exercise equivalent SDK requests through both transports or a
 shared conformance harness so advanced features cannot land as gRPC-only.
 

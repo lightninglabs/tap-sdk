@@ -38,6 +38,19 @@ func (m *walletKitClient) rawClientWithMacAuth(
 	return m.walletKitMac.WithMacaroonAuth(parentCtx), m.client
 }
 
+// CustomAnchorCapabilities reports the static tapd custom-anchor capability
+// profile known by this SDK transport.
+func (m *walletKitClient) CustomAnchorCapabilities(
+	ctx context.Context) (*tapsdk.CustomAnchorCapabilities, error) {
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	caps := tapsdk.DefaultTapdCustomAnchorCapabilities()
+	return &caps, nil
+}
+
 // FundTransfer funds a virtual transaction.
 func (m *walletKitClient) FundTransfer(ctx context.Context,
 	recipients []tapsdk.Recipient, inputs []tapsdk.PrevID) (

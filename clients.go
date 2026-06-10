@@ -136,6 +136,12 @@ type ProofClient interface {
 
 // WalletKitClient exposes the AssetWalletClient service gRPC client.
 type WalletKitClient interface {
+	// CustomAnchorCapabilities reports backend support for the advanced
+	// custom-anchor transaction flow. Unknown capabilities must be treated as
+	// unavailable before asking a caller to sign.
+	CustomAnchorCapabilities(ctx context.Context) (
+		*CustomAnchorCapabilities, error)
+
 	// DeriveScriptKey derives a new script key for receiving assets.
 	// The script key includes both the internal key and the tweaked
 	// Taproot output key.

@@ -1,6 +1,7 @@
 package grpc
 
 import (
+	"context"
 	"testing"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
@@ -8,6 +9,14 @@ import (
 	"github.com/lightninglabs/taproot-assets/taprpc/assetwalletrpc"
 	"github.com/stretchr/testify/require"
 )
+
+func TestWalletKitCustomAnchorCapabilities(t *testing.T) {
+	client := &walletKitClient{}
+
+	caps, err := client.CustomAnchorCapabilities(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, tapsdk.DefaultTapdCustomAnchorCapabilities(), *caps)
+}
 
 func TestMarshalBackupMode(t *testing.T) {
 	tests := []struct {
