@@ -94,6 +94,22 @@ func (s *Wallet) Client() Client {
 	return s.client
 }
 
+// CustomAnchorCapabilities reports backend support for advanced custom-anchor
+// transaction flows.
+func (s *Wallet) CustomAnchorCapabilities(
+	ctx context.Context) (*CustomAnchorCapabilities, error) {
+
+	caps, err := s.client.CustomAnchorCapabilities(ctx)
+	if err != nil {
+		return nil, wrapErr("CustomAnchorCapabilities", err)
+	}
+	if caps == nil {
+		return &CustomAnchorCapabilities{}, nil
+	}
+
+	return caps, nil
+}
+
 // Close releases resources held by the underlying client.
 func (s *Wallet) Close() error {
 	return s.client.Close()
