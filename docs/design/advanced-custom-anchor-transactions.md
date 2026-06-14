@@ -147,6 +147,11 @@ The package should include:
 - proof update metadata required for import, register, export, or delivery
 - enough publish/log metadata to retry after a process restart
 
+The root SDK DTO for this boundary is `CustomAnchorTransferPackage`. It is a
+serializable snapshot of SDK-owned types and byte blobs, not a wrapper around
+tapd or taproot-assets implementation objects. Callers may copy it directly
+into host-owned storage or translate it into their own storage schema.
+
 Callers that publish the anchor transaction outside tapd should persist this
 package before handing the final transaction to their broadcaster.
 
