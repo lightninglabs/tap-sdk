@@ -605,6 +605,24 @@ func TestCustomAnchorTransferPackageRejectsSemanticTamper(t *testing.T) {
 			wantErr: "output proof courier does not match output summary",
 		},
 		{
+			name: "output taproot asset root",
+			mutate: func(_ *testing.T,
+				pkg *CustomAnchorTransferPackage) {
+
+				pkg.Outputs[0].TaprootAssetRoot[0] ^= 1
+			},
+			wantErr: "output commitment roots do not match virtual output",
+		},
+		{
+			name: "output taproot merkle root",
+			mutate: func(_ *testing.T,
+				pkg *CustomAnchorTransferPackage) {
+
+				pkg.Outputs[0].TaprootMerkleRoot[0] ^= 1
+			},
+			wantErr: "output commitment roots do not match virtual output",
+		},
+		{
 			name: "output anchor index",
 			mutate: func(t *testing.T,
 				pkg *CustomAnchorTransferPackage) {
@@ -772,6 +790,75 @@ func TestCustomAnchorTransferPackageRejectsSemanticTamper(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			pkg := newCustomAnchorTestFixture(t).unsealed
 			test.mutate(t, pkg)
+
+			_, err := pkg.Seal()
+			require.ErrorContains(t, err, test.wantErr)
+		})
+	}
+}
+
+func TestCustomAnchorTransferPackageRejectsRootHintTamper(t *testing.T) {
+	tests := []struct {
+		name    string
+		mutate  func([]*btcpsbt.Unknown) []*btcpsbt.Unknown
+		wantErr string
+	}{
+		{
+			name: "missing asset root",
+			mutate: func(unknowns []*btcpsbt.Unknown) []*btcpsbt.Unknown {
+				return removeCustomAnchorTestField(
+					unknowns, tappsbt.PsbtKeyTypeOutputAssetRoot,
+				)
+			},
+			wantErr: "Taproot Asset root hint must be 32 bytes, was 0",
+		},
+		{
+			name: "short merkle root",
+			mutate: func(unknowns []*btcpsbt.Unknown) []*btcpsbt.Unknown {
+				return tappsbt.AddCustomField(
+					unknowns,
+					tappsbt.PsbtKeyTypeOutputTaprootMerkleRoot,
+					[]byte{1},
+				)
+			},
+			wantErr: "Taproot merkle root hint must be 32 bytes, was 1",
+		},
+		{
+			name: "wrong asset root",
+			mutate: func(unknowns []*btcpsbt.Unknown) []*btcpsbt.Unknown {
+				return tappsbt.AddCustomField(
+					unknowns, tappsbt.PsbtKeyTypeOutputAssetRoot,
+					bytes.Repeat([]byte{1}, 32),
+				)
+			},
+			wantErr: "Taproot Asset root hint does not match",
+		},
+		{
+			name: "wrong merkle root",
+			mutate: func(unknowns []*btcpsbt.Unknown) []*btcpsbt.Unknown {
+				return tappsbt.AddCustomField(
+					unknowns,
+					tappsbt.PsbtKeyTypeOutputTaprootMerkleRoot,
+					bytes.Repeat([]byte{2}, 32),
+				)
+			},
+			wantErr: "Taproot merkle root hint does not match",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			pkg := newCustomAnchorTestFixture(t).unsealed
+			for _, current := range []*[]byte{
+				&pkg.CommittedAnchorPsbt, &pkg.AnchorPsbt,
+			} {
+				packet := mustDecodeAnchorPSBT(t, *current)
+				index := pkg.Outputs[0].AnchorOutputIndex
+				packet.Outputs[index].Unknowns = test.mutate(
+					packet.Outputs[index].Unknowns,
+				)
+				*current = mustSerializeAnchorPSBT(t, packet)
+			}
 
 			_, err := pkg.Seal()
 			require.ErrorContains(t, err, test.wantErr)
@@ -1593,6 +1680,20 @@ func mutateCustomAnchorPackageVPacket(t *testing.T,
 	mutate(packet)
 	(*packets)[packetIndex], err = tappsbt.Encode(packet)
 	require.NoError(t, err)
+}
+
+func removeCustomAnchorTestField(unknowns []*btcpsbt.Unknown,
+	key []byte) []*btcpsbt.Unknown {
+
+	filtered := make([]*btcpsbt.Unknown, 0, len(unknowns))
+	for _, unknown := range unknowns {
+		if unknown != nil && bytes.Equal(unknown.Key, key) {
+			continue
+		}
+		filtered = append(filtered, unknown)
+	}
+
+	return filtered
 }
 
 func mustDecodeAnchorPSBT(t *testing.T, raw []byte) *btcpsbt.Packet {

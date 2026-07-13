@@ -109,6 +109,12 @@ func TestCustomAnchorPassiveCallerReanchor(t *testing.T) {
 		packageSnapshot.Outputs[1].PacketRole)
 	require.Equal(t, customAnchorPassiveCourier,
 		packageSnapshot.Outputs[1].ProofDelivery.CourierAddress)
+	require.Equal(t, packageSnapshot.Outputs[0].AnchorOutputIndex,
+		packageSnapshot.Outputs[1].AnchorOutputIndex)
+	require.Equal(t, packageSnapshot.Outputs[0].TaprootAssetRoot,
+		packageSnapshot.Outputs[1].TaprootAssetRoot)
+	require.Equal(t, packageSnapshot.Outputs[0].TaprootMerkleRoot,
+		packageSnapshot.Outputs[1].TaprootMerkleRoot)
 }
 
 func TestCustomAnchorPassiveCallerReanchorRejectsMutation(t *testing.T) {

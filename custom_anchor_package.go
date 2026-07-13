@@ -285,6 +285,16 @@ type CustomAnchorAssetOutputSummary struct {
 	// AnchorValueSat is the BTC value assigned to the asset-bearing output.
 	AnchorValueSat int64 `json:"anchor_value_sat"`
 
+	// TaprootAssetRoot is the root of the Taproot Asset commitment before
+	// combining it with the host-supplied tapscript sibling. Hosts such as
+	// SwapDK use this root to compose their policy tree and control blocks.
+	TaprootAssetRoot Hash `json:"taproot_asset_root"`
+
+	// TaprootMerkleRoot is the final BIP341 root that combines the Taproot
+	// Asset commitment with the optional host-supplied tapscript sibling.
+	// It is the tweak committed to by the anchor output key.
+	TaprootMerkleRoot Hash `json:"taproot_merkle_root"`
+
 	// ScriptKey is the asset script key for the new output.
 	ScriptKey PubKey `json:"script_key"`
 
@@ -1034,6 +1044,11 @@ func validatePackageOutputMapping(anchor *psbt.Packet, txID chainhash.Hash,
 	}
 	anchorOutpoint := Outpoint{Txid: [32]byte(txID), Index: anchorIndex}
 	anchorValue := anchor.UnsignedTx.TxOut[anchorIndex].Value
+	taprootAssetRoot, taprootMerkleRoot, err :=
+		deriveCustomAnchorOutputRoots(virtualOutput, commitments)
+	if err != nil {
+		return fmt.Errorf("derive output commitment roots: %w", err)
+	}
 	if !customAnchorAssetRefMatchesIssuance(
 		summary.AssetRef, actualRef, issuanceID,
 	) ||
@@ -1044,6 +1059,16 @@ func validatePackageOutputMapping(anchor *psbt.Packet, txID chainhash.Hash,
 		summary.Amount != virtualOutput.Amount {
 
 		return fmt.Errorf("output summary does not match virtual output")
+	}
+	if summary.TaprootAssetRoot != taprootAssetRoot ||
+		summary.TaprootMerkleRoot != taprootMerkleRoot {
+
+		return fmt.Errorf("output commitment roots do not match virtual output")
+	}
+	if err := validateCustomAnchorOutputRootHints(
+		anchor, anchorIndex, taprootAssetRoot, taprootMerkleRoot,
+	); err != nil {
+		return err
 	}
 	if customAnchorProofCourierString(
 		virtualOutput.ProofDeliveryAddress,
@@ -1091,6 +1116,69 @@ func validatePackageOutputMapping(anchor *psbt.Packet, txID chainhash.Hash,
 	}
 	if !actualMatches || !updateMatches {
 		return fmt.Errorf("proof suffix does not match committed anchor")
+	}
+
+	return nil
+}
+
+func deriveCustomAnchorOutputRoots(output *tappsbt.VOutput,
+	commitments tappsbt.OutputCommitments) (Hash, Hash, error) {
+
+	if output == nil {
+		return Hash{}, Hash{}, fmt.Errorf("virtual output is missing")
+	}
+	if output.AnchorOutputInternalKey == nil {
+		return Hash{}, Hash{}, fmt.Errorf("anchor output internal key is missing")
+	}
+	anchorCommitment, ok := commitments[output.AnchorOutputIndex]
+	if !ok || anchorCommitment == nil {
+		return Hash{}, Hash{}, fmt.Errorf(
+			"anchor output %d commitment is missing",
+			output.AnchorOutputIndex,
+		)
+	}
+
+	_, merkleRoot, assetRoot, err := tapsend.AnchorOutputScript(
+		output.AnchorOutputInternalKey,
+		output.AnchorOutputTapscriptSibling, anchorCommitment,
+	)
+	if err != nil {
+		return Hash{}, Hash{}, err
+	}
+
+	return Hash(assetRoot), Hash(merkleRoot), nil
+}
+
+func validateCustomAnchorOutputRootHints(anchor *psbt.Packet,
+	anchorIndex uint32, assetRoot, merkleRoot Hash) error {
+
+	if anchorIndex >= uint32(len(anchor.Outputs)) {
+		return fmt.Errorf("anchor output metadata is out of range")
+	}
+	unknowns := anchor.Outputs[anchorIndex].Unknowns
+	assetRootHint := tappsbt.ExtractCustomField(
+		unknowns, tappsbt.PsbtKeyTypeOutputAssetRoot,
+	)
+	if len(assetRootHint) != len(assetRoot) {
+		return fmt.Errorf("anchor output %d Taproot Asset root hint must be %d "+
+			"bytes, was %d", anchorIndex, len(assetRoot), len(assetRootHint))
+	}
+	if !bytes.Equal(assetRootHint, assetRoot[:]) {
+		return fmt.Errorf("anchor output %d Taproot Asset root hint does not "+
+			"match the committed assets", anchorIndex)
+	}
+
+	merkleRootHint := tappsbt.ExtractCustomField(
+		unknowns, tappsbt.PsbtKeyTypeOutputTaprootMerkleRoot,
+	)
+	if len(merkleRootHint) != len(merkleRoot) {
+		return fmt.Errorf("anchor output %d Taproot merkle root hint must be %d "+
+			"bytes, was %d", anchorIndex, len(merkleRoot),
+			len(merkleRootHint))
+	}
+	if !bytes.Equal(merkleRootHint, merkleRoot[:]) {
+		return fmt.Errorf("anchor output %d Taproot merkle root hint does not "+
+			"match the committed assets", anchorIndex)
 	}
 
 	return nil

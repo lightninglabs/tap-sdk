@@ -1099,6 +1099,18 @@ func (p *CustomAnchorPlan) committedOutputSummaries(anchor *psbt.Packet,
 	[]CustomAnchorProofUpdate, error) {
 
 	txID := anchor.UnsignedTx.TxHash()
+	allPackets := append(
+		append([]*tappsbt.VPacket(nil), active...), passive...,
+	)
+	// The committed packets already contain tapd's deterministic STXO alt
+	// leaves. Reconstruct roots from those persisted leaves without adding a
+	// second copy.
+	commitments, err := tapsend.CreateOutputCommitments(
+		allPackets, tapsend.WithNoSTXOProofs(),
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("derive committed output roots: %w", err)
+	}
 	outputs := make([]CustomAnchorAssetOutputSummary, 0, len(p.outputs))
 	updates := make([]CustomAnchorProofUpdate, 0, len(p.outputs))
 	for idx := range p.outputs {
@@ -1141,6 +1153,12 @@ func (p *CustomAnchorPlan) committedOutputSummaries(anchor *psbt.Packet,
 			return nil, nil, fmt.Errorf("committed output %q anchor value "+
 				"changed", planned.LogicalOutputID)
 		}
+		taprootAssetRoot, taprootMerkleRoot, err :=
+			deriveCustomAnchorOutputRoots(vOut, commitments)
+		if err != nil {
+			return nil, nil, fmt.Errorf("derive output %q commitment roots: %w",
+				planned.LogicalOutputID, err)
+		}
 		proofBlob, err := encodeTransitionProof(vOut.ProofSuffix)
 		if err != nil {
 			return nil, nil, fmt.Errorf("encode output %q proof suffix: %w",
@@ -1159,6 +1177,8 @@ func (p *CustomAnchorPlan) committedOutputSummaries(anchor *psbt.Packet,
 			AssetType:          planned.AssetType,
 			AnchorOutpoint:     anchorOutpoint,
 			AnchorValueSat:     anchorValue,
+			TaprootAssetRoot:   taprootAssetRoot,
+			TaprootMerkleRoot:  taprootMerkleRoot,
 			ScriptKey:          planned.ScriptKey,
 			Amount:             planned.Amount,
 			ScriptMode:         planned.ScriptMode,

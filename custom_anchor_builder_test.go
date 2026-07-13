@@ -639,9 +639,20 @@ func TestCustomAnchorBuilderGroupedMultiIssuance(t *testing.T) {
 	require.Len(t, packageSnapshot.Outputs, 2)
 	require.Len(t, packageSnapshot.ProofUpdates, 2)
 	packageIssuances := make(map[AssetID]struct{})
-	for _, output := range packageSnapshot.Outputs {
+	for idx, output := range packageSnapshot.Outputs {
 		packageIssuances[output.IssuanceID] = struct{}{}
 		require.Equal(t, "group-receiver", output.LogicalOutputID)
+		require.NotZero(t, output.TaprootAssetRoot)
+		if idx > 0 {
+			require.Equal(t,
+				packageSnapshot.Outputs[0].TaprootAssetRoot,
+				output.TaprootAssetRoot,
+			)
+			require.Equal(t,
+				packageSnapshot.Outputs[0].TaprootMerkleRoot,
+				output.TaprootMerkleRoot,
+			)
+		}
 	}
 	require.Len(t, packageIssuances, 2)
 

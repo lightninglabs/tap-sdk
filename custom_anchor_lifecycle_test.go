@@ -86,6 +86,10 @@ func TestCustomAnchorLifecycleBackendSigningAndPublish(t *testing.T) {
 	t.Parallel()
 
 	fixture := newCustomAnchorBuilderFixture(t)
+	policyLeaf := txscript.NewBaseTapLeaf([]byte{txscript.OP_TRUE})
+	fixture.request.Outputs[0].Anchor.Tapscript = CustomAnchorTapscriptPlan{
+		TapLeaves: []TapLeaf{{Script: cloneBytes(policyLeaf.Script)}},
+	}
 	var (
 		signCalls     int
 		commitRequest *CommitVirtualPsbtsRequest
@@ -171,6 +175,14 @@ func TestCustomAnchorLifecycleBackendSigningAndPublish(t *testing.T) {
 	require.Len(t, packageSnapshot.ProofUpdates, 1)
 	require.NotEmpty(t, packageSnapshot.ProofUpdates[0].ProofBlob)
 	require.Equal(t, publishMetadata, packageSnapshot.Publish)
+	outputSummary := packageSnapshot.Outputs[0]
+	require.NotZero(t, outputSummary.TaprootAssetRoot)
+	require.NotZero(t, outputSummary.TaprootMerkleRoot)
+	policyRoot := policyLeaf.TapHash()
+	expectedRoot := asset.NewTapBranchHash(
+		chainhash.Hash(outputSummary.TaprootAssetRoot), policyRoot,
+	)
+	require.Equal(t, Hash(expectedRoot), outputSummary.TaprootMerkleRoot)
 
 	before, err := decodeAnchorPSBT(plan.AnchorPSBT())
 	require.NoError(t, err)
@@ -192,6 +204,17 @@ func TestCustomAnchorLifecycleBackendSigningAndPublish(t *testing.T) {
 		committed.UnsignedTx.TxOut[1].PkScript)
 	require.Equal(t, before.UnsignedTx.TxOut[1].Value,
 		committed.UnsignedTx.TxOut[1].Value)
+	internalKey, err := btcec.ParsePubKey(
+		fixture.request.Outputs[0].Anchor.InternalKey.PubKey[:],
+	)
+	require.NoError(t, err)
+	outputKey := txscript.ComputeTaprootOutputKey(
+		internalKey, outputSummary.TaprootMerkleRoot[:],
+	)
+	expectedPkScript, err := txscript.PayToTaprootScript(outputKey)
+	require.NoError(t, err)
+	require.Equal(t, expectedPkScript,
+		committed.UnsignedTx.TxOut[outputSummary.AnchorOutputIndex].PkScript)
 
 	_, err = wallet.PublishCustomAnchorTransfer(
 		context.Background(), packageSnapshot,

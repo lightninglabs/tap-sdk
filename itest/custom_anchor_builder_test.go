@@ -137,6 +137,9 @@ func TestCustomAnchorBuilderEndToEnd(t *testing.T) {
 		require.Len(t, sealed.Outputs, 1)
 		require.Len(t, sealed.ProofUpdates, 1)
 		require.NotEmpty(t, sealed.ProofUpdates[0].ProofBlob)
+		require.NotZero(t, sealed.Outputs[0].TaprootAssetRoot)
+		require.Equal(t, sealed.Outputs[0].TaprootAssetRoot,
+			sealed.Outputs[0].TaprootMerkleRoot)
 		require.Equal(t, receiverKeys.ScriptKey.PubKey,
 			sealed.Outputs[0].ScriptKey)
 		requireCustomAnchorTxShape(t, sealed.AnchorPsbt, anchorValue)
@@ -316,6 +319,9 @@ func TestCustomAnchorBuilderExternalP2AEndToEnd(t *testing.T) {
 		require.Len(t, sealed.Outputs, 1)
 		require.Len(t, sealed.ProofUpdates, 1)
 		require.NotEmpty(t, sealed.ProofUpdates[0].ProofBlob)
+		require.NotZero(t, sealed.Outputs[0].TaprootAssetRoot)
+		require.Equal(t, sealed.Outputs[0].TaprootAssetRoot,
+			sealed.Outputs[0].TaprootMerkleRoot)
 		requireCustomAnchorP2ATxShape(
 			t, sealed.AnchorPsbt, anchorValue,
 		)

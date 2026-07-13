@@ -306,6 +306,9 @@ phase and is follow-up work.
 - the caller's custom lock ID and requested expiration, when wallet funding
   was used;
 - logical-to-concrete input and output mappings;
+- each output's Taproot Asset commitment root and final BIP341 merkle root,
+  derived from the complete committed active/passive packet set rather than
+  trusted proprietary PSBT fields;
 - the self-contained confirmed proof file or compact proof path for every
   selected input, bound by a domain-separated content ID;
 - every output proof suffix and complete proof-delivery metadata;
@@ -331,6 +334,16 @@ a temporary value, and a failure leaves the receiver unchanged.
 Funding metadata is mode-strict. Caller-funded exact and external P2A packages
 cannot carry backend change, lock, locked-UTXO, or backend-managed-input
 metadata; wallet-funded packages require their deterministic custom lock ID.
+
+For a host-owned policy tree, such as an Ark VTXO, the host combines its known
+policy root with `CustomAnchorAssetOutputSummary.TaprootAssetRoot`. The result
+must equal the summary's `TaprootMerkleRoot`; that final root is the tweak
+committed by the anchor output key. The SDK exposes both values so the host can
+build and persist its control blocks without parsing tapd's proprietary PSBT
+output fields. The host remains responsible for persisting its complete policy
+descriptor, leaves, signers, and internal key. The SDK also requires tapd's
+PSBT root hints to be present and equal to these independently reconstructed
+values because the downstream transfer logger persists those hints.
 
 The committed PSBT metadata is also sealed. Before finalization, the current
 PSBT may differ only in signature and finalization fields; changes to prevout,
