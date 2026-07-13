@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
+	"github.com/lightninglabs/tap-sdk/internal/anchor"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 )
 
@@ -310,8 +311,47 @@ type jsonCommitVirtualPsbtsRequest struct {
 	SkipFunding           bool     `json:"skip_funding,omitempty"`
 }
 
-// CommitVirtualPsbts commits virtual transactions.
+// CommitVirtualPsbts commits virtual transactions using the legacy
+// wallet-kit surface.
 func (w *walletKitClient) CommitVirtualPsbts(ctx context.Context,
+	virtualPsbts [][]byte, passivePsbts [][]byte,
+	feeRate tapsdk.FeeRate) (*tapsdk.CommittedTransfer, error) {
+
+	anchorPsbt, err := anchor.PreparePsbt(virtualPsbts, passivePsbts)
+	if err != nil {
+		return nil, fmt.Errorf("prepare anchor PSBT: %w", err)
+	}
+
+	resp, err := w.CommitVirtualPsbtsWithRequest(
+		ctx, &tapsdk.CommitVirtualPsbtsRequest{
+			AnchorPsbt:        anchorPsbt,
+			VirtualPsbts:      virtualPsbts,
+			PassiveAssetPsbts: passivePsbts,
+			Funding: tapsdk.AnchorFundingPlan{
+				ChangeOutput: tapsdk.AnchorChangeOutput{
+					Mode: tapsdk.AnchorChangeOutputAdd,
+				},
+				Fee: tapsdk.AnchorFee{
+					Mode:    tapsdk.AnchorFeeSatPerVByte,
+					FeeRate: feeRate,
+				},
+			},
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &tapsdk.CommittedTransfer{
+		AnchorPsbt:        resp.AnchorPsbt,
+		VirtualPsbts:      resp.VirtualPsbts,
+		PassiveAssetPsbts: resp.PassiveAssetPsbts,
+	}, nil
+}
+
+// CommitVirtualPsbtsWithRequest commits virtual transactions using the full
+// advanced request DTO.
+func (w *walletKitClient) CommitVirtualPsbtsWithRequest(ctx context.Context,
 	req *tapsdk.CommitVirtualPsbtsRequest) (
 	*tapsdk.CommitVirtualPsbtsResponse, error) {
 
@@ -431,7 +471,11 @@ func unmarshalCommitVirtualPsbtsResponse(
 	}
 
 	lockedUTXOs := make([]tapsdk.Outpoint, 0, len(resp.LndLockedUtxos))
-	for _, op := range resp.LndLockedUtxos {
+	for idx, op := range resp.LndLockedUtxos {
+		if op == nil {
+			return nil, fmt.Errorf("invalid locked utxo %d: null outpoint",
+				idx)
+		}
 		outpoint, err := unmarshalJSONOutpoint(op)
 		if err != nil {
 			return nil, fmt.Errorf("invalid locked utxo: %w", err)
@@ -498,9 +542,26 @@ type jsonPublishAndLogRequest struct {
 	Label                 string `json:"label,omitempty"`
 }
 
-// PublishAndLogTransfer publishes the anchor transaction and logs
-// the transfer.
+// PublishAndLogTransfer publishes the anchor transaction using the legacy
+// wallet-kit surface and logs the transfer.
 func (w *walletKitClient) PublishAndLogTransfer(ctx context.Context,
+	anchorPsbt []byte, virtualPsbts [][]byte, passivePsbts [][]byte,
+	skipAnchorTxBroadcast bool) (*tapsdk.AssetPacket, error) {
+
+	return w.PublishAndLogTransferWithRequest(
+		ctx, &tapsdk.PublishAndLogTransferRequest{
+			AnchorPsbt:            anchorPsbt,
+			VirtualPsbts:          virtualPsbts,
+			PassiveAssetPsbts:     passivePsbts,
+			ChangeOutputIndex:     0,
+			SkipAnchorTxBroadcast: skipAnchorTxBroadcast,
+		},
+	)
+}
+
+// PublishAndLogTransferWithRequest publishes the anchor transaction and logs
+// the transfer using the full advanced request DTO.
+func (w *walletKitClient) PublishAndLogTransferWithRequest(ctx context.Context,
 	req *tapsdk.PublishAndLogTransferRequest) (
 	*tapsdk.AssetPacket, error) {
 

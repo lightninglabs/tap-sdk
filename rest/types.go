@@ -202,8 +202,13 @@ type jsonChainAnchor struct {
 
 // jsonPrevWitness is the JSON shape of taprpc.PrevWitness.
 type jsonPrevWitness struct {
-	PrevID *jsonPrevID `json:"prev_id"`
+	PrevID          *jsonPrevID          `json:"prev_id"`
+	SplitCommitment *jsonSplitCommitment `json:"split_commitment"`
 }
+
+// jsonSplitCommitment records whether a decoded witness is a synthetic split
+// leaf. Its nested root asset isn't needed by the SDK's proof summary.
+type jsonSplitCommitment struct{}
 
 // jsonPrevID is the JSON shape of taprpc.PrevInputAsset.
 type jsonPrevID struct {

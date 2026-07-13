@@ -136,6 +136,42 @@ func TestParseUint64(t *testing.T) {
 	}
 }
 
+func TestUnmarshalVerifyProofResponseIncludesDecodedProof(t *testing.T) {
+	var (
+		assetID = "0102030405060708090a0b0c0d0e0f101112131415161718" +
+			"191a1b1c1d1e1f20"
+		scriptKey = hex.EncodeToString(restTestPubKey)
+		outpoint  = "000000000000000000000000000000000000000000000000" +
+			"0000000000000001:7"
+	)
+
+	result, err := unmarshalVerifyProofResponse(&jsonVerifyProofResponse{
+		Valid: true,
+		DecodedProof: &jsonDecodedProof{
+			ProofAtDepth:   2,
+			NumberOfProofs: 3,
+			Asset: &jsonDecodedAsset{
+				AssetGenesis: &jsonGenesisInfo{AssetID: assetID},
+				Amount:       "42",
+				ScriptKey:    scriptKey,
+				ChainAnchor: &jsonChainAnchor{
+					AnchorOutpoint: outpoint,
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.True(t, result.Valid)
+	require.NotNil(t, result.DecodedProof)
+	require.Equal(t, uint64(42), result.DecodedProof.Amount)
+	require.Equal(t, uint32(2), result.DecodedProof.ProofAtDepth)
+	require.Equal(t, uint32(3), result.DecodedProof.NumberOfProofs)
+	require.Equal(t, outpoint, result.DecodedProof.Outpoint.String())
+	require.Equal(t, assetID, hex.EncodeToString(
+		result.DecodedProof.IssuanceID[:],
+	))
+}
+
 func TestParseAssetTypes(t *testing.T) {
 	tests := []struct {
 		name    string

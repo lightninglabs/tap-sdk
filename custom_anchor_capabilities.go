@@ -2,7 +2,7 @@ package tapsdk
 
 import "fmt"
 
-const customAnchorUnknown = "unknown"
+const unknownString = "unknown"
 
 // CustomAnchorBackendMode identifies the kind of backend that reported a
 // custom-anchor capability set.
@@ -10,7 +10,7 @@ type CustomAnchorBackendMode string
 
 const (
 	// CustomAnchorBackendUnknown means the SDK cannot classify the backend.
-	CustomAnchorBackendUnknown CustomAnchorBackendMode = customAnchorUnknown
+	CustomAnchorBackendUnknown CustomAnchorBackendMode = unknownString
 
 	// CustomAnchorBackendLocalTapd means the backend is local tapd.
 	CustomAnchorBackendLocalTapd = CustomAnchorBackendMode(
@@ -129,7 +129,7 @@ func (s CustomAnchorCapabilityStatus) String() string {
 		return "unsupported"
 
 	default:
-		return customAnchorUnknown
+		return unknownString
 	}
 }
 
@@ -258,7 +258,7 @@ func (e *UnsupportedCustomAnchorCapabilityError) Error() string {
 
 	capability := e.Capability
 	if capability == "" {
-		capability = CustomAnchorCapability("unknown")
+		capability = CustomAnchorCapability(unknownString)
 	}
 
 	return fmt.Sprintf(

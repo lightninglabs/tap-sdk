@@ -9,6 +9,7 @@ import (
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	tapsdk "github.com/lightninglabs/tap-sdk"
+	"github.com/lightninglabs/tap-sdk/internal/codec"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"google.golang.org/grpc"
@@ -1598,16 +1599,21 @@ func unmarshalDecodedProof(
 		return nil, fmt.Errorf("nil proof asset")
 	}
 
-	assetID, err := tapsdk.ParseAssetID(
-		rpcProof.Asset.AssetGenesis.AssetId,
-	)
+	asset := rpcProof.Asset
+	if asset.AssetGenesis == nil {
+		return nil, fmt.Errorf("nil proof asset genesis")
+	}
+
+	assetID, err := tapsdk.ParseAssetID(asset.AssetGenesis.AssetId)
 	if err != nil {
 		return nil, fmt.Errorf("invalid asset ID: %w", err)
 	}
+	assetType, err := unmarshalAssetType(asset.AssetGenesis.AssetType)
+	if err != nil {
+		return nil, fmt.Errorf("invalid asset type: %w", err)
+	}
 
-	scriptKey, err := tapsdk.ParseTaprootPubKey(
-		rpcProof.Asset.ScriptKey,
-	)
+	scriptKey, err := tapsdk.ParsePubKey(asset.ScriptKey)
 	if err != nil {
 		return nil, fmt.Errorf("invalid script key: %w", err)
 	}
@@ -1615,15 +1621,16 @@ func unmarshalDecodedProof(
 	proof := &tapsdk.DecodedProof{
 		ProofAtDepth:   rpcProof.ProofAtDepth,
 		NumberOfProofs: rpcProof.NumberOfProofs,
-		AssetRef:       tapsdk.AssetRefFromAsset(assetID, nil),
+		AssetRef:       tapsdk.AssetRefFromTypedAsset(assetID, nil, assetType),
 		IssuanceID:     assetID,
 		ScriptKey:      scriptKey,
-		Amount:         rpcProof.Asset.Amount,
+		Amount:         asset.Amount,
+		IsIssuance:     rpcProof.GenesisReveal != nil,
 	}
 
-	if rpcProof.Asset.ChainAnchor != nil {
+	if asset.ChainAnchor != nil {
 		op, err := tapsdk.NewOutpointFromStr(
-			rpcProof.Asset.ChainAnchor.AnchorOutpoint,
+			asset.ChainAnchor.AnchorOutpoint,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("invalid anchor "+
@@ -1633,19 +1640,96 @@ func unmarshalDecodedProof(
 		proof.Outpoint = op
 	}
 
-	if rpcProof.Asset.AssetGroup != nil &&
-		len(rpcProof.Asset.AssetGroup.TweakedGroupKey) > 0 {
+	if asset.AssetGroup != nil &&
+		len(asset.AssetGroup.TweakedGroupKey) > 0 {
 
 		groupKey, err := tapsdk.ParsePubKey(
-			rpcProof.Asset.AssetGroup.TweakedGroupKey,
+			asset.AssetGroup.TweakedGroupKey,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("invalid group key: %w",
 				err)
 		}
 
-		proof.AssetRef = tapsdk.AssetRefFromGroupKey(groupKey)
+		proof.AssetRef = tapsdk.AssetRefFromTypedAsset(
+			assetID, &groupKey, assetType,
+		)
+	}
+
+	if len(rpcProof.AltLeaves) > 0 {
+		altLeaves, err := codec.DecodeAltLeaves(rpcProof.AltLeaves)
+		if err != nil {
+			return nil, fmt.Errorf("decode alt leaves: %w", err)
+		}
+
+		proof.AltLeaves = altLeaves
+	}
+
+	if len(asset.PrevWitnesses) > 0 {
+		proof.PrevIDs = make(
+			[]tapsdk.PrevID, 0, len(asset.PrevWitnesses),
+		)
+	}
+	for idx, witness := range asset.PrevWitnesses {
+		if witness == nil || witness.PrevId == nil {
+			return nil, fmt.Errorf("missing prev_id for witness %d", idx)
+		}
+
+		prev := witness.PrevId
+		prevOutpoint, err := tapsdk.NewOutpointFromStr(prev.AnchorPoint)
+		if err != nil {
+			return nil, fmt.Errorf("invalid prev_id outpoint for "+
+				"witness %d: %w", idx, err)
+		}
+
+		prevAssetID, err := tapsdk.ParseAssetID(prev.AssetId)
+		if err != nil {
+			return nil, fmt.Errorf("invalid prev_id asset ID for "+
+				"witness %d: %w", idx, err)
+		}
+		if isZeroDecodedProofPrevID(
+			prevOutpoint, prevAssetID, prev.ScriptKey,
+		) {
+
+			if rpcProof.GenesisReveal == nil &&
+				witness.SplitCommitment == nil {
+
+				return nil, fmt.Errorf("zero prev_id is only valid for "+
+					"issuance or split witness %d", idx)
+			}
+
+			continue
+		}
+
+		prevScriptKey, err := tapsdk.ParsePubKey(prev.ScriptKey)
+		if err != nil {
+			return nil, fmt.Errorf("invalid prev_id script key for "+
+				"witness %d: %w", idx, err)
+		}
+
+		proof.PrevIDs = append(proof.PrevIDs, tapsdk.PrevID{
+			Outpoint:   prevOutpoint,
+			IssuanceID: prevAssetID,
+			ScriptKey:  prevScriptKey,
+		})
 	}
 
 	return proof, nil
+}
+
+func isZeroDecodedProofPrevID(outpoint tapsdk.Outpoint,
+	assetID tapsdk.AssetID, scriptKey []byte) bool {
+
+	if outpoint != (tapsdk.Outpoint{}) || assetID != (tapsdk.AssetID{}) ||
+		len(scriptKey) != len(tapsdk.PubKey{}) {
+
+		return false
+	}
+	for _, value := range scriptKey {
+		if value != 0 {
+			return false
+		}
+	}
+
+	return true
 }

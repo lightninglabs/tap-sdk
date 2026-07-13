@@ -1,14 +1,110 @@
 package grpc
 
 import (
+	"bytes"
 	"context"
 	"testing"
+	"time"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightninglabs/taproot-assets/taprpc/assetwalletrpc"
 	"github.com/stretchr/testify/require"
+	grpcpkg "google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
+
+type blockingAssetWalletClient struct {
+	assetwalletrpc.AssetWalletClient
+}
+
+func (b *blockingAssetWalletClient) SignVirtualPsbt(ctx context.Context,
+	_ *assetwalletrpc.SignVirtualPsbtRequest,
+	_ ...grpcpkg.CallOption) (*assetwalletrpc.SignVirtualPsbtResponse,
+	error) {
+
+	<-ctx.Done()
+	return nil, status.FromContextError(ctx.Err()).Err()
+}
+
+func (b *blockingAssetWalletClient) CommitVirtualPsbts(ctx context.Context,
+	_ *assetwalletrpc.CommitVirtualPsbtsRequest,
+	_ ...grpcpkg.CallOption) (*assetwalletrpc.CommitVirtualPsbtsResponse,
+	error) {
+
+	<-ctx.Done()
+	return nil, status.FromContextError(ctx.Err()).Err()
+}
+
+func (b *blockingAssetWalletClient) PublishAndLogTransfer(
+	ctx context.Context, _ *assetwalletrpc.PublishAndLogRequest,
+	_ ...grpcpkg.CallOption) (*taprpc.SendAssetResponse, error) {
+
+	<-ctx.Done()
+	return nil, status.FromContextError(ctx.Err()).Err()
+}
+
+func TestWalletKitRPCTimeout(t *testing.T) {
+	t.Parallel()
+
+	client := &walletKitClient{
+		client:  &blockingAssetWalletClient{},
+		timeout: 10 * time.Millisecond,
+	}
+	tests := []struct {
+		name string
+		call func() error
+	}{
+		{
+			name: "sign virtual",
+			call: func() error {
+				_, err := client.SignVirtualPsbt(
+					context.Background(), []byte{1},
+				)
+				return err
+			},
+		},
+		{
+			name: "commit",
+			call: func() error {
+				_, err := client.CommitVirtualPsbtsWithRequest(
+					context.Background(),
+					&tapsdk.CommitVirtualPsbtsRequest{
+						AnchorPsbt:   []byte{1},
+						VirtualPsbts: [][]byte{{2}},
+						Funding: tapsdk.AnchorFundingPlan{
+							SkipFunding: true,
+						},
+					},
+				)
+				return err
+			},
+		},
+		{
+			name: "publish",
+			call: func() error {
+				_, err := client.PublishAndLogTransferWithRequest(
+					context.Background(),
+					&tapsdk.PublishAndLogTransferRequest{
+						AnchorPsbt:   []byte{1},
+						VirtualPsbts: [][]byte{{2}},
+					},
+				)
+				return err
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			started := time.Now()
+			err := test.call()
+			require.Equal(t, codes.DeadlineExceeded, status.Code(err))
+			require.Less(t, time.Since(started), time.Second)
+		})
+	}
+}
 
 func TestWalletKitCustomAnchorCapabilities(t *testing.T) {
 	client := &walletKitClient{}
@@ -139,6 +235,7 @@ func TestVerifyOwnershipResponseUnmarshal(t *testing.T) {
 func TestMarshalCommitVirtualPsbtsRequest(t *testing.T) {
 	feeRate, err := tapsdk.NewFeeRateSatPerVByte(12)
 	require.NoError(t, err)
+	lockID := bytes.Repeat([]byte("l"), 32)
 
 	req := &tapsdk.CommitVirtualPsbtsRequest{
 		AnchorPsbt:        []byte("anchor"),
@@ -153,7 +250,7 @@ func TestMarshalCommitVirtualPsbtsRequest(t *testing.T) {
 				Mode:    tapsdk.AnchorFeeSatPerVByte,
 				FeeRate: feeRate,
 			},
-			CustomLockID:          []byte("lock"),
+			CustomLockID:          lockID,
 			LockExpirationSeconds: 42,
 		},
 	}
@@ -167,7 +264,7 @@ func TestMarshalCommitVirtualPsbtsRequest(t *testing.T) {
 	)
 	require.Equal(t, int32(0), rpcReq.GetExistingOutputIndex())
 	require.Equal(t, uint64(12), rpcReq.GetSatPerVbyte())
-	require.Equal(t, []byte("lock"), rpcReq.CustomLockId)
+	require.Equal(t, lockID, rpcReq.CustomLockId)
 	require.Equal(t, uint64(42), rpcReq.LockExpirationSeconds)
 }
 

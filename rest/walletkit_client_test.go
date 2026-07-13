@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -174,6 +175,7 @@ func TestProveAssetOwnershipPreservesRequestMetadata(t *testing.T) {
 func TestCommitVirtualPsbtsSendsAdvancedFields(t *testing.T) {
 	feeRate, err := tapsdk.NewFeeRateSatPerVByte(11)
 	require.NoError(t, err)
+	lockID := bytes.Repeat([]byte("l"), 32)
 
 	var locked tapsdk.Outpoint
 	for i := range locked.Txid {
@@ -214,7 +216,7 @@ func TestCommitVirtualPsbtsSendsAdvancedFields(t *testing.T) {
 		assert.Equal(t, int32(0), *body.ExistingOutputIndex)
 		assert.Nil(t, body.Add)
 		assert.Equal(t, "11", body.SatPerVByte)
-		assert.Equal(t, hex.EncodeToString([]byte("lock")),
+		assert.Equal(t, hex.EncodeToString(lockID),
 			body.CustomLockID)
 		assert.Equal(t, "42", body.LockExpirationSeconds)
 
@@ -244,7 +246,7 @@ func TestCommitVirtualPsbtsSendsAdvancedFields(t *testing.T) {
 		macaroons: macaroon.Pouch{},
 	})
 
-	resp, err := client.CommitVirtualPsbts(
+	resp, err := client.CommitVirtualPsbtsWithRequest(
 		context.Background(), &tapsdk.CommitVirtualPsbtsRequest{
 			AnchorPsbt:        []byte("anchor"),
 			VirtualPsbts:      [][]byte{[]byte("virtual")},
@@ -257,7 +259,7 @@ func TestCommitVirtualPsbtsSendsAdvancedFields(t *testing.T) {
 					Mode:    tapsdk.AnchorFeeSatPerVByte,
 					FeeRate: feeRate,
 				},
-				CustomLockID:          []byte("lock"),
+				CustomLockID:          lockID,
 				LockExpirationSeconds: 42,
 			},
 		},
@@ -270,6 +272,18 @@ func TestCommitVirtualPsbtsSendsAdvancedFields(t *testing.T) {
 		resp.PassiveAssetPsbts)
 	require.Equal(t, int32(2), resp.ChangeOutputIndex)
 	require.Equal(t, []tapsdk.Outpoint{locked}, resp.LockedUTXOs)
+}
+
+func TestUnmarshalCommitVirtualPsbtsRejectsNullLockedUTXO(t *testing.T) {
+	t.Parallel()
+
+	_, err := unmarshalCommitVirtualPsbtsResponse(
+		&jsonCommitVirtualPsbtsResponse{
+			AnchorPsbt:     "00",
+			LndLockedUtxos: []*jsonOutpoint{nil},
+		},
+	)
+	require.ErrorContains(t, err, "null outpoint")
 }
 
 func TestPublishAndLogTransferSendsAdvancedFields(t *testing.T) {
@@ -346,7 +360,7 @@ func TestPublishAndLogTransferSendsAdvancedFields(t *testing.T) {
 		macaroons: macaroon.Pouch{},
 	})
 
-	resp, err := client.PublishAndLogTransfer(
+	resp, err := client.PublishAndLogTransferWithRequest(
 		context.Background(), &tapsdk.PublishAndLogTransferRequest{
 			AnchorPsbt:            []byte("anchor"),
 			VirtualPsbts:          [][]byte{[]byte("virtual")},

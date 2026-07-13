@@ -19,6 +19,12 @@ type MockWalletKitClient struct {
 	mock.Mock
 }
 
+// legacyOnlyWalletKitClient deliberately exposes only the original interface
+// even when its delegate also implements the optional advanced extension.
+type legacyOnlyWalletKitClient struct {
+	WalletKitClient
+}
+
 func (m *MockWalletKitClient) CustomAnchorCapabilities(
 	ctx context.Context) (*CustomAnchorCapabilities, error) {
 
@@ -54,6 +60,19 @@ func (m *MockWalletKitClient) SignVirtualPsbt(ctx context.Context,
 }
 
 func (m *MockWalletKitClient) CommitVirtualPsbts(ctx context.Context,
+	virtualPsbts [][]byte, passivePsbts [][]byte,
+	feeRate FeeRate) (*CommittedTransfer, error) {
+
+	args := m.Called(ctx, virtualPsbts, passivePsbts, feeRate)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*CommittedTransfer), args.Error(1)
+}
+
+func (m *MockWalletKitClient) CommitVirtualPsbtsWithRequest(
+	ctx context.Context,
 	req *CommitVirtualPsbtsRequest) (*CommitVirtualPsbtsResponse, error) {
 
 	args := m.Called(ctx, req)
@@ -65,6 +84,22 @@ func (m *MockWalletKitClient) CommitVirtualPsbts(ctx context.Context,
 }
 
 func (m *MockWalletKitClient) PublishAndLogTransfer(ctx context.Context,
+	anchorPsbt []byte, virtualPsbts [][]byte, passivePsbts [][]byte,
+	skipAnchorTxBroadcast bool) (*AssetPacket, error) {
+
+	args := m.Called(
+		ctx, anchorPsbt, virtualPsbts, passivePsbts,
+		skipAnchorTxBroadcast,
+	)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*AssetPacket), args.Error(1)
+}
+
+func (m *MockWalletKitClient) PublishAndLogTransferWithRequest(
+	ctx context.Context,
 	req *PublishAndLogTransferRequest) (*AssetPacket, error) {
 
 	args := m.Called(ctx, req)
@@ -312,7 +347,7 @@ func TestTxBuilder_Execute(t *testing.T) {
 		signedPsbt, nil)
 
 	// 3. Commit
-	mockWalletKit.On("CommitVirtualPsbts", ctx,
+	mockWalletKit.On("CommitVirtualPsbtsWithRequest", ctx,
 		commitVirtualPsbtsReq([][]byte{signedPsbt}, nil, feeRate)).
 		Return(
 			&CommitVirtualPsbtsResponse{
@@ -327,7 +362,7 @@ func TestTxBuilder_Execute(t *testing.T) {
 		AnchorTransaction:   finalAnchorTx,
 		VirtualTransactions: [][]byte{signedPsbt},
 	}
-	mockWalletKit.On("PublishAndLogTransfer", ctx,
+	mockWalletKit.On("PublishAndLogTransferWithRequest", ctx,
 		publishAndLogTransferReq(anchorPsbt, [][]byte{signedPsbt},
 			nil, 2, lockedUTXOs, false)).Return(expectedPacket,
 		nil)
@@ -380,7 +415,7 @@ func TestTxBuilder_StateInjection(t *testing.T) {
 		SetSignedPsbt(signedPsbt).
 		SetPassivePsbts(passivePsbts)
 
-	mockWalletKit.On("CommitVirtualPsbts", ctx,
+	mockWalletKit.On("CommitVirtualPsbtsWithRequest", ctx,
 		commitVirtualPsbtsReq(
 			[][]byte{signedPsbt}, passivePsbts, defaultFeeRate,
 		)).Return(
@@ -396,7 +431,7 @@ func TestTxBuilder_StateInjection(t *testing.T) {
 		AnchorTransaction:   finalAnchorTx,
 		VirtualTransactions: [][]byte{signedPsbt},
 	}
-	mockWalletKit.On("PublishAndLogTransfer", ctx,
+	mockWalletKit.On("PublishAndLogTransferWithRequest", ctx,
 		publishAndLogTransferReq(anchorPsbt, [][]byte{signedPsbt},
 			passivePsbts, 3, lockedUTXOs, false)).Return(
 		expectedPacket, nil)
@@ -434,7 +469,7 @@ func TestTxBuilder_ExecuteWithSkipBroadcast(t *testing.T) {
 	mockWalletKit.On("SignVirtualPsbt", ctx, fundedPsbt).Return(
 		signedPsbt, nil)
 
-	mockWalletKit.On("CommitVirtualPsbts", ctx,
+	mockWalletKit.On("CommitVirtualPsbtsWithRequest", ctx,
 		commitVirtualPsbtsReq(
 			[][]byte{signedPsbt}, nil,
 			mustFeeRateSatPerVByte(t, 1),
@@ -449,7 +484,7 @@ func TestTxBuilder_ExecuteWithSkipBroadcast(t *testing.T) {
 		AnchorTransaction:   finalAnchorTx,
 		VirtualTransactions: [][]byte{signedPsbt},
 	}
-	mockWalletKit.On("PublishAndLogTransfer", ctx,
+	mockWalletKit.On("PublishAndLogTransferWithRequest", ctx,
 		publishAndLogTransferReq(anchorPsbt, [][]byte{signedPsbt},
 			nil, -1, nil, true)).Return(expectedPacket, nil)
 
@@ -479,7 +514,7 @@ func TestTxBuilder_AnchorSigning(t *testing.T) {
 		},
 	)
 
-	mockWalletKit.On("CommitVirtualPsbts", ctx,
+	mockWalletKit.On("CommitVirtualPsbtsWithRequest", ctx,
 		commitVirtualPsbtsReq(
 			[][]byte{signedPsbt}, nil,
 			mustFeeRateSatPerVByte(t, 1),
@@ -495,7 +530,7 @@ func TestTxBuilder_AnchorSigning(t *testing.T) {
 		AnchorTransaction:   finalAnchorTx,
 		VirtualTransactions: [][]byte{signedPsbt},
 	}
-	mockWalletKit.On("PublishAndLogTransfer", ctx,
+	mockWalletKit.On("PublishAndLogTransferWithRequest", ctx,
 		publishAndLogTransferReq(signedAnchorPsbt,
 			[][]byte{signedPsbt}, nil, 4, lockedUTXOs,
 			false)).Return(expectedPacket, nil)
@@ -525,7 +560,7 @@ func TestTxBuilder_AnchorPsbtInjection(t *testing.T) {
 		AnchorTransaction:   finalAnchorTx,
 		VirtualTransactions: [][]byte{signedPsbt},
 	}
-	mockWalletKit.On("PublishAndLogTransfer", ctx,
+	mockWalletKit.On("PublishAndLogTransferWithRequest", ctx,
 		publishAndLogTransferReq(anchorPsbt, [][]byte{signedPsbt},
 			nil, -1, nil, true)).Return(expectedPacket, nil)
 
@@ -574,5 +609,44 @@ func TestTxBuilder_AddTapAddressUsesEmbeddedAmount(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, fundedPsbt, funded.FundedPsbt)
 
+	mockWalletKit.AssertExpectations(t)
+}
+
+// TestCommittedTransferLegacyLiteral protects source compatibility for callers
+// that used the original three-field unkeyed literal before the advanced
+// custom-anchor response DTO was introduced.
+func TestCommittedTransferLegacyLiteral(t *testing.T) {
+	t.Parallel()
+
+	legacy := CommittedTransfer{
+		[]byte("anchor"), [][]byte{[]byte("active")},
+		[][]byte{[]byte("passive")},
+	}
+	require.Equal(t, []byte("anchor"), legacy.AnchorPsbt)
+}
+
+func TestTxBuilderLegacyCommitDoesNotParsePackets(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	mockWalletKit := new(MockWalletKitClient)
+	legacy := &legacyOnlyWalletKitClient{WalletKitClient: mockWalletKit}
+	signed := []byte("legacy-client-owned-packet")
+	feeRate, err := NewFeeRateSatPerVByte(1)
+	require.NoError(t, err)
+	mockWalletKit.On(
+		"CommitVirtualPsbts", ctx, [][]byte{signed}, [][]byte(nil),
+		feeRate,
+	).Return(&CommittedTransfer{
+		AnchorPsbt:   []byte("anchor"),
+		VirtualPsbts: [][]byte{signed},
+	}, nil)
+
+	builder := newTxBuilder(legacy)
+	builder.signedPsbt = signed
+	builder.feeRate = feeRate
+	response, err := builder.commitVirtualPsbts(ctx)
+	require.NoError(t, err)
+	require.Equal(t, int32(-1), response.ChangeOutputIndex)
 	mockWalletKit.AssertExpectations(t)
 }

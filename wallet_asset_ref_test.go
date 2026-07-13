@@ -159,7 +159,8 @@ func (m *refMockClient) SignVirtualPsbt(ctx context.Context,
 }
 
 func (m *refMockClient) CommitVirtualPsbts(ctx context.Context,
-	req *CommitVirtualPsbtsRequest) (*CommitVirtualPsbtsResponse, error) {
+	virtualPsbts [][]byte, passivePsbts [][]byte,
+	feeRate FeeRate) (*CommittedTransfer, error) {
 
 	panic("CommitVirtualPsbts: unexpected call")
 }
@@ -171,7 +172,8 @@ func (m *refMockClient) AnchorVirtualPsbts(ctx context.Context,
 }
 
 func (m *refMockClient) PublishAndLogTransfer(ctx context.Context,
-	req *PublishAndLogTransferRequest) (*AssetPacket, error) {
+	anchorPsbt []byte, virtualPsbts [][]byte, passivePsbts [][]byte,
+	skipAnchorTxBroadcast bool) (*AssetPacket, error) {
 
 	panic("PublishAndLogTransfer: unexpected call")
 }

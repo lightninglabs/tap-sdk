@@ -325,15 +325,22 @@ func (b *TxBuilder) Execute(ctx context.Context, opts ...TxBuilderOption) (
 func (b *TxBuilder) publishAndLog(ctx context.Context,
 	skipBroadcast bool) (*AssetPacket, error) {
 
+	if advanced, ok := b.walletKit.(CustomAnchorWalletKitClient); ok {
+		return advanced.PublishAndLogTransferWithRequest(
+			ctx, &PublishAndLogTransferRequest{
+				AnchorPsbt:            b.anchorPsbt,
+				VirtualPsbts:          [][]byte{b.signedPsbt},
+				PassiveAssetPsbts:     b.passivePsbts,
+				ChangeOutputIndex:     b.changeOutputIndex,
+				LockedUTXOs:           b.lockedUTXOs,
+				SkipAnchorTxBroadcast: skipBroadcast,
+			},
+		)
+	}
+
 	return b.walletKit.PublishAndLogTransfer(
-		ctx, &PublishAndLogTransferRequest{
-			AnchorPsbt:            b.anchorPsbt,
-			VirtualPsbts:          [][]byte{b.signedPsbt},
-			PassiveAssetPsbts:     b.passivePsbts,
-			ChangeOutputIndex:     b.changeOutputIndex,
-			LockedUTXOs:           b.lockedUTXOs,
-			SkipAnchorTxBroadcast: skipBroadcast,
-		},
+		ctx, b.anchorPsbt, [][]byte{b.signedPsbt}, b.passivePsbts,
+		skipBroadcast,
 	)
 }
 
@@ -341,12 +348,29 @@ func (b *TxBuilder) commitVirtualPsbts(ctx context.Context) (
 	*CommitVirtualPsbtsResponse, error) {
 
 	virtualPsbts := [][]byte{b.signedPsbt}
+	advanced, ok := b.walletKit.(CustomAnchorWalletKitClient)
+	if !ok {
+		legacy, err := b.walletKit.CommitVirtualPsbts(
+			ctx, virtualPsbts, b.passivePsbts, b.feeRate,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		return &CommitVirtualPsbtsResponse{
+			AnchorPsbt:        legacy.AnchorPsbt,
+			VirtualPsbts:      legacy.VirtualPsbts,
+			PassiveAssetPsbts: legacy.PassiveAssetPsbts,
+			ChangeOutputIndex: -1,
+		}, nil
+	}
+
 	anchorPsbt, err := anchor.PreparePsbt(virtualPsbts, b.passivePsbts)
 	if err != nil {
 		return nil, err
 	}
 
-	return b.walletKit.CommitVirtualPsbts(
+	return advanced.CommitVirtualPsbtsWithRequest(
 		ctx, &CommitVirtualPsbtsRequest{
 			AnchorPsbt:        anchorPsbt,
 			VirtualPsbts:      virtualPsbts,
@@ -384,8 +408,6 @@ func committedTransferFromResponse(
 		AnchorPsbt:        resp.AnchorPsbt,
 		VirtualPsbts:      resp.VirtualPsbts,
 		PassiveAssetPsbts: resp.PassiveAssetPsbts,
-		ChangeOutputIndex: resp.ChangeOutputIndex,
-		LockedUTXOs:       resp.LockedUTXOs,
 	}
 }
 

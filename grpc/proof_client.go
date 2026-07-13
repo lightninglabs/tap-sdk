@@ -6,7 +6,6 @@ import (
 	"time"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
-	"github.com/lightninglabs/tap-sdk/internal/codec"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"google.golang.org/grpc"
@@ -122,109 +121,7 @@ func (p *proofClient) DecodeProof(ctx context.Context,
 		return nil, fmt.Errorf("invalid decoded proof response")
 	}
 
-	decoded := resp.DecodedProof
-	asset := decoded.Asset
-
-	result := &tapsdk.DecodedProof{
-		ProofAtDepth:   decoded.ProofAtDepth,
-		NumberOfProofs: decoded.NumberOfProofs,
-		IsIssuance:     decoded.GenesisReveal != nil,
-	}
-
-	// Copy asset ID.
-	if asset.AssetGenesis != nil && len(asset.AssetGenesis.AssetId) == 32 {
-		copy(result.IssuanceID[:], asset.AssetGenesis.AssetId)
-	}
-
-	// Copy script key.
-	if len(asset.ScriptKey) == 33 {
-		copy(result.ScriptKey[:], asset.ScriptKey)
-	}
-
-	result.Amount = asset.Amount
-
-	// Get outpoint from chain anchor.
-	if asset.ChainAnchor != nil {
-		op, err := tapsdk.NewOutpointFromStr(asset.ChainAnchor.AnchorOutpoint)
-		if err != nil {
-			return nil, fmt.Errorf("invalid anchor outpoint: %v", err)
-		}
-		result.Outpoint = op
-	}
-
-	// Get group key if present.
-	if asset.AssetGroup != nil {
-		if len(asset.AssetGroup.TweakedGroupKey) > 0 {
-			groupKey, err := tapsdk.ParsePubKey(
-				asset.AssetGroup.TweakedGroupKey,
-			)
-			if err != nil {
-				return nil, fmt.Errorf("invalid group key: %w", err)
-			}
-
-			result.AssetRef = tapsdk.AssetRefFromGroupKey(groupKey)
-		}
-	}
-
-	if result.AssetRef.IsZero() {
-		result.AssetRef = tapsdk.AssetRefFromAssetID(
-			result.IssuanceID,
-		)
-	}
-
-	// Decode alt leaves if present.
-	if len(decoded.AltLeaves) > 0 {
-		altLeaves, err := codec.DecodeAltLeaves(decoded.AltLeaves)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode alt leaves: %w",
-				err)
-		}
-
-		result.AltLeaves = altLeaves
-	}
-
-	// Populate prev IDs if present.
-	if len(asset.PrevWitnesses) > 0 {
-		prevIDs := make([]tapsdk.PrevID, 0, len(asset.PrevWitnesses))
-		for idx, witness := range asset.PrevWitnesses {
-			if witness == nil || witness.PrevId == nil {
-				return nil, fmt.Errorf("missing prev_id for witness %d",
-					idx)
-			}
-
-			prev := witness.PrevId
-			prevOutpoint, err := tapsdk.NewOutpointFromStr(
-				prev.AnchorPoint,
-			)
-			if err != nil {
-				return nil, fmt.Errorf("invalid prev_id outpoint for witness %d: %w",
-					idx, err)
-			}
-
-			if len(prev.AssetId) != 32 {
-				return nil, fmt.Errorf("invalid prev_id asset_id length for witness %d: %d",
-					idx, len(prev.AssetId))
-			}
-
-			if len(prev.ScriptKey) != 33 {
-				return nil, fmt.Errorf("invalid prev_id "+
-					"script_key length for "+
-					"witness %d: %d",
-					idx, len(prev.ScriptKey))
-			}
-
-			var decodedPrev tapsdk.PrevID
-			decodedPrev.Outpoint = prevOutpoint
-			copy(decodedPrev.IssuanceID[:], prev.AssetId)
-			copy(decodedPrev.ScriptKey[:], prev.ScriptKey)
-
-			prevIDs = append(prevIDs, decodedPrev)
-		}
-
-		result.PrevIDs = prevIDs
-	}
-
-	return result, nil
+	return unmarshalDecodedProof(resp.DecodedProof)
 }
 
 // RegisterTransfer registers an inbound transfer for an interactive send.

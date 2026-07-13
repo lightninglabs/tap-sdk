@@ -1,6 +1,14 @@
 package tapsdk
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+	"time"
+)
+
+const maxCustomAnchorLockExpirationSeconds = uint64(
+	math.MaxInt64 / int64(time.Second),
+)
 
 // AnchorChangeOutputMode identifies how anchor change should be handled while
 // funding an anchor PSBT.
@@ -105,6 +113,14 @@ func (r *CommitVirtualPsbtsRequest) Validate() error {
 	if len(r.VirtualPsbts) == 0 {
 		return fmt.Errorf("at least one virtual PSBT is required")
 	}
+	if err := validateCustomAnchorLockID(r.Funding.CustomLockID); err != nil {
+		return err
+	}
+	if err := validateCustomAnchorLockExpiration(
+		r.Funding.LockExpirationSeconds,
+	); err != nil {
+		return err
+	}
 
 	if r.Funding.SkipFunding {
 		return nil
@@ -115,6 +131,22 @@ func (r *CommitVirtualPsbtsRequest) Validate() error {
 	}
 
 	return r.Funding.Fee.validate()
+}
+
+func validateCustomAnchorLockID(lockID []byte) error {
+	if len(lockID) != 0 && len(lockID) != 32 {
+		return fmt.Errorf("custom lock ID must be exactly 32 bytes")
+	}
+
+	return nil
+}
+
+func validateCustomAnchorLockExpiration(seconds uint64) error {
+	if seconds > maxCustomAnchorLockExpirationSeconds {
+		return fmt.Errorf("lock expiration exceeds the maximum safe duration")
+	}
+
+	return nil
 }
 
 // CommitVirtualPsbtsResponse is the result of committing virtual PSBTs into an

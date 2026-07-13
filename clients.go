@@ -155,9 +155,12 @@ type WalletKitClient interface {
 	// SignVirtualPsbt signs a virtual transaction.
 	SignVirtualPsbt(ctx context.Context, fundedPsbt []byte) ([]byte, error)
 
-	// CommitVirtualPsbts commits virtual transactions into an anchor PSBT.
-	CommitVirtualPsbts(ctx context.Context,
-		req *CommitVirtualPsbtsRequest) (*CommitVirtualPsbtsResponse,
+	// CommitVirtualPsbts commits virtual transactions using an anchor fee
+	// rate. Advanced callers that need to preserve a caller-supplied anchor
+	// template should use CustomAnchorWalletKitClient when the concrete
+	// client implements it.
+	CommitVirtualPsbts(ctx context.Context, virtualPsbts [][]byte,
+		passivePsbts [][]byte, feeRate FeeRate) (*CommittedTransfer,
 		error)
 
 	// AnchorVirtualPsbts anchors signed virtual PSBTs in a single call.
@@ -167,8 +170,9 @@ type WalletKitClient interface {
 
 	// PublishAndLogTransfer publishes the anchor transaction and logs the
 	// transfer.
-	PublishAndLogTransfer(ctx context.Context,
-		req *PublishAndLogTransferRequest) (*AssetPacket, error)
+	PublishAndLogTransfer(ctx context.Context, anchorPsbt []byte,
+		virtualPsbts [][]byte, passivePsbts [][]byte,
+		skipAnchorTxBroadcast bool) (*AssetPacket, error)
 
 	// QueryInternalKey looks up an internal key by its raw public key
 	// bytes. The input can be 32-byte x-only or 33-byte compressed.
@@ -209,6 +213,24 @@ type WalletKitClient interface {
 	// ImportBackup imports assets from a previously exported wallet backup
 	// blob and returns the number of imported assets.
 	ImportBackup(ctx context.Context, backup []byte) (uint32, error)
+}
+
+// CustomAnchorWalletKitClient is an optional WalletKitClient extension for
+// advanced anchor construction. It accepts the full request DTOs required to
+// preserve caller-owned Bitcoin transaction topology and durable funding
+// metadata. Keeping this separate from WalletKitClient preserves source
+// compatibility for existing client implementations and test doubles.
+type CustomAnchorWalletKitClient interface {
+	// CommitVirtualPsbtsWithRequest commits virtual transactions into the
+	// caller-supplied anchor PSBT according to the exact funding plan.
+	CommitVirtualPsbtsWithRequest(ctx context.Context,
+		req *CommitVirtualPsbtsRequest) (*CommitVirtualPsbtsResponse,
+		error)
+
+	// PublishAndLogTransferWithRequest publishes or logs a finalized custom
+	// anchor transfer together with the commit response metadata.
+	PublishAndLogTransferWithRequest(ctx context.Context,
+		req *PublishAndLogTransferRequest) (*AssetPacket, error)
 }
 
 // CustomAnchorCapabilityProvider is an optional extension implemented by
