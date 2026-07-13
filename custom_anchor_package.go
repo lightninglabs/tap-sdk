@@ -568,7 +568,6 @@ func (p *CustomAnchorTransferPackage) validateStructure() error {
 				"funding metadata")
 		}
 		if err := p.rejectBackendFundingMetadata("caller-funded exact"); err != nil {
-
 			return err
 		}
 
