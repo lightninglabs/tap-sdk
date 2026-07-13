@@ -136,12 +136,6 @@ type ProofClient interface {
 
 // WalletKitClient exposes the AssetWalletClient service gRPC client.
 type WalletKitClient interface {
-	// CustomAnchorCapabilities reports backend support for the advanced
-	// custom-anchor transaction flow. Unknown capabilities must be treated as
-	// unavailable before asking a caller to sign.
-	CustomAnchorCapabilities(ctx context.Context) (
-		*CustomAnchorCapabilities, error)
-
 	// DeriveScriptKey derives a new script key for receiving assets.
 	// The script key includes both the internal key and the tweaked
 	// Taproot output key.
@@ -215,6 +209,19 @@ type WalletKitClient interface {
 	// ImportBackup imports assets from a previously exported wallet backup
 	// blob and returns the number of imported assets.
 	ImportBackup(ctx context.Context, backup []byte) (uint32, error)
+}
+
+// CustomAnchorCapabilityProvider is an optional extension implemented by
+// clients that can provide a custom-anchor capability profile. It is kept
+// separate from WalletKitClient so existing clients and test doubles aren't
+// forced to implement an SDK-specific discovery method that tapd does not
+// expose over RPC.
+//
+// Implementations must distinguish an explicitly unsupported feature from an
+// unknown one. Callers fail closed for both states.
+type CustomAnchorCapabilityProvider interface {
+	CustomAnchorCapabilities(ctx context.Context) (
+		*CustomAnchorCapabilities, error)
 }
 
 // UniverseClient exposes the Universe service gRPC client.

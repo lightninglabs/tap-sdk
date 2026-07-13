@@ -157,8 +157,10 @@ type CustomAnchorCapabilities struct {
 	BackendVerification      CustomAnchorCapabilityStatus
 }
 
-// DefaultTapdCustomAnchorCapabilities returns the static capability profile for
-// tapd-compatible transports known by this SDK version.
+// DefaultTapdCustomAnchorCapabilities returns an SDK-version-pinned assumption
+// profile for tapd-compatible transports. This is not runtime discovery: tapd
+// does not currently expose a capability RPC. Features not proven by the
+// pinned API are deliberately left unknown so callers fail closed.
 func DefaultTapdCustomAnchorCapabilities() CustomAnchorCapabilities {
 	return CustomAnchorCapabilities{
 		BackendMode:              CustomAnchorBackendUnknown,

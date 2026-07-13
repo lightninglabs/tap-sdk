@@ -94,12 +94,19 @@ func (s *Wallet) Client() Client {
 	return s.client
 }
 
-// CustomAnchorCapabilities reports backend support for advanced custom-anchor
-// transaction flows.
+// CustomAnchorCapabilities reports the optional capability profile exposed by
+// the configured client. tapd does not currently expose a capability RPC, so a
+// client that doesn't implement CustomAnchorCapabilityProvider returns an
+// all-unknown profile. Unknown capabilities fail closed when Require is used.
 func (s *Wallet) CustomAnchorCapabilities(
 	ctx context.Context) (*CustomAnchorCapabilities, error) {
 
-	caps, err := s.client.CustomAnchorCapabilities(ctx)
+	provider, ok := s.client.(CustomAnchorCapabilityProvider)
+	if !ok {
+		return &CustomAnchorCapabilities{}, nil
+	}
+
+	caps, err := provider.CustomAnchorCapabilities(ctx)
 	if err != nil {
 		return nil, wrapErr("CustomAnchorCapabilities", err)
 	}

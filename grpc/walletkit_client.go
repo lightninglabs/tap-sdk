@@ -37,8 +37,8 @@ func (m *walletKitClient) rawClientWithMacAuth(
 	return m.walletKitMac.WithMacaroonAuth(parentCtx), m.client
 }
 
-// CustomAnchorCapabilities reports the static tapd custom-anchor capability
-// profile known by this SDK transport.
+// CustomAnchorCapabilities returns the SDK-version-pinned tapd capability
+// assumptions. tapd does not expose runtime capability discovery over RPC.
 func (m *walletKitClient) CustomAnchorCapabilities(
 	ctx context.Context) (*tapsdk.CustomAnchorCapabilities, error) {
 

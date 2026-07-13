@@ -155,3 +155,23 @@ func TestWalletCustomAnchorCapabilities(t *testing.T) {
 
 	mc.AssertExpectations(t)
 }
+
+// clientWithoutCapabilityProvider intentionally hides optional methods on the
+// wrapped Client so the Wallet's fail-closed fallback can be tested.
+type clientWithoutCapabilityProvider struct {
+	Client
+}
+
+func TestWalletCustomAnchorCapabilitiesUnknown(t *testing.T) {
+	wallet := NewWallet(
+		&clientWithoutCapabilityProvider{Client: new(mockClient)},
+		NetworkRegtest,
+	)
+
+	got, err := wallet.CustomAnchorCapabilities(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, &CustomAnchorCapabilities{}, got)
+
+	err = got.Require(CustomAnchorCapabilityCommit)
+	require.ErrorIs(t, err, ErrUnsupportedCustomAnchorCapability)
+}
