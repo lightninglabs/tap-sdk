@@ -287,6 +287,13 @@ var (
 		"custom-anchor capability unsupported",
 	)
 
+	// ErrUnconfirmedCustomAnchorPublish is returned when a package contains
+	// compact unconfirmed proof-path steps. Current tapd publish/log requires
+	// chain-confirmed input proofs in its local archive.
+	ErrUnconfirmedCustomAnchorPublish = errors.New(
+		"unconfirmed custom-anchor package cannot be published through tapd",
+	)
+
 	// ErrMixedAssetBatchUnsupported is returned when one high-level send
 	// request contains recipients for multiple logical assets. Wallet.SendMulti
 	// sends one logical asset in one tapd request.
@@ -433,6 +440,7 @@ var knownSentinelErrors = []error{
 	ErrTapdPrecondition,
 	ErrUnsupportedByTapd,
 	ErrUnsupportedCustomAnchorCapability,
+	ErrUnconfirmedCustomAnchorPublish,
 	ErrMixedAssetBatchUnsupported,
 	ErrAmountRequired,
 	ErrAmountMismatch,
