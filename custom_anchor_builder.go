@@ -295,7 +295,12 @@ func (b *CustomAnchorTxBuilder) Build(ctx context.Context,
 		return nil, fmt.Errorf("custom anchor builder has no wallet client")
 	}
 	if err := req.Validate(); err != nil {
-		return nil, fmt.Errorf("validate custom anchor request: %w", err)
+		return nil, newCustomAnchorVerificationError(
+			CustomAnchorVerificationScopeRequest,
+			customAnchorIssueRequestInvalid,
+			CustomAnchorVerificationOriginLocal, nil, nil, "",
+			fmt.Errorf("validate custom anchor request: %w", err),
+		)
 	}
 
 	request := req.Clone()
@@ -337,8 +342,13 @@ func (b *CustomAnchorTxBuilder) Build(ctx context.Context,
 		passivePackets...,
 	)
 	if err := tapsend.ValidateCommitmentKeysUnique(allPackets); err != nil {
-		return nil, fmt.Errorf("validate virtual packet commitment keys: %w",
-			err)
+		return nil, newCustomAnchorVerificationError(
+			CustomAnchorVerificationScopeOutputCommitment,
+			customAnchorIssueOutputCommitment,
+			CustomAnchorVerificationOriginLocal, nil, nil, "",
+			fmt.Errorf("validate virtual packet commitment keys: %w",
+				err),
+		)
 	}
 
 	anchorPacket, err := prepareCustomAnchorPSBT(
@@ -350,19 +360,34 @@ func (b *CustomAnchorTxBuilder) Build(ctx context.Context,
 	if _, err := customAnchorSigningRequests(
 		anchorPacket, request.SigningPlans, nil, Hash{},
 	); err != nil {
-		return nil, fmt.Errorf("validate anchor signing plans: %w", err)
+		return nil, newCustomAnchorVerificationError(
+			CustomAnchorVerificationScopeAnchorOutput,
+			customAnchorIssueAnchorOutput,
+			CustomAnchorVerificationOriginLocal, nil, nil, "",
+			fmt.Errorf("validate anchor signing plans: %w", err),
+		)
 	}
 	if err := validateCustomAnchorBitcoinTransaction(
 		anchorPacket,
 		request.Funding.Mode != CustomAnchorFundingWalletFunded,
 	); err != nil {
-		return nil, fmt.Errorf("validate anchor transaction: %w", err)
+		return nil, newCustomAnchorVerificationError(
+			CustomAnchorVerificationScopeAnchorOutput,
+			customAnchorIssueAnchorOutput,
+			CustomAnchorVerificationOriginLocal, nil, nil, "",
+			fmt.Errorf("validate anchor transaction: %w", err),
+		)
 	}
 	if err := tapsend.ValidateAnchorInputs(
 		anchorPacket, allPackets, nil,
 	); err != nil {
-		return nil, fmt.Errorf("validate complete anchor input commitment: %w",
-			err)
+		return nil, newCustomAnchorVerificationError(
+			CustomAnchorVerificationScopeInputProof,
+			customAnchorIssueInputProofInvalid,
+			CustomAnchorVerificationOriginLocal, nil, nil, "",
+			fmt.Errorf("validate complete anchor input "+
+				"commitment: %w", err),
+		)
 	}
 	addCustomAnchorCheck(
 		&verification, customAnchorCheckAnchorInput,
@@ -460,28 +485,52 @@ func (b *CustomAnchorTxBuilder) resolveInputs(ctx context.Context,
 		} else {
 			file, err := proof.DecodeFile(requested.ProofFile)
 			if err != nil {
-				return nil, fmt.Errorf("decode input %d proof file: %w", idx,
-					err)
+				return nil, customAnchorInputFailure(
+					uint32(idx),
+					CustomAnchorVerificationScopeInputProof,
+					customAnchorIssueInputProofInvalid,
+					CustomAnchorVerificationOriginLocal,
+					fmt.Errorf("decode input %d proof "+
+						"file: %w", idx, err),
+				)
 			}
 			lastProof, err = file.LastProof()
 			if err != nil {
-				return nil, fmt.Errorf("read input %d last proof: %w", idx,
-					err)
+				return nil, customAnchorInputFailure(
+					uint32(idx),
+					CustomAnchorVerificationScopeInputProof,
+					customAnchorIssueInputProofInvalid,
+					CustomAnchorVerificationOriginLocal,
+					fmt.Errorf("read input %d last "+
+						"proof: %w", idx, err),
+				)
 			}
 		}
 		if lastProof.Asset.LockTime != 0 ||
 			lastProof.Asset.RelativeLockTime != 0 {
 
-			return nil, fmt.Errorf("input %d asset timelocks are not "+
-				"supported", idx)
+			return nil, customAnchorInputFailure(
+				uint32(idx),
+				CustomAnchorVerificationScopeInputProof,
+				customAnchorIssueInputTimelock,
+				CustomAnchorVerificationOriginLocal,
+				fmt.Errorf("input %d asset timelocks are "+
+					"not supported", idx),
+			)
 		}
 
 		actualRef, issuanceID, assetType, err := assetIdentity(
 			&lastProof.Asset,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("resolve input %d asset identity: %w",
-				idx, err)
+			return nil, customAnchorInputFailure(
+				uint32(idx),
+				CustomAnchorVerificationScopeAssetIdentity,
+				customAnchorIssueAssetIdentity,
+				CustomAnchorVerificationOriginLocal,
+				fmt.Errorf("resolve input %d asset "+
+					"identity: %w", idx, err),
+			)
 		}
 		if !customAnchorAssetRefMatchesIssuance(
 			requested.AssetRef, actualRef, issuanceID,
@@ -491,18 +540,30 @@ func (b *CustomAnchorTxBuilder) resolveInputs(ctx context.Context,
 			if requested.ProofPath != nil {
 				source = "path"
 			}
-			return nil, fmt.Errorf("input %d %s asset ref %q does not "+
-				"match requested %q", idx, source, actualRef,
-				requested.AssetRef)
+			return nil, customAnchorInputFailure(
+				uint32(idx),
+				CustomAnchorVerificationScopeAssetIdentity,
+				customAnchorIssueAssetIdentity,
+				CustomAnchorVerificationOriginLocal,
+				fmt.Errorf("input %d %s asset ref %q does "+
+					"not match requested %q", idx, source,
+					actualRef, requested.AssetRef),
+			)
 		}
 		if requested.Amount != lastProof.Asset.Amount {
 			source := "proof"
 			if requested.ProofPath != nil {
 				source = "path"
 			}
-			return nil, fmt.Errorf("input %d %s amount %d does not "+
-				"match requested %d", idx, source, lastProof.Asset.Amount,
-				requested.Amount)
+			return nil, customAnchorInputFailure(
+				uint32(idx),
+				CustomAnchorVerificationScopeAmount,
+				customAnchorIssueAmountMismatch,
+				CustomAnchorVerificationOriginLocal,
+				fmt.Errorf("input %d %s amount %d does not "+
+					"match requested %d", idx, source,
+					lastProof.Asset.Amount, requested.Amount),
+			)
 		}
 
 		if pathSummary != nil {
@@ -528,13 +589,26 @@ func (b *CustomAnchorTxBuilder) resolveInputs(ctx context.Context,
 				ctx, requested.ProofFile,
 			)
 			if err != nil {
-				return nil, fmt.Errorf("verify input %d proof chain: %w", idx,
-					err)
+				return nil, customAnchorInputFailure(
+					uint32(idx),
+					CustomAnchorVerificationScopeInputProof,
+					customAnchorIssueInputProofInvalid,
+					CustomAnchorVerificationOriginBackend,
+					fmt.Errorf("verify input %d proof "+
+						"chain: %w", idx, err),
+				)
 			}
 			if verified == nil || !verified.Valid ||
 				verified.DecodedProof == nil {
 
-				return nil, fmt.Errorf("input %d proof chain is not valid", idx)
+				return nil, customAnchorInputFailure(
+					uint32(idx),
+					CustomAnchorVerificationScopeInputProof,
+					customAnchorIssueInputProofInvalid,
+					CustomAnchorVerificationOriginBackend,
+					fmt.Errorf("input %d proof chain is "+
+						"not valid", idx),
+				)
 			}
 			backendIdentityMatches := requested.AssetRef.IsAssetIDRef() ||
 				verified.DecodedProof.AssetRef.Equivalent(requested.AssetRef)
@@ -551,8 +625,15 @@ func (b *CustomAnchorTxBuilder) resolveInputs(ctx context.Context,
 				verified.DecodedProof.Outpoint != outpointFromWire(
 					lastProof.OutPoint()) {
 
-				return nil, fmt.Errorf("input %d backend proof summary does "+
-					"not match the locally decoded proof", idx)
+				return nil, customAnchorInputFailure(
+					uint32(idx),
+					CustomAnchorVerificationScopeInputProof,
+					customAnchorIssueInputProofInvalid,
+					CustomAnchorVerificationOriginBackend,
+					fmt.Errorf("input %d backend proof "+
+						"summary does not match the "+
+						"locally decoded proof", idx),
+				)
 			}
 		}
 
@@ -596,8 +677,14 @@ func (b *CustomAnchorTxBuilder) resolveInputs(ctx context.Context,
 		}
 		prevID := customAnchorInputPrevID(input)
 		if _, ok := seenPrevIDs[prevID]; ok {
-			return nil, fmt.Errorf("input %d duplicates asset predecessor %s",
-				idx, prevID)
+			return nil, customAnchorInputFailure(
+				uint32(idx),
+				CustomAnchorVerificationScopeInputProof,
+				customAnchorIssueDuplicateInput,
+				CustomAnchorVerificationOriginLocal,
+				fmt.Errorf("input %d duplicates asset "+
+					"predecessor %s", idx, prevID),
+			)
 		}
 		seenPrevIDs[prevID] = struct{}{}
 		inputs[idx] = input
