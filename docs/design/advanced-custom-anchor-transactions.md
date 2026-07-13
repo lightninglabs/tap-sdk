@@ -2,450 +2,774 @@
 
 ## Status
 
-Proposed.
+Proposed for cross-team review, with a complete first implementation on the
+custom-anchor builder branch. The public API remains experimental until it is
+merged and released.
 
-## Context
+## Summary
 
-Normal Taproot Assets sends should stay simple: callers receive addresses,
-choose amounts, pay an on-chain fee rate, and let tapd manage the BTC anchor
-transaction, asset proofs, logging, and proof delivery.
+Normal Taproot Assets sends should remain address based: the caller identifies
+an asset and amount, and tapd owns coin selection, asset transaction creation,
+Bitcoin funding, signing, proof delivery, and transfer logging.
 
-Some integrations need lower-level control. They may already own the BTC anchor
-transaction, need BTC-only inputs or outputs in the same PSBT, require exact
-asset-bearing output values, or need to inspect asset commitments before any
-external signer authorizes the anchor transaction. They still should not import
-`taprpc`, `tappsbt`, `tapfreighter`, proof, commitment, or other
-Taproot Assets implementation packages.
+Protocol integrations need a separate surface. They may already own a Bitcoin
+transaction graph, require BTC-only inputs and outputs beside asset
+commitments, choose exact output values and ordering, use external signers, or
+keep a fully valid transaction unbroadcast for some time. For those callers,
+tap-sdk provides an advanced custom-anchor builder with three explicit
+boundaries:
 
-## Decision
+1. an immutable, inspectable plan before any Bitcoin signature;
+2. a sealed, persistable package after tapd commits the assets; and
+3. a finalization and publish gate that rejects any unsigned-transaction drift.
 
-Add a separate advanced builder for custom-anchor asset transactions. The
-normal wallet APIs remain the default path. The advanced builder is an explicit
-opt-in surface for callers that need to control the BTC anchor PSBT and inspect
-the asset plan before signing.
+The SDK owns the public DTOs. Serialized PSBTs, virtual PSBTs, and proofs cross
+the public boundary as bytes. Public APIs do not expose taprpc, btcd, or
+taproot-assets implementation types.
 
-The public model uses SDK-owned request and response types plus serialized byte
-blobs for wire formats that are already standard external artifacts:
+## Requirements
 
-- virtual PSBT bytes
-- BTC anchor PSBT bytes
-- raw BTC transaction bytes
-- proof file bytes
-- script, leaf, control-block, signature, and witness bytes carried inside
-  named SDK DTOs
+The first implementation must:
 
-The public model must not expose tapd proto types or Taproot Assets internal
-implementation types.
+- accept a caller-created anchor PSBT containing additional Bitcoin inputs and
+  outputs whose asset inventory is established by the integrating protocol;
+- select exact asset inputs from proof files and compare their identity and
+  amount with one `AssetRef` field;
+- support grouped and ungrouped fungible assets, including multiple concrete
+  issuances of the same group;
+- assign asset outputs to fixed Bitcoin output indices and exact satoshi
+  values;
+- support wallet-derived, external, OP_TRUE, and explicit burn asset script
+  plans;
+- make asset loss and passive-asset handling explicit and fail closed by
+  default;
+- support caller-funded, tapd-wallet-funded, and external P2A fee-bump anchor
+  templates;
+- support backend-signed or caller-witnessed virtual inputs;
+- expose deterministic key-path, MuSig2, and script-path Bitcoin signing
+  requests;
+- verify the committed packets and anchor locally before returning data to a
+  Bitcoin signer;
+- persist every artifact needed to recover after commit or restart;
+- support external broadcast through tapd's skip-broadcast log operation; and
+- keep gRPC and REST transport behavior equivalent.
 
-## Public Concepts
+It must never silently change an output value, drop asset units, infer a
+spending path, ignore a passive asset, or mutate the Bitcoin transaction after
+proof suffixes have been created.
 
-### Asset identity
+## Non-goals
 
-Every caller-supplied asset field uses `AssetRef`.
+The first implementation does not provide:
 
-A grouped fungible asset is identified by a group-key `AssetRef`. An ungrouped
-fungible asset is identified by an asset-ID `AssetRef`. NFT outputs use their
-concrete item asset-ID `AssetRef`. Concrete issuance IDs may appear in decoded
-plans, verification results, and diagnostics, but callers should not need to
-choose issuance-vs-group fields in requests.
+- wallet-selected asset inputs or proof locators;
+- backend-discovered passive-asset preservation;
+- asset-level absolute or relative timelocks;
+- unconfirmed asset merges;
+- a MuSig2 nonce exchange or partial-signature coordinator;
+- Bitcoin transaction-graph construction, application policy, or fee
+  management;
+- an idempotent replacement for tapd's publish-and-log RPC;
+- Lightning asset invoices, RFQ, or asset channels; or
+- a new embedded asset database or proof server.
 
-### Asset inputs
+## Ownership Boundary
 
-An advanced input identifies spendable asset units and where their proof data
-comes from. Supported input sources should be:
+| Concern | tap-sdk | tapd-compatible backend | Integrating protocol |
+| --- | --- | --- | --- |
+| Public request validation | Owns | No | Supplies policy |
+| Proof-file decoding and identity | Local | Confirms chain validity | Supplies proof |
+| Asset selection | Exact proof-selected inputs | Future wallet selection | Chooses inputs |
+| V1 virtual transaction assembly | Owns | Signs managed inputs | Supplies external witnesses |
+| Asset commitments and proof suffixes | Verifies | Creates during commit | Inspects result |
+| Bitcoin transaction topology | Preserves and verifies | May add wallet funding and change | Owns inputs, outputs, order, v3/P2A policy |
+| Bitcoin signature digests | Computes and verifies | No | Runs signers and MuSig2 sessions |
+| Transfer persistence | Defines sealed package | Keeps wallet transfer state | Persists package and state machine |
+| Broadcast and transfer log | Calls and validates | Owns RPC behavior | Chooses internal or external broadcast |
+| Unconfirmed proof paths | Serializes and verifies asset transitions | Optional compatible verifier | Attests Bitcoin graph and stores paths |
+| Deployment | Transport-neutral | Local, remote, or hosted | Chooses trust and availability model |
 
-- a raw proof file byte blob
-- a proof locator such as asset ref, script key, and outpoint
-- a future SDK proof DTO produced by proof import/export helpers
-- a wallet-selected input source for managed tapd wallets
+In particular, tap-sdk does not construct the integrating protocol's
+transaction tree. That protocol chooses transaction version, locktime, input
+outpoints and sequences, output order, connector outputs, P2A outputs, and
+package relationships before asking the asset builder to bind commitments
+into that topology.
 
-The request uses `AssetRef` and amount. The builder resolves the concrete
-issuance/tranche when tapd or local proof decoding requires it.
+Every host graph edge that moves an asset must also be a real V1 Taproot Assets
+transition consuming the prior asset-bearing outpoint. A Bitcoin-only
+replacement or refresh that forfeits an old output while independently funding
+a new output cannot carry the asset. When a graph contains intermediate
+checkpoints, every asset transition must be built, committed, persisted, and
+verified before Bitcoin signatures for that graph are requested.
 
-When an input source is a proof file, the decoded proof must be checked against
-the requested `AssetRef`. A group-key ref may match any concrete issuance in
-that group. An asset-ID ref must match that exact issuance. The first
-implementation should support proof-file-selected concrete inputs before adding
-more complex wallet-selected multi-tranche selection.
+The MVP still requires a tapd-compatible backend for key derivation, backend
+virtual signing when selected, confirmed-proof verification, commit,
+publish/log, and wallet funding. That backend can be local, remote, hosted, or
+a smaller compatible service. tap-sdk itself is not the complete wallet and
+proof runtime.
 
-### Asset outputs
+## Public Model
 
-An advanced output describes the asset units to create and where their Taproot
-Asset commitment will be anchored. It uses:
+### Asset identity and selection
 
-- `AssetRef`
-- amount
-- anchor output index
-- required anchor output value in sats, when known
-- script/key plan
-- proof delivery metadata
+Every request uses `AssetRef`. An asset-ID ref identifies one concrete
+issuance. A group-key ref identifies a fungible group and may resolve to
+several concrete issuances. The plan and package include both the original
+`AssetRef` and the resolved issuance ID so persistence and diagnostics are
+unambiguous. A concrete asset-ID ref may select one issuance even when that
+issuance belongs to a fungible group. Grouped collectibles remain concrete
+asset-ID refs; only fungible assets use their group key as the semantic ref.
 
-Any explicit asset burn or loss must be represented by a named loss policy. The
-builder must not silently drop asset units as a side effect of balancing.
+`CustomAssetInput` selects the complete asset at the tip of exactly one
+confirmed proof file or compact proof path. The requested amount must equal
+that asset's amount; the builder does not partially select a proof. Confirmed
+proof files use backend chain verification. Compact paths use a host-supplied
+confirmed-base verifier, host attestation of every unconfirmed Bitcoin
+transition, and SDK-local Taproot Assets transition verification. The builder:
 
-Passive assets must also have an explicit policy. The safe default is to reject
-unknown passive assets. Advanced callers may opt into preserving or re-anchoring
-passive assets when the backend returns the required packets and proof metadata.
+1. decodes the proof locally;
+2. checks the exact amount and `AssetRef` equivalence locally;
+3. rejects asset timelocks;
+4. asks the backend to verify the confirmed proof chain; and
+5. cross-checks the backend summary with the locally decoded proof.
 
-### Anchor template
+For compact paths, steps 4 and 5 instead use the explicitly separated host and
+local checks described below.
 
-The caller may supply a BTC anchor PSBT template. The template can include
-BTC-only inputs, BTC-only outputs, asset-bearing output placeholders, change
-outputs, and fee-bump outputs.
+For a confirmed input, verification is not the same as import. Before commit,
+the same tapd instance that will eventually publish/log the transfer must
+already have the input proof in its proof archive. The current APIs have no
+read-only inventory check that can prove this precondition, so the integration
+must import selected proofs as a separate, authenticated setup step and retain
+the proof source in its recovery state.
 
-The SDK should treat the anchor PSBT as serialized bytes at the public API
-boundary. Inspectable SDK DTOs may describe the expected output indices,
-values, scripts, funding mode, and lock metadata, but the root package should
-not expose btcd or taproot-assets PSBT internals as required public inputs.
+Local, host-attested, and backend-trusted checks are distinct entries in
+`CustomAnchorVerificationResult`.
 
-Anchor funding should be represented as a named plan rather than a collection
-of booleans:
+### Outputs and script plans
 
-- wallet-funded with fee rate or target confirmation, change handling, custom
-  lock ID, and lock expiration
-- caller-funded with no backend funding step
-- no-change when the caller expects the template to be exactly balanced
-- externally fee-bumped when the parent transaction relies on a separate fee
-  child, such as a P2A output where supported by the backend
+Each `CustomAssetOutput` has a stable caller ID, `AssetRef`, amount, fixed
+anchor output index, exact anchor value, asset script plan, anchor internal key,
+optional tapscript sibling, and proof-delivery metadata.
 
-### Script, key, and witness plans
+Supported asset script modes are:
 
-The advanced builder should expose SDK-owned plans for:
+- `CustomAssetScriptWallet`, for a fresh backend wallet key;
+- `CustomAssetScriptExternal`, for a complete caller-supplied script key;
+- `CustomAssetScriptOPTrue`, for an OP_TRUE asset leaf protected by the
+  Bitcoin-level policy; and
+- `CustomAssetScriptBurn`, for the protocol burn key derived from each concrete
+  virtual packet's input `PrevID`.
 
-- wallet-derived asset script keys
-- externally supplied script keys
-- OP_TRUE-style asset scripts protected by BTC-level conditions
-- direct anchor internal keys
-- externally signed key-path spends
-- script-path witness material
+When one group-key request consumes multiple issuances, each concrete output
+needs a distinct asset commitment key. The builder derives the protocol's
+issuance-specific unique script-key tweak from the raw wallet, external, or
+OP_TRUE key. Burn allocation temporarily uses the protocol NUMS key, but the
+final output uses `asset.DeriveBurnKey` with that packet's concrete input
+`PrevID`; this is what makes `Asset.IsBurn` recognize the transition. A
+pre-tweaked external key cannot be safely reused for this case and is rejected.
 
-The plan should not make callers re-derive taproot math that the builder already
-computed. It should return typed signing and witness requests with named byte
-fields. For example, a key-path request can carry the anchor input index,
-sighash, internal key, taproot root, and required signer keys. A script-path
-request can carry the anchor input index, leaf script, leaf version, control
-block bytes, sighash, taproot root, and required signer keys.
+### Passive assets and loss
 
-The exact field names may change during implementation, but the public contract
-must be structured enough that callers can perform MuSig2/key-path signing and
-script-path witness construction without importing Taproot Assets internals.
+The zero-value policies are fail-closed:
 
-### Transfer package
+- `CustomAnchorPassiveReject` requires the active packets to account for every
+  asset committed at every spent anchor input.
+- `CustomAnchorLossReject` requires exact amount conservation and rejects burn
+  outputs.
 
-After commit, the SDK should return a persistable transfer package. This
-package is the recovery boundary between commit, external signing, optional
-external broadcast, publish/log, and later proof handling.
+The current positive passive mode is
+`CustomAnchorPassiveCallerReanchor`. The caller supplies every V1 passive
+packet, and the SDK validates its identity and amount before including it in
+the complete anchor-input commitment check. `CustomAnchorPassivePreserve` is
+reserved but returns unsupported because the current tapd commit response
+cannot prove that backend discovery was complete before signing.
 
-The package should include:
+Irreversible loss requires `CustomAnchorLossBurn`, an explicit confirmation
+flag, and a per-`AssetRef` upper bound. Only explicit protocol burn outputs
+count against the bound. Input and output amounts must still balance exactly;
+implicit or intentionally unallocated deficits are rejected so loss cannot be
+hidden outside a verifiable burn transition.
 
-- committed anchor PSBT bytes
-- committed active virtual PSBT bytes
-- committed passive virtual PSBT bytes
-- change output index
-- locked BTC UTXO metadata when the backend funded the anchor
-- committed input and output summaries
-- proof update metadata required for import, register, export, or delivery
-- enough publish/log metadata to retry after a process restart
+### Funding
 
-Callers that publish the anchor transaction outside tapd should persist this
-package before handing the final transaction to their broadcaster.
+`CustomAnchorFundingPlan` is a tagged union:
 
-### Verification model
+- `CustomAnchorFundingCallerFundedExact` prevents tapd from changing the
+  number of inputs or outputs;
+- `CustomAnchorFundingExternalP2AFeeBump` has the same exact-parent behavior
+  and additionally requires a version-3 transaction with the canonical
+  zero-value P2A output at the declared index, an exact zero parent fee, and no
+  other dust output; and
+- `CustomAnchorFundingWalletFunded` lets tapd append wallet inputs and add or
+  update one declared change output using an explicit fee and lock policy.
 
-Verification has three checkpoints:
+For wallet funding, the SDK accepts only a suffix of newly added inputs and at
+most one returned change output. Existing input outpoints and sequences,
+non-change BTC outputs, all output ordering, and every asset output value must
+remain unchanged. The caller must also provide a non-zero `MaxFeeSat`. The SDK
+computes the exact committed fee from all PSBT prevouts and rejects a backend
+result above that hard ceiling before any Bitcoin signer sees it. The actual
+fee and ceiling are sealed into the durable package and independently
+recomputed during package validation.
 
-1. **Pre-commit plan verification** checks proof sources, selected amounts,
-   `AssetRef` equivalence, output scripts, output values, output indices,
-   passive-asset policy, and loss policy before any signer is asked to sign.
-2. **Post-commit verification** checks the committed anchor PSBT, committed
-   virtual PSBTs, proof update metadata, change output, and locked UTXO metadata
-   against the inspected plan.
-3. **Pre-publish verification** checks the final signed anchor PSBT still
-   matches the committed asset-bearing output scripts, values, and indices
-   before publish/log.
+The high-level no-new-change mode is capability gated and is not enabled in
+the pinned tapd profile. Although tapd's protobuf currently represents this as
+an `add=false` variant, the downstream lnd funding request does not preserve a
+distinct no-change instruction. Treating that shape as supported would let a
+backend add a change output after the caller had selected an exact topology.
 
-Verification results should be structured. A result can be valid while also
-carrying warnings. Failures should identify the scope, such as input proof,
-asset identity, amount, output commitment, anchor output, passive asset, loss
-policy, capability, or backend trust.
+P2A is a caller-side Bitcoin policy. The SDK validates the parent shape,
+including the exact zero parent fee and absence of any second dust output; it
+does not claim that tapd performs package relay or fee-bump construction. A
+P2A funding plan always seals skip-broadcast and external-broadcast metadata,
+and commit preflights tapd's skip-broadcast capability before any signer sees
+the parent. The host constructs, signs, and submits the fee-paying child as a
+package through Bitcoin Core or an equivalent package-relay surface.
 
-Some checks can run locally in the SDK and some checks require a tapd-compatible
-backend in the first implementation. The API must make that distinction visible
-so remote or hosted backends are not treated as an implicit trust boundary.
+## Lifecycle and Frozen Transaction Invariant
 
-## Lifecycle
+There are three different PSBT states and they must not be conflated:
 
-The advanced lifecycle has explicit checkpoints:
+1. **Caller template.** The protocol supplies complete transaction topology.
+   Asset-bearing output scripts may still be placeholders. In wallet-funded
+   mode, tapd may later append inputs and one change output.
+2. **Committed anchor.** tapd funds when requested, inserts the asset
+   commitment scripts, and creates proof suffixes in one commit operation.
+   The SDK locally checks the returned virtual packets against the complete
+   returned anchor and seals it into a transfer package.
+3. **Final anchor.** Signers may add PSBT signature and final-witness fields.
+   The unsigned transaction must be byte-for-byte equivalent to the committed
+   anchor.
 
-1. **Collect inputs and outputs.** The caller adds asset inputs, asset outputs,
-   passive asset handling, proof sources, and an optional anchor PSBT template.
-2. **Build a plan.** The builder validates the request, resolves `AssetRef`
-   values, decodes enough proof data to identify concrete inputs, and returns
-   an inspectable plan. No caller signature should be requested before this
-   point.
-3. **Verify the plan.** The caller verifies input proofs, selected amounts,
-   asset identities, anchor output scripts, anchor output values, passive asset
-   policy, and loss policy. The result distinguishes local checks from
-   backend-trusted checks.
-4. **Commit asset transactions.** The SDK asks the configured backend to bind
-   virtual asset transactions to the anchor PSBT. The response returns a
-   persistable transfer package containing the committed anchor PSBT, committed
-   virtual PSBTs, passive PSBTs, locked UTXO metadata, and proof update metadata
-   as SDK DTOs or byte blobs.
-5. **Sign and finalize.** The caller or wallet signs any required BTC anchor
-   inputs and any external asset-signing material. Finalized PSBT bytes are
-   handed back to the SDK and checked against the committed plan before
-   publish/log.
-6. **Publish and log.** The SDK publishes and/or logs the transfer. A
-   `SkipBroadcast` option keeps the final anchor transaction unbroadcast while
-   still logging the transfer when the backend supports that mode.
-7. **Handle proofs.** The SDK exposes enough proof metadata for receivers and
-   storage systems to import, register, export, or deliver complete proofs.
+The committed unsigned transaction is frozen. The following ordered fields
+are all part of the invariant:
 
-Plans are immutable snapshots. Builders may be mutable while collecting inputs
-and outputs, but `Build` should return a plan that does not change under the
-caller. Commit consumes a plan and returns a committed package. Publish/log
-consumes a committed package plus final anchor PSBT bytes. If publish/log fails
-after commit, callers should be able to retry from the persisted committed
-package when the backend operation is idempotent or exposes a duplicate-safe
-result.
+- version and locktime;
+- every input outpoint and sequence;
+- every output value and script; and
+- input and output ordering.
 
-## API Sketch
+Changing any of those fields changes the transaction ID or the commitment
+context and invalidates the returned proof suffixes. In particular, v3 and P2A
+must be present in the caller template, and no code may normalize all input
+sequences after commit.
 
-Names are provisional. The important shape is the separation of the advanced
-custom-anchor path from the normal send path.
+The concrete lifecycle is:
+
+1. The caller builds a `CustomAnchorRequest` and the full anchor template.
+2. `Build` validates the request, resolves and verifies proof-selected inputs,
+   allocates grouped issuances, prepares V1 virtual packets, validates
+   caller-provided virtual witnesses, merges required PSBT metadata, and
+   returns an immutable `CustomAnchorPlan`.
+3. The caller inspects `plan.Verification()`, `plan.AnchorPSBT()`, and the
+   prepared virtual packets. No Bitcoin signature has been requested.
+4. `Commit` checks required backend capabilities. It asks the backend to sign
+   virtual packets whose inputs use the backend-signer mode, then calls
+   `CommitVirtualPsbts`.
+5. The SDK validates the backend's funding shape and runs
+   `ValidateAnchorInputs` and `ValidateAnchorOutputs` over the complete active
+   and passive packet set. It returns a sealed
+   `CustomAnchorTransferPackage`.
+6. The caller persists the package before external signing, broadcasting, or
+   handing it to another service.
+7. The caller derives typed Bitcoin signing requests from the package, applies
+   external signatures or script witnesses on returned package clones, and
+   invokes an `AnchorSigner` for wallet-managed Bitcoin inputs when needed.
+8. `VerifyFinalAnchorPSBT` compares the complete unsigned transaction and all
+   non-signature PSBT metadata with the frozen committed transaction.
+9. `Wallet.PublishCustomAnchorTransfer` additionally requires a fully
+   finalized PSBT, revalidates all asset commitments, checks skip-broadcast
+   capability, and calls tapd's publish-and-log operation.
+
+Caller-provided virtual asset witnesses necessarily exist before commit;
+Bitcoin anchor signatures necessarily come after commit. Moving either to the
+wrong side of that boundary creates invalid commitments or asks a Bitcoin
+signer to authorize an unverified transaction.
+
+The first caller-witness API is intentionally limited to a complete witness
+that is already valid for the packet produced by `Build`, such as a static
+OP_TRUE path controlled by the integrating protocol. Interactive asset signing
+after packet assembly requires a separate immutable asset-signing request/apply
+phase and is follow-up work.
+
+## Durable Transfer Package
+
+`CustomAnchorTransferPackage` is the recovery boundary. It stores:
+
+- a schema version and immutable plan ID;
+- the original committed anchor PSBT and the current signed/finalized clone;
+- committed active and passive virtual PSBTs;
+- change index and the locked outpoints actually returned by tapd;
+- the selected funding mode, P2A index when applicable, exact committed fee,
+  and wallet-funding fee ceiling;
+- the caller's custom lock ID and requested expiration, when wallet funding
+  was used;
+- logical-to-concrete input and output mappings;
+- each output's Taproot Asset commitment root and final BIP341 merkle root,
+  derived from the complete committed active/passive packet set rather than
+  trusted proprietary PSBT fields;
+- the self-contained confirmed proof file or compact proof path for every
+  selected input, bound by a domain-separated content ID;
+- every output proof suffix and complete proof-delivery metadata;
+- explicit external signing plans and backend-managed input indices; and
+- publish label, skip-broadcast choice, and external-broadcast intent.
+
+It uses three independent digests:
+
+- `UnsignedTxDigest` binds the complete ordered unsigned transaction;
+- `CommittedPackageDigest` binds the immutable commit result while excluding
+  mutable PSBT signature/finalization fields; and
+- `PackageDigest` detects any mutation of the current persisted snapshot.
+
+`Seal`, JSON encoding, and binary encoding are strict and versioned. Unknown
+versions, trailing bytes, inconsistent signing classifications, duplicate
+mappings, digest changes, and tampered PSBTs fail validation. All accessors and
+signature application methods return deep copies so a previously persisted
+snapshot cannot change through caller aliasing.
+
+Public JSON and binary decoding is atomic: bytes are decoded and validated in
+a temporary value, and a failure leaves the receiver unchanged.
+
+Funding metadata is mode-strict. Caller-funded exact and external P2A packages
+cannot carry backend change, lock, locked-UTXO, or backend-managed-input
+metadata; wallet-funded packages require their deterministic custom lock ID.
+
+For a host-owned policy tree, such as an Ark VTXO, the host combines its known
+policy root with `CustomAnchorAssetOutputSummary.TaprootAssetRoot`. The result
+must equal the summary's `TaprootMerkleRoot`; that final root is the tweak
+committed by the anchor output key. The SDK exposes both values so the host can
+build and persist its control blocks without parsing tapd's proprietary PSBT
+output fields. The host remains responsible for persisting its complete policy
+descriptor, leaves, signers, and internal key. The SDK also requires tapd's
+PSBT root hints to be present and equal to these independently reconstructed
+values because the downstream transfer logger persists those hints.
+
+The committed PSBT metadata is also sealed. Before finalization, the current
+PSBT may differ only in signature and finalization fields; changes to prevout,
+sighash, Taproot key/leaf, or other signing metadata are rejected. Standard
+PSBT serialization removes non-final input metadata after finalization, so the
+SDK reconstructs the expected finalized packet from the committed metadata and
+the final scripts, compares its canonical encoding, and restores the committed
+metadata in the persisted package.
+
+These unkeyed digests detect accidental corruption, stale snapshots, and
+inconsistent state. They are not an authenticity mechanism against a party
+that can rewrite a package and recompute its digests. A hostile-storage threat
+model requires the host to bind the expected plan/committed digest in an
+authenticated database record, MAC, or signature outside the package.
+
+The tapd commit RPC currently returns only locked outpoints. The SDK preserves
+the caller-supplied lock ID and requested expiration and verifies that returned
+locks exactly cover backend-added inputs, but it does not invent per-output
+lease IDs, values, or actual expirations that tapd did not return.
+
+## Bitcoin Signing
+
+Every caller-supplied anchor input must select exactly one trusted spend path:
+
+- single-signer Taproot key path;
+- aggregate MuSig2 key path; or
+- one exact Taproot script leaf.
+
+Inputs appended by wallet funding are classified separately as
+backend-managed. The two sets are an exact, disjoint cover of all committed
+anchor inputs.
+
+Caller-supplied inputs are P2TR-only in the first implementation because every
+such input selects a typed key-path, MuSig2, or script-path plan. Inputs
+appended and signed by the backend in wallet-funded mode may use native
+P2WPKH, P2WSH, or P2TR. All inputs must have an empty scriptSig before commit.
+Legacy and wrapped-SegWit inputs can acquire a scriptSig during finalization and
+therefore change the txid after proof suffixes are created; the builder rejects
+them.
+
+`SigningRequests` derives BIP341 sighashes from the committed transaction and
+all PSBT prevouts. Requests include a digest-bound ID, input index, prevout,
+prevout value and script, sighash type and digest, internal key, merkle root,
+and mode-specific material. Script-path requests additionally include the leaf
+hash, version, script, control block, and declared signers.
+
+The SDK verifies that each explicit plan matches the committed PSBT. Signature
+application is immutable and cryptographic:
+
+- key-path application accepts only a valid Schnorr signature for the declared
+  signer or aggregate MuSig2 key and exact sighash;
+- script-path application checks the leaf and control block and executes the
+  complete final witness under the standard Bitcoin script flags;
+- finalized external inputs must use the exact sealed key path or selected
+  leaf, the exact sealed sighash, and every 64/65-byte script witness signature
+  must match a declared required signer; and
+- request IDs cease to match if any committed field changes.
+
+The first script-path surface rejects annexes and selected leaves containing
+an actual `OP_CODESEPARATOR`, because either feature changes sighash semantics
+that the typed request does not model. Opcode parsing distinguishes a real
+separator from the same byte inside pushed data. Backend-managed inputs are
+still fully consensus-validated but are not constrained to an external signing
+plan.
+
+The SDK intentionally does not own MuSig2 nonce generation, nonce exchange,
+partial-signature aggregation, or session storage. The integrating protocol
+owns those rounds and applies only the final aggregate Schnorr signature.
+
+## Verification and Trust
+
+| Check | First implementation |
+| --- | --- |
+| Request structure, tagged unions, limits | Local SDK |
+| Amount conservation and bounded loss | Local SDK |
+| Proof decoding, identity, amount, asset type | Local SDK |
+| Confirmed proof-file chain validity | Backend trusted and marked as such |
+| Compact-path confirmed base and inventory | Configured host verifier |
+| Unconfirmed Bitcoin graph authorization and policy | Integrating host |
+| Unconfirmed asset VM and commitment transitions | Local SDK |
+| Complete active/passive anchor-input inventory | Local SDK from supplied packets |
+| V1 virtual transaction and caller witness VM rules | Local SDK |
+| Anchor output commitment, index, script, value | Local SDK after commit |
+| Backend funding shape and change constraints | Local SDK |
+| Signing-plan and PSBT compatibility | Local SDK |
+| BIP341 sighash and applied signatures/witnesses | Local SDK |
+| Final transaction and immutable PSBT metadata equality | Local SDK |
+| Transfer logging and wallet state mutation | Backend |
+
+The backend verification marker is not a claim of local trustlessness. A
+remote or hosted backend can verify a confirmed proof for a lightweight client,
+but the caller must decide whether that backend is trusted for chain state.
+
+## Compact Unconfirmed Proof Paths
+
+A normal proof file repeats its entire history. Repeating the full file at
+every node of a deep off-chain transaction graph grows storage quadratically
+and still does not make unconfirmed anchors chain-valid. The SDK therefore
+defines `AssetProofPath` for the restricted unconfirmed case.
+
+A path contains one confirmed base proof file and an ordered list of serialized
+V1 transition proofs. The container has a version, deterministic checksummed
+binary encoding, depth and byte limits, deep-copy semantics, and
+domain-separated content IDs for the full path and each step. A store can keep
+steps once by content ID and let VTXO records refer to a parent path plus one
+new step.
+
+Verification proceeds as follows:
+
+1. A `ConfirmedProofVerifier` fully verifies the base proof against the chain
+   and attests that the base anchor inventory is complete and contains no
+   passive assets.
+2. The SDK decodes the base tip and every transition.
+3. For every unconfirmed step, the verifier must also implement
+   `UnconfirmedAnchorVerifier`. The host validates the complete serialized
+   anchor transaction against its authoritative Ark/swap graph, including the
+   expected previous and new outpoints, all Bitcoin prevouts and signatures,
+   standardness, and transaction/package policy.
+4. For each step the SDK checks exact parent asset identity, outpoint, amount, and
+   script-key continuity.
+5. It runs the native Taproot Assets proof verifier with chain-inclusion
+   verification skipped only for the unconfirmed transition. Asset VM,
+   commitment, witness, and state-transition checks still run.
+6. It reconstructs the selected output commitment, including disclosed
+   alternate leaves, and compares the exact anchor output script. This rejects
+   hidden co-anchored active or passive assets.
+
+The host attestation is a mandatory trust boundary for non-empty paths, not an
+optional safety enhancement. Native Taproot Assets proof verification does not
+validate the complete Bitcoin input graph, Bitcoin witnesses, standardness, or
+Ark package policy. The SDK therefore fails closed if the confirmed verifier
+does not provide the unconfirmed-anchor extension or rejects any step. The
+inspectable result records host-attested chain/graph checks separately from
+SDK-local asset-transition checks.
+
+The MVP accepts one active asset predecessor per edge. A Bitcoin transaction
+may contain additional opaque Bitcoin or connector inputs. An empty Taproot
+Assets `AdditionalInputs` field proves only that those inputs do not contribute
+to the tracked transition; the compact path verifier cannot attest their full
+asset inventory. The host's `UnconfirmedAnchorVerifier` must establish that
+inventory before treating them as BTC-only connectors. One asset input may
+split into several asset outputs; the selected split child must carry its
+split-root proof and the root asset must carry a complete V1 witness. Merges,
+additional asset input paths, asset timelocks, ownership challenges, non-V1
+assets, and passive assets are rejected.
+
+These paths are an application-level unconfirmed representation. They must not
+be imported into tapd or a universe as confirmed proofs. Once the relevant
+branch confirms, the integration obtains or materializes ordinary
+chain-anchored proofs, verifies them normally, imports/registers them, and may
+replace the compact path with a new confirmed base. A public SDK helper for
+materializing every transition from block headers and merkle proofs is future
+work; the current upstream `proof.UpdateTransitionProof` primitive uses
+implementation types and is intentionally not leaked through this API.
+
+An unconfirmed path package cannot be passed to
+`PublishCustomAnchorTransfer`. Today tapd's chain porter verifies every input
+proof with full header and merkle inclusion before broadcast and then fetches
+the proof prefix from its local archive. There is no skip-chain or proof-path
+request field. The SDK therefore rejects this call locally. Publishing such a
+branch needs either a path-aware tapd RPC or a post-confirmation materialize,
+import, rebuild/rebind, recommit, and reseal flow.
+
+## Capabilities and Transport
+
+The capability model is an optional extension to `WalletKitClient`, not a new
+mandatory method on every SDK client. Each capability is supported,
+unsupported, or unknown; both unsupported and unknown fail closed when the
+operation requires the feature.
+
+Current tapd has no live capability RPC. The gRPC and REST clients therefore
+return an SDK-version-pinned compatibility profile. This is an explicit
+assumption about the tapd API version, not runtime discovery. Custom backends
+should implement `CustomAnchorCapabilityProvider` with their real profile.
+
+The legacy `WalletKitClient` commit and publish method signatures remain
+source-compatible. Advanced request DTOs are exposed through the optional
+`CustomAnchorWalletKitClient` extension implemented by the SDK gRPC and REST
+clients. Custom-anchor lifecycle calls fail closed with an explicit unsupported
+capability error when a third-party client lacks that extension.
+
+Both transports support equivalent SDK DTOs for:
+
+- caller-supplied anchor PSBTs;
+- active and passive virtual packets;
+- skip funding, change selection, fee targets/rates, and lock parameters;
+- returned change index and locked outpoints; and
+- finalized publish/log with skip broadcast and label.
+
+TLS, macaroon, timeout, and deployment configuration remain transport
+concerns. The root package never marshals taprpc types.
+
+## Failure and Recovery
+
+The host application should persist state at least at these points:
+
+1. plan accepted;
+2. committed package persisted;
+3. signed/finalized PSBT persisted;
+4. external broadcast submitted or result unknown;
+5. publish/log completed or result unknown; and
+6. proof delivered/imported.
+
+`CommitVirtualPsbts` can lock wallet UTXOs. A verified response records the
+returned outpoints, so abandoned packages require explicit lock cleanup using
+those outpoints and the backend's lease API.
+
+A transport timeout is harder: tapd can successfully commit and retain lnd
+leases before its response reaches the caller. In that case no committed
+package or returned outpoint inventory exists even though locks may remain.
+Wallet-funded custom-anchor requests therefore require a deterministic 32-byte
+custom lock ID. The integration must persist it before the RPC and treat every
+unknown commit result as a reconciliation state rather than a safe retry. Today
+that reconciliation must inspect lnd leases out of band. A robust backend
+contract needs an idempotent commit request ID and status lookup, or at minimum
+list and release operations keyed by the custom lock ID.
+
+The SDK returns `CustomAnchorCommitAttemptError` for a failed call or unusable
+response and sets `OutcomeUnknown` whenever the backend may have committed.
+Callers must branch on that field: an unknown outcome enters reconciliation,
+while a known pre-execution rejection may be safely corrected before a new
+attempt.
+
+Two existing rollback paths also require upstream fixes. lnd's multi-output
+funding rollback releases earlier leases with its internal lock ID even when
+the caller supplied a custom ID. tapd's post-funding rollback reuses the
+original request context, which can already be canceled when cleanup runs.
+Either failure can leave leases until expiry and must not be described as
+recoverable by the SDK alone.
+
+tapd's `PublishAndLogTransfer` has no request ID or documented idempotency
+contract. A timeout after submission is therefore an ambiguous result. The
+integration must not blindly retry. It should first inspect the Bitcoin
+mempool/chain and tapd transfer history, reconcile by transaction ID, and only
+then decide whether to resubmit or continue proof recovery. Adding a
+duplicate-safe request ID and status lookup is recommended upstream work.
+
+Publish/log failures use `CustomAnchorPublishAttemptError`. A nil response, a
+response without an anchor transaction, a response whose anchor or virtual
+packets differ from the finalized sealed package, a transport error that may
+have reached the backend, and `AlreadyExists` all set `OutcomeUnknown` because
+none proves that a prior operation used identical content. These cases require
+the same transaction-ID reconciliation before retry.
+
+## API Examples
+
+Normal users stay on the address-based wallet surface:
+
+```go
+transfer, err := wallet.Send(ctx, address, tapsdk.WithAmount(100))
+if err != nil {
+    return err
+}
+```
+
+Only integrations that own the Bitcoin topology use the advanced lifecycle.
+
+The exact transaction topology is intentionally created outside the builder:
 
 ```go
 builder := wallet.NewCustomAnchorTxBuilder()
 
-plan, err := builder.AddInput(tapsdk.CustomAssetInput{
-    AssetRef: ref,
-    Amount:   100,
-    Source: tapsdk.ProofFileSource{
-        ProofFile: proofFileBytes,
+plan, err := builder.Build(ctx, &tapsdk.CustomAnchorRequest{
+    Inputs: []tapsdk.CustomAssetInput{input},
+    Outputs: []tapsdk.CustomAssetOutput{output},
+    AnchorPSBT: anchorTemplate,
+    Funding: tapsdk.CustomAnchorFundingPlan{
+        Mode: tapsdk.CustomAnchorFundingExternalP2AFeeBump,
+        ExternalP2AFeeBump: &tapsdk.CustomAnchorExternalP2AFeeBump{
+            P2AOutputIndex: p2aIndex,
+        },
     },
-}).AddOutput(tapsdk.CustomAssetOutput{
-    AssetRef:          ref,
-    Amount:            100,
-    AnchorOutputIndex: 2,
-    AnchorValueSat:    330,
-    ScriptPlan: tapsdk.ExternalScriptKeyPlan{
-        ScriptKey: receiverScriptKey,
+    PassiveAssets: tapsdk.CustomAnchorPassiveAssets{
+        Policy: tapsdk.CustomAnchorPassiveReject,
     },
-}).SetAnchorTemplate(tapsdk.AnchorTemplate{
-    PSBT: anchorTemplateBytes,
-    Funding: tapsdk.AnchorFundingPlan{
-        Mode: tapsdk.AnchorFundingCallerFunded,
+    LossPolicy: tapsdk.CustomAnchorLossPolicy{
+        Mode: tapsdk.CustomAnchorLossReject,
     },
-}).Build(ctx)
-
-verification, err := plan.Verify(ctx)
-if err != nil || !verification.Valid {
+    SigningPlans: []tapsdk.CustomAnchorInputSigningPlan{signingPlan},
+})
+if err != nil || !plan.Verification().Valid() {
     return err
 }
 
-committed, err := plan.Commit(ctx)
-if err := committed.VerifyFinalAnchorPSBT(finalAnchorPSBT); err != nil {
+committed, err := plan.Commit(ctx, tapsdk.CustomAnchorCommitOptions{
+    Publish: tapsdk.CustomAnchorPublishMetadata{
+        SkipAnchorTxBroadcast: true,
+        ExternalBroadcast: true,
+    },
+})
+if err != nil {
+    return err
+}
+if err := persist(committed); err != nil {
     return err
 }
 
-packet, err := committed.PublishAndLog(
-    ctx, finalAnchorPSBT, tapsdk.PublishOptions{
-        SkipBroadcast: true,
-    },
+requests, err := committed.SigningRequests()
+if err != nil {
+    return err
+}
+
+// This example has one external key-path input. Repeat the corresponding
+// Apply call for every key-path, MuSig2, and script-path request, always using
+// the package clone returned by the previous call.
+signature, err := keyPathSigner(ctx, requests.KeyPath[0])
+if err != nil {
+    return err
+}
+signed, err := committed.ApplyKeyPathSignature(
+    requests.KeyPath[0].ID, signature,
+)
+if err != nil {
+    return err
+}
+if err := persist(signed); err != nil {
+    return err
+}
+
+finalPSBT, err := anchorSigner(ctx, signed.AnchorPsbt)
+if err != nil {
+    return err
+}
+finalized, err := signed.WithFinalAnchorPSBT(finalPSBT)
+if err != nil {
+    return err
+}
+if err := persist(finalized); err != nil {
+    return err
+}
+
+packet, err := wallet.PublishCustomAnchorTransfer(
+    ctx, finalized, finalized.AnchorPsbt,
 )
 ```
 
-Signing and witness material should also be inspectable through typed requests:
+## Test Strategy
 
-```go
-signing, err := committed.SigningRequests()
-for _, req := range signing.KeyPath {
-    sig, err := signer.SignMuSig2(ctx, req.Sighash, req.Signers)
-    if err != nil {
-        return err
-    }
+The implementation requires four layers of tests:
 
-    committed, err = committed.ApplyKeyPathSignature(req.ID, sig)
-    if err != nil {
-        return err
-    }
-}
+- DTO validation, cloning, strict serialization, overflow, passive/loss, and
+  capability unit tests;
+- cryptographic tests for V1 state transitions, grouped multi-issuance splits,
+  output commitment reconstruction, BIP341 digests, signature/witness
+  application, and tamper rejection;
+- gRPC and REST mapping tests over identical low-level request/response DTOs;
+  and
+- real tapd/lnd regtests for an exact caller-funded v3 anchor and an external
+  zero-fee P2A parent through both gRPC and REST. The exact flow preserves a
+  non-default sequence. The P2A flow externally funds and signs the child,
+  submits parent and child as a package, confirms them, exports/imports the
+  receiver proof, and verifies the receiver balance.
 
-for _, req := range signing.ScriptPath {
-    witness, err := scriptSigner.BuildWitness(ctx, req)
-    if err != nil {
-        return err
-    }
+Negative tests must mutate every frozen transaction field, omit passive
+packets, exceed loss bounds, provide mismatched proofs or script keys, mix
+virtual witness modes, use unknown capabilities, tamper with package digests,
+and corrupt compact proof paths.
 
-    committed, err = committed.ApplyScriptPathWitness(req.ID, witness)
-    if err != nil {
-        return err
-    }
-}
-```
+## Upstream and Follow-up Work
 
-A transport-backed client method should take one SDK request type rather than a
-long positional argument list. For example:
+The current MVP can support confirmed, proof-selected protocol transactions
+without a tapd protocol change when every selected input proof is already in
+the publishing tapd archive. It can also build, verify, and persist compact
+unconfirmed paths, but current tapd cannot publish/log those packages. The
+following improvements should be tracked separately:
 
-```go
-type CommitCustomAnchorRequest struct {
-    PlanID             string
-    AnchorPSBT         []byte
-    VirtualPSBTs       [][]byte
-    PassiveAssetPSBTs  [][]byte
-    Funding            AnchorFundingPlan
-}
+1. **Multi-packet wallet funding.** `FundVirtualPsbt` rejects a response with
+   more than one packet, while grouped multi-issuance selection can naturally
+   require one packet per concrete issuance. This blocks wallet-selected group
+   inputs, not the proof-selected MVP.
+2. **Idempotent publish/log.** Add a request ID and a transaction-status lookup
+   or documented duplicate-safe semantics to `PublishAndLogTransfer`.
+3. **Commit lease recovery.** Fix lnd's partial funding rollback to release
+   each output with its actual custom lock ID, and make tapd cleanup use an
+   independent bounded context. Then make `CommitVirtualPsbts` idempotent and
+   expose status by request or lock ID. Also expose enough lease metadata to
+   list and release every retained lnd lock after a lost response. Until then,
+   a commit timeout is an externally reconciled, outcome-unknown state.
+4. **Explicit no-change funding.** Preserve a real no-new-change policy through
+   tapd into lnd instead of encoding it as an `add=false` value whose semantic
+   distinction is lost. The pinned capability profile intentionally reports
+   this feature as unknown.
+5. **Live capabilities.** Expose supported custom-anchor features and API
+   version through tapd `GetInfo`; remove the static compatibility profile when
+   available.
+6. **Supported V1 witness rebinding.** Expose a stable helper for rebinding a
+   complete V1 witness to a new virtual transaction instead of requiring
+   integrations to manipulate protocol structs.
+7. **Path-aware proof APIs.** If tapd is to own off-chain paths, add explicit
+   verify/store/finalize operations that distinguish unconfirmed transitions
+   from confirmed proof import.
+8. **Granular macaroons.** Split advanced commit, log-only publish, proof
+   verification, and proof import permissions for hosted deployments.
+9. **Proof materialization helper.** Add an SDK-owned confirmation DTO and path
+   finalizer after the required chain-data source and retry model are agreed.
+10. **Path-aware publish or rebinding.** Accept verified compact proof sources
+   in chain porter, or define a post-confirmation API that rebinds materialized
+   input proofs and reseals the package without leaking implementation types.
+11. **VerifyProof predecessor metadata.** tapd currently marshals
+   `VerifyProofResponse.DecodedProof` without predecessor IDs, while
+   `DecodeProof` can expose them. The builder locally decodes proof files and
+   does not depend on this response field, but integrations must not infer
+   predecessor inventory from the `VerifyProof` summary. Upstream should expose
+   the metadata or explicitly document its omission.
 
-type CommitCustomAnchorResponse struct {
-    AnchorPSBT         []byte
-    VirtualPSBTs       [][]byte
-    PassiveAssetPSBTs  [][]byte
-    ChangeOutputIndex  int32
-    Outputs            []CommittedAssetOutput
-    ProofUpdates       []ProofUpdate
-    LockedUTXOs        []LockedUTXO
-}
+The deployment follow-up must add a tapd-compatible service to the integrating
+product's Kubernetes chart with pinned versions, network/chain agreement, TLS
+and macaroon secret distribution, persistent proof and wallet state, backup,
+network policy, health checks, and monitoring. That belongs in deployment
+infrastructure, not in tap-sdk.
 
-type VerifyCustomAnchorResult struct {
-    Valid    bool
-    Issues   []VerificationIssue
-    Warnings []VerificationIssue
-}
+## Rejected Approaches
 
-type VerificationIssue struct {
-    Code        VerificationCode
-    Scope       VerificationScope
-    InputIndex  int
-    OutputIndex int
-    Message     string
-    Local       bool
-}
-```
-
-The concrete request names can change during implementation. The invariant is
-that request and response types live in the root package, while conversion to
-gRPC or REST wire formats stays inside the transport packages.
-
-## Existing Builder Evolution
-
-Keep the simple surfaces:
-
-- `Wallet.Send` and `Wallet.SendMulti` stay the default address-based flow.
-- `TxBuilder` remains the low-level address-based Fund/Sign/Commit/Finish
-  helper.
-- `InteractiveTxBuilder` remains the receiver-key flow for manual proof
-  delivery.
-
-Add `CustomAnchorTxBuilder` instead of forcing custom-anchor controls into the
-existing builders. After the advanced path stabilizes, the simple builders may
-share an internal core with it, but their public API should remain small and
-address/key-flow specific.
-
-The advanced builder may reuse simple-builder concepts such as
-`AnchorSigner` and `WithSkipBroadcast` where the meaning is identical. Its main
-handoff should still be the explicit plan/package flow above, because advanced
-callers need to inspect, persist, externally sign, externally broadcast, and
-retry at boundaries that the simple builders intentionally hide.
-
-## Transport Boundary
-
-Every advanced operation that needs a backend call must be available through
-both gRPC and REST. The root package owns the SDK DTOs. The `grpc` and `rest`
-packages own:
-
-- proto and JSON marshal/unmarshal code
-- TLS and macaroon behavior
-- large proof and PSBT byte encoding
-- timeout behavior
-- any daemon-version compatibility shims
-
-Because custom-anchor support depends on backend capabilities that may not be
-available on every tapd-compatible service, transports should expose capability
-discovery or return a structured unsupported-capability error before the caller
-reaches a signing step. Capabilities should cover at least custom-anchor commit,
-skip-broadcast publish/log, skip-funding commit, P2A or external fee-bump
-support, proof registration, and local-vs-backend verification support.
-
-Tests should exercise equivalent SDK requests through both transports or a
-shared conformance harness so advanced features cannot land as gRPC-only.
-
-## Runtime Model
-
-The first implementation may still require a tapd-compatible backend for
-wallet inventory, proof decoding or verification, virtual PSBT funding, asset
-signing, commitment generation, transfer logging, and proof registration.
-
-That backend does not have to be a full local daemon for every end user. The
-SDK should support the same public API when the configured transport points at:
-
-- a local tapd
-- a remote tapd controlled by the application
-- a hosted tapd-compatible service
-- a future smaller service that exposes only wallet, proof, and builder calls
-
-The API should avoid local-daemon assumptions such as hard-coded file paths,
-local-only proof stores, or local-only signer behavior.
-
-The caller decides how much trust to place in the backend, but the SDK must not
-present backend-verified data as if it were locally verified. The first
-implementation should classify checks as follows:
-
-- request validation, duplicate output indices, amount conservation, passive
-  policy, and loss policy: local SDK in the first implementation and long term
-- anchor PSBT output scripts, values, indices, and final-PSBT drift: local SDK
-  in the first implementation and long term
-- proof file decoding and `AssetRef` equivalence: backend or local SDK where
-  available in the first implementation, local SDK long term
-- input proof chain validity: backend in the first implementation, local SDK
-  verifier long term
-- output commitment inclusion and proof suffix correctness: backend plus local
-  structural checks where available in the first implementation, local SDK
-  verifier long term
-- transfer logging, proof registration, and wallet inventory mutation: backend
-  in the first implementation and long term
-
-Over time, pure proof decoding, proof verification, vPSBT assembly, anchor PSBT
-inspection, and commitment checks can move into SDK/library code so lightweight
-clients can verify more locally.
-
-## Safety Invariants
-
-- Caller requests use `AssetRef`, not parallel asset ID and group key fields.
-- Proof-file inputs must be checked for equivalence with the requested
-  `AssetRef`.
-- Public signatures use SDK DTOs and bytes, not tapd or taproot-assets types.
-- Callers can inspect and verify the plan before signing any BTC anchor input.
-- Verification results distinguish local checks from backend-trusted checks.
-- The final anchor PSBT must match planned asset-bearing output scripts, values,
-  and indices before publish/log.
-- Asset loss requires an explicit loss policy.
-- Passive assets must be either preserved, explicitly re-anchored, or rejected.
-- A committed transfer package must be persistable before external signing or
-  broadcast.
-- Proof metadata required for recovery must be returned before the flow is
-  considered complete.
-- Publish/log must expose whether the anchor transaction was broadcast or only
-  logged for external broadcast.
-- Unsupported backend capabilities must fail before a caller is asked to sign.
-
-## Follow-Up Work
-
-Implementation issues should cover:
-
-- builder DTO validation and state transitions
-- immutable plan and persistable transfer-package lifecycle
-- wallet-selected and proof-file-selected asset inputs
-- caller-supplied anchor PSBT templates
-- exact anchor output value handling
-- wallet-funded, no-change, zero-fee, and externally fee-bumped paths
-- P2A anchor output policy where supported by the backend
-- typed script/key/witness signing requests and application of signatures or
-  witnesses
-- pre-signing verification results and failure classes
-- proof import/export/register flows after publish/log
-- path-oriented proof metadata for deep transaction graphs
-- backend capability discovery and unsupported-capability errors
-- REST and gRPC parity wrappers
-- unit, transport, and regtest coverage
-- examples that keep normal users on the simple send APIs
+- Mutating a serialized anchor after commit, including appending P2A/change,
+  changing v3, or normalizing sequences. This invalidates transaction IDs and
+  proof suffixes.
+- Overwriting an asset-bearing output value with the total asset input amount.
+  Asset units and satoshis are independent dimensions.
+- Hard-coding one asset ID per transaction. Group-key sends can span multiple
+  concrete issuances.
+- Inferring the safe Taproot spend path from PSBT fields. The caller must select
+  the exact trusted path.
+- Treating one selected inclusion proof as evidence that a spent anchor had no
+  other assets. Complete packet inventory or an explicit inventory attestation
+  is required.
+- Copying the full proof prefix into every off-chain node. Content-addressed
+  path steps preserve verification while avoiding quadratic storage.
+- Making capability discovery a mandatory method on `WalletKitClient`. Existing
+  clients must remain source compatible and unknown support must fail closed.

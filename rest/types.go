@@ -202,8 +202,13 @@ type jsonChainAnchor struct {
 
 // jsonPrevWitness is the JSON shape of taprpc.PrevWitness.
 type jsonPrevWitness struct {
-	PrevID *jsonPrevID `json:"prev_id"`
+	PrevID          *jsonPrevID          `json:"prev_id"`
+	SplitCommitment *jsonSplitCommitment `json:"split_commitment"`
 }
+
+// jsonSplitCommitment records whether a decoded witness is a synthetic split
+// leaf. Its nested root asset isn't needed by the SDK's proof summary.
+type jsonSplitCommitment struct{}
 
 // jsonPrevID is the JSON shape of taprpc.PrevInputAsset.
 type jsonPrevID struct {
@@ -313,9 +318,11 @@ type jsonSignVirtualPsbtResponse struct {
 // jsonCommitVirtualPsbtsResponse is the JSON shape of
 // assetwalletrpc.CommitVirtualPsbtsResponse.
 type jsonCommitVirtualPsbtsResponse struct {
-	AnchorPsbt        string   `json:"anchor_psbt"`
-	VirtualPsbts      []string `json:"virtual_psbts"`
-	PassiveAssetPsbts []string `json:"passive_asset_psbts"`
+	AnchorPsbt        string          `json:"anchor_psbt"`
+	VirtualPsbts      []string        `json:"virtual_psbts"`
+	PassiveAssetPsbts []string        `json:"passive_asset_psbts"`
+	ChangeOutputIndex int32           `json:"change_output_index"`
+	LndLockedUtxos    []*jsonOutpoint `json:"lnd_locked_utxos"`
 }
 
 // jsonPublishAndLogResponse is the JSON shape of

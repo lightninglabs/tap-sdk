@@ -19,6 +19,19 @@ func newWalletKitClient(tp *transport) *walletKitClient {
 	return &walletKitClient{transport: tp}
 }
 
+// CustomAnchorCapabilities returns the SDK-version-pinned tapd capability
+// assumptions. tapd does not expose runtime capability discovery over REST.
+func (w *walletKitClient) CustomAnchorCapabilities(
+	ctx context.Context) (*tapsdk.CustomAnchorCapabilities, error) {
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	caps := tapsdk.DefaultTapdCustomAnchorCapabilities()
+	return &caps, nil
+}
+
 type jsonExportAssetWalletBackupRequest struct {
 	Mode string `json:"mode"`
 }
@@ -286,14 +299,20 @@ func (w *walletKitClient) SignVirtualPsbt(ctx context.Context,
 // jsonCommitVirtualPsbtsRequest is the JSON body for
 // CommitVirtualPsbts.
 type jsonCommitVirtualPsbtsRequest struct {
-	VirtualPsbts      []string `json:"virtual_psbts"`
-	PassiveAssetPsbts []string `json:"passive_asset_psbts,omitempty"`
-	AnchorPsbt        string   `json:"anchor_psbt"`
-	SatPerVByte       string   `json:"sat_per_vbyte,omitempty"`
-	Add               bool     `json:"add,omitempty"`
+	VirtualPsbts          []string `json:"virtual_psbts"`
+	PassiveAssetPsbts     []string `json:"passive_asset_psbts,omitempty"`
+	AnchorPsbt            string   `json:"anchor_psbt"`
+	ExistingOutputIndex   *int32   `json:"existing_output_index,omitempty"`
+	Add                   *bool    `json:"add,omitempty"`
+	TargetConf            *uint32  `json:"target_conf,omitempty"`
+	SatPerVByte           string   `json:"sat_per_vbyte,omitempty"`
+	CustomLockID          string   `json:"custom_lock_id,omitempty"`
+	LockExpirationSeconds string   `json:"lock_expiration_seconds,omitempty"`
+	SkipFunding           bool     `json:"skip_funding,omitempty"`
 }
 
-// CommitVirtualPsbts commits virtual transactions.
+// CommitVirtualPsbts commits virtual transactions using the legacy
+// wallet-kit surface.
 func (w *walletKitClient) CommitVirtualPsbts(ctx context.Context,
 	virtualPsbts [][]byte, passivePsbts [][]byte,
 	feeRate tapsdk.FeeRate) (*tapsdk.CommittedTransfer, error) {
@@ -303,29 +322,42 @@ func (w *walletKitClient) CommitVirtualPsbts(ctx context.Context,
 		return nil, fmt.Errorf("prepare anchor PSBT: %w", err)
 	}
 
-	vPsbts := make([]string, 0, len(virtualPsbts))
-	for _, p := range virtualPsbts {
-		vPsbts = append(
-			vPsbts,
-			hex.EncodeToString(p),
-		)
+	resp, err := w.CommitVirtualPsbtsWithRequest(
+		ctx, &tapsdk.CommitVirtualPsbtsRequest{
+			AnchorPsbt:        anchorPsbt,
+			VirtualPsbts:      virtualPsbts,
+			PassiveAssetPsbts: passivePsbts,
+			Funding: tapsdk.AnchorFundingPlan{
+				ChangeOutput: tapsdk.AnchorChangeOutput{
+					Mode: tapsdk.AnchorChangeOutputAdd,
+				},
+				Fee: tapsdk.AnchorFee{
+					Mode:    tapsdk.AnchorFeeSatPerVByte,
+					FeeRate: feeRate,
+				},
+			},
+		},
+	)
+	if err != nil {
+		return nil, err
 	}
 
-	pPsbts := make([]string, 0, len(passivePsbts))
-	for _, p := range passivePsbts {
-		pPsbts = append(
-			pPsbts,
-			hex.EncodeToString(p),
-		)
-	}
+	return &tapsdk.CommittedTransfer{
+		AnchorPsbt:        resp.AnchorPsbt,
+		VirtualPsbts:      resp.VirtualPsbts,
+		PassiveAssetPsbts: resp.PassiveAssetPsbts,
+	}, nil
+}
 
-	body := &jsonCommitVirtualPsbtsRequest{
-		VirtualPsbts:      vPsbts,
-		PassiveAssetPsbts: pPsbts,
-		AnchorPsbt:        hex.EncodeToString(anchorPsbt),
-		SatPerVByte: fmt.Sprintf("%d",
-			feeRate.SatPerVByteCeil()),
-		Add: true,
+// CommitVirtualPsbtsWithRequest commits virtual transactions using the full
+// advanced request DTO.
+func (w *walletKitClient) CommitVirtualPsbtsWithRequest(ctx context.Context,
+	req *tapsdk.CommitVirtualPsbtsRequest) (
+	*tapsdk.CommitVirtualPsbtsResponse, error) {
+
+	body, err := marshalCommitVirtualPsbtsRequest(req)
+	if err != nil {
+		return nil, err
 	}
 
 	var resp jsonCommitVirtualPsbtsResponse
@@ -336,6 +368,73 @@ func (w *walletKitClient) CommitVirtualPsbts(ctx context.Context,
 	)
 	if err != nil {
 		return nil, err
+	}
+
+	return unmarshalCommitVirtualPsbtsResponse(&resp)
+}
+
+func marshalCommitVirtualPsbtsRequest(
+	req *tapsdk.CommitVirtualPsbtsRequest) (
+	*jsonCommitVirtualPsbtsRequest, error) {
+
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	body := &jsonCommitVirtualPsbtsRequest{
+		VirtualPsbts:      hexEncodeByteSlices(req.VirtualPsbts),
+		PassiveAssetPsbts: hexEncodeByteSlices(req.PassiveAssetPsbts),
+		AnchorPsbt:        hex.EncodeToString(req.AnchorPsbt),
+		SkipFunding:       req.Funding.SkipFunding,
+	}
+
+	if len(req.Funding.CustomLockID) > 0 {
+		body.CustomLockID = hex.EncodeToString(req.Funding.CustomLockID)
+	}
+	if req.Funding.LockExpirationSeconds > 0 {
+		body.LockExpirationSeconds = fmt.Sprintf(
+			"%d", req.Funding.LockExpirationSeconds,
+		)
+	}
+
+	if req.Funding.SkipFunding {
+		return body, nil
+	}
+
+	switch change := req.Funding.ChangeOutput; change.Mode {
+	case tapsdk.AnchorChangeOutputAdd:
+		add := true
+		body.Add = &add
+
+	case tapsdk.AnchorChangeOutputNoNew:
+		add := false
+		body.Add = &add
+
+	case tapsdk.AnchorChangeOutputExisting:
+		index := change.ExistingOutputIndex
+		body.ExistingOutputIndex = &index
+	}
+
+	switch fee := req.Funding.Fee; fee.Mode {
+	case tapsdk.AnchorFeeSatPerVByte:
+		body.SatPerVByte = fmt.Sprintf(
+			"%d", fee.FeeRate.SatPerVByteCeil(),
+		)
+
+	case tapsdk.AnchorFeeTargetConf:
+		targetConf := fee.TargetConf
+		body.TargetConf = &targetConf
+	}
+
+	return body, nil
+}
+
+func unmarshalCommitVirtualPsbtsResponse(
+	resp *jsonCommitVirtualPsbtsResponse) (
+	*tapsdk.CommitVirtualPsbtsResponse, error) {
+
+	if resp == nil {
+		return nil, fmt.Errorf("nil commit virtual PSBTs response")
 	}
 
 	respAnchorPsbt, err := parseHexBytes(resp.AnchorPsbt)
@@ -371,10 +470,26 @@ func (w *walletKitClient) CommitVirtualPsbts(ctx context.Context,
 		pPsbtBytes = append(pPsbtBytes, psbt)
 	}
 
-	return &tapsdk.CommittedTransfer{
+	lockedUTXOs := make([]tapsdk.Outpoint, 0, len(resp.LndLockedUtxos))
+	for idx, op := range resp.LndLockedUtxos {
+		if op == nil {
+			return nil, fmt.Errorf("invalid locked utxo %d: null outpoint",
+				idx)
+		}
+		outpoint, err := unmarshalJSONOutpoint(op)
+		if err != nil {
+			return nil, fmt.Errorf("invalid locked utxo: %w", err)
+		}
+
+		lockedUTXOs = append(lockedUTXOs, outpoint)
+	}
+
+	return &tapsdk.CommitVirtualPsbtsResponse{
 		AnchorPsbt:        respAnchorPsbt,
 		VirtualPsbts:      vPsbtBytes,
 		PassiveAssetPsbts: pPsbtBytes,
+		ChangeOutputIndex: resp.ChangeOutputIndex,
+		LockedUTXOs:       lockedUTXOs,
 	}, nil
 }
 
@@ -417,48 +532,46 @@ func (w *walletKitClient) AnchorVirtualPsbts(ctx context.Context,
 // jsonPublishAndLogRequest is the JSON body for
 // PublishAndLogTransfer.
 type jsonPublishAndLogRequest struct {
-	AnchorPsbt        string   `json:"anchor_psbt"`
-	VirtualPsbts      []string `json:"virtual_psbts"`
-	PassiveAssetPsbts []string `json:"passive_asset_psbts,omitempty"`
+	AnchorPsbt        string             `json:"anchor_psbt"`
+	VirtualPsbts      []string           `json:"virtual_psbts"`
+	PassiveAssetPsbts []string           `json:"passive_asset_psbts,omitempty"`
+	ChangeOutputIndex int32              `json:"change_output_index"`
+	LndLockedUtxos    []*jsonOutpointReq `json:"lnd_locked_utxos,omitempty"`
 
-	SkipAnchorTxBroadcast bool `json:"skip_anchor_tx_broadcast,omitempty"` //nolint:lll
+	SkipAnchorTxBroadcast bool   `json:"skip_anchor_tx_broadcast,omitempty"` //nolint:lll
+	Label                 string `json:"label,omitempty"`
 }
 
-// PublishAndLogTransfer publishes the anchor transaction and logs
-// the transfer.
+// PublishAndLogTransfer publishes the anchor transaction using the legacy
+// wallet-kit surface and logs the transfer.
 func (w *walletKitClient) PublishAndLogTransfer(ctx context.Context,
-	anchorPsbt []byte, virtualPsbts [][]byte,
-	passivePsbts [][]byte,
-	skipAnchorTxBroadcast bool) (
+	anchorPsbt []byte, virtualPsbts [][]byte, passivePsbts [][]byte,
+	skipAnchorTxBroadcast bool) (*tapsdk.AssetPacket, error) {
+
+	return w.PublishAndLogTransferWithRequest(
+		ctx, &tapsdk.PublishAndLogTransferRequest{
+			AnchorPsbt:            anchorPsbt,
+			VirtualPsbts:          virtualPsbts,
+			PassiveAssetPsbts:     passivePsbts,
+			ChangeOutputIndex:     0,
+			SkipAnchorTxBroadcast: skipAnchorTxBroadcast,
+		},
+	)
+}
+
+// PublishAndLogTransferWithRequest publishes the anchor transaction and logs
+// the transfer using the full advanced request DTO.
+func (w *walletKitClient) PublishAndLogTransferWithRequest(ctx context.Context,
+	req *tapsdk.PublishAndLogTransferRequest) (
 	*tapsdk.AssetPacket, error) {
 
-	vPsbts := make([]string, 0, len(virtualPsbts))
-	for _, p := range virtualPsbts {
-		vPsbts = append(
-			vPsbts,
-			hex.EncodeToString(p),
-		)
-	}
-
-	pPsbts := make([]string, 0, len(passivePsbts))
-	for _, p := range passivePsbts {
-		pPsbts = append(
-			pPsbts,
-			hex.EncodeToString(p),
-		)
-	}
-
-	body := &jsonPublishAndLogRequest{
-		AnchorPsbt: hex.EncodeToString(
-			anchorPsbt,
-		),
-		VirtualPsbts:          vPsbts,
-		PassiveAssetPsbts:     pPsbts,
-		SkipAnchorTxBroadcast: skipAnchorTxBroadcast,
+	body, err := marshalPublishAndLogTransferRequest(req)
+	if err != nil {
+		return nil, err
 	}
 
 	var resp jsonPublishAndLogResponse
-	err := w.transport.doPost(
+	err = w.transport.doPost(
 		ctx,
 		"/v1/taproot-assets/wallet/virtual-psbt/log-transfer",
 		macaroon.WalletKitServiceMac, body, &resp,
@@ -482,9 +595,45 @@ func (w *walletKitClient) PublishAndLogTransfer(ctx context.Context,
 	// virtual and passive transactions.
 	return &tapsdk.AssetPacket{
 		AnchorTransaction:        anchorTx,
-		VirtualTransactions:      virtualPsbts,
-		PassiveAssetTransactions: passivePsbts,
+		VirtualTransactions:      req.VirtualPsbts,
+		PassiveAssetTransactions: req.PassiveAssetPsbts,
 	}, nil
+}
+
+func marshalPublishAndLogTransferRequest(
+	req *tapsdk.PublishAndLogTransferRequest) (
+	*jsonPublishAndLogRequest, error) {
+
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	lockedUTXOs := make([]*jsonOutpointReq, 0, len(req.LockedUTXOs))
+	for _, op := range req.LockedUTXOs {
+		lockedUTXOs = append(lockedUTXOs, &jsonOutpointReq{
+			Txid:        hex.EncodeToString(op.Txid[:]),
+			OutputIndex: op.Index,
+		})
+	}
+
+	return &jsonPublishAndLogRequest{
+		AnchorPsbt:            hex.EncodeToString(req.AnchorPsbt),
+		VirtualPsbts:          hexEncodeByteSlices(req.VirtualPsbts),
+		PassiveAssetPsbts:     hexEncodeByteSlices(req.PassiveAssetPsbts),
+		ChangeOutputIndex:     req.ChangeOutputIndex,
+		LndLockedUtxos:        lockedUTXOs,
+		SkipAnchorTxBroadcast: req.SkipAnchorTxBroadcast,
+		Label:                 req.Label,
+	}, nil
+}
+
+func hexEncodeByteSlices(values [][]byte) []string {
+	encoded := make([]string, 0, len(values))
+	for _, value := range values {
+		encoded = append(encoded, hex.EncodeToString(value))
+	}
+
+	return encoded
 }
 
 // QueryInternalKey looks up an internal key by its raw public key.

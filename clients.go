@@ -156,7 +156,9 @@ type WalletKitClient interface {
 	SignVirtualPsbt(ctx context.Context, fundedPsbt []byte) ([]byte, error)
 
 	// CommitVirtualPsbts commits virtual transactions using an anchor fee
-	// rate.
+	// rate. Advanced callers that need to preserve a caller-supplied anchor
+	// template should use CustomAnchorWalletKitClient when the concrete
+	// client implements it.
 	CommitVirtualPsbts(ctx context.Context, virtualPsbts [][]byte,
 		passivePsbts [][]byte, feeRate FeeRate) (*CommittedTransfer,
 		error)
@@ -211,6 +213,37 @@ type WalletKitClient interface {
 	// ImportBackup imports assets from a previously exported wallet backup
 	// blob and returns the number of imported assets.
 	ImportBackup(ctx context.Context, backup []byte) (uint32, error)
+}
+
+// CustomAnchorWalletKitClient is an optional WalletKitClient extension for
+// advanced anchor construction. It accepts the full request DTOs required to
+// preserve caller-owned Bitcoin transaction topology and durable funding
+// metadata. Keeping this separate from WalletKitClient preserves source
+// compatibility for existing client implementations and test doubles.
+type CustomAnchorWalletKitClient interface {
+	// CommitVirtualPsbtsWithRequest commits virtual transactions into the
+	// caller-supplied anchor PSBT according to the exact funding plan.
+	CommitVirtualPsbtsWithRequest(ctx context.Context,
+		req *CommitVirtualPsbtsRequest) (*CommitVirtualPsbtsResponse,
+		error)
+
+	// PublishAndLogTransferWithRequest publishes or logs a finalized custom
+	// anchor transfer together with the commit response metadata.
+	PublishAndLogTransferWithRequest(ctx context.Context,
+		req *PublishAndLogTransferRequest) (*AssetPacket, error)
+}
+
+// CustomAnchorCapabilityProvider is an optional extension implemented by
+// clients that can provide a custom-anchor capability profile. It is kept
+// separate from WalletKitClient so existing clients and test doubles aren't
+// forced to implement an SDK-specific discovery method that tapd does not
+// expose over RPC.
+//
+// Implementations must distinguish an explicitly unsupported feature from an
+// unknown one. Callers fail closed for both states.
+type CustomAnchorCapabilityProvider interface {
+	CustomAnchorCapabilities(ctx context.Context) (
+		*CustomAnchorCapabilities, error)
 }
 
 // UniverseClient exposes the Universe service gRPC client.

@@ -33,9 +33,23 @@ func NewWalletKitClient(conn grpc.ClientConnInterface, timeout time.Duration,
 
 func (m *walletKitClient) rawClientWithMacAuth(
 	parentCtx context.Context) (context.Context,
-	assetwalletrpc.AssetWalletClient) {
+	context.CancelFunc, assetwalletrpc.AssetWalletClient) {
 
-	return m.walletKitMac.WithMacaroonAuth(parentCtx), m.client
+	rpcCtx, cancel := context.WithTimeout(parentCtx, m.timeout)
+	return m.walletKitMac.WithMacaroonAuth(rpcCtx), cancel, m.client
+}
+
+// CustomAnchorCapabilities returns the SDK-version-pinned tapd capability
+// assumptions. tapd does not expose runtime capability discovery over RPC.
+func (m *walletKitClient) CustomAnchorCapabilities(
+	ctx context.Context) (*tapsdk.CustomAnchorCapabilities, error) {
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	caps := tapsdk.DefaultTapdCustomAnchorCapabilities()
+	return &caps, nil
 }
 
 // FundTransfer funds a virtual transaction.
@@ -85,7 +99,8 @@ func (m *walletKitClient) FundTransfer(ctx context.Context,
 		},
 	}
 
-	authCtx, client := m.rawClientWithMacAuth(ctx)
+	authCtx, cancel, client := m.rawClientWithMacAuth(ctx)
+	defer cancel()
 	resp, err := client.FundVirtualPsbt(authCtx, req)
 	if err != nil {
 		return nil, err
@@ -105,7 +120,8 @@ func (m *walletKitClient) SignVirtualPsbt(ctx context.Context,
 		FundedPsbt: fundedPsbt,
 	}
 
-	authCtx, client := m.rawClientWithMacAuth(ctx)
+	authCtx, cancel, client := m.rawClientWithMacAuth(ctx)
+	defer cancel()
 	resp, err := client.SignVirtualPsbt(authCtx, req)
 	if err != nil {
 		return nil, err
@@ -114,31 +130,33 @@ func (m *walletKitClient) SignVirtualPsbt(ctx context.Context,
 	return resp.SignedPsbt, nil
 }
 
-// CommitVirtualPsbts commits virtual transactions.
+// CommitVirtualPsbts commits virtual transactions using the legacy
+// wallet-kit surface.
 func (m *walletKitClient) CommitVirtualPsbts(ctx context.Context,
 	virtualPsbts [][]byte, passivePsbts [][]byte,
-	feeRate tapsdk.FeeRate) (
-	*tapsdk.CommittedTransfer, error) {
+	feeRate tapsdk.FeeRate) (*tapsdk.CommittedTransfer, error) {
 
 	anchorPsbt, err := anchor.PreparePsbt(virtualPsbts, passivePsbts)
 	if err != nil {
 		return nil, fmt.Errorf("prepare anchor PSBT: %w", err)
 	}
 
-	req := &assetwalletrpc.CommitVirtualPsbtsRequest{
-		VirtualPsbts:      virtualPsbts,
-		PassiveAssetPsbts: passivePsbts,
-		AnchorPsbt:        anchorPsbt,
-		Fees: &assetwalletrpc.CommitVirtualPsbtsRequest_SatPerVbyte{
-			SatPerVbyte: feeRate.SatPerVByteCeil(),
+	resp, err := m.CommitVirtualPsbtsWithRequest(
+		ctx, &tapsdk.CommitVirtualPsbtsRequest{
+			AnchorPsbt:        anchorPsbt,
+			VirtualPsbts:      virtualPsbts,
+			PassiveAssetPsbts: passivePsbts,
+			Funding: tapsdk.AnchorFundingPlan{
+				ChangeOutput: tapsdk.AnchorChangeOutput{
+					Mode: tapsdk.AnchorChangeOutputAdd,
+				},
+				Fee: tapsdk.AnchorFee{
+					Mode:    tapsdk.AnchorFeeSatPerVByte,
+					FeeRate: feeRate,
+				},
+			},
 		},
-		AnchorChangeOutput: &assetwalletrpc.CommitVirtualPsbtsRequest_Add{
-			Add: true,
-		},
-	}
-
-	authCtx, client := m.rawClientWithMacAuth(ctx)
-	resp, err := client.CommitVirtualPsbts(authCtx, req)
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -150,28 +168,181 @@ func (m *walletKitClient) CommitVirtualPsbts(ctx context.Context,
 	}, nil
 }
 
-// PublishAndLogTransfer publishes the anchor transaction and logs the transfer.
-func (m *walletKitClient) PublishAndLogTransfer(ctx context.Context,
-	anchorPsbt []byte, virtualPsbts [][]byte, passivePsbts [][]byte,
-	skipAnchorTxBroadcast bool) (*tapsdk.AssetPacket, error) {
+// CommitVirtualPsbtsWithRequest commits virtual transactions using the full
+// advanced request DTO.
+func (m *walletKitClient) CommitVirtualPsbtsWithRequest(ctx context.Context,
+	req *tapsdk.CommitVirtualPsbtsRequest) (
+	*tapsdk.CommitVirtualPsbtsResponse, error) {
 
-	req := &assetwalletrpc.PublishAndLogRequest{
-		AnchorPsbt:            anchorPsbt,
-		VirtualPsbts:          virtualPsbts,
-		PassiveAssetPsbts:     passivePsbts,
-		SkipAnchorTxBroadcast: skipAnchorTxBroadcast,
-	}
-
-	authCtx, client := m.rawClientWithMacAuth(ctx)
-	resp, err := client.PublishAndLogTransfer(authCtx, req)
+	rpcReq, err := marshalCommitVirtualPsbtsRequest(req)
 	if err != nil {
 		return nil, err
 	}
 
+	authCtx, cancel, client := m.rawClientWithMacAuth(ctx)
+	defer cancel()
+	resp, err := client.CommitVirtualPsbts(authCtx, rpcReq)
+	if err != nil {
+		return nil, err
+	}
+
+	return unmarshalCommitVirtualPsbtsResponse(resp)
+}
+
+// PublishAndLogTransfer publishes the anchor transaction using the legacy
+// wallet-kit surface and logs the transfer.
+func (m *walletKitClient) PublishAndLogTransfer(ctx context.Context,
+	anchorPsbt []byte, virtualPsbts [][]byte, passivePsbts [][]byte,
+	skipAnchorTxBroadcast bool) (*tapsdk.AssetPacket, error) {
+
+	return m.PublishAndLogTransferWithRequest(
+		ctx, &tapsdk.PublishAndLogTransferRequest{
+			AnchorPsbt:            anchorPsbt,
+			VirtualPsbts:          virtualPsbts,
+			PassiveAssetPsbts:     passivePsbts,
+			ChangeOutputIndex:     0,
+			SkipAnchorTxBroadcast: skipAnchorTxBroadcast,
+		},
+	)
+}
+
+// PublishAndLogTransferWithRequest publishes the anchor transaction and logs
+// the transfer using the full advanced request DTO.
+func (m *walletKitClient) PublishAndLogTransferWithRequest(ctx context.Context,
+	req *tapsdk.PublishAndLogTransferRequest) (
+	*tapsdk.AssetPacket, error) {
+
+	rpcReq, err := marshalPublishAndLogTransferRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	authCtx, cancel, client := m.rawClientWithMacAuth(ctx)
+	defer cancel()
+	resp, err := client.PublishAndLogTransfer(authCtx, rpcReq)
+	if err != nil {
+		return nil, err
+	}
+	if resp == nil || resp.Transfer == nil {
+		return nil, fmt.Errorf("invalid transfer response")
+	}
+
 	return &tapsdk.AssetPacket{
 		AnchorTransaction:        resp.Transfer.AnchorTx,
-		VirtualTransactions:      virtualPsbts,
-		PassiveAssetTransactions: passivePsbts,
+		VirtualTransactions:      req.VirtualPsbts,
+		PassiveAssetTransactions: req.PassiveAssetPsbts,
+	}, nil
+}
+
+func marshalCommitVirtualPsbtsRequest(
+	req *tapsdk.CommitVirtualPsbtsRequest) (
+	*assetwalletrpc.CommitVirtualPsbtsRequest, error) {
+
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	rpcReq := &assetwalletrpc.CommitVirtualPsbtsRequest{
+		VirtualPsbts:          req.VirtualPsbts,
+		PassiveAssetPsbts:     req.PassiveAssetPsbts,
+		AnchorPsbt:            req.AnchorPsbt,
+		CustomLockId:          req.Funding.CustomLockID,
+		LockExpirationSeconds: req.Funding.LockExpirationSeconds,
+		SkipFunding:           req.Funding.SkipFunding,
+	}
+
+	if req.Funding.SkipFunding {
+		return rpcReq, nil
+	}
+
+	switch change := req.Funding.ChangeOutput; change.Mode {
+	case tapsdk.AnchorChangeOutputAdd:
+		rpcReq.AnchorChangeOutput =
+			&assetwalletrpc.CommitVirtualPsbtsRequest_Add{
+				Add: true,
+			}
+
+	case tapsdk.AnchorChangeOutputNoNew:
+		rpcReq.AnchorChangeOutput =
+			&assetwalletrpc.CommitVirtualPsbtsRequest_Add{
+				Add: false,
+			}
+
+	case tapsdk.AnchorChangeOutputExisting:
+		rpcReq.AnchorChangeOutput =
+			&assetwalletrpc.CommitVirtualPsbtsRequest_ExistingOutputIndex{
+				ExistingOutputIndex: change.ExistingOutputIndex,
+			}
+	}
+
+	switch fee := req.Funding.Fee; fee.Mode {
+	case tapsdk.AnchorFeeSatPerVByte:
+		rpcReq.Fees =
+			&assetwalletrpc.CommitVirtualPsbtsRequest_SatPerVbyte{
+				SatPerVbyte: fee.FeeRate.SatPerVByteCeil(),
+			}
+
+	case tapsdk.AnchorFeeTargetConf:
+		rpcReq.Fees =
+			&assetwalletrpc.CommitVirtualPsbtsRequest_TargetConf{
+				TargetConf: fee.TargetConf,
+			}
+	}
+
+	return rpcReq, nil
+}
+
+func unmarshalCommitVirtualPsbtsResponse(
+	resp *assetwalletrpc.CommitVirtualPsbtsResponse) (
+	*tapsdk.CommitVirtualPsbtsResponse, error) {
+
+	if resp == nil {
+		return nil, fmt.Errorf("nil commit virtual PSBTs response")
+	}
+
+	lockedUTXOs := make([]tapsdk.Outpoint, 0, len(resp.LndLockedUtxos))
+	for _, rpcOutpoint := range resp.LndLockedUtxos {
+		outpoint, err := unmarshalOutPoint(rpcOutpoint)
+		if err != nil {
+			return nil, fmt.Errorf("invalid locked utxo: %w", err)
+		}
+
+		lockedUTXOs = append(lockedUTXOs, outpoint)
+	}
+
+	return &tapsdk.CommitVirtualPsbtsResponse{
+		AnchorPsbt:        resp.AnchorPsbt,
+		VirtualPsbts:      resp.VirtualPsbts,
+		PassiveAssetPsbts: resp.PassiveAssetPsbts,
+		ChangeOutputIndex: resp.ChangeOutputIndex,
+		LockedUTXOs:       lockedUTXOs,
+	}, nil
+}
+
+func marshalPublishAndLogTransferRequest(
+	req *tapsdk.PublishAndLogTransferRequest) (
+	*assetwalletrpc.PublishAndLogRequest, error) {
+
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	rpcLockedUTXOs := make([]*taprpc.OutPoint, 0, len(req.LockedUTXOs))
+	for _, outpoint := range req.LockedUTXOs {
+		rpcLockedUTXOs = append(rpcLockedUTXOs, &taprpc.OutPoint{
+			Txid:        outpoint.Txid[:],
+			OutputIndex: outpoint.Index,
+		})
+	}
+
+	return &assetwalletrpc.PublishAndLogRequest{
+		AnchorPsbt:            req.AnchorPsbt,
+		VirtualPsbts:          req.VirtualPsbts,
+		PassiveAssetPsbts:     req.PassiveAssetPsbts,
+		ChangeOutputIndex:     req.ChangeOutputIndex,
+		LndLockedUtxos:        rpcLockedUTXOs,
+		SkipAnchorTxBroadcast: req.SkipAnchorTxBroadcast,
+		Label:                 req.Label,
 	}, nil
 }
 
@@ -185,7 +356,8 @@ func (m *walletKitClient) DeriveScriptKey(ctx context.Context) (
 		KeyFamily: tapsdk.TaprootAssetsKeyFamily,
 	}
 
-	authCtx, client := m.rawClientWithMacAuth(ctx)
+	authCtx, cancel, client := m.rawClientWithMacAuth(ctx)
+	defer cancel()
 	resp, err := client.NextScriptKey(authCtx, req)
 	if err != nil {
 		return nil, err
@@ -211,7 +383,8 @@ func (m *walletKitClient) DeriveInternalKey(ctx context.Context) (
 		KeyFamily: tapsdk.TaprootAssetsKeyFamily,
 	}
 
-	authCtx, client := m.rawClientWithMacAuth(ctx)
+	authCtx, cancel, client := m.rawClientWithMacAuth(ctx)
+	defer cancel()
 	resp, err := client.NextInternalKey(authCtx, req)
 	if err != nil {
 		return nil, err
@@ -244,7 +417,8 @@ func (m *walletKitClient) FundInteractivePsbt(ctx context.Context,
 		},
 	}
 
-	authCtx, client := m.rawClientWithMacAuth(ctx)
+	authCtx, cancel, client := m.rawClientWithMacAuth(ctx)
+	defer cancel()
 	resp, err := client.FundVirtualPsbt(authCtx, req)
 	if err != nil {
 		return nil, err
@@ -266,7 +440,8 @@ func (m *walletKitClient) AnchorVirtualPsbts(ctx context.Context,
 		VirtualPsbts: signedPsbts,
 	}
 
-	authCtx, client := m.rawClientWithMacAuth(ctx)
+	authCtx, cancel, client := m.rawClientWithMacAuth(ctx)
+	defer cancel()
 	resp, err := client.AnchorVirtualPsbts(authCtx, req)
 	if err != nil {
 		return nil, err
@@ -332,7 +507,8 @@ func unmarshalKeyDescriptor(rpcKey *taprpc.KeyDescriptor) (
 func (m *walletKitClient) QueryInternalKey(ctx context.Context,
 	internalKey []byte) (*tapsdk.KeyDescriptor, error) {
 
-	authCtx, client := m.rawClientWithMacAuth(ctx)
+	authCtx, cancel, client := m.rawClientWithMacAuth(ctx)
+	defer cancel()
 
 	resp, err := client.QueryInternalKey(
 		authCtx, &assetwalletrpc.QueryInternalKeyRequest{
@@ -355,7 +531,8 @@ func (m *walletKitClient) QueryInternalKey(ctx context.Context,
 func (m *walletKitClient) QueryScriptKey(ctx context.Context,
 	tweakedScriptKey []byte) (*tapsdk.ScriptKey, error) {
 
-	authCtx, client := m.rawClientWithMacAuth(ctx)
+	authCtx, cancel, client := m.rawClientWithMacAuth(ctx)
+	defer cancel()
 
 	resp, err := client.QueryScriptKey(
 		authCtx, &assetwalletrpc.QueryScriptKeyRequest{
@@ -392,7 +569,8 @@ func (m *walletKitClient) ProveAssetOwnership(ctx context.Context,
 		return nil, err
 	}
 
-	authCtx, client := m.rawClientWithMacAuth(ctx)
+	authCtx, cancel, client := m.rawClientWithMacAuth(ctx)
+	defer cancel()
 
 	rpcReq := &assetwalletrpc.ProveAssetOwnershipRequest{
 		AssetId:   assetID[:],
@@ -430,7 +608,8 @@ func (m *walletKitClient) VerifyAssetOwnership(ctx context.Context,
 		return nil, err
 	}
 
-	authCtx, client := m.rawClientWithMacAuth(ctx)
+	authCtx, cancel, client := m.rawClientWithMacAuth(ctx)
+	defer cancel()
 
 	rpcReq := &assetwalletrpc.VerifyAssetOwnershipRequest{
 		ProofWithWitness: req.ProofWithWitness,
@@ -501,7 +680,8 @@ func unmarshalVerifyOwnershipResponse(
 func (m *walletKitClient) RemoveUTXOLease(ctx context.Context,
 	outpoint tapsdk.Outpoint) error {
 
-	authCtx, client := m.rawClientWithMacAuth(ctx)
+	authCtx, cancel, client := m.rawClientWithMacAuth(ctx)
+	defer cancel()
 
 	_, err := client.RemoveUTXOLease(
 		authCtx, &assetwalletrpc.RemoveUTXOLeaseRequest{
@@ -521,7 +701,8 @@ func (m *walletKitClient) DeclareScriptKey(ctx context.Context,
 	req *tapsdk.DeclareScriptKeyRequest) (*tapsdk.ScriptKey,
 	error) {
 
-	authCtx, client := m.rawClientWithMacAuth(ctx)
+	authCtx, cancel, client := m.rawClientWithMacAuth(ctx)
+	defer cancel()
 
 	rpcKey := &taprpc.ScriptKey{
 		PubKey:   req.ScriptKey.PubKey[:],
@@ -562,7 +743,8 @@ func (m *walletKitClient) DeclareScriptKey(ctx context.Context,
 func (m *walletKitClient) ExportBackup(ctx context.Context,
 	mode tapsdk.BackupMode) ([]byte, error) {
 
-	authCtx, client := m.rawClientWithMacAuth(ctx)
+	authCtx, cancel, client := m.rawClientWithMacAuth(ctx)
+	defer cancel()
 
 	resp, err := client.ExportAssetWalletBackup(
 		authCtx, &assetwalletrpc.ExportAssetWalletBackupRequest{
@@ -580,7 +762,8 @@ func (m *walletKitClient) ExportBackup(ctx context.Context,
 func (m *walletKitClient) ImportBackup(ctx context.Context,
 	backup []byte) (uint32, error) {
 
-	authCtx, client := m.rawClientWithMacAuth(ctx)
+	authCtx, cancel, client := m.rawClientWithMacAuth(ctx)
+	defer cancel()
 
 	resp, err := client.ImportAssetsFromBackup(
 		authCtx, &assetwalletrpc.ImportAssetsFromBackupRequest{
