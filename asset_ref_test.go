@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/btcsuite/btcd/btcutil/bech32"
+	"github.com/btcsuite/btcd/address/v2/bech32"
 	"github.com/stretchr/testify/require"
 )
 

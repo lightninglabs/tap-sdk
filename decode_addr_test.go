@@ -5,8 +5,8 @@ import (
 	"math"
 	"testing"
 
+	"github.com/btcsuite/btcd/address/v2/bech32"
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil/bech32"
 	"github.com/stretchr/testify/require"
 )
 
