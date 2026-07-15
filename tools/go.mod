@@ -1,6 +1,6 @@
 module github.com/lightninglabs/tap-sdk/tools
 
-go 1.25.10
+go 1.26.0
 
 require (
 	github.com/golangci/golangci-lint/v2 v2.6.1

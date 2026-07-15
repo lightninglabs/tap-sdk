@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/btcsuite/btcd/btcutil/bech32"
+	"github.com/btcsuite/btcd/address/v2/bech32"
 )
 
 // Tap address HRPs per Bitcoin network. Kept private because

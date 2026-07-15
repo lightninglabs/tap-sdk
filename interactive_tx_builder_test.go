@@ -5,7 +5,7 @@ import (
 	"context"
 	"testing"
 
-	btcpsbt "github.com/btcsuite/btcd/btcutil/psbt"
+	btcpsbt "github.com/btcsuite/btcd/psbt/v2"
 	"github.com/lightninglabs/tap-sdk/internal/codec"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
