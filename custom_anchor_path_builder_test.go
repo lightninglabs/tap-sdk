@@ -73,6 +73,135 @@ func TestCustomAnchorPathBuilderConsumesUnconfirmedTip(t *testing.T) {
 		packet.Inputs[0].Proof.OutPoint())
 }
 
+// TestCustomAnchorOutputCommitmentPreviewMatchesCommit proves a
+// caller-witnessed plan can expose its exact output roots before the backend
+// commits the transition.
+func TestCustomAnchorOutputCommitmentPreviewMatchesCommit(t *testing.T) {
+	t.Parallel()
+
+	fixture := newCustomAnchorPathBuilderFixture(t)
+	request := fixture.request.Clone()
+	anchor, err := decodeAnchorPSBT(request.AnchorPSBT)
+	require.NoError(t, err)
+	equalCarrier := (anchor.UnsignedTx.TxOut[0].Value +
+		anchor.UnsignedTx.TxOut[1].Value) / 2
+	require.Equal(t, int64(6_561), equalCarrier)
+	anchor.UnsignedTx.TxOut[0].Value = equalCarrier
+	anchor.UnsignedTx.TxOut[1].Value = equalCarrier
+	request.AnchorPSBT, err = serializePSBT(anchor)
+	require.NoError(t, err)
+	receiver := cloneCustomAssetOutput(request.Outputs[0])
+	receiver.ID = "asset-receiver"
+	receiver.Amount = 60
+	receiver.AnchorValueSat = uint64(equalCarrier)
+	change := cloneCustomAssetOutput(request.Outputs[0])
+	change.ID = "asset-change"
+	change.Amount = 40
+	change.AnchorOutputIndex = 0
+	change.AnchorValueSat = uint64(equalCarrier)
+	change.Script.External.ScriptKey = customAnchorExternalScriptKey(
+		t, testPrivateKey(t, 56),
+	)
+	change.Anchor.InternalKey.PubKey = mustCustomAnchorPubKey(
+		t, testPrivateKey(t, 57).PubKey(),
+	)
+	request.Outputs = []CustomAssetOutput{receiver, change}
+	witnessBuilder := NewWallet(fixture.client, NetworkRegtest).
+		NewCustomAnchorTxBuilder()
+	request.Inputs[0].Witness.Stack = customAnchorPathSpendWitness(
+		t, witnessBuilder, fixture.transition, request.Outputs,
+		fixture.tipSpendKey,
+	)
+	fixture.client.commit = func(_ context.Context,
+		req *CommitVirtualPsbtsRequest) (*CommitVirtualPsbtsResponse,
+		error) {
+
+		return customAnchorTestCommitResponse(t, req), nil
+	}
+	capabilities := DefaultTapdCustomAnchorCapabilities()
+	client := &capableCustomAnchorBuilderTestClient{
+		customAnchorBuilderTestClient: fixture.client,
+		capabilities:                  &capabilities,
+	}
+	builder := NewWallet(client, NetworkRegtest).
+		NewCustomAnchorTxBuilder().SetConfirmedProofVerifier(
+		fixture.verifier,
+	)
+
+	plan, err := builder.Build(context.Background(), request)
+	require.NoError(t, err)
+	beforePackets := plan.ActiveVirtualPSBTs()
+	require.Len(t, beforePackets, 1)
+	preparedPacket, err := tappsbt.Decode(beforePackets[0])
+	require.NoError(t, err)
+	isSplit, err := preparedPacket.HasSplitCommitment()
+	require.NoError(t, err)
+	require.True(t, isSplit)
+	_, err = preparedPacket.SplitRootOutput()
+	require.NoError(t, err)
+	previews, err := plan.PreviewOutputCommitments()
+	require.NoError(t, err)
+	require.Len(t, previews, 2)
+	require.Equal(t, uint32(1), previews[0].AnchorOutputIndex)
+	require.Equal(t, uint32(0), previews[1].AnchorOutputIndex)
+	for idx := range previews {
+		require.NotZero(t, previews[idx].TaprootAssetRoot)
+		require.NotZero(t, previews[idx].TaprootMerkleRoot)
+	}
+	repeated, err := plan.PreviewOutputCommitments()
+	require.NoError(t, err)
+	require.Equal(t, previews, repeated)
+	require.Equal(t, beforePackets, plan.ActiveVirtualPSBTs())
+
+	// Split locators bind the anchor output index. Rebuilding the same
+	// equal-value logical allocations with swapped indices must therefore
+	// produce different previews before a host checks for a stable canonical
+	// permutation.
+	swapped := request.Clone()
+	swapped.Outputs[0].AnchorOutputIndex = 0
+	swapped.Outputs[1].AnchorOutputIndex = 1
+	swapped.Inputs[0].Witness.Stack = customAnchorPathSpendWitness(
+		t, witnessBuilder, fixture.transition, swapped.Outputs,
+		fixture.tipSpendKey,
+	)
+	swappedPlan, err := builder.Build(context.Background(), swapped)
+	require.NoError(t, err)
+	swappedPreviews, err := swappedPlan.PreviewOutputCommitments()
+	require.NoError(t, err)
+	require.Len(t, swappedPreviews, 2)
+	require.Equal(t, previews[0].LogicalOutputID,
+		swappedPreviews[0].LogicalOutputID)
+	require.Equal(t, previews[1].LogicalOutputID,
+		swappedPreviews[1].LogicalOutputID)
+	require.NotEqual(t, previews, swappedPreviews)
+	require.NotEqual(t, previews[0].TaprootAssetRoot,
+		swappedPreviews[0].TaprootAssetRoot)
+
+	sealed, err := plan.Commit(context.Background())
+	require.NoError(t, err)
+	require.Len(t, sealed.Outputs, 2)
+	require.Len(t, sealed.ActiveVirtualPsbts, 1)
+	committedPacket, err := tappsbt.Decode(sealed.ActiveVirtualPsbts[0])
+	require.NoError(t, err)
+	var alternateLeaves int
+	for idx := range committedPacket.Outputs {
+		alternateLeaves += len(committedPacket.Outputs[idx].AltLeaves)
+	}
+	require.Positive(t, alternateLeaves)
+	for idx := range sealed.Outputs {
+		require.Equal(t, sealed.Outputs[idx].LogicalOutputID,
+			previews[idx].LogicalOutputID)
+		require.Equal(t, sealed.Outputs[idx].LogicalOutputIndex,
+			previews[idx].LogicalOutputIndex)
+		require.Equal(t, sealed.Outputs[idx].AnchorOutputIndex,
+			previews[idx].AnchorOutputIndex)
+		require.Equal(t, sealed.Outputs[idx].TaprootAssetRoot,
+			previews[idx].TaprootAssetRoot)
+		require.Equal(t, sealed.Outputs[idx].TaprootMerkleRoot,
+			previews[idx].TaprootMerkleRoot)
+	}
+}
+
 // TestCustomAnchorPathBuilderRequiresOneProofSource keeps confirmed proofs and
 // compact paths a disjoint input union.
 func TestCustomAnchorPathBuilderRequiresOneProofSource(t *testing.T) {
@@ -218,11 +347,12 @@ func TestCustomAnchorPathBuilderRejectsDuplicateTip(t *testing.T) {
 }
 
 type customAnchorPathBuilderFixture struct {
-	request    *CustomAnchorRequest
-	path       *AssetProofPath
-	transition *proof.Proof
-	verifier   *testConfirmedProofVerifier
-	client     *customAnchorBuilderTestClient
+	request     *CustomAnchorRequest
+	path        *AssetProofPath
+	transition  *proof.Proof
+	tipSpendKey *btcec.PrivateKey
+	verifier    *testConfirmedProofVerifier
+	client      *customAnchorBuilderTestClient
 }
 
 func newCustomAnchorPathBuilderFixture(
@@ -338,14 +468,15 @@ func newCustomAnchorPathBuilderFixture(
 	request.Inputs[0].Witness = CustomAssetWitnessPlan{
 		Mode: CustomAssetWitnessCallerProvided,
 		Stack: customAnchorPathSpendWitness(
-			t, builder, transition, request.Outputs[0], tipSpendKey,
+			t, builder, transition, request.Outputs, tipSpendKey,
 		),
 	}
 
 	return &customAnchorPathBuilderFixture{
-		request:    request,
-		path:       path,
-		transition: transition,
+		request:     request,
+		path:        path,
+		transition:  transition,
+		tipSpendKey: tipSpendKey,
 		verifier: &testConfirmedProofVerifier{
 			result: &ConfirmedProofVerification{
 				AnchorAssetInventoryComplete: true,
@@ -357,17 +488,21 @@ func newCustomAnchorPathBuilderFixture(
 
 func customAnchorPathSpendWitness(t *testing.T,
 	builder *CustomAnchorTxBuilder, inputProof *proof.Proof,
-	output CustomAssetOutput, spendKey *btcec.PrivateKey) [][]byte {
+	outputs []CustomAssetOutput, spendKey *btcec.PrivateKey) [][]byte {
 
 	t.Helper()
 
-	internalKey := mustParseCustomAnchorPubKey(
-		t, output.Anchor.InternalKey.PubKey,
-	)
-	scriptKey, err := tapAssetScriptKey(output.Script.External.ScriptKey)
-	require.NoError(t, err)
-	packets, err := tapsend.DistributeCoins(
-		[]*proof.Proof{inputProof}, []*tapsend.Allocation{{
+	allocations := make([]*tapsend.Allocation, len(outputs))
+	for idx := range outputs {
+		output := outputs[idx]
+		internalKey := mustParseCustomAnchorPubKey(
+			t, output.Anchor.InternalKey.PubKey,
+		)
+		scriptKey, err := tapAssetScriptKey(
+			output.Script.External.ScriptKey,
+		)
+		require.NoError(t, err)
+		allocations[idx] = &tapsend.Allocation{
 			Type:         tapsend.CommitAllocationToRemote,
 			OutputIndex:  output.AnchorOutputIndex,
 			InternalKey:  internalKey,
@@ -375,7 +510,11 @@ func customAnchorPathSpendWitness(t *testing.T,
 			Amount:       output.Amount,
 			AssetVersion: asset.V1,
 			BtcAmount:    btcutil.Amount(output.AnchorValueSat),
-		}}, builder.params, true, tappsbt.V1,
+		}
+	}
+	packets, err := tapsend.DistributeCoins(
+		[]*proof.Proof{inputProof}, allocations, builder.params, true,
+		tappsbt.V1,
 	)
 	require.NoError(t, err)
 	require.Len(t, packets, 1)
@@ -388,8 +527,14 @@ func customAnchorPathSpendWitness(t *testing.T,
 	signed := customAnchorSignVirtualPacket(t, spendKey, encoded)
 	signedPacket, err := tappsbt.Decode(signed)
 	require.NoError(t, err)
-	require.Len(t, signedPacket.Outputs, 1)
 	newAsset := signedPacket.Outputs[0].Asset
+	isSplit, err := signedPacket.HasSplitCommitment()
+	require.NoError(t, err)
+	if isSplit {
+		rootOutput, err := signedPacket.SplitRootOutput()
+		require.NoError(t, err)
+		newAsset = rootOutput.Asset
+	}
 	require.NotNil(t, newAsset)
 	require.Len(t, newAsset.PrevWitnesses, 1)
 	require.NotEmpty(t, newAsset.PrevWitnesses[0].TxWitness)

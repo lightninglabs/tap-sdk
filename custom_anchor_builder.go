@@ -174,6 +174,38 @@ type CustomAnchorPlannedOutputSummary struct {
 	OPTrueSpend *CustomAssetOPTrueSpendInfo
 }
 
+// CustomAnchorOutputCommitmentPreview describes the Taproot commitment roots
+// a custom-anchor plan will insert into one Bitcoin output. The preview is
+// computed locally and does not sign or commit a virtual transaction or mutate
+// the plan.
+type CustomAnchorOutputCommitmentPreview struct {
+	// LogicalOutputID is the stable caller-defined output allocation ID.
+	LogicalOutputID string
+
+	// LogicalOutputIndex is the output position in the build request.
+	LogicalOutputIndex uint32
+
+	// PacketIndex identifies the prepared virtual packet.
+	PacketIndex uint32
+
+	// PacketRole identifies the active or passive packet collection.
+	PacketRole CustomAnchorPacketRole
+
+	// VirtualOutputIndex identifies the output within PacketIndex.
+	VirtualOutputIndex uint32
+
+	// AnchorOutputIndex identifies the output in the anchor transaction.
+	AnchorOutputIndex uint32
+
+	// TaprootAssetRoot is the root of the Taproot Asset commitment before
+	// combining it with the host-supplied tapscript sibling.
+	TaprootAssetRoot Hash
+
+	// TaprootMerkleRoot is the final BIP341 root that combines the Taproot
+	// Asset commitment with the optional host-supplied tapscript sibling.
+	TaprootMerkleRoot Hash
+}
+
 // NewCustomAnchorTxBuilder creates the advanced proof-selected builder.
 func (s *Wallet) NewCustomAnchorTxBuilder() *CustomAnchorTxBuilder {
 	params, err := address.Net(s.networkHRP)
@@ -272,6 +304,98 @@ func (p *CustomAnchorPlan) Outputs() []CustomAnchorPlannedOutputSummary {
 	}
 
 	return result
+}
+
+// PreviewOutputCommitments derives the exact output commitment roots without
+// signing virtual inputs or calling CommitVirtualPsbts. It is intended for
+// hosts that must compose and canonically order their final Bitcoin outputs
+// before committing the transition.
+//
+// Taproot Asset V1 output commitment leaves use witness-stripped asset
+// encoding, so the roots are independent of a later backend virtual-input
+// signature. Split commitments bind the anchor output index, however, so
+// callers that reindex outputs after a preview must rebuild and preview again
+// before committing.
+func (p *CustomAnchorPlan) PreviewOutputCommitments() (
+	[]CustomAnchorOutputCommitmentPreview, error) {
+
+	if p == nil || p.client == nil || p.request == nil {
+		return nil, fmt.Errorf("nil custom anchor plan")
+	}
+	if !p.verification.Valid() {
+		return nil, fmt.Errorf("custom anchor plan verification is not " +
+			"valid")
+	}
+	if len(p.activeVirtualPSBTs) != len(p.backendSigning) {
+		return nil, fmt.Errorf("custom anchor plan signing classification " +
+			"is incomplete")
+	}
+	active, err := decodeVirtualPackets(
+		"preview active", p.activeVirtualPSBTs,
+	)
+	if err != nil {
+		return nil, err
+	}
+	passive, err := decodeVirtualPackets(
+		"preview passive", p.passiveVirtualPSBTs,
+	)
+	if err != nil {
+		return nil, err
+	}
+	allPackets := append(
+		append([]*tappsbt.VPacket(nil), active...), passive...,
+	)
+	commitments, err := tapsend.CreateOutputCommitments(allPackets)
+	if err != nil {
+		return nil, fmt.Errorf("preview output commitments: %w", err)
+	}
+
+	previews := make(
+		[]CustomAnchorOutputCommitmentPreview, 0, len(p.outputs),
+	)
+	for idx := range p.outputs {
+		planned := p.outputs[idx]
+		packets := active
+		if planned.PacketRole == CustomAnchorPacketRolePassive {
+			packets = passive
+		} else if planned.PacketRole != CustomAnchorPacketRoleActive {
+			return nil, fmt.Errorf("planned output %q has unknown packet "+
+				"role %d", planned.LogicalOutputID,
+				planned.PacketRole)
+		}
+		if planned.PacketIndex >= uint32(len(packets)) {
+			return nil, fmt.Errorf("planned output %q packet index is "+
+				"out of range", planned.LogicalOutputID)
+		}
+		packet := packets[planned.PacketIndex]
+		if planned.VirtualOutput >= uint32(len(packet.Outputs)) {
+			return nil, fmt.Errorf("planned output %q virtual index is "+
+				"out of range", planned.LogicalOutputID)
+		}
+		virtualOutput := packet.Outputs[planned.VirtualOutput]
+		assetRoot, merkleRoot, err := deriveCustomAnchorOutputRoots(
+			virtualOutput, commitments,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("preview output %q commitment roots: "+
+				"%w", planned.LogicalOutputID, err)
+		}
+
+		previews = append(previews,
+			CustomAnchorOutputCommitmentPreview{
+				LogicalOutputID:    planned.LogicalOutputID,
+				LogicalOutputIndex: planned.RequestIndex,
+				PacketIndex:        planned.PacketIndex,
+				PacketRole:         planned.PacketRole,
+				VirtualOutputIndex: planned.VirtualOutput,
+				AnchorOutputIndex:  planned.AnchorOutput,
+				TaprootAssetRoot:   assetRoot,
+				TaprootMerkleRoot:  merkleRoot,
+			},
+		)
+	}
+
+	return previews, nil
 }
 
 // Verification returns a copy of the structured pre-commit verification

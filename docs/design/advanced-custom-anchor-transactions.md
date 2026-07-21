@@ -264,21 +264,25 @@ The concrete lifecycle is:
    returns an immutable `CustomAnchorPlan`.
 3. The caller inspects `plan.Verification()`, `plan.AnchorPSBT()`, and the
    prepared virtual packets. No Bitcoin signature has been requested.
-4. `Commit` checks required backend capabilities. It asks the backend to sign
+4. The caller can use `PreviewOutputCommitments` to derive the exact Taproot
+   Asset and BIP341 output roots without signing or committing. This lets a
+   host compose and canonically order final Bitcoin output scripts before it
+   freezes the transaction.
+5. `Commit` checks required backend capabilities. It asks the backend to sign
    virtual packets whose inputs use the backend-signer mode, then calls
    `CommitVirtualPsbts`.
-5. The SDK validates the backend's funding shape and runs
+6. The SDK validates the backend's funding shape and runs
    `ValidateAnchorInputs` and `ValidateAnchorOutputs` over the complete active
    and passive packet set. It returns a sealed
    `CustomAnchorTransferPackage`.
-6. The caller persists the package before external signing, broadcasting, or
+7. The caller persists the package before external signing, broadcasting, or
    handing it to another service.
-7. The caller derives typed Bitcoin signing requests from the package, applies
+8. The caller derives typed Bitcoin signing requests from the package, applies
    external signatures or script witnesses on returned package clones, and
    invokes an `AnchorSigner` for wallet-managed Bitcoin inputs when needed.
-8. `VerifyFinalAnchorPSBT` compares the complete unsigned transaction and all
+9. `VerifyFinalAnchorPSBT` compares the complete unsigned transaction and all
    non-signature PSBT metadata with the frozen committed transaction.
-9. `Wallet.PublishCustomAnchorTransfer` additionally requires a fully
+10. `Wallet.PublishCustomAnchorTransfer` additionally requires a fully
    finalized PSBT, revalidates all asset commitments, checks skip-broadcast
    capability, and calls tapd's publish-and-log operation.
 
@@ -292,6 +296,15 @@ that is already valid for the packet produced by `Build`, such as a static
 OP_TRUE path controlled by the integrating protocol. Interactive asset signing
 after packet assembly requires a separate immutable asset-signing request/apply
 phase and is follow-up work.
+
+Taproot Asset V1 output commitment leaves use witness-stripped asset encoding,
+so `PreviewOutputCommitments` does not need backend virtual-input signatures.
+It operates on decoded copies, so deriving the deterministic spent-output
+alternate leaves cannot mutate the immutable plan. For split transitions the
+commitment root depends on the virtual output's anchor index. A host that uses
+the preview to sort equal-value Bitcoin outputs must therefore rebuild and
+preview after reindexing, then require the final permutation to be stable
+before commit.
 
 ## Durable Transfer Package
 
