@@ -120,6 +120,64 @@ type customAnchorBuilderFixture struct {
 	btcInputKey    *btcec.PrivateKey
 }
 
+// TestCustomAnchorOutputCommitmentPreviewSupportsBackendSigning proves V1
+// output roots do not depend on the delegated virtual-input signature.
+func TestCustomAnchorOutputCommitmentPreviewSupportsBackendSigning(
+	t *testing.T) {
+
+	t.Parallel()
+
+	fixture := newCustomAnchorBuilderFixture(t)
+	var signCalls int
+	fixture.client.signVirtual = func(_ context.Context, packet []byte) (
+		[]byte, error) {
+
+		signCalls++
+		return customAnchorSignVirtualPacket(
+			t, fixture.assetSpendKey, packet,
+		), nil
+	}
+	fixture.client.commit = func(_ context.Context,
+		req *CommitVirtualPsbtsRequest) (*CommitVirtualPsbtsResponse,
+		error) {
+
+		return customAnchorTestCommitResponse(t, req), nil
+	}
+	capabilities := DefaultTapdCustomAnchorCapabilities()
+	client := &capableCustomAnchorBuilderTestClient{
+		customAnchorBuilderTestClient: fixture.client,
+		capabilities:                  &capabilities,
+	}
+	plan, err := NewWallet(client, NetworkRegtest).
+		NewCustomAnchorTxBuilder().Build(
+		context.Background(), fixture.request,
+	)
+	require.NoError(t, err)
+
+	previews, err := plan.PreviewOutputCommitments()
+	require.NoError(t, err)
+	require.Len(t, previews, 1)
+	require.Zero(t, signCalls)
+
+	sealed, err := plan.Commit(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 1, signCalls)
+	require.Len(t, sealed.Outputs, 1)
+	require.Equal(t, previews[0].TaprootAssetRoot,
+		sealed.Outputs[0].TaprootAssetRoot)
+	require.Equal(t, previews[0].TaprootMerkleRoot,
+		sealed.Outputs[0].TaprootMerkleRoot)
+}
+
+// TestCustomAnchorOutputCommitmentPreviewRejectsEmptyPlan prevents a manually
+// constructed zero-value plan from appearing to have a valid empty preview.
+func TestCustomAnchorOutputCommitmentPreviewRejectsEmptyPlan(t *testing.T) {
+	t.Parallel()
+
+	_, err := (&CustomAnchorPlan{}).PreviewOutputCommitments()
+	require.ErrorContains(t, err, "nil custom anchor plan")
+}
+
 func TestCustomAnchorBuilderRequiresWalletFundingLock(t *testing.T) {
 	t.Parallel()
 

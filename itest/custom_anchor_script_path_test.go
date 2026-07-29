@@ -139,6 +139,9 @@ func TestCustomAnchorBuilderScriptPathTimeoutSweep(t *testing.T) {
 	require.NoError(t, err)
 	lockVerification := lockPlan.Verification()
 	require.True(t, lockVerification.Valid())
+	lockPreview, err := lockPlan.PreviewOutputCommitments()
+	require.NoError(t, err)
+	require.Len(t, lockPreview, 1)
 
 	lockSealed, err := lockPlan.Commit(ctx, tapsdk.CustomAnchorCommitOptions{
 		Publish: tapsdk.CustomAnchorPublishMetadata{Label: name},
@@ -147,6 +150,10 @@ func TestCustomAnchorBuilderScriptPathTimeoutSweep(t *testing.T) {
 	require.NoError(t, lockSealed.Validate())
 	require.Len(t, lockSealed.Outputs, 1)
 	timeoutOutput := lockSealed.Outputs[0]
+	require.Equal(t, timeoutOutput.TaprootAssetRoot,
+		lockPreview[0].TaprootAssetRoot)
+	require.Equal(t, timeoutOutput.TaprootMerkleRoot,
+		lockPreview[0].TaprootMerkleRoot)
 	require.NotNil(t, timeoutOutput.OPTrueSpend)
 	require.NoError(t, timeoutOutput.OPTrueSpend.Validate(
 		timeoutOutput.ScriptKey,
@@ -247,6 +254,9 @@ func TestCustomAnchorBuilderScriptPathTimeoutSweep(t *testing.T) {
 	require.NoError(t, err)
 	sweepVerification := sweepPlan.Verification()
 	require.True(t, sweepVerification.Valid())
+	sweepPreview, err := sweepPlan.PreviewOutputCommitments()
+	require.NoError(t, err)
+	require.Len(t, sweepPreview, 1)
 
 	sweepSealed, err := sweepPlan.Commit(ctx, tapsdk.CustomAnchorCommitOptions{
 		Publish: tapsdk.CustomAnchorPublishMetadata{
@@ -255,6 +265,15 @@ func TestCustomAnchorBuilderScriptPathTimeoutSweep(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NoError(t, sweepSealed.Validate())
+	require.Len(t, sweepSealed.Outputs, 1)
+	require.Equal(t, sweepSealed.Outputs[0].LogicalOutputID,
+		sweepPreview[0].LogicalOutputID)
+	require.Equal(t, sweepSealed.Outputs[0].AnchorOutputIndex,
+		sweepPreview[0].AnchorOutputIndex)
+	require.Equal(t, sweepSealed.Outputs[0].TaprootAssetRoot,
+		sweepPreview[0].TaprootAssetRoot)
+	require.Equal(t, sweepSealed.Outputs[0].TaprootMerkleRoot,
+		sweepPreview[0].TaprootMerkleRoot)
 
 	// This is the assertion the existing custom-anchor itests invert: the
 	// unilateral sweep produces exactly one script-path signing request and
