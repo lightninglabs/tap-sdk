@@ -298,6 +298,7 @@ func commitVirtualPsbtsReq(virtualPsbts [][]byte, passivePsbts [][]byte,
 			len(req.AnchorPsbt) > 0 &&
 			reflect.DeepEqual(req.VirtualPsbts, virtualPsbts) &&
 			reflect.DeepEqual(req.PassiveAssetPsbts, passivePsbts) &&
+			req.TransitionProofVersion == TransitionProofVersionV1 &&
 			req.Funding.ChangeOutput.Mode == AnchorChangeOutputAdd &&
 			req.Funding.Fee.Mode == AnchorFeeSatPerVByte &&
 			req.Funding.Fee.FeeRate == feeRate

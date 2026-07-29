@@ -249,6 +249,9 @@ func marshalCommitVirtualPsbtsRequest(
 		CustomLockId:          req.Funding.CustomLockID,
 		LockExpirationSeconds: req.Funding.LockExpirationSeconds,
 		SkipFunding:           req.Funding.SkipFunding,
+		TransitionProofVersion: marshalTransitionProofVersion(
+			req.TransitionProofVersion,
+		),
 	}
 
 	if req.Funding.SkipFunding {
@@ -290,6 +293,20 @@ func marshalCommitVirtualPsbtsRequest(
 	}
 
 	return rpcReq, nil
+}
+
+func marshalTransitionProofVersion(
+	version tapsdk.TransitionProofVersion) assetwalletrpc.TransitionProofVersion {
+
+	switch version {
+	case tapsdk.TransitionProofVersionV1:
+		return assetwalletrpc.
+			TransitionProofVersion_TRANSITION_PROOF_VERSION_V1
+
+	default:
+		return assetwalletrpc.
+			TransitionProofVersion_TRANSITION_PROOF_VERSION_V0
+	}
 }
 
 func unmarshalCommitVirtualPsbtsResponse(

@@ -192,14 +192,15 @@ func TestCommitVirtualPsbtsSendsAdvancedFields(t *testing.T) {
 		)
 
 		var body struct {
-			AnchorPsbt            string   `json:"anchor_psbt"`
-			VirtualPsbts          []string `json:"virtual_psbts"`
-			PassiveAssetPsbts     []string `json:"passive_asset_psbts"`
-			ExistingOutputIndex   *int32   `json:"existing_output_index"`
-			Add                   *bool    `json:"add"`
-			SatPerVByte           string   `json:"sat_per_vbyte"`
-			CustomLockID          string   `json:"custom_lock_id"`
-			LockExpirationSeconds string   `json:"lock_expiration_seconds"`
+			AnchorPsbt             string   `json:"anchor_psbt"`
+			VirtualPsbts           []string `json:"virtual_psbts"`
+			PassiveAssetPsbts      []string `json:"passive_asset_psbts"`
+			ExistingOutputIndex    *int32   `json:"existing_output_index"`
+			Add                    *bool    `json:"add"`
+			SatPerVByte            string   `json:"sat_per_vbyte"`
+			CustomLockID           string   `json:"custom_lock_id"`
+			LockExpirationSeconds  string   `json:"lock_expiration_seconds"`
+			TransitionProofVersion string   `json:"transition_proof_version"`
 		}
 		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&body)) {
 			return
@@ -219,6 +220,10 @@ func TestCommitVirtualPsbtsSendsAdvancedFields(t *testing.T) {
 		assert.Equal(t, hex.EncodeToString(lockID),
 			body.CustomLockID)
 		assert.Equal(t, "42", body.LockExpirationSeconds)
+		assert.Equal(
+			t, "TRANSITION_PROOF_VERSION_V1",
+			body.TransitionProofVersion,
+		)
 
 		_, err := fmt.Fprintf(w, `{
 			"anchor_psbt":%q,
@@ -248,9 +253,10 @@ func TestCommitVirtualPsbtsSendsAdvancedFields(t *testing.T) {
 
 	resp, err := client.CommitVirtualPsbtsWithRequest(
 		context.Background(), &tapsdk.CommitVirtualPsbtsRequest{
-			AnchorPsbt:        []byte("anchor"),
-			VirtualPsbts:      [][]byte{[]byte("virtual")},
-			PassiveAssetPsbts: [][]byte{[]byte("passive")},
+			AnchorPsbt:             []byte("anchor"),
+			VirtualPsbts:           [][]byte{[]byte("virtual")},
+			PassiveAssetPsbts:      [][]byte{[]byte("passive")},
+			TransitionProofVersion: tapsdk.TransitionProofVersionV1,
 			Funding: tapsdk.AnchorFundingPlan{
 				ChangeOutput: tapsdk.AnchorChangeOutput{
 					Mode: tapsdk.AnchorChangeOutputExisting,
@@ -272,6 +278,37 @@ func TestCommitVirtualPsbtsSendsAdvancedFields(t *testing.T) {
 		resp.PassiveAssetPsbts)
 	require.Equal(t, int32(2), resp.ChangeOutputIndex)
 	require.Equal(t, []tapsdk.Outpoint{locked}, resp.LockedUTXOs)
+}
+
+func TestMarshalTransitionProofVersionJSON(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		version tapsdk.TransitionProofVersion
+		want    string
+	}{
+		{
+			name:    "v0 omitted",
+			version: tapsdk.TransitionProofVersionV0,
+		},
+		{
+			name:    "v1",
+			version: tapsdk.TransitionProofVersionV1,
+			want:    "TRANSITION_PROOF_VERSION_V1",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			require.Equal(
+				t, test.want,
+				marshalTransitionProofVersionJSON(test.version),
+			)
+		})
+	}
 }
 
 func TestUnmarshalCommitVirtualPsbtsRejectsNullLockedUTXO(t *testing.T) {

@@ -238,9 +238,10 @@ func TestMarshalCommitVirtualPsbtsRequest(t *testing.T) {
 	lockID := bytes.Repeat([]byte("l"), 32)
 
 	req := &tapsdk.CommitVirtualPsbtsRequest{
-		AnchorPsbt:        []byte("anchor"),
-		VirtualPsbts:      [][]byte{[]byte("virtual")},
-		PassiveAssetPsbts: [][]byte{[]byte("passive")},
+		AnchorPsbt:             []byte("anchor"),
+		VirtualPsbts:           [][]byte{[]byte("virtual")},
+		PassiveAssetPsbts:      [][]byte{[]byte("passive")},
+		TransitionProofVersion: tapsdk.TransitionProofVersionV1,
 		Funding: tapsdk.AnchorFundingPlan{
 			ChangeOutput: tapsdk.AnchorChangeOutput{
 				Mode:                tapsdk.AnchorChangeOutputExisting,
@@ -266,6 +267,45 @@ func TestMarshalCommitVirtualPsbtsRequest(t *testing.T) {
 	require.Equal(t, uint64(12), rpcReq.GetSatPerVbyte())
 	require.Equal(t, lockID, rpcReq.CustomLockId)
 	require.Equal(t, uint64(42), rpcReq.LockExpirationSeconds)
+	require.Equal(
+		t, assetwalletrpc.
+			TransitionProofVersion_TRANSITION_PROOF_VERSION_V1,
+		rpcReq.TransitionProofVersion,
+	)
+}
+
+func TestMarshalTransitionProofVersion(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		version tapsdk.TransitionProofVersion
+		want    assetwalletrpc.TransitionProofVersion
+	}{
+		{
+			name:    "v0",
+			version: tapsdk.TransitionProofVersionV0,
+			want: assetwalletrpc.
+				TransitionProofVersion_TRANSITION_PROOF_VERSION_V0,
+		},
+		{
+			name:    "v1",
+			version: tapsdk.TransitionProofVersionV1,
+			want: assetwalletrpc.
+				TransitionProofVersion_TRANSITION_PROOF_VERSION_V1,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			require.Equal(
+				t, test.want,
+				marshalTransitionProofVersion(test.version),
+			)
+		})
+	}
 }
 
 func TestMarshalCommitVirtualPsbtsNoNewChange(t *testing.T) {

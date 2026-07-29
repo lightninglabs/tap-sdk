@@ -18,6 +18,7 @@ import (
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/proof"
 	"github.com/lightninglabs/taproot-assets/tappsbt"
+	"github.com/lightninglabs/taproot-assets/tapsend"
 	"github.com/stretchr/testify/require"
 )
 
@@ -39,11 +40,41 @@ func TestCustomAnchorTransferPackageSealValidate(t *testing.T) {
 	require.NotEmpty(t, sealed.CommittedPackageDigest)
 	require.NotEmpty(t, sealed.UnsignedTxDigest)
 	require.NotEmpty(t, sealed.PackageDigest)
+	updateProof, err := proof.Decode(sealed.ProofUpdates[0].ProofBlob)
+	require.NoError(t, err)
+	require.Equal(t, proof.TransitionV1, updateProof.Version)
+	active, err := tappsbt.Decode(sealed.ActiveVirtualPsbts[0])
+	require.NoError(t, err)
+	require.Equal(
+		t, proof.TransitionV1,
+		active.Outputs[0].ProofSuffix.Version,
+	)
 
 	// Sealing is immutable.
 	require.Zero(t, pkg.SchemaVersion)
 	require.Empty(t, pkg.CommittedPackageDigest)
 	require.NotSame(t, pkg, sealed)
+}
+
+func TestCustomAnchorTransferPackageValidatesLegacyV0Proofs(t *testing.T) {
+	t.Parallel()
+
+	pkg := newCustomAnchorTestFixture(t).unsealed.Clone()
+	setCustomAnchorPackageProofVersion(t, pkg, proof.TransitionV0)
+
+	sealed, err := pkg.Seal()
+	require.NoError(t, err)
+	require.NoError(t, sealed.Validate())
+
+	updateProof, err := proof.Decode(sealed.ProofUpdates[0].ProofBlob)
+	require.NoError(t, err)
+	require.Equal(t, proof.TransitionV0, updateProof.Version)
+	active, err := tappsbt.Decode(sealed.ActiveVirtualPsbts[0])
+	require.NoError(t, err)
+	require.Equal(
+		t, proof.TransitionV0,
+		active.Outputs[0].ProofSuffix.Version,
+	)
 }
 
 func TestCustomAnchorTransferPackageSealErrors(t *testing.T) {
@@ -666,6 +697,53 @@ func TestCustomAnchorTransferPackageRejectsSemanticTamper(t *testing.T) {
 				require.NoError(t, err)
 			},
 			wantErr: "proof suffix does not match committed anchor",
+		},
+		{
+			name: "unsupported proof update version",
+			mutate: func(t *testing.T,
+				pkg *CustomAnchorTransferPackage) {
+
+				transition, err := proof.Decode(
+					pkg.ProofUpdates[0].ProofBlob,
+				)
+				require.NoError(t, err)
+				transition.Version = proof.TransitionVersion(2)
+				pkg.ProofUpdates[0].ProofBlob, err =
+					encodeTransitionProof(transition)
+				require.NoError(t, err)
+			},
+			wantErr: "unsupported proof update transition proof version 2",
+		},
+		{
+			name: "unsupported virtual proof version",
+			mutate: func(t *testing.T,
+				pkg *CustomAnchorTransferPackage) {
+
+				mutateCustomAnchorPackageVPacket(
+					t, pkg, CustomAnchorPacketRoleActive, 0,
+					func(packet *tappsbt.VPacket) {
+						packet.Outputs[0].ProofSuffix.Version =
+							proof.TransitionVersion(2)
+					},
+				)
+			},
+			wantErr: "unsupported virtual output transition proof version 2",
+		},
+		{
+			name: "proof suffix version mismatch",
+			mutate: func(t *testing.T,
+				pkg *CustomAnchorTransferPackage) {
+
+				transition, err := proof.Decode(
+					pkg.ProofUpdates[0].ProofBlob,
+				)
+				require.NoError(t, err)
+				transition.Version = proof.TransitionV0
+				pkg.ProofUpdates[0].ProofBlob, err =
+					encodeTransitionProof(transition)
+				require.NoError(t, err)
+			},
+			wantErr: "proof suffix transition proof versions do not match",
 		},
 		{
 			name: "missing input mapping",
@@ -1536,6 +1614,61 @@ func newCustomAnchorTestFixture(t *testing.T) *customAnchorTestFixture {
 		sealed:            sealed,
 		keyPathPrivateKey: keyPathPrivateKey,
 		muSigPrivateKeys:  muSigPrivateKeys,
+	}
+}
+
+func setCustomAnchorPackageProofVersion(t *testing.T,
+	pkg *CustomAnchorTransferPackage, version proof.TransitionVersion) {
+
+	t.Helper()
+
+	anchor := mustDecodeAnchorPSBT(t, pkg.AnchorPsbt)
+	active, err := decodeVirtualPackets("active", pkg.ActiveVirtualPsbts)
+	require.NoError(t, err)
+	passive, err := decodeVirtualPackets(
+		"passive", pkg.PassiveVirtualPsbts,
+	)
+	require.NoError(t, err)
+	allPackets := append(
+		append([]*tappsbt.VPacket(nil), active...), passive...,
+	)
+	commitments, err := tapsend.CreateOutputCommitments(
+		allPackets, tapsend.WithNoSTXOProofs(),
+	)
+	require.NoError(t, err)
+
+	for _, packet := range allPackets {
+		for outputIndex := range packet.Outputs {
+			suffix, err := tapsend.CreateProofSuffix(
+				anchor.UnsignedTx, anchor.Outputs, packet,
+				commitments, outputIndex, allPackets,
+				proof.WithVersion(version),
+			)
+			require.NoError(t, err)
+			packet.Outputs[outputIndex].ProofSuffix = suffix
+		}
+	}
+
+	pkg.ActiveVirtualPsbts, err = encodeVirtualPackets(active)
+	require.NoError(t, err)
+	pkg.PassiveVirtualPsbts, err = encodeVirtualPackets(passive)
+	require.NoError(t, err)
+	for idx := range pkg.ProofUpdates {
+		update := &pkg.ProofUpdates[idx]
+		packets := active
+		if update.PacketRole == CustomAnchorPacketRolePassive {
+			packets = passive
+		}
+		require.Less(t, update.PacketIndex, uint32(len(packets)))
+		packet := packets[update.PacketIndex]
+		require.Less(
+			t, update.VirtualOutputIndex,
+			uint32(len(packet.Outputs)),
+		)
+		update.ProofBlob, err = encodeTransitionProof(
+			packet.Outputs[update.VirtualOutputIndex].ProofSuffix,
+		)
+		require.NoError(t, err)
 	}
 }
 

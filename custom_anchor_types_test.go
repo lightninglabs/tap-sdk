@@ -547,6 +547,53 @@ func TestCommitVirtualPsbtsRequestValidateLockID(t *testing.T) {
 	}
 }
 
+func TestCommitVirtualPsbtsRequestValidateTransitionProofVersion(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		version TransitionProofVersion
+		wantErr string
+	}{
+		{
+			name:    "v0",
+			version: TransitionProofVersionV0,
+		},
+		{
+			name:    "v1",
+			version: TransitionProofVersionV1,
+		},
+		{
+			name:    "unknown",
+			version: TransitionProofVersion(2),
+			wantErr: "unknown transition proof version 2",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			request := &CommitVirtualPsbtsRequest{
+				AnchorPsbt:             []byte{1},
+				VirtualPsbts:           [][]byte{{2}},
+				TransitionProofVersion: test.version,
+				Funding: AnchorFundingPlan{
+					SkipFunding: true,
+				},
+			}
+
+			err := request.Validate()
+			if test.wantErr != "" {
+				require.ErrorContains(t, err, test.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+		})
+	}
+}
+
 func TestCustomAnchorFundingLockExpiration(t *testing.T) {
 	feeRate, err := NewFeeRateSatPerVByte(2)
 	require.NoError(t, err)
