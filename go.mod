@@ -12,8 +12,8 @@ require (
 	github.com/btcsuite/btcd/txscript/v2 v2.0.0
 	github.com/btcsuite/btcd/wire/v2 v2.0.0
 	github.com/coder/websocket v1.8.14
-	github.com/lightninglabs/taproot-assets v0.7.1-0.20260706193822-2adfadc58e3c
-	github.com/lightninglabs/taproot-assets/taprpc v1.1.1-0.20260706193822-2adfadc58e3c
+	github.com/lightninglabs/taproot-assets v0.7.1-0.20260729123750-e798aabc7f20
+	github.com/lightninglabs/taproot-assets/taprpc v1.1.1-0.20260729123750-e798aabc7f20
 	github.com/lightningnetwork/lnd v0.21.0-beta.rc2.0.20260630214209-40c64f9db30d
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/grpc v1.80.0
@@ -169,16 +169,16 @@ require (
 	go.uber.org/zap v1.23.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/crypto v0.49.0 // indirect
+	golang.org/x/crypto v0.52.0 // indirect
 	golang.org/x/exp v0.0.0-20250811191247-51f88131bc50 // indirect
-	golang.org/x/mod v0.33.0 // indirect
-	golang.org/x/net v0.52.0 // indirect
+	golang.org/x/mod v0.35.0 // indirect
+	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
-	golang.org/x/term v0.41.0 // indirect
-	golang.org/x/text v0.35.0 // indirect
+	golang.org/x/term v0.43.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/time v0.11.0 // indirect
-	golang.org/x/tools v0.42.0 // indirect
+	golang.org/x/tools v0.44.0 // indirect
 	google.golang.org/genproto v0.0.0-20240213162025-012b6fc9bca9 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260330182312-d5a96adf58d8 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260330182312-d5a96adf58d8 // indirect

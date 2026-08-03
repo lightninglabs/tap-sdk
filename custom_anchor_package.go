@@ -1091,16 +1091,28 @@ func validatePackageOutputMapping(anchor *psbt.Packet, txID chainhash.Hash,
 
 		return fmt.Errorf("proof update does not match output summary")
 	}
-	expectedSuffix, err := tapsend.CreateProofSuffix(
-		anchor.UnsignedTx, anchor.Outputs, packet, commitments,
-		virtualIndex, allPackets,
-	)
-	if err != nil {
-		return err
-	}
 	updateProof, err := proof.Decode(update.ProofBlob)
 	if err != nil {
 		return fmt.Errorf("decode proof update: %w", err)
+	}
+	if updateProof.IsUnknownVersion() {
+		return fmt.Errorf("unsupported proof update transition proof "+
+			"version %d", updateProof.Version)
+	}
+	if virtualOutput.ProofSuffix.IsUnknownVersion() {
+		return fmt.Errorf("unsupported virtual output transition proof "+
+			"version %d", virtualOutput.ProofSuffix.Version)
+	}
+	if virtualOutput.ProofSuffix.Version != updateProof.Version {
+		return fmt.Errorf("proof suffix transition proof versions do not " +
+			"match")
+	}
+	expectedSuffix, err := tapsend.CreateProofSuffix(
+		anchor.UnsignedTx, anchor.Outputs, packet, commitments,
+		virtualIndex, allPackets, proof.WithVersion(updateProof.Version),
+	)
+	if err != nil {
+		return err
 	}
 	actualMatches, err := customAnchorTransitionProofsEqual(
 		expectedSuffix, virtualOutput.ProofSuffix,

@@ -14,6 +14,7 @@ import (
 	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/commitment"
+	"github.com/lightninglabs/taproot-assets/proof"
 	"github.com/lightninglabs/taproot-assets/tappsbt"
 	"github.com/lightninglabs/taproot-assets/tapscript"
 	"github.com/lightninglabs/taproot-assets/tapsend"
@@ -161,6 +162,10 @@ func TestCustomAnchorLifecycleBackendSigningAndPublish(t *testing.T) {
 	require.Equal(t, 1, signCalls)
 	require.NotNil(t, commitRequest)
 	require.True(t, commitRequest.Funding.SkipFunding)
+	require.Equal(
+		t, TransitionProofVersionV1,
+		commitRequest.TransitionProofVersion,
+	)
 	require.Equal(t, plan.AnchorPSBT(), commitRequest.AnchorPsbt)
 	require.Len(t, commitRequest.VirtualPsbts, 1)
 	require.NotEqual(t, plan.ActiveVirtualPSBTs()[0],
@@ -174,6 +179,11 @@ func TestCustomAnchorLifecycleBackendSigningAndPublish(t *testing.T) {
 	require.Len(t, packageSnapshot.Outputs, 1)
 	require.Len(t, packageSnapshot.ProofUpdates, 1)
 	require.NotEmpty(t, packageSnapshot.ProofUpdates[0].ProofBlob)
+	transition, err := proof.Decode(
+		packageSnapshot.ProofUpdates[0].ProofBlob,
+	)
+	require.NoError(t, err)
+	require.Equal(t, proof.TransitionV1, transition.Version)
 	require.Equal(t, publishMetadata, packageSnapshot.Publish)
 	outputSummary := packageSnapshot.Outputs[0]
 	require.NotZero(t, outputSummary.TaprootAssetRoot)
@@ -841,6 +851,19 @@ func TestCustomAnchorCommitRejectsBackendResponseDrift(t *testing.T) {
 			},
 			wantErr: "backend changed asset output 1 PSBT metadata",
 		},
+		{
+			name: "transition proof version downgrade",
+			mutateResponse: func(response *CommitVirtualPsbtsResponse) {
+				packet, err := tappsbt.Decode(response.VirtualPsbts[0])
+				require.NoError(t, err)
+				require.NotNil(t, packet.Outputs[0].ProofSuffix)
+				packet.Outputs[0].ProofSuffix.Version =
+					proof.TransitionV0
+				response.VirtualPsbts[0], err = tappsbt.Encode(packet)
+				require.NoError(t, err)
+			},
+			wantErr: "proof suffix mismatch",
+		},
 	}
 
 	for _, test := range tests {
@@ -1182,9 +1205,14 @@ func customAnchorTestCommitResponseWithMutation(t *testing.T,
 	}
 	for _, packet := range allPackets {
 		for outputIndex := range packet.Outputs {
+			version, err := transitionProofVersion(
+				req.TransitionProofVersion,
+			)
+			require.NoError(t, err)
 			suffix, err := tapsend.CreateProofSuffix(
 				anchor.UnsignedTx, anchor.Outputs, packet,
 				outputCommitments, outputIndex, allPackets,
+				proof.WithVersion(version),
 			)
 			require.NoError(t, err)
 			packet.Outputs[outputIndex].ProofSuffix = suffix

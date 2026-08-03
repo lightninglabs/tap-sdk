@@ -299,16 +299,17 @@ func (w *walletKitClient) SignVirtualPsbt(ctx context.Context,
 // jsonCommitVirtualPsbtsRequest is the JSON body for
 // CommitVirtualPsbts.
 type jsonCommitVirtualPsbtsRequest struct {
-	VirtualPsbts          []string `json:"virtual_psbts"`
-	PassiveAssetPsbts     []string `json:"passive_asset_psbts,omitempty"`
-	AnchorPsbt            string   `json:"anchor_psbt"`
-	ExistingOutputIndex   *int32   `json:"existing_output_index,omitempty"`
-	Add                   *bool    `json:"add,omitempty"`
-	TargetConf            *uint32  `json:"target_conf,omitempty"`
-	SatPerVByte           string   `json:"sat_per_vbyte,omitempty"`
-	CustomLockID          string   `json:"custom_lock_id,omitempty"`
-	LockExpirationSeconds string   `json:"lock_expiration_seconds,omitempty"`
-	SkipFunding           bool     `json:"skip_funding,omitempty"`
+	VirtualPsbts           []string `json:"virtual_psbts"`
+	PassiveAssetPsbts      []string `json:"passive_asset_psbts,omitempty"`
+	AnchorPsbt             string   `json:"anchor_psbt"`
+	TransitionProofVersion string   `json:"transition_proof_version,omitempty"`
+	ExistingOutputIndex    *int32   `json:"existing_output_index,omitempty"`
+	Add                    *bool    `json:"add,omitempty"`
+	TargetConf             *uint32  `json:"target_conf,omitempty"`
+	SatPerVByte            string   `json:"sat_per_vbyte,omitempty"`
+	CustomLockID           string   `json:"custom_lock_id,omitempty"`
+	LockExpirationSeconds  string   `json:"lock_expiration_seconds,omitempty"`
+	SkipFunding            bool     `json:"skip_funding,omitempty"`
 }
 
 // CommitVirtualPsbts commits virtual transactions using the legacy
@@ -382,10 +383,15 @@ func marshalCommitVirtualPsbtsRequest(
 	}
 
 	body := &jsonCommitVirtualPsbtsRequest{
-		VirtualPsbts:      hexEncodeByteSlices(req.VirtualPsbts),
-		PassiveAssetPsbts: hexEncodeByteSlices(req.PassiveAssetPsbts),
-		AnchorPsbt:        hex.EncodeToString(req.AnchorPsbt),
-		SkipFunding:       req.Funding.SkipFunding,
+		VirtualPsbts: hexEncodeByteSlices(req.VirtualPsbts),
+		PassiveAssetPsbts: hexEncodeByteSlices(
+			req.PassiveAssetPsbts,
+		),
+		AnchorPsbt: hex.EncodeToString(req.AnchorPsbt),
+		TransitionProofVersion: marshalTransitionProofVersionJSON(
+			req.TransitionProofVersion,
+		),
+		SkipFunding: req.Funding.SkipFunding,
 	}
 
 	if len(req.Funding.CustomLockID) > 0 {
@@ -427,6 +433,20 @@ func marshalCommitVirtualPsbtsRequest(
 	}
 
 	return body, nil
+}
+
+func marshalTransitionProofVersionJSON(
+	version tapsdk.TransitionProofVersion) string {
+
+	switch version {
+	case tapsdk.TransitionProofVersionV1:
+		return "TRANSITION_PROOF_VERSION_V1"
+
+	default:
+		// Omitting V0 retains compatibility with tapd versions that predate
+		// the selector and uses the protocol's V0 default on newer versions.
+		return ""
+	}
 }
 
 func unmarshalCommitVirtualPsbtsResponse(
