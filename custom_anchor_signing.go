@@ -65,8 +65,11 @@ type CustomAnchorKeyPathSigningPlan struct {
 // CustomAnchorMuSig2SigningPlan identifies an ordered MuSig2 participant set.
 // Participant order is significant and is preserved in the signing request.
 type CustomAnchorMuSig2SigningPlan struct {
-	// Participants are the ordered x-only keys used for key aggregation.
-	Participants []XOnlyPubKey `json:"participants"`
+	// Participants are the ordered 33-byte compressed keys used for key
+	// aggregation. Full keys preserve Y parity, so any cosigner key can
+	// participate; callers whose aggregation sorts keys declare them
+	// pre-sorted.
+	Participants []PubKey `json:"participants"`
 
 	// SessionContext is caller-defined public context used to distinguish
 	// signing sessions. It must never contain a secret nonce.
@@ -124,7 +127,7 @@ type CustomAnchorMuSig2SigningRequest struct {
 	Sighash           Hash
 	InternalKey       XOnlyPubKey
 	TaprootMerkleRoot []byte
-	Participants      []XOnlyPubKey
+	Participants      []PubKey
 	SessionContext    []byte
 }
 
@@ -300,7 +303,7 @@ func customAnchorSigningRequests(packet *btcpsbt.Packet,
 						context.taprootMerkleRoot,
 					),
 					Participants: append(
-						[]XOnlyPubKey(nil),
+						[]PubKey(nil),
 						plan.MuSig2.Participants...,
 					),
 					SessionContext: cloneBytes(
@@ -839,7 +842,7 @@ func validateCustomAnchorSigningPlans(
 						"required", i,
 				)
 			}
-			if err := validateCustomAnchorXOnlyKeys(
+			if err := validateCustomAnchorPubKeys(
 				"MuSig2 participant", plan.MuSig2.Participants,
 			); err != nil {
 				return fmt.Errorf("signing plan %d: %w", i, err)
@@ -906,7 +909,7 @@ func cloneCustomAnchorSigningPlans(
 		if plans[i].MuSig2 != nil {
 			muSig2 := *plans[i].MuSig2
 			muSig2.Participants = append(
-				[]XOnlyPubKey(nil), plans[i].MuSig2.Participants...,
+				[]PubKey(nil), plans[i].MuSig2.Participants...,
 			)
 			muSig2.SessionContext = cloneBytes(
 				plans[i].MuSig2.SessionContext,
@@ -1266,11 +1269,11 @@ func verifyScriptPathWitness(tx *wire.MsgTx, inputIndex int,
 }
 
 func validateMuSig2Aggregate(internalKey XOnlyPubKey,
-	participants []XOnlyPubKey) error {
+	participants []PubKey) error {
 
 	keys := make([]*btcec.PublicKey, len(participants))
 	for i, participant := range participants {
-		key, err := schnorr.ParsePubKey(participant[:])
+		key, err := btcec.ParsePubKey(participant[:])
 		if err != nil {
 			return fmt.Errorf("participant %d: %w", i, err)
 		}
@@ -1310,6 +1313,22 @@ func validateCustomAnchorXOnlyKey(label string, key XOnlyPubKey) error {
 	_, err := schnorr.ParsePubKey(key[:])
 	if err != nil {
 		return fmt.Errorf("invalid %s: %w", label, err)
+	}
+
+	return nil
+}
+
+func validateCustomAnchorPubKeys(label string, keys []PubKey) error {
+	seen := make(map[PubKey]struct{}, len(keys))
+	for i, key := range keys {
+		if _, err := btcec.ParsePubKey(key[:]); err != nil {
+			return fmt.Errorf("%s %d: invalid %s: %w", label, i,
+				label, err)
+		}
+		if _, ok := seen[key]; ok {
+			return fmt.Errorf("duplicate %s %d", label, i)
+		}
+		seen[key] = struct{}{}
 	}
 
 	return nil
