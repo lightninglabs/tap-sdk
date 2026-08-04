@@ -48,11 +48,11 @@ func TestCustomAnchorBuilderMuSig2KeyPathSweep(t *testing.T) {
 	require.NoError(t, err)
 
 	// Two cooperative signers own the anchor. Their pre-tweaked aggregate
-	// key is the anchor internal key exactly as the SDK reconstructs it. The
-	// SDK re-parses participants as x-only keys before aggregating, so the
-	// participant keys must be even-parity for the local aggregate to match.
-	aliceKey := customAnchorEvenParityKey(t)
-	bobKey := customAnchorEvenParityKey(t)
+	// key is the anchor internal key exactly as the SDK reconstructs it.
+	aliceKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
+	bobKey, err := btcec.NewPrivateKey()
+	require.NoError(t, err)
 	signers := []*btcec.PrivateKey{aliceKey, bobKey}
 	participants := []*btcec.PublicKey{aliceKey.PubKey(), bobKey.PubKey()}
 	aggregateKey := customAnchorMuSig2AggregateKey(t, participants)
@@ -210,9 +210,9 @@ func TestCustomAnchorBuilderMuSig2KeyPathSweep(t *testing.T) {
 		SigningPlans: []tapsdk.CustomAnchorInputSigningPlan{{
 			InputIndex: 0,
 			MuSig2: &tapsdk.CustomAnchorMuSig2SigningPlan{
-				Participants: []tapsdk.XOnlyPubKey{
-					mustXOnlyPubKey(t, aliceKey.PubKey()),
-					mustXOnlyPubKey(t, bobKey.PubKey()),
+				Participants: []tapsdk.PubKey{
+					mustCompressedPubKey(t, aliceKey.PubKey()),
+					mustCompressedPubKey(t, bobKey.PubKey()),
 				},
 				SessionContext: []byte("musig2-cooperative-sweep"),
 			},
@@ -305,19 +305,6 @@ func customAnchorFinalizeKeyPath(t testing.TB, rawPsbt []byte) []byte {
 	require.NoError(t, packet.Serialize(&buffer))
 
 	return buffer.Bytes()
-}
-
-// customAnchorEvenParityKey returns a fresh private key whose public key has
-// even Y parity, so it equals its own x-only reparse.
-func customAnchorEvenParityKey(t testing.TB) *btcec.PrivateKey {
-	t.Helper()
-	for {
-		key, err := btcec.NewPrivateKey()
-		require.NoError(t, err)
-		if key.PubKey().SerializeCompressed()[0] == 0x02 {
-			return key
-		}
-	}
 }
 
 // customAnchorMuSig2AggregateKey returns the BIP-327 pre-tweaked aggregate key

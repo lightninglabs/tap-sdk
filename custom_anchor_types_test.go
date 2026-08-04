@@ -1317,7 +1317,7 @@ func TestCustomAnchorRequestCloneNoAlias(t *testing.T) {
 		clone.SigningPlans[0].MuSig2.SessionContext,
 	)
 	require.Equal(
-		t, customAnchorTypesTestPubKey(t).XOnly(),
+		t, customAnchorTypesTestPubKey(t),
 		clone.SigningPlans[0].MuSig2.Participants[0],
 	)
 }
@@ -1542,8 +1542,8 @@ func richCustomAnchorRequest(t *testing.T) *CustomAnchorRequest {
 		{
 			InputIndex: 0,
 			MuSig2: &CustomAnchorMuSig2SigningPlan{
-				Participants: []XOnlyPubKey{
-					key.XOnly(), customAnchorTypesTestSecondPubKey(t).XOnly(),
+				Participants: []PubKey{
+					key, customAnchorTypesTestSecondPubKey(t),
 				},
 				SessionContext: []byte{21, 22},
 			},

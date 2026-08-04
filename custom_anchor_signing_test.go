@@ -67,7 +67,7 @@ func TestCustomAnchorSigningRequests(t *testing.T) {
 }
 
 func TestCustomAnchorSigningPlanValidation(t *testing.T) {
-	validKey := customAnchorTestXOnly(
+	validParticipant := customAnchorTestPubKey(
 		customAnchorTestPrivateKey(8).PubKey(),
 	)
 	tests := []struct {
@@ -114,8 +114,8 @@ func TestCustomAnchorSigningPlanValidation(t *testing.T) {
 		{
 			name: "too few musig participants",
 			mutate: func(pkg *CustomAnchorTransferPackage) {
-				pkg.SigningPlans[1].MuSig2.Participants = []XOnlyPubKey{
-					validKey,
+				pkg.SigningPlans[1].MuSig2.Participants = []PubKey{
+					validParticipant,
 				}
 			},
 			wantErr: "requires at least two participants",
@@ -174,11 +174,11 @@ func TestCustomAnchorSigningRequestMismatch(t *testing.T) {
 		{
 			name: "musig aggregate",
 			mutate: func(pkg *CustomAnchorTransferPackage) {
-				pkg.SigningPlans[1].MuSig2.Participants = []XOnlyPubKey{
-					customAnchorTestXOnly(
+				pkg.SigningPlans[1].MuSig2.Participants = []PubKey{
+					customAnchorTestPubKey(
 						customAnchorTestPrivateKey(11).PubKey(),
 					),
-					customAnchorTestXOnly(
+					customAnchorTestPubKey(
 						customAnchorTestPrivateKey(12).PubKey(),
 					),
 				}

@@ -1556,9 +1556,9 @@ func newCustomAnchorTestFixture(t *testing.T) *customAnchorTestFixture {
 		{
 			InputIndex: 1,
 			MuSig2: &CustomAnchorMuSig2SigningPlan{
-				Participants: []XOnlyPubKey{
-					customAnchorTestXOnly(muSigKeys[0]),
-					customAnchorTestXOnly(muSigKeys[1]),
+				Participants: []PubKey{
+					customAnchorTestPubKey(muSigKeys[0]),
+					customAnchorTestPubKey(muSigKeys[1]),
 				},
 				SessionContext: []byte("batch-session-1"),
 			},
