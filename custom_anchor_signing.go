@@ -53,6 +53,11 @@ type CustomAnchorInputSigningPlan struct {
 
 	// ScriptPath selects one exact Taproot leaf spend.
 	ScriptPath *CustomAnchorScriptPathSigningPlan `json:"script_path,omitempty"`
+
+	// CallerSigned declares an input whose witness the caller supplies
+	// out of band. The SDK derives no signing request and the backend
+	// must not sign it.
+	CallerSigned *CustomAnchorCallerSignedPlan `json:"caller_signed,omitempty"`
 }
 
 // CustomAnchorKeyPathSigningPlan identifies the internal key that must
@@ -75,6 +80,11 @@ type CustomAnchorMuSig2SigningPlan struct {
 	// signing sessions. It must never contain a secret nonce.
 	SessionContext []byte `json:"session_context"`
 }
+
+// CustomAnchorCallerSignedPlan declares an anchor input signed entirely by
+// the caller, outside the SDK's signing-request flow: typically a funding
+// input from the caller's own on-chain wallet on a caller-funded anchor.
+type CustomAnchorCallerSignedPlan struct{}
 
 // CustomAnchorScriptPathSigningPlan identifies one exact committed Taproot
 // leaf and any external keys expected to contribute witness signatures. The
@@ -324,6 +334,10 @@ func customAnchorSigningRequests(packet *btcpsbt.Packet,
 			requests.ScriptPath = append(
 				requests.ScriptPath, *request,
 			)
+
+		case plan.CallerSigned != nil:
+			// The caller supplies this input's witness out of
+			// band; no signing request is derived.
 		}
 	}
 
@@ -621,6 +635,12 @@ func (p *CustomAnchorTransferPackage) verifyFinalAnchorSigningPlans(
 	for _, inputIndex := range p.BackendManagedInputIndices {
 		backendManaged[inputIndex] = struct{}{}
 	}
+	callerSigned := make(map[uint32]struct{}, len(p.SigningPlans))
+	for _, plan := range p.SigningPlans {
+		if plan.CallerSigned != nil {
+			callerSigned[plan.InputIndex] = struct{}{}
+		}
+	}
 
 	for idx := range finalTx.TxIn {
 		inputIndex := uint32(idx)
@@ -662,6 +682,14 @@ func (p *CustomAnchorTransferPackage) verifyFinalAnchorSigningPlans(
 				return err
 			}
 
+		case hasCallerSignedPlan(callerSigned, inputIndex):
+			if len(witness) == 0 {
+				return fmt.Errorf(
+					"final anchor input %d misses its caller-signed "+
+						"witness", idx,
+				)
+			}
+
 		default:
 			return fmt.Errorf(
 				"final anchor input %d has no sealed signing plan", idx,
@@ -670,6 +698,15 @@ func (p *CustomAnchorTransferPackage) verifyFinalAnchorSigningPlans(
 	}
 
 	return nil
+}
+
+// hasCallerSignedPlan reports whether the input carries a caller-signed
+// plan.
+func hasCallerSignedPlan(callerSigned map[uint32]struct{},
+	inputIndex uint32) bool {
+
+	_, ok := callerSigned[inputIndex]
+	return ok
 }
 
 func verifyFinalKeyPathWitness(inputIndex int, witness wire.TxWitness,
@@ -863,6 +900,9 @@ func validateCustomAnchorSigningPlans(
 				return fmt.Errorf("signing plan %d: %w", i, err)
 			}
 		}
+		if plan.CallerSigned != nil {
+			variants++
+		}
 		if variants != 1 {
 			return fmt.Errorf(
 				"signing plan %d must set exactly one spending path", i,
@@ -915,6 +955,10 @@ func cloneCustomAnchorSigningPlans(
 				plans[i].MuSig2.SessionContext,
 			)
 			clone[i].MuSig2 = &muSig2
+		}
+		if plans[i].CallerSigned != nil {
+			callerSigned := *plans[i].CallerSigned
+			clone[i].CallerSigned = &callerSigned
 		}
 		if plans[i].ScriptPath != nil {
 			scriptPath := *plans[i].ScriptPath
