@@ -549,7 +549,7 @@ func (p *AssetProofPath) UnmarshalBinary(encoded []byte) error {
 				AssetProofPathMaxAdditionalBases,
 			)
 		}
-		for i := 0; i < int(baseCount); i++ {
+		for i := range int(baseCount) {
 			base, err := readAssetProofPathBytes(
 				reader, AssetProofPathMaxConfirmedProofSize,
 				"additional base proof",
@@ -1073,6 +1073,7 @@ func decodeAssetProofPathBase(rawProofFile []byte) (*proof.Proof, error) {
 // always pin it.
 func decodeAssetProofPathStep(step *AssetProofPathStep,
 	wantWitnesses int) (*proof.Proof, error) {
+
 	if step == nil {
 		return nil, fmt.Errorf("%w: nil step", ErrAssetProofPathInvalid)
 	}
