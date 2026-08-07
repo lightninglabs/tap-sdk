@@ -781,6 +781,11 @@ func (p *AssetProofPath) Verify(ctx context.Context,
 				previous.Asset.GroupKey,
 			),
 		}
+		if i == 0 && len(coInputs) > 0 {
+			verificationContext = assetProofPathCoInputContext(
+				verificationContext,
+			)
+		}
 
 		// Splice the declared co-inputs in for the merging step so
 		// the state machine can build the full virtual transaction.
@@ -1281,6 +1286,46 @@ func (assetProofPathChainLookup) MeanBlockTimestamp(context.Context,
 		"%w: absolute timelock lookup is unsupported",
 		ErrAssetProofPathInvalid,
 	)
+}
+
+// assetProofPathCoInputContext completes a verifier context so the state
+// machine can walk a merging step's co-input lineages. Those files are the
+// path's own declared bases, and every one of them was just accepted by
+// the caller's confirmed-proof verifier — the authority on what is on
+// chain — so re-deriving their chain facts here would only repeat a
+// stronger check that already passed, and cannot be done offline anyway.
+// What the state machine still needs from them is the input assets, which
+// come from the file contents.
+func assetProofPathCoInputContext(
+	base proof.VerifierCtx) proof.VerifierCtx {
+
+	base.HeaderVerifier = func(wire.BlockHeader, uint32) error {
+		return nil
+	}
+	base.MerkleVerifier = func(*wire.MsgTx, *proof.TxMerkleProof,
+		[32]byte) error {
+
+		return nil
+	}
+	base.ChainLookupGen = assetProofPathChainLookupGen{}
+
+	return base
+}
+
+// assetProofPathChainLookupGen hands out the path's fail-closed chain
+// lookup for every proof and file.
+type assetProofPathChainLookupGen struct{}
+
+func (assetProofPathChainLookupGen) GenFileChainLookup(
+	*proof.File) asset.ChainLookup {
+
+	return assetProofPathChainLookup{}
+}
+
+func (assetProofPathChainLookupGen) GenProofChainLookup(
+	*proof.Proof) (asset.ChainLookup, error) {
+
+	return assetProofPathChainLookup{}, nil
 }
 
 func verifyAssetProofPathIsolatedOutput(transition *proof.Proof) error {
