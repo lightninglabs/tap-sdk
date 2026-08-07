@@ -152,7 +152,7 @@ func TestAssetProofPathAcceptsSplitSteps(t *testing.T) {
 	incompletePath := path.Clone()
 	incompletePath.Steps[0].TransitionProof = incompleteRootWitness
 	require.ErrorContains(
-		t, incompletePath.Validate(), "one complete asset witness",
+		t, incompletePath.Validate(), "asset witness 0 is incomplete",
 	)
 }
 
@@ -515,7 +515,7 @@ func TestAssetProofPathRejectsUnsafeTransitions(t *testing.T) {
 			mutate: func(p *proof.Proof) {
 				p.Asset.PrevWitnesses[0].TxWitness = nil
 			},
-			errMsg: "one complete asset witness",
+			errMsg: "asset witness 0 is incomplete",
 		},
 		{
 			name: "additional asset input path",
@@ -814,10 +814,25 @@ func newGroupedAssetProofPathBase(t *testing.T) ([]byte, *proof.Proof,
 func newAssetProofPathBaseWithGroup(t *testing.T, grouped bool) (
 	[]byte, *proof.Proof, *btcec.PrivateKey) {
 
+	return newAssetProofPathBaseVariant(t, grouped, 2)
+}
+
+// newAssetProofPathSecondBase mints the same asset under a different
+// anchor internal key, so the two bases share an identity but sit at
+// distinct outpoints — the shape two boarded outputs of one asset have.
+func newAssetProofPathSecondBase(t *testing.T) ([]byte, *proof.Proof,
+	*btcec.PrivateKey) {
+
+	return newAssetProofPathBaseVariant(t, false, 7)
+}
+
+func newAssetProofPathBaseVariant(t *testing.T, grouped bool,
+	internalKeyIndex byte) ([]byte, *proof.Proof, *btcec.PrivateKey) {
+
 	t.Helper()
 
 	senderKey := testPrivateKey(t, 1)
-	internalKey := testPrivateKey(t, 2)
+	internalKey := testPrivateKey(t, internalKeyIndex)
 	var genesisHash chainhash.Hash
 	genesisHash[0] = 1
 	genesis := asset.Genesis{
