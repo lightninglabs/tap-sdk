@@ -75,6 +75,17 @@ type AssetProofPathVersion uint16
 const (
 	// AssetProofPathVersionV0 is the initial compact proof-path schema.
 	AssetProofPathVersionV0 AssetProofPathVersion = 0
+
+	// AssetProofPathVersionV1 extends V0 with additional confirmed base
+	// proofs, one per co-input of a multi-input first transition. The
+	// selected asset's lineage stays in ConfirmedBaseProof; the
+	// additional bases authenticate the prior states merged into the
+	// first step.
+	AssetProofPathVersionV1 AssetProofPathVersion = 1
+
+	// AssetProofPathMaxAdditionalBases bounds the co-input base proofs
+	// of a V1 path.
+	AssetProofPathMaxAdditionalBases = 15
 )
 
 // AssetProofPath keeps a fully verified confirmed proof file followed by a
@@ -88,8 +99,15 @@ type AssetProofPath struct {
 	Version AssetProofPathVersion
 
 	// ConfirmedBaseProof is the complete proof file ending at the last
-	// confirmed asset state.
+	// confirmed asset state of the selected lineage.
 	ConfirmedBaseProof []byte
+
+	// AdditionalBaseProofs are complete confirmed proof files for the
+	// co-inputs of a multi-input first transition (V1 paths). The first
+	// step's previous witnesses must reference exactly the outpoints of
+	// ConfirmedBaseProof plus these bases, and every base must carry
+	// the same asset identity.
+	AdditionalBaseProofs [][]byte
 
 	// Steps are ordered from the first unconfirmed child transition to the
 	// selected leaf in the transaction tree.
@@ -230,9 +248,34 @@ func (p *AssetProofPath) Validate() error {
 	if p == nil {
 		return fmt.Errorf("%w: nil path", ErrAssetProofPathInvalid)
 	}
-	if p.Version != AssetProofPathVersionV0 {
+	if p.Version != AssetProofPathVersionV0 &&
+		p.Version != AssetProofPathVersionV1 {
+
 		return fmt.Errorf(
 			"%w: %d", ErrAssetProofPathUnknownVersion, p.Version,
+		)
+	}
+	if p.Version == AssetProofPathVersionV0 &&
+		len(p.AdditionalBaseProofs) != 0 {
+
+		return fmt.Errorf(
+			"%w: additional base proofs need a v1 path",
+			ErrAssetProofPathInvalid,
+		)
+	}
+	if len(p.AdditionalBaseProofs) > AssetProofPathMaxAdditionalBases {
+		return fmt.Errorf(
+			"%w: %d additional base proofs exceed %d",
+			ErrAssetProofPathInvalid,
+			len(p.AdditionalBaseProofs),
+			AssetProofPathMaxAdditionalBases,
+		)
+	}
+	if len(p.AdditionalBaseProofs) > 0 && len(p.Steps) == 0 {
+		return fmt.Errorf(
+			"%w: additional base proofs need the multi-input "+
+				"transition they feed",
+			ErrAssetProofPathInvalid,
 		)
 	}
 	if len(p.ConfirmedBaseProof) == 0 {
@@ -277,6 +320,48 @@ func (p *AssetProofPath) Validate() error {
 
 	totalSize := uint64(assetProofPathHeaderSize +
 		assetProofPathChecksumSize + len(p.ConfirmedBaseProof))
+
+	// Additional bases must decode, stay in bounds, and carry the same
+	// asset identity as the selected base: a multi-input transition can
+	// only merge identical assets into one output.
+	for i, base := range p.AdditionalBaseProofs {
+		if len(base) == 0 ||
+			len(base) > AssetProofPathMaxConfirmedProofSize {
+
+			return fmt.Errorf(
+				"%w: additional base proof %d size is out "+
+					"of bounds", ErrAssetProofPathInvalid,
+				i,
+			)
+		}
+		totalSize += uint64(4 + len(base))
+		if totalSize > AssetProofPathMaxSize {
+			return fmt.Errorf(
+				"%w: encoded path exceeds %d bytes",
+				ErrAssetProofPathInvalid,
+				AssetProofPathMaxSize,
+			)
+		}
+
+		additional, err := decodeAssetProofPathBase(base)
+		if err != nil {
+			return fmt.Errorf("additional base %d: %w", i, err)
+		}
+		if additional.Asset.LockTime != 0 ||
+			additional.Asset.RelativeLockTime != 0 {
+
+			return fmt.Errorf(
+				"%w: confirmed asset timelocks are "+
+					"unsupported", ErrAssetProofPathInvalid,
+			)
+		}
+		if err := verifyAssetProofPathAssetIdentity(
+			&baseProof.Asset, &additional.Asset,
+			"additional base asset",
+		); err != nil {
+			return fmt.Errorf("additional base %d: %w", i, err)
+		}
+	}
 	for i := range p.Steps {
 		stepSize := len(p.Steps[i].TransitionProof)
 		totalSize += uint64(4 + stepSize)
@@ -307,6 +392,11 @@ func (p *AssetProofPath) Clone() *AssetProofPath {
 		ConfirmedBaseProof: cloneBytes(p.ConfirmedBaseProof),
 		Steps:              make([]AssetProofPathStep, len(p.Steps)),
 	}
+	for _, base := range p.AdditionalBaseProofs {
+		clone.AdditionalBaseProofs = append(
+			clone.AdditionalBaseProofs, cloneBytes(base),
+		)
+	}
 	for i := range p.Steps {
 		clone.Steps[i].TransitionProof = cloneBytes(
 			p.Steps[i].TransitionProof,
@@ -327,7 +417,12 @@ func (p *AssetProofPath) ContentID() (Hash, error) {
 		return Hash{}, err
 	}
 
-	return taggedAssetProofPathHash("tapsdk/asset-proof-path/v0", body), nil
+	tag := "tapsdk/asset-proof-path/v0"
+	if p.Version == AssetProofPathVersionV1 {
+		tag = "tapsdk/asset-proof-path/v1"
+	}
+
+	return taggedAssetProofPathHash(tag, body), nil
 }
 
 // ContentID returns a domain-separated commitment to the transition proof.
@@ -419,7 +514,9 @@ func (p *AssetProofPath) UnmarshalBinary(encoded []byte) error {
 			"%w: read version: %v", ErrAssetProofPathInvalid, err,
 		)
 	}
-	if AssetProofPathVersion(version) != AssetProofPathVersionV0 {
+	if AssetProofPathVersion(version) != AssetProofPathVersionV0 &&
+		AssetProofPathVersion(version) != AssetProofPathVersionV1 {
+
 		return fmt.Errorf(
 			"%w: %d", ErrAssetProofPathUnknownVersion, version,
 		)
@@ -430,6 +527,37 @@ func (p *AssetProofPath) UnmarshalBinary(encoded []byte) error {
 	)
 	if err != nil {
 		return err
+	}
+
+	var additionalBases [][]byte
+	if AssetProofPathVersion(version) >= AssetProofPathVersionV1 {
+		var baseCount uint16
+		err := binary.Read(reader, binary.BigEndian, &baseCount)
+		if err != nil {
+			return fmt.Errorf(
+				"%w: read additional base count: %v",
+				ErrAssetProofPathInvalid, err,
+			)
+		}
+		if baseCount > AssetProofPathMaxAdditionalBases {
+			return fmt.Errorf(
+				"%w: %d additional base proofs exceed %d",
+				ErrAssetProofPathInvalid, baseCount,
+				AssetProofPathMaxAdditionalBases,
+			)
+		}
+		for i := 0; i < int(baseCount); i++ {
+			base, err := readAssetProofPathBytes(
+				reader, AssetProofPathMaxConfirmedProofSize,
+				"additional base proof",
+			)
+			if err != nil {
+				return fmt.Errorf(
+					"additional base %d: %w", i, err,
+				)
+			}
+			additionalBases = append(additionalBases, base)
+		}
 	}
 
 	var stepCount uint16
@@ -447,9 +575,12 @@ func (p *AssetProofPath) UnmarshalBinary(encoded []byte) error {
 	}
 
 	decoded := AssetProofPath{
-		Version:            AssetProofPathVersion(version),
-		ConfirmedBaseProof: baseProof,
-		Steps:              make([]AssetProofPathStep, int(stepCount)),
+		Version:              AssetProofPathVersion(version),
+		ConfirmedBaseProof:   baseProof,
+		AdditionalBaseProofs: additionalBases,
+		Steps: make(
+			[]AssetProofPathStep, int(stepCount),
+		),
 	}
 	for i := range decoded.Steps {
 		stepProof, err := readAssetProofPathBytes(
@@ -526,11 +657,64 @@ func (p *AssetProofPath) Verify(ctx context.Context,
 		OutPoint: baseProof.OutPoint(),
 	}
 
+	// Additional bases (co-inputs of a multi-input first transition)
+	// are verified exactly like the selected base, and the first step
+	// must spend precisely the union of all base outpoints — otherwise
+	// the extra bases would be unbound decoration.
+	baseOutpoints := map[wire.OutPoint]struct{}{
+		baseProof.OutPoint(): {},
+	}
+	for i, base := range p.AdditionalBaseProofs {
+		additionalVerification, err := verifier.VerifyConfirmedProof(
+			ctx, cloneBytes(base),
+		)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"verify additional base proof %d: %w", i, err,
+			)
+		}
+		if additionalVerification == nil ||
+			!additionalVerification.AnchorAssetInventoryComplete {
+
+			return nil, ErrAssetProofPathUnknownPassiveAssets
+		}
+		if additionalVerification.PassiveAssetCount != 0 {
+			return nil, fmt.Errorf(
+				"%w: %d", ErrAssetProofPathPassiveAssets,
+				additionalVerification.PassiveAssetCount,
+			)
+		}
+
+		additional, err := decodeAssetProofPathBase(base)
+		if err != nil {
+			return nil, fmt.Errorf("additional base %d: %w", i,
+				err)
+		}
+		baseOutpoints[additional.OutPoint()] = struct{}{}
+	}
+	if len(baseOutpoints) != len(p.AdditionalBaseProofs)+1 {
+		return nil, fmt.Errorf(
+			"%w: duplicate base proof outpoints",
+			ErrAssetProofPathInvalid,
+		)
+	}
+
 	var finalProof = baseProof
 	for i := range p.Steps {
 		transition, err := decodeAssetProofPathStep(&p.Steps[i])
 		if err != nil {
 			return nil, fmt.Errorf("step %d: %w", i, err)
+		}
+		if i == 0 && len(p.AdditionalBaseProofs) > 0 {
+			err := verifyAssetProofPathBaseBinding(
+				transition, baseOutpoints,
+			)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"verify first step base binding: %w",
+					err,
+				)
+			}
 		}
 		if err := verifyAssetProofPathIdentity(
 			previous.Asset, transition,
@@ -655,6 +839,41 @@ func verifyAssetProofPathIdentity(previous *asset.Asset,
 	)
 }
 
+// verifyAssetProofPathBaseBinding requires a multi-base first transition
+// to spend exactly the outpoints of the declared base proofs: every
+// previous witness resolves to a declared base and every base is spent.
+func verifyAssetProofPathBaseBinding(transition *proof.Proof,
+	baseOutpoints map[wire.OutPoint]struct{}) error {
+
+	spent := make(map[wire.OutPoint]struct{})
+	for i := range transition.Asset.PrevWitnesses {
+		prevID := transition.Asset.PrevWitnesses[i].PrevID
+		if prevID == nil {
+			return fmt.Errorf(
+				"%w: transition witness %d misses its "+
+					"previous ID", ErrAssetProofPathInvalid,
+				i,
+			)
+		}
+		if _, ok := baseOutpoints[prevID.OutPoint]; !ok {
+			return fmt.Errorf(
+				"%w: transition spends undeclared outpoint "+
+					"%v", ErrAssetProofPathInvalid,
+				prevID.OutPoint,
+			)
+		}
+		spent[prevID.OutPoint] = struct{}{}
+	}
+	if len(spent) != len(baseOutpoints) {
+		return fmt.Errorf(
+			"%w: transition does not spend every declared base",
+			ErrAssetProofPathInvalid,
+		)
+	}
+
+	return nil
+}
+
 func verifyAssetProofPathAssetIdentity(previous, next *asset.Asset,
 	label string) error {
 
@@ -707,6 +926,21 @@ func (p *AssetProofPath) marshalBody() ([]byte, error) {
 	}
 	if err := writeAssetProofPathBytes(&body, p.ConfirmedBaseProof); err != nil {
 		return nil, err
+	}
+	if p.Version >= AssetProofPathVersionV1 {
+		err := binary.Write(
+			&body, binary.BigEndian,
+			uint16(len(p.AdditionalBaseProofs)),
+		)
+		if err != nil {
+			return nil, err
+		}
+		for _, base := range p.AdditionalBaseProofs {
+			err := writeAssetProofPathBytes(&body, base)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 	if err := binary.Write(
 		&body, binary.BigEndian, uint16(len(p.Steps)),
