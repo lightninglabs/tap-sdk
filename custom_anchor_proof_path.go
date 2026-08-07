@@ -667,6 +667,7 @@ func (p *AssetProofPath) Verify(ctx context.Context,
 	baseOutpoints := map[wire.OutPoint]struct{}{
 		baseProof.OutPoint(): {},
 	}
+	coInputs := make([]proof.File, 0, len(p.AdditionalBaseProofs))
 	for i, base := range p.AdditionalBaseProofs {
 		additionalVerification, err := verifier.VerifyConfirmedProof(
 			ctx, cloneBytes(base),
@@ -694,6 +695,22 @@ func (p *AssetProofPath) Verify(ctx context.Context,
 				err)
 		}
 		baseOutpoints[additional.OutPoint()] = struct{}{}
+
+		// The virtual transaction of a merging transition covers
+		// every input asset, so the state machine needs each
+		// co-input's lineage. It comes from the path's own declared
+		// bases, which were just verified as confirmed, never from
+		// the transition proof itself.
+		var coInput proof.File
+		if err := coInput.Decode(
+			bytes.NewReader(base),
+		); err != nil {
+			return nil, fmt.Errorf(
+				"%w: decode additional base %d: %v",
+				ErrAssetProofPathInvalid, i, err,
+			)
+		}
+		coInputs = append(coInputs, coInput)
 	}
 	if len(baseOutpoints) != len(p.AdditionalBaseProofs)+1 {
 		return nil, fmt.Errorf(
@@ -765,11 +782,20 @@ func (p *AssetProofPath) Verify(ctx context.Context,
 			),
 		}
 
+		// Splice the declared co-inputs in for the merging step so
+		// the state machine can build the full virtual transaction.
+		// They are cleared again immediately: a path's transition
+		// proof must stay compact, and one arriving with inputs of
+		// its own is rejected at decode.
+		if i == 0 && len(coInputs) > 0 {
+			transition.AdditionalInputs = coInputs
+		}
 		previous, err = transition.Verify(
 			ctx, previous, assetProofPathChainLookup{},
 			verificationContext,
 			proof.WithSkipChainVerification(),
 		)
+		transition.AdditionalInputs = nil
 		if err != nil {
 			return nil, fmt.Errorf(
 				"verify unconfirmed step %d: %w", i, err,
