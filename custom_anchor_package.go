@@ -1554,8 +1554,9 @@ func validateCustomAnchorProofSource(
 		if len(path.Steps) == 0 {
 			tip, err = decodeAssetProofPathBase(path.ConfirmedBaseProof)
 		} else {
+			last := len(path.Steps) - 1
 			tip, err = decodeAssetProofPathStep(
-				&path.Steps[len(path.Steps)-1],
+				&path.Steps[last], path.stepWitnessCount(last),
 			)
 		}
 		if err != nil {

@@ -571,8 +571,10 @@ func (b *CustomAnchorTxBuilder) resolveInputs(ctx context.Context,
 					requested.ProofPath.ConfirmedBaseProof,
 				)
 			} else {
+				tip := len(requested.ProofPath.Steps) - 1
 				lastProof, err = decodeAssetProofPathStep(
-					&requested.ProofPath.Steps[len(requested.ProofPath.Steps)-1],
+					&requested.ProofPath.Steps[tip],
+					requested.ProofPath.stepWitnessCount(tip),
 				)
 			}
 			if err != nil {

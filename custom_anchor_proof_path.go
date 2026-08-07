@@ -373,7 +373,10 @@ func (p *AssetProofPath) Validate() error {
 			)
 		}
 
-		if _, err := decodeAssetProofPathStep(&p.Steps[i]); err != nil {
+		_, err := decodeAssetProofPathStep(
+			&p.Steps[i], p.stepWitnessCount(i),
+		)
+		if err != nil {
 			return fmt.Errorf("step %d: %w", i, err)
 		}
 	}
@@ -427,7 +430,7 @@ func (p *AssetProofPath) ContentID() (Hash, error) {
 
 // ContentID returns a domain-separated commitment to the transition proof.
 func (s *AssetProofPathStep) ContentID() (Hash, error) {
-	if _, err := decodeAssetProofPathStep(s); err != nil {
+	if _, err := decodeAssetProofPathStep(s, 0); err != nil {
 		return Hash{}, err
 	}
 
@@ -439,7 +442,7 @@ func (s *AssetProofPathStep) ContentID() (Hash, error) {
 // Summary decodes and derives the step's identity and resulting asset state.
 // It does not cryptographically verify the transition against its predecessor.
 func (s *AssetProofPathStep) Summary() (*AssetProofPathStepSummary, error) {
-	transition, err := decodeAssetProofPathStep(s)
+	transition, err := decodeAssetProofPathStep(s, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -701,7 +704,9 @@ func (p *AssetProofPath) Verify(ctx context.Context,
 
 	var finalProof = baseProof
 	for i := range p.Steps {
-		transition, err := decodeAssetProofPathStep(&p.Steps[i])
+		transition, err := decodeAssetProofPathStep(
+			&p.Steps[i], p.stepWitnessCount(i),
+		)
 		if err != nil {
 			return nil, fmt.Errorf("step %d: %w", i, err)
 		}
@@ -1030,7 +1035,13 @@ func decodeAssetProofPathBase(rawProofFile []byte) (*proof.Proof, error) {
 	return baseProof, nil
 }
 
-func decodeAssetProofPathStep(step *AssetProofPathStep) (*proof.Proof, error) {
+// decodeAssetProofPathStep decodes one step and checks its structure.
+// wantWitnesses pins how many asset witnesses the transition must carry;
+// zero accepts any complete set, which the per-step helpers use because
+// they have no path context to pin the count with. Validate and Verify
+// always pin it.
+func decodeAssetProofPathStep(step *AssetProofPathStep,
+	wantWitnesses int) (*proof.Proof, error) {
 	if step == nil {
 		return nil, fmt.Errorf("%w: nil step", ErrAssetProofPathInvalid)
 	}
@@ -1161,23 +1172,60 @@ func decodeAssetProofPathStep(step *AssetProofPathStep) (*proof.Proof, error) {
 		witnesses = transition.Asset.PrevWitnesses
 	}
 
-	if len(witnesses) != 1 || witnesses[0].PrevID == nil ||
-		len(witnesses[0].TxWitness) == 0 ||
-		witnesses[0].SplitCommitment != nil {
-
+	if len(witnesses) == 0 {
 		return nil, fmt.Errorf(
-			"%w: transition must contain one complete asset witness",
-			ErrAssetProofPathInvalid,
+			"%w: transition must contain at least one complete "+
+				"asset witness", ErrAssetProofPathInvalid,
 		)
 	}
-	if witnesses[0].PrevID.OutPoint != transition.PrevOut {
+	if wantWitnesses > 0 && len(witnesses) != wantWitnesses {
 		return nil, fmt.Errorf(
-			"%w: asset witness previous outpoint mismatch",
-			ErrAssetProofPathInvalid,
+			"%w: transition must contain %d complete asset "+
+				"witnesses, found %d", ErrAssetProofPathInvalid,
+			wantWitnesses, len(witnesses),
+		)
+	}
+
+	// Every witness must be complete, and exactly one of them must spend
+	// the step's declared predecessor. A merging transition may carry
+	// more, but each of those is pinned to a declared base outpoint by
+	// verifyAssetProofPathBaseBinding, so none can hide an unproven
+	// input.
+	predecessors := 0
+	for i := range witnesses {
+		witness := &witnesses[i]
+		if witness.PrevID == nil || len(witness.TxWitness) == 0 ||
+			witness.SplitCommitment != nil {
+
+			return nil, fmt.Errorf(
+				"%w: asset witness %d is incomplete",
+				ErrAssetProofPathInvalid, i,
+			)
+		}
+		if witness.PrevID.OutPoint == transition.PrevOut {
+			predecessors++
+		}
+	}
+	if predecessors != 1 {
+		return nil, fmt.Errorf(
+			"%w: transition must spend its declared predecessor "+
+				"exactly once, found %d",
+			ErrAssetProofPathInvalid, predecessors,
 		)
 	}
 
 	return transition, nil
+}
+
+// stepWitnessCount returns the number of asset witnesses the step at the
+// given index must carry. Only a multi-base path's first step merges more
+// than one predecessor; every later step spends a single tree node.
+func (p *AssetProofPath) stepWitnessCount(index int) int {
+	if index == 0 {
+		return 1 + len(p.AdditionalBaseProofs)
+	}
+
+	return 1
 }
 
 // assetProofPathChainLookup lets the VM execute its normal timelock path while
