@@ -1372,6 +1372,18 @@ func verifyCommittedVirtualPackets(label string, expected,
 				return fmt.Errorf("committed %s virtual packet %d output %d "+
 					"has no proof suffix", label, idx, outputIdx)
 			}
+
+			if outputIdx >= len(expected[idx].Outputs) {
+				continue
+			}
+			if !customAnchorAltLeavesEqual(
+				expected[idx].Outputs[outputIdx].AltLeaves,
+				output.AltLeaves,
+			) {
+
+				return fmt.Errorf("committed %s virtual packet %d output %d "+
+					"alternate leaves changed", label, idx, outputIdx)
+			}
 		}
 
 		expectedBytes, err := encodeVirtualPacketWithoutProofSuffixes(
@@ -1405,16 +1417,25 @@ func encodeVirtualPacketWithoutProofSuffixes(
 		return nil, fmt.Errorf("nil virtual packet")
 	}
 	proofSuffixes := make([]*proof.Proof, len(packet.Outputs))
+	altLeaves := make([][]asset.AltLeaf[asset.Asset], len(packet.Outputs))
 	for idx, output := range packet.Outputs {
 		if output == nil {
 			return nil, fmt.Errorf("nil virtual output %d", idx)
 		}
 		proofSuffixes[idx] = output.ProofSuffix
 		output.ProofSuffix = nil
+
+		// Alt leaves are committed by key in an MS-SMT, so their
+		// serialized order carries no meaning; tapsend emits a
+		// different one when several packets share an anchor output.
+		// They are compared by key separately.
+		altLeaves[idx] = output.AltLeaves
+		output.AltLeaves = nil
 	}
 	defer func() {
 		for idx, output := range packet.Outputs {
 			output.ProofSuffix = proofSuffixes[idx]
+			output.AltLeaves = altLeaves[idx]
 		}
 	}()
 
