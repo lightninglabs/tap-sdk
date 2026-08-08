@@ -1387,6 +1387,25 @@ func verifyCommittedVirtualPackets(label string, expected,
 			}
 		}
 
+		if len(expected[idx].Inputs) != len(committed[idx].Inputs) {
+			return fmt.Errorf("committed %s virtual packet %d input count "+
+				"changed", label, idx)
+		}
+		for inputIdx := range expected[idx].Inputs {
+			equal, err := customAnchorTransitionProofsEqual(
+				expected[idx].Inputs[inputIdx].Proof,
+				committed[idx].Inputs[inputIdx].Proof,
+			)
+			if err != nil {
+				return fmt.Errorf("compare %s virtual packet %d input %d "+
+					"proof: %w", label, idx, inputIdx, err)
+			}
+			if !equal {
+				return fmt.Errorf("committed %s virtual packet %d input %d "+
+					"proof changed", label, idx, inputIdx)
+			}
+		}
+
 		expectedBytes, err := encodeVirtualPacketWithoutProofSuffixes(
 			expected[idx],
 		)
@@ -1420,6 +1439,24 @@ func encodeVirtualPacketWithoutProofSuffixes(
 	if packet == nil {
 		return nil, fmt.Errorf("nil virtual packet")
 	}
+
+	// An input proof is a transition proof and carries alternate leaves
+	// of its own, so it is subject to the same reordering. It is
+	// compared with the proof comparator instead.
+	inputProofs := make([]*proof.Proof, len(packet.Inputs))
+	for idx, input := range packet.Inputs {
+		if input == nil {
+			return nil, fmt.Errorf("nil virtual input %d", idx)
+		}
+		inputProofs[idx] = input.Proof
+		input.Proof = nil
+	}
+	defer func() {
+		for idx, input := range packet.Inputs {
+			input.Proof = inputProofs[idx]
+		}
+	}()
+
 	proofSuffixes := make([]*proof.Proof, len(packet.Outputs))
 	altLeaves := make([][]asset.AltLeaf[asset.Asset], len(packet.Outputs))
 	for idx, output := range packet.Outputs {
