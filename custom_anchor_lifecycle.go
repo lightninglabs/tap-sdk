@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
@@ -1372,6 +1373,37 @@ func verifyCommittedVirtualPackets(label string, expected,
 				return fmt.Errorf("committed %s virtual packet %d output %d "+
 					"has no proof suffix", label, idx, outputIdx)
 			}
+
+			if outputIdx >= len(expected[idx].Outputs) {
+				continue
+			}
+			if !customAnchorAltLeavesEqual(
+				expected[idx].Outputs[outputIdx].AltLeaves,
+				output.AltLeaves,
+			) {
+
+				return fmt.Errorf("committed %s virtual packet %d output %d "+
+					"alternate leaves changed", label, idx, outputIdx)
+			}
+		}
+
+		if len(expected[idx].Inputs) != len(committed[idx].Inputs) {
+			return fmt.Errorf("committed %s virtual packet %d input count "+
+				"changed", label, idx)
+		}
+		for inputIdx := range expected[idx].Inputs {
+			equal, err := customAnchorTransitionProofsEqual(
+				expected[idx].Inputs[inputIdx].Proof,
+				committed[idx].Inputs[inputIdx].Proof,
+			)
+			if err != nil {
+				return fmt.Errorf("compare %s virtual packet %d input %d "+
+					"proof: %w", label, idx, inputIdx, err)
+			}
+			if !equal {
+				return fmt.Errorf("committed %s virtual packet %d input %d "+
+					"proof changed", label, idx, inputIdx)
+			}
 		}
 
 		expectedBytes, err := encodeVirtualPacketWithoutProofSuffixes(
@@ -1391,7 +1423,10 @@ func verifyCommittedVirtualPackets(label string, expected,
 		if !bytes.Equal(expectedBytes, committedBytes) {
 			return fmt.Errorf("committed %s virtual packet %d changed fields "+
 				"other than deterministic alternate leaves and proof "+
-				"suffixes", label, idx)
+				"suffixes (%s)", label, idx,
+				describeVirtualPacketDelta(
+					expectedBytes, committedBytes,
+				))
 		}
 	}
 
@@ -1404,17 +1439,44 @@ func encodeVirtualPacketWithoutProofSuffixes(
 	if packet == nil {
 		return nil, fmt.Errorf("nil virtual packet")
 	}
+
+	// An input proof is a transition proof and carries alternate leaves
+	// of its own, so it is subject to the same reordering. It is
+	// compared with the proof comparator instead.
+	inputProofs := make([]*proof.Proof, len(packet.Inputs))
+	for idx, input := range packet.Inputs {
+		if input == nil {
+			return nil, fmt.Errorf("nil virtual input %d", idx)
+		}
+		inputProofs[idx] = input.Proof
+		input.Proof = nil
+	}
+	defer func() {
+		for idx, input := range packet.Inputs {
+			input.Proof = inputProofs[idx]
+		}
+	}()
+
 	proofSuffixes := make([]*proof.Proof, len(packet.Outputs))
+	altLeaves := make([][]asset.AltLeaf[asset.Asset], len(packet.Outputs))
 	for idx, output := range packet.Outputs {
 		if output == nil {
 			return nil, fmt.Errorf("nil virtual output %d", idx)
 		}
 		proofSuffixes[idx] = output.ProofSuffix
 		output.ProofSuffix = nil
+
+		// Alt leaves are committed by key in an MS-SMT, so their
+		// serialized order carries no meaning; tapsend emits a
+		// different one when several packets share an anchor output.
+		// They are compared by key separately.
+		altLeaves[idx] = output.AltLeaves
+		output.AltLeaves = nil
 	}
 	defer func() {
 		for idx, output := range packet.Outputs {
 			output.ProofSuffix = proofSuffixes[idx]
+			output.AltLeaves = altLeaves[idx]
 		}
 	}()
 
@@ -1570,4 +1632,89 @@ func packageLockedOutpoints(
 func writePlanDigestBytes(buf *bytes.Buffer, value []byte) {
 	_ = binary.Write(buf, binary.BigEndian, uint64(len(value)))
 	_, _ = buf.Write(value)
+}
+
+// describeVirtualPacketDelta names the PSBT sections and key types that
+// differ between two encoded virtual packets. A bare "the packet changed"
+// is not actionable when the caller cannot see either side, so the
+// comparison failure carries the offending keys with it.
+func describeVirtualPacketDelta(expected, committed []byte) string {
+	left, err := psbt.NewFromRawBytes(bytes.NewReader(expected), false)
+	if err != nil {
+		return fmt.Sprintf("undiagnosable: parse submitted: %v", err)
+	}
+	right, err := psbt.NewFromRawBytes(bytes.NewReader(committed), false)
+	if err != nil {
+		return fmt.Sprintf("undiagnosable: parse committed: %v", err)
+	}
+
+	var deltas []string
+	record := func(section string, l, r []*psbt.Unknown) {
+		for _, key := range unknownKeyDelta(l, r) {
+			deltas = append(deltas, fmt.Sprintf(
+				"%s key 0x%x", section, key,
+			))
+		}
+	}
+
+	record("global", left.Unknowns, right.Unknowns)
+	if len(left.Inputs) != len(right.Inputs) {
+		deltas = append(deltas, fmt.Sprintf("input count %d != %d",
+			len(left.Inputs), len(right.Inputs)))
+	} else {
+		for idx := range left.Inputs {
+			record(
+				fmt.Sprintf("input %d", idx),
+				left.Inputs[idx].Unknowns,
+				right.Inputs[idx].Unknowns,
+			)
+		}
+	}
+	if len(left.Outputs) != len(right.Outputs) {
+		deltas = append(deltas, fmt.Sprintf("output count %d != %d",
+			len(left.Outputs), len(right.Outputs)))
+	} else {
+		for idx := range left.Outputs {
+			record(
+				fmt.Sprintf("output %d", idx),
+				left.Outputs[idx].Unknowns,
+				right.Outputs[idx].Unknowns,
+			)
+		}
+	}
+
+	if len(deltas) == 0 {
+		return "differing bytes outside the PSBT key-value sections"
+	}
+
+	return strings.Join(deltas, ", ")
+}
+
+// unknownKeyDelta returns the keys whose values differ between two PSBT
+// unknown-field sets, including keys present on only one side.
+func unknownKeyDelta(left, right []*psbt.Unknown) [][]byte {
+	index := func(fields []*psbt.Unknown) map[string][]byte {
+		byKey := make(map[string][]byte, len(fields))
+		for _, field := range fields {
+			byKey[string(field.Key)] = field.Value
+		}
+
+		return byKey
+	}
+	leftByKey, rightByKey := index(left), index(right)
+
+	var keys [][]byte
+	for _, field := range left {
+		other, ok := rightByKey[string(field.Key)]
+		if !ok || !bytes.Equal(field.Value, other) {
+			keys = append(keys, field.Key)
+		}
+	}
+	for _, field := range right {
+		if _, ok := leftByKey[string(field.Key)]; !ok {
+			keys = append(keys, field.Key)
+		}
+	}
+
+	return keys
 }
