@@ -721,8 +721,10 @@ func (m *walletKitClient) DeclareScriptKey(ctx context.Context,
 	authCtx, cancel, client := m.rawClientWithMacAuth(ctx)
 	defer cancel()
 
+	// The script key travels as a 32-byte x-only key on the RPC, while
+	// the SDK type holds the compressed form.
 	rpcKey := &taprpc.ScriptKey{
-		PubKey:   req.ScriptKey.PubKey[:],
+		PubKey:   req.ScriptKey.PubKey[1:],
 		TapTweak: req.ScriptKey.TapTweak,
 	}
 
