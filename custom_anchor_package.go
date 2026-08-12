@@ -1277,7 +1277,7 @@ func (p *CustomAnchorTransferPackage) MarshalBinary() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(jsonBytes) > math.MaxUint32 {
+	if uint64(len(jsonBytes)) > math.MaxUint32 {
 		return nil, fmt.Errorf("custom anchor package is too large")
 	}
 
