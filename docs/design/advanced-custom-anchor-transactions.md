@@ -65,7 +65,6 @@ The first implementation does not provide:
 - wallet-selected asset inputs or proof locators;
 - backend-discovered passive-asset preservation;
 - asset-level absolute or relative timelocks;
-- unconfirmed asset merges;
 - a MuSig2 nonce exchange or partial-signature coordinator;
 - Bitcoin transaction-graph construction, application policy, or fee
   management;
@@ -464,23 +463,42 @@ domain-separated content IDs for the full path and each step. A store can keep
 steps once by content ID and let VTXO records refer to a parent path plus one
 new step.
 
+A step that merges several prior states carries the evidence for its extra
+inputs alongside the spine. Version 1 paths declare additional confirmed base
+proof files that only the first step may consume. Version 2 paths let any
+step carry complete recursive co-input paths — each one a self-describing
+encoding with its own confirmed base and unconfirmed steps — bounded by a
+per-step co-path count, a nesting depth checked before nested content is
+parsed, and one whole-tree byte budget. Internally a V1 path is re-expressed
+as first-step co-input paths, so a single verification engine covers both.
+
 Verification proceeds as follows:
 
 1. A `ConfirmedProofVerifier` fully verifies the base proof against the chain
    and attests that the base anchor inventory is complete and contains no
-   passive assets.
+   passive assets. Every co-input path is resolved recursively with the same
+   engine, so its confirmed base receives the identical treatment.
 2. The SDK decodes the base tip and every transition.
 3. For every unconfirmed step, the verifier must also implement
    `UnconfirmedAnchorVerifier`. The host validates the complete serialized
    anchor transaction against its authoritative Ark/swap graph, including the
-   expected previous and new outpoints, all Bitcoin prevouts and signatures,
-   standardness, and transaction/package policy.
+   expected previous and new outpoints — a merging step reports the complete
+   input set in `PreviousAnchorOutpoints` — all Bitcoin prevouts and
+   signatures, standardness, and transaction/package policy.
 4. For each step the SDK checks exact parent asset identity, outpoint, amount, and
-   script-key continuity.
-5. It runs the native Taproot Assets proof verifier with chain-inclusion
-   verification skipped only for the unconfirmed transition. Asset VM,
-   commitment, witness, and state-transition checks still run.
-6. It reconstructs the selected output commitment, including disclosed
+   script-key continuity, and checks every co-input tip against the same
+   immutable identity.
+5. It binds the step's effective witness set (the root asset's witnesses for
+   split transitions) to exactly the spine tip plus the verified co-input
+   tips, and requires the anchor transaction to spend each of those outpoints
+   exactly once — the native verifier only proves the spine prevout is
+   consumed.
+6. It runs the native Taproot Assets proof verifier with chain-inclusion
+   verification skipped only for the unconfirmed transition, splicing each
+   co-input lineage in as a synthetic in-memory proof file built from the
+   co-path's own declared proofs. Asset VM, commitment, witness, inflation,
+   and state-transition checks still run.
+7. It reconstructs the selected output commitment, including disclosed
    alternate leaves, and compares the exact anchor output script. This rejects
    hidden co-anchored active or passive assets.
 
@@ -492,16 +510,21 @@ does not provide the unconfirmed-anchor extension or rejects any step. The
 inspectable result records host-attested chain/graph checks separately from
 SDK-local asset-transition checks.
 
-The MVP accepts one active asset predecessor per edge. A Bitcoin transaction
-may contain additional opaque Bitcoin or connector inputs. An empty Taproot
-Assets `AdditionalInputs` field proves only that those inputs do not contribute
-to the tracked transition; the compact path verifier cannot attest their full
-asset inventory. The host's `UnconfirmedAnchorVerifier` must establish that
-inventory before treating them as BTC-only connectors. One asset input may
-split into several asset outputs; the selected split child must carry its
-split-root proof and the root asset must carry a complete V1 witness. Merges,
-additional asset input paths, asset timelocks, ownership challenges, non-V1
-assets, and passive assets are rejected.
+An edge accepts one active asset predecessor per declared input: the spine
+plus one per co-input path. A Bitcoin transaction may contain additional
+opaque Bitcoin or connector inputs. An empty Taproot Assets
+`AdditionalInputs` field on a step's transition proof proves only that those
+inputs do not contribute to the tracked transition; the compact path verifier
+cannot attest their full asset inventory. The host's
+`UnconfirmedAnchorVerifier` must establish that inventory before treating
+them as BTC-only connectors. Any step may merge several inputs into one
+output and may split its inputs into several asset outputs — including the
+Ark merge-and-split shape — as long as every input is evidenced by the
+confirmed base or a declared co-input path; the selected split child must
+carry its split-root proof and the root asset must carry a complete V1
+witness per input. Transition proofs arriving with embedded input files,
+asset timelocks, ownership challenges, non-V1 assets, and passive assets are
+rejected.
 
 These paths are an application-level unconfirmed representation. They must not
 be imported into tapd or a universe as confirmed proofs. Once the relevant

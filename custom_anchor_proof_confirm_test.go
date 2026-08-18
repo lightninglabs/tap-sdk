@@ -2,8 +2,10 @@ package tapsdk
 
 import (
 	"bytes"
+	"context"
 	"testing"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/taproot-assets/proof"
 	"github.com/stretchr/testify/require"
@@ -116,6 +118,112 @@ func TestConfirmProofFileMergeEmbedsCoInputs(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, last.AdditionalInputs, 1)
 	require.EqualValues(t, 99, last.BlockHeight)
+}
+
+// TestConfirmProofFileV2ConfirmsCoInputPaths verifies the recursive
+// assembly: a merging step embeds each co-input path confirmed into a full
+// file of its own, at the step that consumes it, and the assembled file
+// passes complete native verification with real merkle inclusion checks.
+func TestConfirmProofFileV2ConfirmsCoInputPaths(t *testing.T) {
+	t.Parallel()
+
+	firstFile, firstProof, firstKey := newAssetProofPathBase(t)
+	secondFile, secondProof, secondKey := newAssetProofPathSecondBase(t)
+
+	// Spine: A -> A'. Co-input path: B -> B'. Merge: A' + B' -> C.
+	spineKey := testPrivateKey(t, 13)
+	spineTransition := newAssetProofPathTransition(
+		t, firstProof, firstKey, spineKey,
+	)
+	spineBytes, err := spineTransition.Bytes()
+	require.NoError(t, err)
+
+	coKey := testPrivateKey(t, 14)
+	coTransition := newAssetProofPathTransition(
+		t, secondProof, secondKey, coKey,
+	)
+	coBytes, err := coTransition.Bytes()
+	require.NoError(t, err)
+
+	mergeTransition := newAssetProofPathMergeTransition(
+		t, []*proof.Proof{spineTransition, coTransition},
+		[]*btcec.PrivateKey{spineKey, coKey}, testPrivateKey(t, 15),
+	)
+	mergeBytes, err := mergeTransition.Bytes()
+	require.NoError(t, err)
+
+	path := &AssetProofPath{
+		Version:            AssetProofPathVersionV2,
+		ConfirmedBaseProof: firstFile,
+		Steps: []AssetProofPathStep{
+			{TransitionProof: spineBytes},
+			{
+				TransitionProof: mergeBytes,
+				CoInputPaths: []*AssetProofPath{{
+					Version:            AssetProofPathVersionV0,
+					ConfirmedBaseProof: secondFile,
+					Steps: []AssetProofPathStep{{
+						TransitionProof: coBytes,
+					}},
+				}},
+			},
+		},
+	}
+	require.NoError(t, path.Validate())
+
+	confirmations := map[Hash]AnchorConfirmation{
+		Hash(spineTransition.AnchorTx.TxHash()): {
+			BlockHeight: 210,
+			Block: confirmationBlockFor(
+				t, &spineTransition.AnchorTx,
+			),
+		},
+		Hash(coTransition.AnchorTx.TxHash()): {
+			BlockHeight: 211,
+			Block: confirmationBlockFor(
+				t, &coTransition.AnchorTx,
+			),
+		},
+		Hash(mergeTransition.AnchorTx.TxHash()): {
+			BlockHeight: 212,
+			Block: confirmationBlockFor(
+				t, &mergeTransition.AnchorTx,
+			),
+		},
+	}
+	encoded, err := path.ConfirmProofFile(confirmations)
+	require.NoError(t, err)
+
+	baseFile, err := proof.DecodeFile(firstFile)
+	require.NoError(t, err)
+	coBaseFile, err := proof.DecodeFile(secondFile)
+	require.NoError(t, err)
+
+	file, err := proof.DecodeFile(encoded)
+	require.NoError(t, err)
+	require.Equal(t, baseFile.NumProofs()+2, file.NumProofs())
+
+	// The merge proof embeds the co-input path as one fully confirmed
+	// file: the co-input base extended by its own confirmed transition.
+	last, err := file.LastProof()
+	require.NoError(t, err)
+	require.EqualValues(t, 212, last.BlockHeight)
+	require.Len(t, last.AdditionalInputs, 1)
+	embedded := last.AdditionalInputs[0]
+	require.Equal(t, coBaseFile.NumProofs()+1, embedded.NumProofs())
+	embeddedTip, err := embedded.LastProof()
+	require.NoError(t, err)
+	require.EqualValues(t, 211, embeddedTip.BlockHeight)
+	require.True(t, embeddedTip.TxMerkleProof.Verify(
+		&coTransition.AnchorTx, embeddedTip.BlockHeader.MerkleRoot,
+	))
+
+	// The complete file, including the embedded co-input lineage, passes
+	// native verification with real merkle inclusion checks.
+	verifierCtx := proof.MockVerifierCtx
+	verifierCtx.MerkleVerifier = proof.DefaultMerkleVerifier
+	_, err = file.Verify(context.Background(), verifierCtx)
+	require.NoError(t, err)
 }
 
 // TestConfirmProofFileFailsClosed covers the assembly's rejection paths.

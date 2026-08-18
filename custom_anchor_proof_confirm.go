@@ -26,11 +26,12 @@ type AnchorConfirmation struct {
 //
 // The result is the confirmed base proof file extended with one proof per
 // step, each completed with its block header, height, and merkle inclusion
-// proof. A merging first step permanently embeds the path's additional base
-// proofs as its input files, the layout a confirmed multi-input transition
-// proof carries. The caller's backend performs full validation, including
-// chain anchoring, when the file is imported or spent; this assembly only
-// guarantees structural completeness.
+// proof. A merging step permanently embeds each of its co-input paths,
+// confirmed recursively into a full file of its own, as its input files —
+// the layout a confirmed multi-input transition proof carries. The caller's
+// backend performs full validation, including chain anchoring, when the file
+// is imported or spent; this assembly only guarantees structural
+// completeness.
 func (p *AssetProofPath) ConfirmProofFile(
 	confirmations map[Hash]AnchorConfirmation) ([]byte, error) {
 
@@ -47,19 +48,6 @@ func (p *AssetProofPath) ConfirmProofFile(
 			err)
 	}
 
-	// A merging first step needs each co-input's full lineage embedded,
-	// exactly as a backend-produced multi-input transition proof would
-	// carry it.
-	coInputs := make([]proof.File, 0, len(p.AdditionalBaseProofs))
-	for i, base := range p.AdditionalBaseProofs {
-		var coInput proof.File
-		if err := coInput.Decode(bytes.NewReader(base)); err != nil {
-			return nil, fmt.Errorf("decode additional base "+
-				"proof %d: %w", i, err)
-		}
-		coInputs = append(coInputs, coInput)
-	}
-
 	for i := range p.Steps {
 		transition, err := decodeAssetProofPathStep(
 			&p.Steps[i], p.stepWitnessCount(i),
@@ -67,8 +55,30 @@ func (p *AssetProofPath) ConfirmProofFile(
 		if err != nil {
 			return nil, fmt.Errorf("step %d: %w", i, err)
 		}
-		if i == 0 && len(coInputs) > 0 {
-			transition.AdditionalInputs = coInputs
+
+		// A merging step needs each co-input's full confirmed lineage
+		// embedded, exactly as a backend-produced multi-input
+		// transition proof would carry it.
+		for j, coPath := range p.stepCoInputPaths(i) {
+			confirmedCoPath, err := coPath.ConfirmProofFile(
+				confirmations,
+			)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"step %d co-input path %d: %w", i, j,
+					err,
+				)
+			}
+			var coInput proof.File
+			if err := coInput.Decode(
+				bytes.NewReader(confirmedCoPath),
+			); err != nil {
+				return nil, fmt.Errorf("decode step %d "+
+					"co-input file %d: %w", i, j, err)
+			}
+			transition.AdditionalInputs = append(
+				transition.AdditionalInputs, coInput,
+			)
 		}
 
 		if err := confirmTransitionProof(
@@ -77,7 +87,18 @@ func (p *AssetProofPath) ConfirmProofFile(
 			return nil, fmt.Errorf("confirm step %d: %w", i, err)
 		}
 
-		if err := file.AppendProof(*transition); err != nil {
+		proofBytes, err := transition.Bytes()
+		if err != nil {
+			return nil, fmt.Errorf("encode step %d proof: %w", i,
+				err)
+		}
+		if len(proofBytes) > proof.FileMaxProofSizeBytes {
+			return nil, fmt.Errorf("assembled step %d proof "+
+				"size %d exceeds the %d byte proof file "+
+				"limit", i, len(proofBytes),
+				proof.FileMaxProofSizeBytes)
+		}
+		if err := file.AppendProofRaw(proofBytes); err != nil {
 			return nil, fmt.Errorf("append step %d proof: %w", i,
 				err)
 		}

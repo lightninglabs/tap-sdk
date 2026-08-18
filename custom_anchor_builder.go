@@ -698,11 +698,21 @@ func (b *CustomAnchorTxBuilder) resolveInputs(ctx context.Context,
 						"unconfirmed Bitcoin anchor",
 				)
 			}
+			pathMessage := "SDK verified the compact Taproot " +
+				"Assets path"
+			coPathCount, coPathDepth := requested.ProofPath.
+				coInputStats()
+			if coPathCount > 0 {
+				pathMessage = fmt.Sprintf(
+					"%s (%d co-input paths, max depth %d)",
+					pathMessage, coPathCount, coPathDepth,
+				)
+			}
 			addCustomAnchorCheck(
 				verification, customAnchorCheckAssetPath,
 				CustomAnchorVerificationScopeInputProof,
 				CustomAnchorVerificationOriginLocal, &inputIndex, "",
-				"SDK verified the compact Taproot Assets path",
+				pathMessage,
 			)
 		}
 		addCustomAnchorCheck(
