@@ -86,6 +86,8 @@ func TestAssetProofPathRoundTripAndVerify(t *testing.T) {
 	require.Equal(t, uint16(0), attestation.StepIndex)
 	require.Equal(t, stepSummary.PreviousAnchorOutpoint,
 		attestation.PreviousAnchorOutpoint)
+	require.Equal(t, []Outpoint{attestation.PreviousAnchorOutpoint},
+		attestation.PreviousAnchorOutpoints)
 	require.Equal(t, stepSummary.AnchorOutpoint, attestation.AnchorOutpoint)
 	var anchorBytes bytes.Buffer
 	require.NoError(t, fixture.transition.AnchorTx.Serialize(&anchorBytes))
@@ -658,6 +660,8 @@ func TestAssetProofPathVerifierFailsClosed(t *testing.T) {
 	)
 	require.ErrorContains(t, err, "verify unconfirmed step 0")
 
+	// A repeated step no longer chains off the first step's tip, so the
+	// second step's witness binding fails.
 	brokenChain := path.Clone()
 	brokenChain.Steps = append(brokenChain.Steps, brokenChain.Steps[0])
 	_, err = brokenChain.Verify(
@@ -667,7 +671,7 @@ func TestAssetProofPathVerifierFailsClosed(t *testing.T) {
 			},
 		},
 	)
-	require.ErrorContains(t, err, "verify unconfirmed step 1")
+	require.ErrorContains(t, err, "verify step 1 input binding")
 }
 
 // TestAssetProofPathEncodingRejectsCorruption checks that decode is bounded,

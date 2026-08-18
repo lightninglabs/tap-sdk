@@ -2,10 +2,19 @@ package tapsdk
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"testing"
 
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
+	"github.com/lightninglabs/taproot-assets/asset"
+	"github.com/lightninglabs/taproot-assets/commitment"
+	"github.com/lightninglabs/taproot-assets/proof"
+	"github.com/lightninglabs/taproot-assets/tapscript"
 	"github.com/stretchr/testify/require"
 )
 
@@ -77,6 +86,528 @@ func TestAssetProofPathV2RoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, v0ID, v2ID)
 	require.NotEqual(t, v1ID, v2ID)
+}
+
+// TestAssetProofPathV2MidPathMerge proves a second step can merge a co-input
+// path that carries its own unconfirmed transition: both spines chain from
+// their confirmed bases and the merged tip carries the combined amount.
+func TestAssetProofPathV2MidPathMerge(t *testing.T) {
+	t.Parallel()
+
+	firstFile, firstProof, firstKey := newAssetProofPathBase(t)
+	secondFile, secondProof, secondKey := newAssetProofPathSecondBase(t)
+
+	// Spine: A -> A'. Co-input path: B -> B'. Merge: A' + B' -> C.
+	spineKey := testPrivateKey(t, 13)
+	spineTransition := newAssetProofPathTransition(
+		t, firstProof, firstKey, spineKey,
+	)
+	spineBytes, err := spineTransition.Bytes()
+	require.NoError(t, err)
+
+	coKey := testPrivateKey(t, 14)
+	coTransition := newAssetProofPathTransition(
+		t, secondProof, secondKey, coKey,
+	)
+	coBytes, err := coTransition.Bytes()
+	require.NoError(t, err)
+
+	mergeTransition := newAssetProofPathMergeTransition(
+		t, []*proof.Proof{spineTransition, coTransition},
+		[]*btcec.PrivateKey{spineKey, coKey}, testPrivateKey(t, 15),
+	)
+	mergeBytes, err := mergeTransition.Bytes()
+	require.NoError(t, err)
+
+	path := &AssetProofPath{
+		Version:            AssetProofPathVersionV2,
+		ConfirmedBaseProof: firstFile,
+		Steps: []AssetProofPathStep{
+			{TransitionProof: spineBytes},
+			{
+				TransitionProof: mergeBytes,
+				CoInputPaths: []*AssetProofPath{{
+					Version:            AssetProofPathVersionV0,
+					ConfirmedBaseProof: secondFile,
+					Steps: []AssetProofPathStep{{
+						TransitionProof: coBytes,
+					}},
+				}},
+			},
+		},
+	}
+	require.NoError(t, path.Validate())
+
+	encoded, err := path.MarshalBinary()
+	require.NoError(t, err)
+	var decoded AssetProofPath
+	require.NoError(t, decoded.UnmarshalBinary(encoded))
+	require.Equal(t, path, &decoded)
+
+	verifier := &testConfirmedProofVerifier{
+		result: &ConfirmedProofVerification{
+			AnchorAssetInventoryComplete: true,
+		},
+	}
+	summary, err := decoded.Verify(context.Background(), verifier)
+	require.NoError(t, err)
+	require.Equal(t, uint16(2), summary.Depth)
+	require.Equal(t, uint64(200), summary.Amount)
+	require.Equal(
+		t, outpointFromWire(mergeTransition.OutPoint()),
+		summary.AnchorOutpoint,
+	)
+
+	// Both confirmed bases are host-verified, and every unconfirmed
+	// anchor is attested: spine A', co-input B', then the merge.
+	require.Equal(t, 2, verifier.calls)
+	require.Equal(t, 3, verifier.unconfirmedCalls)
+	mergeAttestation := verifier.unconfirmedTransitions[2]
+	require.Equal(t, uint16(1), mergeAttestation.StepIndex)
+	require.Equal(t, []Outpoint{
+		outpointFromWire(spineTransition.OutPoint()),
+		outpointFromWire(coTransition.OutPoint()),
+	}, mergeAttestation.PreviousAnchorOutpoints)
+	coAttestation := verifier.unconfirmedTransitions[1]
+	require.Equal(t, uint16(0), coAttestation.StepIndex)
+	require.Equal(
+		t, outpointFromWire(secondProof.OutPoint()),
+		coAttestation.PreviousAnchorOutpoint,
+	)
+}
+
+// TestAssetProofPathV2MergeAndSplit proves the Ark transition shape: one
+// step spends two inputs and splits them into a recipient leaf and a change
+// leaf, with the recipient leaf selected by the path.
+func TestAssetProofPathV2MergeAndSplit(t *testing.T) {
+	t.Parallel()
+
+	firstFile, firstProof, firstKey := newAssetProofPathBase(t)
+	secondFile, secondProof, secondKey := newAssetProofPathSecondBase(t)
+
+	transition := newAssetProofPathMergeSplitTransition(
+		t, []*proof.Proof{firstProof, secondProof},
+		[]*btcec.PrivateKey{firstKey, secondKey}, 140,
+	)
+	transitionBytes, err := transition.Bytes()
+	require.NoError(t, err)
+
+	path := &AssetProofPath{
+		Version:            AssetProofPathVersionV2,
+		ConfirmedBaseProof: firstFile,
+		Steps: []AssetProofPathStep{{
+			TransitionProof: transitionBytes,
+			CoInputPaths: []*AssetProofPath{{
+				Version:            AssetProofPathVersionV0,
+				ConfirmedBaseProof: secondFile,
+			}},
+		}},
+	}
+	require.NoError(t, path.Validate())
+
+	stepSummary, err := path.Steps[0].Summary()
+	require.NoError(t, err)
+	require.True(t, stepSummary.SplitAsset)
+	require.Equal(t, uint64(140), stepSummary.Amount)
+
+	verifier := &testConfirmedProofVerifier{
+		result: &ConfirmedProofVerification{
+			AnchorAssetInventoryComplete: true,
+		},
+	}
+	summary, err := path.Verify(context.Background(), verifier)
+	require.NoError(t, err)
+	require.Equal(t, uint16(1), summary.Depth)
+	require.Equal(t, uint64(140), summary.Amount)
+	require.Equal(
+		t, outpointFromWire(transition.OutPoint()),
+		summary.AnchorOutpoint,
+	)
+	require.Equal(t, 2, verifier.calls)
+	require.Equal(t, 1, verifier.unconfirmedCalls)
+	require.Equal(t, []Outpoint{
+		outpointFromWire(firstProof.OutPoint()),
+		outpointFromWire(secondProof.OutPoint()),
+	}, verifier.unconfirmedTransitions[0].PreviousAnchorOutpoints)
+}
+
+// TestAssetProofPathV2NestedCoPath proves a co-input path that itself merges
+// another co-input path verifies end to end at nesting depth two.
+func TestAssetProofPathV2NestedCoPath(t *testing.T) {
+	t.Parallel()
+
+	firstFile, firstProof, firstKey := newAssetProofPathBase(t)
+	secondFile, secondProof, secondKey := newAssetProofPathSecondBase(t)
+	thirdFile, thirdProof, thirdKey := newAssetProofPathBaseVariant(
+		t, false, 12,
+	)
+
+	// Inner merge: B + C -> D. Outer merge: A + D -> E.
+	innerKey := testPrivateKey(t, 16)
+	innerMerge := newAssetProofPathMergeTransition(
+		t, []*proof.Proof{secondProof, thirdProof},
+		[]*btcec.PrivateKey{secondKey, thirdKey}, innerKey,
+	)
+	innerBytes, err := innerMerge.Bytes()
+	require.NoError(t, err)
+
+	outerMerge := newAssetProofPathMergeTransition(
+		t, []*proof.Proof{firstProof, innerMerge},
+		[]*btcec.PrivateKey{firstKey, innerKey}, testPrivateKey(t, 17),
+	)
+	outerBytes, err := outerMerge.Bytes()
+	require.NoError(t, err)
+
+	path := &AssetProofPath{
+		Version:            AssetProofPathVersionV2,
+		ConfirmedBaseProof: firstFile,
+		Steps: []AssetProofPathStep{{
+			TransitionProof: outerBytes,
+			CoInputPaths: []*AssetProofPath{{
+				Version:            AssetProofPathVersionV2,
+				ConfirmedBaseProof: secondFile,
+				Steps: []AssetProofPathStep{{
+					TransitionProof: innerBytes,
+					CoInputPaths: []*AssetProofPath{{
+						Version:            AssetProofPathVersionV0,
+						ConfirmedBaseProof: thirdFile,
+					}},
+				}},
+			}},
+		}},
+	}
+	require.NoError(t, path.Validate())
+
+	encoded, err := path.MarshalBinary()
+	require.NoError(t, err)
+	var decoded AssetProofPath
+	require.NoError(t, decoded.UnmarshalBinary(encoded))
+	require.Equal(t, path, &decoded)
+
+	verifier := &testConfirmedProofVerifier{
+		result: &ConfirmedProofVerification{
+			AnchorAssetInventoryComplete: true,
+		},
+	}
+	summary, err := decoded.Verify(context.Background(), verifier)
+	require.NoError(t, err)
+	require.Equal(t, uint64(300), summary.Amount)
+	require.Equal(
+		t, outpointFromWire(outerMerge.OutPoint()),
+		summary.AnchorOutpoint,
+	)
+
+	// All three confirmed bases are host-verified, and both merges are
+	// attested with their complete input sets.
+	require.Equal(t, 3, verifier.calls)
+	require.Equal(t, 2, verifier.unconfirmedCalls)
+	require.Equal(t, []Outpoint{
+		outpointFromWire(secondProof.OutPoint()),
+		outpointFromWire(thirdProof.OutPoint()),
+	}, verifier.unconfirmedTransitions[0].PreviousAnchorOutpoints)
+	require.Equal(t, []Outpoint{
+		outpointFromWire(firstProof.OutPoint()),
+		outpointFromWire(innerMerge.OutPoint()),
+	}, verifier.unconfirmedTransitions[1].PreviousAnchorOutpoints)
+}
+
+// TestAssetProofPathV2VerifyFailsClosed covers the money-critical rejection
+// paths of merging steps: unbound co-inputs, anchors that do not consume
+// them, and identity drift between the spine and a co-input tip.
+func TestAssetProofPathV2VerifyFailsClosed(t *testing.T) {
+	t.Parallel()
+
+	firstFile, firstProof, firstKey := newAssetProofPathBase(t)
+	secondFile, secondProof, secondKey := newAssetProofPathSecondBase(t)
+	verifier := func() *testConfirmedProofVerifier {
+		return &testConfirmedProofVerifier{
+			result: &ConfirmedProofVerification{
+				AnchorAssetInventoryComplete: true,
+			},
+		}
+	}
+	mergeTransition := newAssetProofPathMergeTransition(
+		t, []*proof.Proof{firstProof, secondProof},
+		[]*btcec.PrivateKey{firstKey, secondKey}, testPrivateKey(t, 3),
+	)
+	mergeBytes, err := mergeTransition.Bytes()
+	require.NoError(t, err)
+
+	t.Run("duplicate co-input outpoint", func(t *testing.T) {
+		t.Parallel()
+
+		// The co-path resolves to the spine's own tip, so the two
+		// declared inputs collapse to one outpoint.
+		path := &AssetProofPath{
+			Version:            AssetProofPathVersionV2,
+			ConfirmedBaseProof: firstFile,
+			Steps: []AssetProofPathStep{{
+				TransitionProof: mergeBytes,
+				CoInputPaths: []*AssetProofPath{{
+					Version:            AssetProofPathVersionV0,
+					ConfirmedBaseProof: firstFile,
+				}},
+			}},
+		}
+		_, err := path.Verify(context.Background(), verifier())
+		require.ErrorIs(t, err, ErrAssetProofPathInvalid)
+		require.ErrorContains(t, err, "duplicate co-input outpoint")
+	})
+
+	t.Run("anchor does not spend co-input", func(t *testing.T) {
+		t.Parallel()
+
+		// The witnesses still claim both inputs, but the Bitcoin
+		// transaction only consumes the spine tip. The native
+		// verifier does not check co-input prevouts, so the local
+		// anchor-spend check must.
+		mutated := mutateAssetProofPathTransition(
+			t, mergeBytes, func(p *proof.Proof) {
+				p.AnchorTx.TxIn = p.AnchorTx.TxIn[:1]
+			},
+		)
+		path := &AssetProofPath{
+			Version:            AssetProofPathVersionV2,
+			ConfirmedBaseProof: firstFile,
+			Steps: []AssetProofPathStep{{
+				TransitionProof: mutated,
+				CoInputPaths: []*AssetProofPath{{
+					Version:            AssetProofPathVersionV0,
+					ConfirmedBaseProof: secondFile,
+				}},
+			}},
+		}
+		_, err := path.Verify(context.Background(), verifier())
+		require.ErrorIs(t, err, ErrAssetProofPathInvalid)
+		require.ErrorContains(t, err, "anchor inputs")
+		require.ErrorContains(t, err, "exactly once, found 0")
+	})
+
+	t.Run("undeclared witness outpoint", func(t *testing.T) {
+		t.Parallel()
+
+		// A merging transition whose second witness spends an
+		// outpoint no co-path accounts for is rejected before the
+		// native verifier runs.
+		unrelatedFile, _, _ := newAssetProofPathBaseVariant(
+			t, false, 12,
+		)
+		path := &AssetProofPath{
+			Version:            AssetProofPathVersionV2,
+			ConfirmedBaseProof: firstFile,
+			Steps: []AssetProofPathStep{{
+				TransitionProof: mergeBytes,
+				CoInputPaths: []*AssetProofPath{{
+					Version:            AssetProofPathVersionV0,
+					ConfirmedBaseProof: unrelatedFile,
+				}},
+			}},
+		}
+		_, err := path.Verify(context.Background(), verifier())
+		require.ErrorIs(t, err, ErrAssetProofPathInvalid)
+		require.ErrorContains(t, err, "undeclared outpoint")
+	})
+
+	t.Run("co-input identity mismatch", func(t *testing.T) {
+		t.Parallel()
+
+		groupedFile, groupedProof, groupedKey :=
+			newGroupedAssetProofPathBase(t)
+		grouped := newAssetProofPathMergeTransition(
+			t, []*proof.Proof{firstProof, groupedProof},
+			[]*btcec.PrivateKey{firstKey, groupedKey},
+			testPrivateKey(t, 3),
+		)
+		groupedBytes, err := grouped.Bytes()
+		require.NoError(t, err)
+
+		path := &AssetProofPath{
+			Version:            AssetProofPathVersionV2,
+			ConfirmedBaseProof: firstFile,
+			Steps: []AssetProofPathStep{{
+				TransitionProof: groupedBytes,
+				CoInputPaths: []*AssetProofPath{{
+					Version:            AssetProofPathVersionV0,
+					ConfirmedBaseProof: groupedFile,
+				}},
+			}},
+		}
+		_, err = path.Verify(context.Background(), verifier())
+		require.ErrorIs(t, err, ErrAssetProofPathInvalid)
+		require.ErrorContains(
+			t, err, "co-input asset group key changed",
+		)
+	})
+}
+
+// newAssetProofPathMergeSplitTransition spends any number of predecessors of
+// the same asset into a recipient split and a change split, returning the
+// proof of the selected recipient leaf.
+func newAssetProofPathMergeSplitTransition(t *testing.T,
+	sources []*proof.Proof, keys []*btcec.PrivateKey,
+	recipientAmount uint64) *proof.Proof {
+
+	t.Helper()
+	require.Len(t, keys, len(sources))
+
+	total := uint64(0)
+	for _, source := range sources {
+		total += source.Asset.Amount
+	}
+	require.Less(t, recipientAmount, total)
+
+	changeKey := testPrivateKey(t, 21)
+	recipientKey := testPrivateKey(t, 22)
+	changeLocator := &commitment.SplitLocator{
+		OutputIndex:  0,
+		AssetID:      sources[0].Asset.ID(),
+		ScriptKey:    asset.ToSerialized(changeKey.PubKey()),
+		Amount:       total - recipientAmount,
+		AssetVersion: asset.V1,
+	}
+	recipientLocator := &commitment.SplitLocator{
+		OutputIndex:  1,
+		AssetID:      sources[0].Asset.ID(),
+		ScriptKey:    asset.ToSerialized(recipientKey.PubKey()),
+		Amount:       recipientAmount,
+		AssetVersion: asset.V1,
+	}
+	splitInputs := make([]commitment.SplitCommitmentInput, len(sources))
+	sourceIndex := make(map[wire.OutPoint]int, len(sources))
+	for i, source := range sources {
+		splitInputs[i] = commitment.SplitCommitmentInput{
+			Asset:    &source.Asset,
+			OutPoint: source.OutPoint(),
+		}
+		sourceIndex[source.OutPoint()] = i
+	}
+	splitCommitment, err := commitment.NewSplitCommitment(
+		context.Background(), splitInputs, changeLocator,
+		recipientLocator,
+	)
+	require.NoError(t, err)
+
+	rootAsset := splitCommitment.RootAsset
+	selectedAsset := &splitCommitment.SplitAssets[*recipientLocator].Asset
+
+	// Sign every root witness with the key of the source it spends, then
+	// mirror the complete witness set into the selected leaf's embedded
+	// root asset.
+	inputs := commitment.InputSet{}
+	for _, witness := range rootAsset.PrevWitnesses {
+		require.NotNil(t, witness.PrevID)
+		index, ok := sourceIndex[witness.PrevID.OutPoint]
+		require.True(t, ok)
+		inputs[*witness.PrevID] = &sources[index].Asset
+	}
+	virtualTx, _, err := tapscript.VirtualTx(rootAsset, inputs)
+	require.NoError(t, err)
+	for i := range rootAsset.PrevWitnesses {
+		witness := &rootAsset.PrevWitnesses[i]
+		index := sourceIndex[witness.PrevID.OutPoint]
+		inputTx := asset.VirtualTxWithInput(
+			virtualTx, rootAsset.LockTime,
+			rootAsset.RelativeLockTime, uint32(i), nil,
+		)
+		sigHash, err := tapscript.InputKeySpendSigHash(
+			inputTx, &sources[index].Asset, rootAsset, uint32(i),
+			txscript.SigHashDefault,
+		)
+		require.NoError(t, err)
+		signature, err := schnorr.Sign(
+			txscript.TweakTaprootPrivKey(*keys[index], nil),
+			sigHash,
+		)
+		require.NoError(t, err)
+		witness.TxWitness = wire.TxWitness{signature.Serialize()}
+	}
+	embeddedRoot := &selectedAsset.PrevWitnesses[0].SplitCommitment.
+		RootAsset
+	for i := range rootAsset.PrevWitnesses {
+		embeddedRoot.PrevWitnesses[i].TxWitness =
+			rootAsset.PrevWitnesses[i].TxWitness
+	}
+
+	selectedAssetNoProof := selectedAsset.Copy()
+	selectedAssetNoProof.PrevWitnesses[0].SplitCommitment = nil
+	rootAssetCommitment, err := commitment.NewAssetCommitment(rootAsset)
+	require.NoError(t, err)
+	selectedAssetCommitment, err := commitment.NewAssetCommitment(
+		selectedAssetNoProof,
+	)
+	require.NoError(t, err)
+	commitmentVersion := commitment.TapCommitmentV2
+	rootTapCommitment, err := commitment.NewTapCommitment(
+		&commitmentVersion, rootAssetCommitment,
+	)
+	require.NoError(t, err)
+	selectedTapCommitment, err := commitment.NewTapCommitment(
+		&commitmentVersion, selectedAssetCommitment,
+	)
+	require.NoError(t, err)
+
+	spentAssets := make([]*asset.Asset, 0, len(rootAsset.PrevWitnesses))
+	for i := range rootAsset.PrevWitnesses {
+		spent, err := asset.MakeSpentAsset(rootAsset.PrevWitnesses[i])
+		require.NoError(t, err)
+		spentAssets = append(spentAssets, spent)
+	}
+	require.NoError(t, rootTapCommitment.MergeAltLeaves(
+		asset.ToAltLeaves(spentAssets),
+	))
+
+	changeInternalKey := testPrivateKey(t, 23).PubKey()
+	recipientInternalKey := testPrivateKey(t, 24).PubKey()
+	anchorTx := &wire.MsgTx{
+		Version: 3,
+		TxOut: []*wire.TxOut{
+			assetProofPathAnchorOutput(
+				t, changeInternalKey, rootTapCommitment,
+			),
+			assetProofPathAnchorOutput(
+				t, recipientInternalKey,
+				selectedTapCommitment,
+			),
+		},
+	}
+	for _, source := range sources {
+		anchorTx.TxIn = append(anchorTx.TxIn, &wire.TxIn{
+			PreviousOutPoint: source.OutPoint(),
+		})
+	}
+
+	_, selectedInRootProof, err := rootTapCommitment.Proof(
+		selectedAsset.TapCommitmentKey(),
+		selectedAsset.AssetCommitmentKey(),
+	)
+	require.NoError(t, err)
+
+	transition, err := proof.CreateTransitionProof(
+		sources[0].OutPoint(), &proof.TransitionParams{
+			BaseProofParams: proof.BaseProofParams{
+				Block:            assetProofPathBlock(anchorTx),
+				Tx:               anchorTx,
+				TxIndex:          0,
+				OutputIndex:      1,
+				InternalKey:      recipientInternalKey,
+				TaprootAssetRoot: selectedTapCommitment,
+				ExclusionProofs: []proof.TaprootProof{{
+					OutputIndex: 0,
+					InternalKey: changeInternalKey,
+					CommitmentProof: &proof.CommitmentProof{
+						Proof: *selectedInRootProof,
+					},
+				}},
+			},
+			NewAsset:             selectedAsset,
+			RootOutputIndex:      0,
+			RootInternalKey:      changeInternalKey,
+			RootTaprootAssetTree: rootTapCommitment,
+		}, proof.WithVersion(proof.TransitionV1),
+	)
+	require.NoError(t, err)
+
+	return transition
 }
 
 // TestAssetProofPathV2ValidateRejections walks the structural rules for
@@ -190,7 +721,7 @@ func TestAssetProofPathV2ValidateRejections(t *testing.T) {
 		for range 3 {
 			path.Steps[0].CoInputPaths = append(
 				path.Steps[0].CoInputPaths, &AssetProofPath{
-					Version: AssetProofPathVersionV0,
+					Version:            AssetProofPathVersionV0,
 					ConfirmedBaseProof: hugeBase,
 				},
 			)

@@ -189,6 +189,12 @@ type UnconfirmedAnchorVerification struct {
 	// AnchorTransaction is the complete serialized Bitcoin transaction,
 	// including witness data when present.
 	AnchorTransaction []byte
+
+	// PreviousAnchorOutpoints lists every asset-bearing outpoint the
+	// transition consumes: the spine tip first, then each co-input path
+	// tip in declared order. It equals [PreviousAnchorOutpoint] for
+	// single-input steps.
+	PreviousAnchorOutpoints []Outpoint
 }
 
 // UnconfirmedAnchorVerifier is an optional extension that becomes mandatory
@@ -795,6 +801,8 @@ func (p *AssetProofPath) unmarshalBinaryAt(encoded []byte, depth int) error {
 
 // Verify fully verifies the confirmed base through verifier, then locally
 // chains every unconfirmed proof while skipping only block inclusion checks.
+// Co-input paths are resolved recursively with the same engine before the
+// step that merges them.
 func (p *AssetProofPath) Verify(ctx context.Context,
 	verifier ConfirmedProofVerifier) (*AssetProofPathSummary, error) {
 
@@ -818,6 +826,46 @@ func (p *AssetProofPath) Verify(ctx context.Context,
 			)
 		}
 	}
+
+	finalProof, err := p.verifyChain(ctx, verifier, unconfirmedVerifier)
+	if err != nil {
+		return nil, err
+	}
+
+	derived, err := summarizeAssetProof(finalProof)
+	if err != nil {
+		return nil, err
+	}
+	contentID, err := p.ContentID()
+	if err != nil {
+		return nil, err
+	}
+	baseProofID := sha256.Sum256(p.ConfirmedBaseProof)
+
+	return &AssetProofPathSummary{
+		ContentID:            contentID,
+		ConfirmedBaseProofID: Hash(baseProofID),
+		Depth:                uint16(len(p.Steps)),
+		AssetRef:             derived.assetRef,
+		IssuanceID:           derived.issuanceID,
+		AssetType:            derived.assetType,
+		Amount:               derived.amount,
+		ScriptKey:            derived.scriptKey,
+		AnchorOutpoint:       derived.anchorOutpoint,
+		AnchorValueSat:       derived.anchorValueSat,
+	}, nil
+}
+
+// verifyChain is the verification engine for one path. The confirmed base is
+// fully verified by the caller's verifier, then every unconfirmed step is
+// chained locally: the step's co-input paths are resolved recursively to
+// verified tips, the transition's witnesses and its anchor transaction are
+// bound to exactly those tips plus the spine tip, and only then does the
+// native verifier run with the co-input lineages spliced in. The verified
+// tip proof is returned.
+func (p *AssetProofPath) verifyChain(ctx context.Context,
+	verifier ConfirmedProofVerifier,
+	unconfirmedVerifier UnconfirmedAnchorVerifier) (*proof.Proof, error) {
 
 	verification, err := verifier.VerifyConfirmedProof(
 		ctx, cloneBytes(p.ConfirmedBaseProof),
@@ -846,65 +894,6 @@ func (p *AssetProofPath) Verify(ctx context.Context,
 		OutPoint: baseProof.OutPoint(),
 	}
 
-	// Additional bases (co-inputs of a multi-input first transition)
-	// are verified exactly like the selected base, and the first step
-	// must spend precisely the union of all base outpoints — otherwise
-	// the extra bases would be unbound decoration.
-	baseOutpoints := map[wire.OutPoint]struct{}{
-		baseProof.OutPoint(): {},
-	}
-	coInputs := make([]proof.File, 0, len(p.AdditionalBaseProofs))
-	for i, base := range p.AdditionalBaseProofs {
-		additionalVerification, err := verifier.VerifyConfirmedProof(
-			ctx, cloneBytes(base),
-		)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"verify additional base proof %d: %w", i, err,
-			)
-		}
-		if additionalVerification == nil ||
-			!additionalVerification.AnchorAssetInventoryComplete {
-
-			return nil, ErrAssetProofPathUnknownPassiveAssets
-		}
-		if additionalVerification.PassiveAssetCount != 0 {
-			return nil, fmt.Errorf(
-				"%w: %d", ErrAssetProofPathPassiveAssets,
-				additionalVerification.PassiveAssetCount,
-			)
-		}
-
-		additional, err := decodeAssetProofPathBase(base)
-		if err != nil {
-			return nil, fmt.Errorf("additional base %d: %w", i,
-				err)
-		}
-		baseOutpoints[additional.OutPoint()] = struct{}{}
-
-		// The virtual transaction of a merging transition covers
-		// every input asset, so the state machine needs each
-		// co-input's lineage. It comes from the path's own declared
-		// bases, which were just verified as confirmed, never from
-		// the transition proof itself.
-		var coInput proof.File
-		if err := coInput.Decode(
-			bytes.NewReader(base),
-		); err != nil {
-			return nil, fmt.Errorf(
-				"%w: decode additional base %d: %v",
-				ErrAssetProofPathInvalid, i, err,
-			)
-		}
-		coInputs = append(coInputs, coInput)
-	}
-	if len(baseOutpoints) != len(p.AdditionalBaseProofs)+1 {
-		return nil, fmt.Errorf(
-			"%w: duplicate base proof outpoints",
-			ErrAssetProofPathInvalid,
-		)
-	}
-
 	var finalProof = baseProof
 	for i := range p.Steps {
 		transition, err := decodeAssetProofPathStep(
@@ -913,44 +902,118 @@ func (p *AssetProofPath) Verify(ctx context.Context,
 		if err != nil {
 			return nil, fmt.Errorf("step %d: %w", i, err)
 		}
-		if i == 0 && len(p.AdditionalBaseProofs) > 0 {
-			err := verifyAssetProofPathBaseBinding(
-				transition, baseOutpoints,
+		if unconfirmedVerifier == nil {
+			return nil, fmt.Errorf(
+				"%w: verifier extension is required",
+				ErrAssetProofPathUnconfirmedAnchor,
+			)
+		}
+
+		// Resolve every co-input path to a verified tip first. The
+		// tips define, together with the spine tip, exactly which
+		// asset outpoints this step may consume — otherwise the
+		// declared co-paths would be unbound decoration.
+		coPaths := p.stepCoInputPaths(i)
+		expected := map[wire.OutPoint]struct{}{
+			previous.OutPoint: {},
+		}
+		spentOutpoints := []wire.OutPoint{previous.OutPoint}
+		coInputs := make([]proof.File, 0, len(coPaths))
+		for j, coPath := range coPaths {
+			coTip, err := coPath.verifyChain(
+				ctx, verifier, unconfirmedVerifier,
 			)
 			if err != nil {
 				return nil, fmt.Errorf(
-					"verify first step base binding: %w",
+					"step %d co-input path %d: %w", i, j,
 					err,
 				)
 			}
+			coOutpoint := coTip.OutPoint()
+			if _, ok := expected[coOutpoint]; ok {
+				return nil, fmt.Errorf(
+					"%w: step %d duplicate co-input "+
+						"outpoint %v",
+					ErrAssetProofPathInvalid, i,
+					coOutpoint,
+				)
+			}
+			expected[coOutpoint] = struct{}{}
+			spentOutpoints = append(spentOutpoints, coOutpoint)
+
+			// A merging transition may only consume prior states
+			// of the confirmed base's exact asset identity.
+			if err := verifyAssetProofPathAssetIdentity(
+				previous.Asset, &coTip.Asset, "co-input asset",
+			); err != nil {
+				return nil, fmt.Errorf(
+					"step %d co-input path %d: %w", i, j,
+					err,
+				)
+			}
+
+			// The virtual transaction of a merging transition
+			// covers every input asset, so the state machine
+			// needs each co-input's lineage. It comes from the
+			// path's own declared co-paths, which were just
+			// verified, never from the transition proof itself.
+			coInput, err := coPath.syntheticProofFile()
+			if err != nil {
+				return nil, fmt.Errorf(
+					"step %d co-input path %d: %w", i, j,
+					err,
+				)
+			}
+			coInputs = append(coInputs, *coInput)
+		}
+
+		err = verifyAssetProofPathStepInputBinding(transition, expected)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"verify step %d input binding: %w", i, err,
+			)
+		}
+		err = verifyAssetProofPathAnchorSpend(transition, expected)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"verify step %d anchor inputs: %w", i, err,
+			)
 		}
 		if err := verifyAssetProofPathIdentity(
 			previous.Asset, transition,
 		); err != nil {
 			return nil, fmt.Errorf(
-				"verify unconfirmed step %d identity: %w", i, err,
+				"verify unconfirmed step %d identity: %w", i,
+				err,
 			)
 		}
 		stepSummary, err := summarizeAssetProofPathStep(
 			&p.Steps[i], transition,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("summarize unconfirmed step %d: %w", i,
-				err)
+			return nil, fmt.Errorf(
+				"summarize unconfirmed step %d: %w", i, err,
+			)
 		}
 		var anchorTransaction bytes.Buffer
 		if err := transition.AnchorTx.Serialize(
 			&anchorTransaction,
 		); err != nil {
-			return nil, fmt.Errorf("serialize unconfirmed step %d anchor: %w",
-				i, err)
+			return nil, fmt.Errorf(
+				"serialize unconfirmed step %d anchor: %w", i,
+				err,
+			)
 		}
 		if err := unconfirmedVerifier.VerifyUnconfirmedAnchor(
 			ctx, UnconfirmedAnchorVerification{
-				StepIndex:              uint16(i),
-				PreviousAnchorOutpoint: stepSummary.PreviousAnchorOutpoint,
-				AnchorOutpoint:         stepSummary.AnchorOutpoint,
-				AnchorTransaction:      anchorTransaction.Bytes(),
+				StepIndex: uint16(i),
+				PreviousAnchorOutpoint: stepSummary.
+					PreviousAnchorOutpoint,
+				AnchorOutpoint:    stepSummary.AnchorOutpoint,
+				AnchorTransaction: anchorTransaction.Bytes(),
+				PreviousAnchorOutpoints: sdkOutpoints(
+					spentOutpoints,
+				),
 			},
 		); err != nil {
 			return nil, fmt.Errorf(
@@ -960,17 +1023,13 @@ func (p *AssetProofPath) Verify(ctx context.Context,
 		}
 
 		verificationContext := proof.VerifierCtx{
-			// The confirmed base establishes the only group key that may
-			// appear in this path. The explicit identity check above binds
-			// every other immutable group parameter as well.
+			// The confirmed base establishes the only group key
+			// that may appear in this path. The explicit identity
+			// checks above bind every other immutable group
+			// parameter as well.
 			GroupVerifier: assetProofPathGroupVerifier(
 				previous.Asset.GroupKey,
 			),
-		}
-		if i == 0 && len(coInputs) > 0 {
-			verificationContext = assetProofPathCoInputContext(
-				verificationContext,
-			)
 		}
 
 		// Splice the declared co-inputs in for the merging step so
@@ -978,7 +1037,10 @@ func (p *AssetProofPath) Verify(ctx context.Context,
 		// They are cleared again immediately: a path's transition
 		// proof must stay compact, and one arriving with inputs of
 		// its own is rejected at decode.
-		if i == 0 && len(coInputs) > 0 {
+		if len(coInputs) > 0 {
+			verificationContext = assetProofPathCoInputContext(
+				verificationContext,
+			)
 			transition.AdditionalInputs = coInputs
 		}
 		previous, err = transition.Verify(
@@ -1001,28 +1063,55 @@ func (p *AssetProofPath) Verify(ctx context.Context,
 		finalProof = transition
 	}
 
-	derived, err := summarizeAssetProof(finalProof)
-	if err != nil {
-		return nil, err
-	}
-	contentID, err := p.ContentID()
-	if err != nil {
-		return nil, err
-	}
-	baseProofID := sha256.Sum256(p.ConfirmedBaseProof)
+	return finalProof, nil
+}
 
-	return &AssetProofPathSummary{
-		ContentID:            contentID,
-		ConfirmedBaseProofID: Hash(baseProofID),
-		Depth:                uint16(len(p.Steps)),
-		AssetRef:             derived.assetRef,
-		IssuanceID:           derived.issuanceID,
-		AssetType:            derived.assetType,
-		Amount:               derived.amount,
-		ScriptKey:            derived.scriptKey,
-		AnchorOutpoint:       derived.anchorOutpoint,
-		AnchorValueSat:       derived.anchorValueSat,
-	}, nil
+// syntheticProofFile assembles the in-memory proof file the native verifier
+// consumes as a merging step's additional input: the co-input path's
+// confirmed base file with its transition proofs appended without block
+// data. Chain facts for those proofs are established by verifyChain; the
+// synthetic file only feeds the state machine the co-input lineage under
+// the no-op chain context.
+func (p *AssetProofPath) syntheticProofFile() (*proof.File, error) {
+	file, err := proof.DecodeFile(p.ConfirmedBaseProof)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"%w: decode co-input base file: %v",
+			ErrAssetProofPathInvalid, err,
+		)
+	}
+
+	for i := range p.Steps {
+		transition, err := decodeAssetProofPathStep(
+			&p.Steps[i], p.stepWitnessCount(i),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("step %d: %w", i, err)
+		}
+		for j, coPath := range p.stepCoInputPaths(i) {
+			coInput, err := coPath.syntheticProofFile()
+			if err != nil {
+				return nil, fmt.Errorf(
+					"step %d co-input path %d: %w", i, j,
+					err,
+				)
+			}
+			transition.AdditionalInputs = append(
+				transition.AdditionalInputs, *coInput,
+			)
+		}
+
+		transition.BlockHeader = wire.BlockHeader{}
+		transition.BlockHeight = 0
+		transition.TxMerkleProof = proof.TxMerkleProof{}
+		if err := file.AppendProof(*transition); err != nil {
+			return nil, fmt.Errorf(
+				"append step %d proof: %w", i, err,
+			)
+		}
+	}
+
+	return file, nil
 }
 
 // verifyAssetProofPathIdentity enforces the immutable asset parameters that
@@ -1061,15 +1150,28 @@ func verifyAssetProofPathIdentity(previous *asset.Asset,
 	)
 }
 
-// verifyAssetProofPathBaseBinding requires a multi-base first transition
-// to spend exactly the outpoints of the declared base proofs: every
-// previous witness resolves to a declared base and every base is spent.
-func verifyAssetProofPathBaseBinding(transition *proof.Proof,
-	baseOutpoints map[wire.OutPoint]struct{}) error {
+// verifyAssetProofPathStepInputBinding requires a step's transition to spend
+// exactly the expected asset outpoints: the spine tip plus every declared
+// co-input tip. The complete witness set of a split transition lives on the
+// root asset, so the binding reads the transition's effective witnesses
+// rather than the selected output's.
+func verifyAssetProofPathStepInputBinding(transition *proof.Proof,
+	expected map[wire.OutPoint]struct{}) error {
+
+	witnesses := transition.Asset.PrevWitnesses
+	if transition.Asset.HasSplitCommitmentWitness() {
+		if len(witnesses) != 1 || witnesses[0].SplitCommitment == nil {
+			return fmt.Errorf(
+				"%w: split asset is missing its root asset",
+				ErrAssetProofPathInvalid,
+			)
+		}
+		witnesses = witnesses[0].SplitCommitment.RootAsset.PrevWitnesses
+	}
 
 	spent := make(map[wire.OutPoint]struct{})
-	for i := range transition.Asset.PrevWitnesses {
-		prevID := transition.Asset.PrevWitnesses[i].PrevID
+	for i := range witnesses {
+		prevID := witnesses[i].PrevID
 		if prevID == nil {
 			return fmt.Errorf(
 				"%w: transition witness %d misses its "+
@@ -1077,7 +1179,7 @@ func verifyAssetProofPathBaseBinding(transition *proof.Proof,
 				i,
 			)
 		}
-		if _, ok := baseOutpoints[prevID.OutPoint]; !ok {
+		if _, ok := expected[prevID.OutPoint]; !ok {
 			return fmt.Errorf(
 				"%w: transition spends undeclared outpoint "+
 					"%v", ErrAssetProofPathInvalid,
@@ -1086,11 +1188,38 @@ func verifyAssetProofPathBaseBinding(transition *proof.Proof,
 		}
 		spent[prevID.OutPoint] = struct{}{}
 	}
-	if len(spent) != len(baseOutpoints) {
+	if len(spent) != len(expected) {
 		return fmt.Errorf(
-			"%w: transition does not spend every declared base",
-			ErrAssetProofPathInvalid,
+			"%w: transition does not spend every declared "+
+				"co-input", ErrAssetProofPathInvalid,
 		)
+	}
+
+	return nil
+}
+
+// verifyAssetProofPathAnchorSpend requires the step's anchor transaction to
+// spend every expected asset outpoint exactly once. The native verifier only
+// proves the spine predecessor is consumed; without this check a transition
+// could claim a co-input its Bitcoin transaction never spends.
+func verifyAssetProofPathAnchorSpend(transition *proof.Proof,
+	expected map[wire.OutPoint]struct{}) error {
+
+	spends := make(map[wire.OutPoint]int, len(expected))
+	for _, input := range transition.AnchorTx.TxIn {
+		if _, ok := expected[input.PreviousOutPoint]; ok {
+			spends[input.PreviousOutPoint]++
+		}
+	}
+	for outpoint := range expected {
+		if spends[outpoint] != 1 {
+			return fmt.Errorf(
+				"%w: anchor transaction must spend asset "+
+					"outpoint %v exactly once, found %d",
+				ErrAssetProofPathInvalid, outpoint,
+				spends[outpoint],
+			)
+		}
 	}
 
 	return nil
@@ -1427,8 +1556,8 @@ func decodeAssetProofPathStep(step *AssetProofPathStep,
 
 	// Every witness must be complete, and exactly one of them must spend
 	// the step's declared predecessor. A merging transition may carry
-	// more, but each of those is pinned to a declared base outpoint by
-	// verifyAssetProofPathBaseBinding, so none can hide an unproven
+	// more, but each of those is pinned to a declared co-input tip by
+	// verifyAssetProofPathStepInputBinding, so none can hide an unproven
 	// input.
 	predecessors := 0
 	for i := range witnesses {
@@ -1521,13 +1650,14 @@ func (assetProofPathChainLookup) MeanBlockTimestamp(context.Context,
 }
 
 // assetProofPathCoInputContext completes a verifier context so the state
-// machine can walk a merging step's co-input lineages. Those files are the
-// path's own declared bases, and every one of them was just accepted by
-// the caller's confirmed-proof verifier — the authority on what is on
-// chain — so re-deriving their chain facts here would only repeat a
-// stronger check that already passed, and cannot be done offline anyway.
-// What the state machine still needs from them is the input assets, which
-// come from the file contents.
+// machine can walk a merging step's co-input lineages. Those files are built
+// from the path's own declared co-input paths, and every one of them was
+// just verified by the engine — confirmed bases through the caller's
+// confirmed-proof verifier, the authority on what is on chain, and
+// unconfirmed steps through the recursive chain walk — so re-deriving their
+// chain facts here would only repeat a stronger check that already passed,
+// and cannot be done offline anyway. What the state machine still needs from
+// them is the input assets, which come from the file contents.
 func assetProofPathCoInputContext(
 	base proof.VerifierCtx) proof.VerifierCtx {
 
@@ -1781,6 +1911,15 @@ func sdkOutpoint(outpoint wire.OutPoint) Outpoint {
 		Txid:  txid,
 		Index: outpoint.Index,
 	}
+}
+
+func sdkOutpoints(outpoints []wire.OutPoint) []Outpoint {
+	converted := make([]Outpoint, len(outpoints))
+	for i := range outpoints {
+		converted[i] = sdkOutpoint(outpoints[i])
+	}
+
+	return converted
 }
 
 func taggedAssetProofPathHash(tag string, content []byte) Hash {

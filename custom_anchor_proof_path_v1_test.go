@@ -43,6 +43,12 @@ func TestAssetProofPathV1RoundTrip(t *testing.T) {
 	require.NoError(t, decoded.UnmarshalBinary(encoded))
 	require.Equal(t, path, &decoded)
 
+	// The V1 wire format must stay byte-stable: re-encoding the decoded
+	// path reproduces the exact original bytes.
+	reEncoded, err := decoded.MarshalBinary()
+	require.NoError(t, err)
+	require.Equal(t, encoded, reEncoded)
+
 	// Domain separation is a property of the version tag alone, so it is
 	// checked over one single-base path expressed both ways.
 	single := newAssetProofPathFixture(t)
@@ -63,6 +69,56 @@ func TestAssetProofPathV1RoundTrip(t *testing.T) {
 	v1ID, err := v1.ContentID()
 	require.NoError(t, err)
 	require.NotEqual(t, v0ID, v1ID)
+}
+
+// TestAssetProofPathV1MergeVerifies proves the complete merge flow end to
+// end: a first step that spends two confirmed bases into one output passes
+// verification, with both base lineages resolved and the merged amount at
+// the tip.
+func TestAssetProofPathV1MergeVerifies(t *testing.T) {
+	t.Parallel()
+
+	merge := newAssetProofPathMergeFixture(t)
+	path := &AssetProofPath{
+		Version:            AssetProofPathVersionV1,
+		ConfirmedBaseProof: merge.firstBaseFile,
+		AdditionalBaseProofs: [][]byte{
+			merge.secondBaseFile,
+		},
+		Steps: []AssetProofPathStep{{
+			TransitionProof: merge.transitionProof,
+		}},
+	}
+	verifier := &testConfirmedProofVerifier{
+		result: &ConfirmedProofVerification{
+			AnchorAssetInventoryComplete: true,
+		},
+	}
+
+	summary, err := path.Verify(context.Background(), verifier)
+	require.NoError(t, err)
+	require.Equal(t, uint16(1), summary.Depth)
+	require.Equal(t, uint64(200), summary.Amount)
+
+	merged, err := proof.Decode(merge.transitionProof)
+	require.NoError(t, err)
+	require.Equal(
+		t, outpointFromWire(merged.OutPoint()), summary.AnchorOutpoint,
+	)
+
+	// Both bases are fully verified by the host verifier, and the host
+	// attests one merged anchor spending both confirmed tips.
+	require.Equal(t, 2, verifier.calls)
+	require.Equal(t, 1, verifier.unconfirmedCalls)
+	attestation := verifier.unconfirmedTransitions[0]
+	require.Equal(
+		t, outpointFromWire(merge.firstOutPoint),
+		attestation.PreviousAnchorOutpoint,
+	)
+	require.Equal(t, []Outpoint{
+		outpointFromWire(merge.firstOutPoint),
+		outpointFromWire(merge.secondOutPoint),
+	}, attestation.PreviousAnchorOutpoints)
 }
 
 // TestAssetProofPathV1RejectsUnmergedFirstStep proves a path that
@@ -175,7 +231,7 @@ func TestAssetProofPathV1BindingFailsClosed(t *testing.T) {
 		},
 	}
 	_, err := duplicate.Verify(context.Background(), verifier)
-	require.ErrorContains(t, err, "duplicate base proof outpoints")
+	require.ErrorContains(t, err, "duplicate co-input outpoint")
 }
 
 // assetProofPathMergeFixture is a two-base merge: the shape a round's
@@ -198,7 +254,8 @@ func newAssetProofPathMergeFixture(t *testing.T) *assetProofPathMergeFixture {
 	secondFile, secondProof, secondKey := newAssetProofPathSecondBase(t)
 
 	merged := newAssetProofPathMergeTransition(
-		t, firstProof, secondProof, firstKey, secondKey,
+		t, []*proof.Proof{firstProof, secondProof},
+		[]*btcec.PrivateKey{firstKey, secondKey},
 		testPrivateKey(t, 3),
 	)
 	mergedBytes, err := merged.Bytes()
@@ -213,41 +270,38 @@ func newAssetProofPathMergeFixture(t *testing.T) *assetProofPathMergeFixture {
 	}
 }
 
-// newAssetProofPathMergeTransition spends two predecessors of the same
-// asset into a single output, signing each input independently.
-func newAssetProofPathMergeTransition(t *testing.T, first, second *proof.Proof,
-	firstKey, secondKey, recipientKey *btcec.PrivateKey) *proof.Proof {
+// newAssetProofPathMergeTransition spends any number of predecessors of the
+// same asset into a single output, signing each input independently.
+func newAssetProofPathMergeTransition(t *testing.T, sources []*proof.Proof,
+	keys []*btcec.PrivateKey, recipientKey *btcec.PrivateKey) *proof.Proof {
 
 	t.Helper()
+	require.Len(t, keys, len(sources))
 
-	newAsset := first.Asset.Copy()
-	newAsset.Amount = first.Asset.Amount + second.Asset.Amount
+	newAsset := sources[0].Asset.Copy()
+	newAsset.Amount = 0
 	newAsset.ScriptKey = asset.NewScriptKeyBip86(keychain.KeyDescriptor{
 		PubKey: recipientKey.PubKey(),
 	})
 
-	prevIDs := make([]*asset.PrevID, 2)
-	sources := []*proof.Proof{first, second}
 	inputs := commitment.InputSet{}
+	newAsset.PrevWitnesses = make([]asset.Witness, len(sources))
 	for i, source := range sources {
-		prevIDs[i] = &asset.PrevID{
+		prevID := &asset.PrevID{
 			OutPoint: source.OutPoint(),
 			ID:       source.Asset.ID(),
 			ScriptKey: asset.ToSerialized(
 				source.Asset.ScriptKey.PubKey,
 			),
 		}
-		inputs[*prevIDs[i]] = &source.Asset
-	}
-	newAsset.PrevWitnesses = []asset.Witness{
-		{PrevID: prevIDs[0]},
-		{PrevID: prevIDs[1]},
+		inputs[*prevID] = &source.Asset
+		newAsset.PrevWitnesses[i] = asset.Witness{PrevID: prevID}
+		newAsset.Amount += source.Asset.Amount
 	}
 
 	virtualTx, _, err := tapscript.VirtualTx(newAsset, inputs)
 	require.NoError(t, err)
 
-	keys := []*btcec.PrivateKey{firstKey, secondKey}
 	for i, source := range sources {
 		inputTx := asset.VirtualTxWithInput(
 			virtualTx, newAsset.LockTime,
@@ -290,19 +344,20 @@ func newAssetProofPathMergeTransition(t *testing.T, first, second *proof.Proof,
 
 	anchorTx := &wire.MsgTx{
 		Version: 3,
-		TxIn: []*wire.TxIn{
-			{PreviousOutPoint: first.OutPoint()},
-			{PreviousOutPoint: second.OutPoint()},
-		},
 		TxOut: []*wire.TxOut{
 			assetProofPathAnchorOutput(
 				t, recipientKey.PubKey(), tapCommitment,
 			),
 		},
 	}
+	for _, source := range sources {
+		anchorTx.TxIn = append(anchorTx.TxIn, &wire.TxIn{
+			PreviousOutPoint: source.OutPoint(),
+		})
+	}
 
 	transition, err := proof.CreateTransitionProof(
-		first.OutPoint(), &proof.TransitionParams{
+		sources[0].OutPoint(), &proof.TransitionParams{
 			BaseProofParams: proof.BaseProofParams{
 				Block:            assetProofPathBlock(anchorTx),
 				Tx:               anchorTx,
