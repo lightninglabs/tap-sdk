@@ -1620,6 +1620,23 @@ func (p *AssetProofPath) stepWitnessCount(index int) int {
 	return 1 + len(p.stepCoInputPaths(index))
 }
 
+// coInputStats returns the total number of co-input paths in the tree and
+// the deepest co-input nesting level.
+func (p *AssetProofPath) coInputStats() (int, int) {
+	total, maxDepth := 0, 0
+	for i := range p.Steps {
+		for _, coPath := range p.stepCoInputPaths(i) {
+			nestedTotal, nestedDepth := coPath.coInputStats()
+			total += 1 + nestedTotal
+			if nestedDepth+1 > maxDepth {
+				maxDepth = nestedDepth + 1
+			}
+		}
+	}
+
+	return total, maxDepth
+}
+
 // assetProofPathChainLookup lets the VM execute its normal timelock path while
 // remaining fail closed. The path policy rejects every non-zero asset
 // timelock before verification, so only CurrentHeight is expected to run.
