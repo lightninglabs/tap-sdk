@@ -31,8 +31,18 @@ const (
 	// AssetProofPathMaxStepSize bounds one serialized transition proof.
 	AssetProofPathMaxStepSize = 4 * 1024 * 1024
 
-	// AssetProofPathMaxSize bounds the complete encoded path.
+	// AssetProofPathMaxSize bounds the complete encoded path, including
+	// every recursively embedded co-input path.
 	AssetProofPathMaxSize = 64 * 1024 * 1024
+
+	// AssetProofPathMaxStepCoPaths bounds the co-input paths of one step,
+	// so a merging transition carries at most 16 asset witnesses.
+	AssetProofPathMaxStepCoPaths = 15
+
+	// AssetProofPathMaxCoPathDepth bounds co-input path nesting below the
+	// selected path. The bound is checked before nested content is
+	// parsed, so hostile deep encodings fail without recursing into them.
+	AssetProofPathMaxCoPathDepth = 3
 
 	assetProofPathChecksumSize = sha256.Size
 	assetProofPathHeaderSize   = len(assetProofPathMagic) + 2 + 4 + 2
@@ -83,6 +93,13 @@ const (
 	// first step.
 	AssetProofPathVersionV1 AssetProofPathVersion = 1
 
+	// AssetProofPathVersionV2 extends V1 so any step can merge co-input
+	// lineages: each step carries complete recursive co-input paths whose
+	// tips the step's transition spends alongside the spine tip. V2 paths
+	// express first-step co-inputs the same way and leave
+	// AdditionalBaseProofs empty.
+	AssetProofPathVersionV2 AssetProofPathVersion = 2
+
 	// AssetProofPathMaxAdditionalBases bounds the co-input base proofs
 	// of a V1 path.
 	AssetProofPathMaxAdditionalBases = 15
@@ -103,10 +120,11 @@ type AssetProofPath struct {
 	ConfirmedBaseProof []byte
 
 	// AdditionalBaseProofs are complete confirmed proof files for the
-	// co-inputs of a multi-input first transition (V1 paths). The first
-	// step's previous witnesses must reference exactly the outpoints of
-	// ConfirmedBaseProof plus these bases, and every base must carry
-	// the same asset identity.
+	// co-inputs of a multi-input first transition (V1 paths only). The
+	// first step's previous witnesses must reference exactly the outpoints
+	// of ConfirmedBaseProof plus these bases, and every base must carry
+	// the same asset identity. V2 paths express the same shape as
+	// first-step CoInputPaths instead.
 	AdditionalBaseProofs [][]byte
 
 	// Steps are ordered from the first unconfirmed child transition to the
@@ -119,6 +137,12 @@ type AssetProofPath struct {
 // asset witnesses and commitment proofs needed for local verification.
 type AssetProofPathStep struct {
 	TransitionProof []byte
+
+	// CoInputPaths are complete proof paths for the co-inputs merged by
+	// this step (V2 paths only). The transition must spend exactly the
+	// spine tip plus every co-path tip, and every co-path must carry the
+	// same asset identity as the selected lineage.
+	CoInputPaths []*AssetProofPath
 }
 
 // ConfirmedProofVerification is the non-derivable part of confirmed proof
@@ -243,19 +267,42 @@ type AssetProofPathStepSummary struct {
 }
 
 // Validate checks bounded structural and policy invariants without trusting a
-// backend or treating the unconfirmed steps as verified.
+// backend or treating the unconfirmed steps as verified. Count, size, and
+// depth bounds are enforced over the complete path tree before any proof
+// content is decoded, so hostile shapes are rejected cheaply.
 func (p *AssetProofPath) Validate() error {
+	var totalSize uint64
+	if err := p.validateShape(0, &totalSize); err != nil {
+		return err
+	}
+
+	return p.validateContent()
+}
+
+// validateShape enforces the version, count, size, and depth bounds of one
+// path level and recurses into its co-input paths. totalSize accumulates the
+// encoded size of the whole tree against the shared budget. No proof bytes
+// are decoded here.
+func (p *AssetProofPath) validateShape(depth int, totalSize *uint64) error {
 	if p == nil {
 		return fmt.Errorf("%w: nil path", ErrAssetProofPathInvalid)
 	}
-	if p.Version != AssetProofPathVersionV0 &&
-		p.Version != AssetProofPathVersionV1 {
+	if depth > AssetProofPathMaxCoPathDepth {
+		return fmt.Errorf(
+			"%w: co-input path depth exceeds %d",
+			ErrAssetProofPathInvalid, AssetProofPathMaxCoPathDepth,
+		)
+	}
+	switch p.Version {
+	case AssetProofPathVersionV0, AssetProofPathVersionV1,
+		AssetProofPathVersionV2:
 
+	default:
 		return fmt.Errorf(
 			"%w: %d", ErrAssetProofPathUnknownVersion, p.Version,
 		)
 	}
-	if p.Version == AssetProofPathVersionV0 &&
+	if p.Version != AssetProofPathVersionV1 &&
 		len(p.AdditionalBaseProofs) != 0 {
 
 		return fmt.Errorf(
@@ -299,6 +346,87 @@ func (p *AssetProofPath) Validate() error {
 		)
 	}
 
+	*totalSize += uint64(assetProofPathHeaderSize +
+		assetProofPathChecksumSize + len(p.ConfirmedBaseProof))
+	if *totalSize > AssetProofPathMaxSize {
+		return fmt.Errorf(
+			"%w: encoded path exceeds %d bytes",
+			ErrAssetProofPathInvalid, AssetProofPathMaxSize,
+		)
+	}
+
+	for i, base := range p.AdditionalBaseProofs {
+		if len(base) == 0 ||
+			len(base) > AssetProofPathMaxConfirmedProofSize {
+
+			return fmt.Errorf(
+				"%w: additional base proof %d size is out "+
+					"of bounds", ErrAssetProofPathInvalid,
+				i,
+			)
+		}
+		*totalSize += uint64(4 + len(base))
+		if *totalSize > AssetProofPathMaxSize {
+			return fmt.Errorf(
+				"%w: encoded path exceeds %d bytes",
+				ErrAssetProofPathInvalid,
+				AssetProofPathMaxSize,
+			)
+		}
+	}
+
+	for i := range p.Steps {
+		step := &p.Steps[i]
+		if len(step.TransitionProof) > AssetProofPathMaxStepSize {
+			return fmt.Errorf(
+				"%w: transition proof exceeds %d bytes",
+				ErrAssetProofPathInvalid,
+				AssetProofPathMaxStepSize,
+			)
+		}
+		*totalSize += uint64(4 + len(step.TransitionProof))
+		if *totalSize > AssetProofPathMaxSize {
+			return fmt.Errorf(
+				"%w: encoded path exceeds %d bytes",
+				ErrAssetProofPathInvalid,
+				AssetProofPathMaxSize,
+			)
+		}
+
+		if len(step.CoInputPaths) != 0 &&
+			p.Version != AssetProofPathVersionV2 {
+
+			return fmt.Errorf(
+				"%w: co-input paths need a v2 path",
+				ErrAssetProofPathInvalid,
+			)
+		}
+		if len(step.CoInputPaths) > AssetProofPathMaxStepCoPaths {
+			return fmt.Errorf(
+				"%w: step %d has %d co-input paths, limit "+
+					"is %d", ErrAssetProofPathInvalid, i,
+				len(step.CoInputPaths),
+				AssetProofPathMaxStepCoPaths,
+			)
+		}
+		for j, coPath := range step.CoInputPaths {
+			*totalSize += 4
+			err := coPath.validateShape(depth+1, totalSize)
+			if err != nil {
+				return fmt.Errorf(
+					"step %d co-input path %d: %w", i, j,
+					err,
+				)
+			}
+		}
+	}
+
+	return nil
+}
+
+// validateContent decodes and checks the proof content of one path level and
+// recurses into its co-input paths. The shape bounds are assumed to hold.
+func (p *AssetProofPath) validateContent() error {
 	baseProof, err := decodeAssetProofPathBase(p.ConfirmedBaseProof)
 	if err != nil {
 		return err
@@ -318,31 +446,10 @@ func (p *AssetProofPath) Validate() error {
 		)
 	}
 
-	totalSize := uint64(assetProofPathHeaderSize +
-		assetProofPathChecksumSize + len(p.ConfirmedBaseProof))
-
-	// Additional bases must decode, stay in bounds, and carry the same
-	// asset identity as the selected base: a multi-input transition can
-	// only merge identical assets into one output.
+	// Additional bases must decode and carry the same asset identity as
+	// the selected base: a multi-input transition can only merge
+	// identical assets into one output.
 	for i, base := range p.AdditionalBaseProofs {
-		if len(base) == 0 ||
-			len(base) > AssetProofPathMaxConfirmedProofSize {
-
-			return fmt.Errorf(
-				"%w: additional base proof %d size is out "+
-					"of bounds", ErrAssetProofPathInvalid,
-				i,
-			)
-		}
-		totalSize += uint64(4 + len(base))
-		if totalSize > AssetProofPathMaxSize {
-			return fmt.Errorf(
-				"%w: encoded path exceeds %d bytes",
-				ErrAssetProofPathInvalid,
-				AssetProofPathMaxSize,
-			)
-		}
-
 		additional, err := decodeAssetProofPathBase(base)
 		if err != nil {
 			return fmt.Errorf("additional base %d: %w", i, err)
@@ -362,22 +469,21 @@ func (p *AssetProofPath) Validate() error {
 			return fmt.Errorf("additional base %d: %w", i, err)
 		}
 	}
-	for i := range p.Steps {
-		stepSize := len(p.Steps[i].TransitionProof)
-		totalSize += uint64(4 + stepSize)
-		if totalSize > AssetProofPathMaxSize {
-			return fmt.Errorf(
-				"%w: encoded path exceeds %d bytes",
-				ErrAssetProofPathInvalid,
-				AssetProofPathMaxSize,
-			)
-		}
 
+	for i := range p.Steps {
 		_, err := decodeAssetProofPathStep(
 			&p.Steps[i], p.stepWitnessCount(i),
 		)
 		if err != nil {
 			return fmt.Errorf("step %d: %w", i, err)
+		}
+		for j, coPath := range p.Steps[i].CoInputPaths {
+			if err := coPath.validateContent(); err != nil {
+				return fmt.Errorf(
+					"step %d co-input path %d: %w", i, j,
+					err,
+				)
+			}
 		}
 	}
 
@@ -393,7 +499,9 @@ func (p *AssetProofPath) Clone() *AssetProofPath {
 	clone := &AssetProofPath{
 		Version:            p.Version,
 		ConfirmedBaseProof: cloneBytes(p.ConfirmedBaseProof),
-		Steps:              make([]AssetProofPathStep, len(p.Steps)),
+	}
+	if len(p.Steps) > 0 {
+		clone.Steps = make([]AssetProofPathStep, len(p.Steps))
 	}
 	for _, base := range p.AdditionalBaseProofs {
 		clone.AdditionalBaseProofs = append(
@@ -404,6 +512,11 @@ func (p *AssetProofPath) Clone() *AssetProofPath {
 		clone.Steps[i].TransitionProof = cloneBytes(
 			p.Steps[i].TransitionProof,
 		)
+		for _, coPath := range p.Steps[i].CoInputPaths {
+			clone.Steps[i].CoInputPaths = append(
+				clone.Steps[i].CoInputPaths, coPath.Clone(),
+			)
+		}
 	}
 
 	return clone
@@ -421,8 +534,11 @@ func (p *AssetProofPath) ContentID() (Hash, error) {
 	}
 
 	tag := "tapsdk/asset-proof-path/v0"
-	if p.Version == AssetProofPathVersionV1 {
+	switch p.Version {
+	case AssetProofPathVersionV1:
 		tag = "tapsdk/asset-proof-path/v1"
+	case AssetProofPathVersionV2:
+		tag = "tapsdk/asset-proof-path/v2"
 	}
 
 	return taggedAssetProofPathHash(tag, body), nil
@@ -456,6 +572,12 @@ func (p *AssetProofPath) MarshalBinary() ([]byte, error) {
 		return nil, err
 	}
 
+	return p.encode()
+}
+
+// encode serializes an already validated path with its trailing checksum.
+// Co-input paths embed the same self-describing encoding recursively.
+func (p *AssetProofPath) encode() ([]byte, error) {
 	body, err := p.marshalBody()
 	if err != nil {
 		return nil, err
@@ -474,6 +596,30 @@ func (p *AssetProofPath) MarshalBinary() ([]byte, error) {
 func (p *AssetProofPath) UnmarshalBinary(encoded []byte) error {
 	if p == nil {
 		return fmt.Errorf("%w: nil receiver", ErrAssetProofPathInvalid)
+	}
+
+	var decoded AssetProofPath
+	if err := decoded.unmarshalBinaryAt(encoded, 0); err != nil {
+		return err
+	}
+	if err := decoded.Validate(); err != nil {
+		return err
+	}
+
+	*p = decoded
+	return nil
+}
+
+// unmarshalBinaryAt decodes one self-describing path encoding found at the
+// given co-input nesting depth. The depth bound is checked before anything is
+// parsed, so a hostile deeply nested blob fails fast without recursion, and
+// full validation runs once over the decoded root.
+func (p *AssetProofPath) unmarshalBinaryAt(encoded []byte, depth int) error {
+	if depth > AssetProofPathMaxCoPathDepth {
+		return fmt.Errorf(
+			"%w: co-input path depth exceeds %d",
+			ErrAssetProofPathInvalid, AssetProofPathMaxCoPathDepth,
+		)
 	}
 	if len(encoded) > AssetProofPathMaxSize {
 		return fmt.Errorf(
@@ -517,9 +663,11 @@ func (p *AssetProofPath) UnmarshalBinary(encoded []byte) error {
 			"%w: read version: %v", ErrAssetProofPathInvalid, err,
 		)
 	}
-	if AssetProofPathVersion(version) != AssetProofPathVersionV0 &&
-		AssetProofPathVersion(version) != AssetProofPathVersionV1 {
+	switch AssetProofPathVersion(version) {
+	case AssetProofPathVersionV0, AssetProofPathVersionV1,
+		AssetProofPathVersionV2:
 
+	default:
 		return fmt.Errorf(
 			"%w: %d", ErrAssetProofPathUnknownVersion, version,
 		)
@@ -533,7 +681,7 @@ func (p *AssetProofPath) UnmarshalBinary(encoded []byte) error {
 	}
 
 	var additionalBases [][]byte
-	if AssetProofPathVersion(version) >= AssetProofPathVersionV1 {
+	if AssetProofPathVersion(version) == AssetProofPathVersionV1 {
 		var baseCount uint16
 		err := binary.Read(reader, binary.BigEndian, &baseCount)
 		if err != nil {
@@ -581,9 +729,9 @@ func (p *AssetProofPath) UnmarshalBinary(encoded []byte) error {
 		Version:              AssetProofPathVersion(version),
 		ConfirmedBaseProof:   baseProof,
 		AdditionalBaseProofs: additionalBases,
-		Steps: make(
-			[]AssetProofPathStep, int(stepCount),
-		),
+	}
+	if stepCount > 0 {
+		decoded.Steps = make([]AssetProofPathStep, int(stepCount))
 	}
 	for i := range decoded.Steps {
 		stepProof, err := readAssetProofPathBytes(
@@ -593,14 +741,52 @@ func (p *AssetProofPath) UnmarshalBinary(encoded []byte) error {
 			return fmt.Errorf("step %d: %w", i, err)
 		}
 		decoded.Steps[i].TransitionProof = stepProof
+
+		if AssetProofPathVersion(version) != AssetProofPathVersionV2 {
+			continue
+		}
+		var coPathCount uint16
+		err = binary.Read(reader, binary.BigEndian, &coPathCount)
+		if err != nil {
+			return fmt.Errorf(
+				"%w: read step %d co-input path count: %v",
+				ErrAssetProofPathInvalid, i, err,
+			)
+		}
+		if coPathCount > AssetProofPathMaxStepCoPaths {
+			return fmt.Errorf(
+				"%w: step %d has %d co-input paths, limit "+
+					"is %d", ErrAssetProofPathInvalid, i,
+				coPathCount, AssetProofPathMaxStepCoPaths,
+			)
+		}
+		for j := range int(coPathCount) {
+			coPathBlob, err := readAssetProofPathBytes(
+				reader, AssetProofPathMaxSize, "co-input path",
+			)
+			if err != nil {
+				return fmt.Errorf(
+					"step %d co-input path %d: %w", i, j,
+					err,
+				)
+			}
+			coPath := &AssetProofPath{}
+			err = coPath.unmarshalBinaryAt(coPathBlob, depth+1)
+			if err != nil {
+				return fmt.Errorf(
+					"step %d co-input path %d: %w", i, j,
+					err,
+				)
+			}
+			decoded.Steps[i].CoInputPaths = append(
+				decoded.Steps[i].CoInputPaths, coPath,
+			)
+		}
 	}
 	if reader.Len() != 0 {
 		return fmt.Errorf(
 			"%w: trailing bytes", ErrAssetProofPathInvalid,
 		)
-	}
-	if err := decoded.Validate(); err != nil {
-		return err
 	}
 
 	*p = decoded
@@ -963,7 +1149,7 @@ func (p *AssetProofPath) marshalBody() ([]byte, error) {
 	if err := writeAssetProofPathBytes(&body, p.ConfirmedBaseProof); err != nil {
 		return nil, err
 	}
-	if p.Version >= AssetProofPathVersionV1 {
+	if p.Version == AssetProofPathVersionV1 {
 		err := binary.Write(
 			&body, binary.BigEndian,
 			uint16(len(p.AdditionalBaseProofs)),
@@ -988,6 +1174,27 @@ func (p *AssetProofPath) marshalBody() ([]byte, error) {
 			&body, p.Steps[i].TransitionProof,
 		); err != nil {
 			return nil, err
+		}
+
+		if p.Version != AssetProofPathVersionV2 {
+			continue
+		}
+		err := binary.Write(
+			&body, binary.BigEndian,
+			uint16(len(p.Steps[i].CoInputPaths)),
+		)
+		if err != nil {
+			return nil, err
+		}
+		for _, coPath := range p.Steps[i].CoInputPaths {
+			encodedCoPath, err := coPath.encode()
+			if err != nil {
+				return nil, err
+			}
+			err = writeAssetProofPathBytes(&body, encodedCoPath)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -1249,15 +1456,39 @@ func decodeAssetProofPathStep(step *AssetProofPathStep,
 	return transition, nil
 }
 
-// stepWitnessCount returns the number of asset witnesses the step at the
-// given index must carry. Only a multi-base path's first step merges more
-// than one predecessor; every later step spends a single tree node.
-func (p *AssetProofPath) stepWitnessCount(index int) int {
-	if index == 0 {
-		return 1 + len(p.AdditionalBaseProofs)
+// stepCoInputPaths returns the co-input paths merged by the step at the
+// given index. A V1 path's additional base proofs are re-expressed as
+// stepless first-step co-input paths, so one verification engine covers
+// every encoding.
+func (p *AssetProofPath) stepCoInputPaths(index int) []*AssetProofPath {
+	if p.Version == AssetProofPathVersionV1 {
+		if index != 0 {
+			return nil
+		}
+		coPaths := make(
+			[]*AssetProofPath, len(p.AdditionalBaseProofs),
+		)
+		for i, base := range p.AdditionalBaseProofs {
+			coPaths[i] = &AssetProofPath{
+				Version:            AssetProofPathVersionV0,
+				ConfirmedBaseProof: base,
+			}
+		}
+
+		return coPaths
+	}
+	if index < 0 || index >= len(p.Steps) {
+		return nil
 	}
 
-	return 1
+	return p.Steps[index].CoInputPaths
+}
+
+// stepWitnessCount returns the number of asset witnesses the step at the
+// given index must carry: one for the spine predecessor plus one per
+// declared co-input path.
+func (p *AssetProofPath) stepWitnessCount(index int) int {
+	return 1 + len(p.stepCoInputPaths(index))
 }
 
 // assetProofPathChainLookup lets the VM execute its normal timelock path while
