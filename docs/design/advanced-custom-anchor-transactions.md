@@ -457,20 +457,16 @@ and still does not make unconfirmed anchors chain-valid. The SDK therefore
 defines `AssetProofPath` for the restricted unconfirmed case.
 
 A path contains one confirmed base proof file and an ordered list of serialized
-V1 transition proofs. The container has a version, deterministic checksummed
-binary encoding, depth and byte limits, deep-copy semantics, and
-domain-separated content IDs for the full path and each step. A store can keep
-steps once by content ID and let VTXO records refer to a parent path plus one
-new step.
+V1 transition proofs. The container has a deterministic checksummed binary
+encoding, depth and byte limits, deep-copy semantics, and domain-separated
+content IDs for the full path and each step. A store can keep steps once by
+content ID and let VTXO records refer to a parent path plus one new step.
 
 A step that merges several prior states carries the evidence for its extra
-inputs alongside the spine. Version 1 paths declare additional confirmed base
-proof files that only the first step may consume. Version 2 paths let any
-step carry complete recursive co-input paths — each one a self-describing
-encoding with its own confirmed base and unconfirmed steps — bounded by a
-per-step co-path count, a nesting depth checked before nested content is
-parsed, and one whole-tree byte budget. Internally a V1 path is re-expressed
-as first-step co-input paths, so a single verification engine covers both.
+inputs alongside the spine as complete recursive co-input paths. Each co-input
+path has its own confirmed base and unconfirmed steps. A per-step path count,
+a nesting-depth limit checked before nested content is parsed, and one shared
+byte budget bound the complete structure.
 
 Verification proceeds as follows:
 

@@ -16,21 +16,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestAssetProofPathV1RoundTrip proves a multi-base path survives the
-// binary codec with its additional bases intact and derives a distinct
-// content ID domain.
-func TestAssetProofPathV1RoundTrip(t *testing.T) {
+// TestAssetProofPathMergeRoundTrip proves a first-step merge survives the
+// binary codec with its co-input path intact.
+func TestAssetProofPathMergeRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	merge := newAssetProofPathMergeFixture(t)
 	path := &AssetProofPath{
-		Version:            AssetProofPathVersionV1,
 		ConfirmedBaseProof: merge.firstBaseFile,
-		AdditionalBaseProofs: [][]byte{
-			merge.secondBaseFile,
-		},
 		Steps: []AssetProofPathStep{{
 			TransitionProof: merge.transitionProof,
+			CoInputPaths: []*AssetProofPath{{
+				ConfirmedBaseProof: merge.secondBaseFile,
+			}},
 		}},
 	}
 
@@ -43,50 +41,27 @@ func TestAssetProofPathV1RoundTrip(t *testing.T) {
 	require.NoError(t, decoded.UnmarshalBinary(encoded))
 	require.Equal(t, path, &decoded)
 
-	// The V1 wire format must stay byte-stable: re-encoding the decoded
-	// path reproduces the exact original bytes.
+	// Re-encoding the decoded path reproduces the exact original bytes.
 	reEncoded, err := decoded.MarshalBinary()
 	require.NoError(t, err)
 	require.Equal(t, encoded, reEncoded)
-
-	// Domain separation is a property of the version tag alone, so it is
-	// checked over one single-base path expressed both ways.
-	single := newAssetProofPathFixture(t)
-	v0 := &AssetProofPath{
-		Version:            AssetProofPathVersionV0,
-		ConfirmedBaseProof: single.baseProofFile,
-		Steps: []AssetProofPathStep{{
-			TransitionProof: single.transitionProof,
-		}},
-	}
-	v1 := &AssetProofPath{
-		Version:            AssetProofPathVersionV1,
-		ConfirmedBaseProof: single.baseProofFile,
-		Steps:              v0.Steps,
-	}
-	v0ID, err := v0.ContentID()
-	require.NoError(t, err)
-	v1ID, err := v1.ContentID()
-	require.NoError(t, err)
-	require.NotEqual(t, v0ID, v1ID)
 }
 
-// TestAssetProofPathV1MergeVerifies proves the complete merge flow end to
+// TestAssetProofPathMergeVerifies proves the complete merge flow end to
 // end: a first step that spends two confirmed bases into one output passes
 // verification, with both base lineages resolved and the merged amount at
 // the tip.
-func TestAssetProofPathV1MergeVerifies(t *testing.T) {
+func TestAssetProofPathMergeVerifies(t *testing.T) {
 	t.Parallel()
 
 	merge := newAssetProofPathMergeFixture(t)
 	path := &AssetProofPath{
-		Version:            AssetProofPathVersionV1,
 		ConfirmedBaseProof: merge.firstBaseFile,
-		AdditionalBaseProofs: [][]byte{
-			merge.secondBaseFile,
-		},
 		Steps: []AssetProofPathStep{{
 			TransitionProof: merge.transitionProof,
+			CoInputPaths: []*AssetProofPath{{
+				ConfirmedBaseProof: merge.secondBaseFile,
+			}},
 		}},
 	}
 	verifier := &testConfirmedProofVerifier{
@@ -121,24 +96,21 @@ func TestAssetProofPathV1MergeVerifies(t *testing.T) {
 	}, attestation.PreviousAnchorOutpoints)
 }
 
-// TestAssetProofPathV1RejectsUnmergedFirstStep proves a path that
-// declares two bases but whose first transition spends only one is
-// rejected. Accepting it would let a caller claim units the transition
-// never actually consumed.
-func TestAssetProofPathV1RejectsUnmergedFirstStep(t *testing.T) {
+// TestAssetProofPathRejectsUnmergedCoInput proves a declared co-input that the
+// transition does not spend is rejected.
+func TestAssetProofPathRejectsUnmergedCoInput(t *testing.T) {
 	t.Parallel()
 
 	fixture := newAssetProofPathFixture(t)
 	second, _, _ := newAssetProofPathSecondBase(t)
 
 	path := &AssetProofPath{
-		Version:            AssetProofPathVersionV1,
 		ConfirmedBaseProof: fixture.baseProofFile,
-		AdditionalBaseProofs: [][]byte{
-			second,
-		},
 		Steps: []AssetProofPathStep{{
 			TransitionProof: fixture.transitionProof,
+			CoInputPaths: []*AssetProofPath{{
+				ConfirmedBaseProof: second,
+			}},
 		}},
 	}
 	require.ErrorContains(
@@ -147,67 +119,9 @@ func TestAssetProofPathV1RejectsUnmergedFirstStep(t *testing.T) {
 	)
 }
 
-// TestAssetProofPathV1ValidateRejections walks the structural rules for
-// additional base proofs.
-func TestAssetProofPathV1ValidateRejections(t *testing.T) {
-	t.Parallel()
-
-	fixture := newAssetProofPathFixture(t)
-
-	t.Run("v0 rejects additional bases", func(t *testing.T) {
-		t.Parallel()
-
-		path := &AssetProofPath{
-			Version:            AssetProofPathVersionV0,
-			ConfirmedBaseProof: fixture.baseProofFile,
-			AdditionalBaseProofs: [][]byte{
-				fixture.baseProofFile,
-			},
-			Steps: []AssetProofPathStep{{
-				TransitionProof: fixture.transitionProof,
-			}},
-		}
-		require.ErrorContains(t, path.Validate(), "need a v1 path")
-	})
-
-	t.Run("additional bases need steps", func(t *testing.T) {
-		t.Parallel()
-
-		path := &AssetProofPath{
-			Version:            AssetProofPathVersionV1,
-			ConfirmedBaseProof: fixture.baseProofFile,
-			AdditionalBaseProofs: [][]byte{
-				fixture.baseProofFile,
-			},
-		}
-		require.ErrorContains(
-			t, path.Validate(), "multi-input transition",
-		)
-	})
-
-	t.Run("identity mismatch rejected", func(t *testing.T) {
-		t.Parallel()
-
-		groupedBase, _, _ := newGroupedAssetProofPathBase(t)
-		path := &AssetProofPath{
-			Version:            AssetProofPathVersionV1,
-			ConfirmedBaseProof: fixture.baseProofFile,
-			AdditionalBaseProofs: [][]byte{
-				groupedBase,
-			},
-			Steps: []AssetProofPathStep{{
-				TransitionProof: fixture.transitionProof,
-			}},
-		}
-		require.ErrorContains(t, path.Validate(), "additional base")
-	})
-}
-
-// TestAssetProofPathV1BindingFailsClosed proves an additional base that
-// the first transition does not spend is rejected at verification: the
-// declared co-inputs must be exactly the transition's previous
-// witnesses.
-func TestAssetProofPathV1BindingFailsClosed(t *testing.T) {
+// TestAssetProofPathMergeBindingRejectsDuplicates proves duplicate co-input
+// outpoints are rejected.
+func TestAssetProofPathMergeBindingRejectsDuplicates(t *testing.T) {
 	t.Parallel()
 
 	merge := newAssetProofPathMergeFixture(t)
@@ -216,13 +130,12 @@ func TestAssetProofPathV1BindingFailsClosed(t *testing.T) {
 	// the declared set can no longer account for both of the
 	// transition's witnesses.
 	duplicate := &AssetProofPath{
-		Version:            AssetProofPathVersionV1,
 		ConfirmedBaseProof: merge.firstBaseFile,
-		AdditionalBaseProofs: [][]byte{
-			merge.firstBaseFile,
-		},
 		Steps: []AssetProofPathStep{{
 			TransitionProof: merge.transitionProof,
+			CoInputPaths: []*AssetProofPath{{
+				ConfirmedBaseProof: merge.firstBaseFile,
+			}},
 		}},
 	}
 	verifier := &testConfirmedProofVerifier{

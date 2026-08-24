@@ -43,7 +43,6 @@ func TestConfirmProofFile(t *testing.T) {
 
 	fixture := newAssetProofPathFixture(t)
 	path := &AssetProofPath{
-		Version:            AssetProofPathVersionV0,
 		ConfirmedBaseProof: fixture.baseProofFile,
 		Steps: []AssetProofPathStep{{
 			TransitionProof: fixture.transitionProof,
@@ -80,20 +79,18 @@ func TestConfirmProofFile(t *testing.T) {
 }
 
 // TestConfirmProofFileMergeEmbedsCoInputs verifies a merging first step
-// permanently embeds the additional base proofs as its input files, the
-// layout a confirmed multi-input transition proof carries.
+// permanently embeds its co-input path as an input file.
 func TestConfirmProofFileMergeEmbedsCoInputs(t *testing.T) {
 	t.Parallel()
 
 	fixture := newAssetProofPathMergeFixture(t)
 	path := &AssetProofPath{
-		Version:            AssetProofPathVersionV1,
 		ConfirmedBaseProof: fixture.firstBaseFile,
-		AdditionalBaseProofs: [][]byte{
-			fixture.secondBaseFile,
-		},
 		Steps: []AssetProofPathStep{{
 			TransitionProof: fixture.transitionProof,
+			CoInputPaths: []*AssetProofPath{{
+				ConfirmedBaseProof: fixture.secondBaseFile,
+			}},
 		}},
 	}
 	require.NoError(t, path.Validate())
@@ -120,11 +117,10 @@ func TestConfirmProofFileMergeEmbedsCoInputs(t *testing.T) {
 	require.EqualValues(t, 99, last.BlockHeight)
 }
 
-// TestConfirmProofFileV2ConfirmsCoInputPaths verifies the recursive
-// assembly: a merging step embeds each co-input path confirmed into a full
-// file of its own, at the step that consumes it, and the assembled file
-// passes complete native verification with real merkle inclusion checks.
-func TestConfirmProofFileV2ConfirmsCoInputPaths(t *testing.T) {
+// TestConfirmProofFileConfirmsCoInputPaths verifies recursive assembly: a
+// merging step embeds each confirmed co-input lineage at the step that
+// consumes it.
+func TestConfirmProofFileConfirmsCoInputPaths(t *testing.T) {
 	t.Parallel()
 
 	firstFile, firstProof, firstKey := newAssetProofPathBase(t)
@@ -153,14 +149,12 @@ func TestConfirmProofFileV2ConfirmsCoInputPaths(t *testing.T) {
 	require.NoError(t, err)
 
 	path := &AssetProofPath{
-		Version:            AssetProofPathVersionV2,
 		ConfirmedBaseProof: firstFile,
 		Steps: []AssetProofPathStep{
 			{TransitionProof: spineBytes},
 			{
 				TransitionProof: mergeBytes,
 				CoInputPaths: []*AssetProofPath{{
-					Version:            AssetProofPathVersionV0,
 					ConfirmedBaseProof: secondFile,
 					Steps: []AssetProofPathStep{{
 						TransitionProof: coBytes,
@@ -232,7 +226,6 @@ func TestConfirmProofFileFailsClosed(t *testing.T) {
 
 	fixture := newAssetProofPathFixture(t)
 	path := &AssetProofPath{
-		Version:            AssetProofPathVersionV0,
 		ConfirmedBaseProof: fixture.baseProofFile,
 		Steps: []AssetProofPathStep{{
 			TransitionProof: fixture.transitionProof,
@@ -258,7 +251,6 @@ func TestConfirmProofFileFailsClosed(t *testing.T) {
 
 	// A path without steps is already a confirmed file.
 	stepless := &AssetProofPath{
-		Version:            AssetProofPathVersionV0,
 		ConfirmedBaseProof: fixture.baseProofFile,
 	}
 	encoded, err := stepless.ConfirmProofFile(nil)

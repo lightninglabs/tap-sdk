@@ -30,7 +30,6 @@ func TestAssetProofPathRoundTripAndVerify(t *testing.T) {
 
 	fixture := newAssetProofPathFixture(t)
 	path := &AssetProofPath{
-		Version:            AssetProofPathVersionV0,
 		ConfirmedBaseProof: fixture.baseProofFile,
 		Steps: []AssetProofPathStep{{
 			TransitionProof: fixture.transitionProof,
@@ -117,7 +116,6 @@ func TestAssetProofPathAcceptsSplitSteps(t *testing.T) {
 	require.NoError(t, err)
 
 	path := &AssetProofPath{
-		Version:            AssetProofPathVersionV0,
 		ConfirmedBaseProof: baseProofFile,
 		Steps: []AssetProofPathStep{{
 			TransitionProof: transitionProof,
@@ -176,7 +174,6 @@ func TestAssetProofPathMultiHopFromSplitChild(t *testing.T) {
 	require.NoError(t, err)
 
 	path := &AssetProofPath{
-		Version:            AssetProofPathVersionV0,
 		ConfirmedBaseProof: baseProofFile,
 		Steps: []AssetProofPathStep{
 			{TransitionProof: splitBytes},
@@ -220,7 +217,6 @@ func TestAssetProofPathAllowsBitcoinOnlyInputs(t *testing.T) {
 		},
 	)
 	path := &AssetProofPath{
-		Version:            AssetProofPathVersionV0,
 		ConfirmedBaseProof: fixture.baseProofFile,
 		Steps: []AssetProofPathStep{{
 			TransitionProof: transitionProof,
@@ -253,7 +249,6 @@ func TestAssetProofPathRejectsHiddenCoAnchoredAsset(t *testing.T) {
 	require.NoError(t, err)
 
 	path := &AssetProofPath{
-		Version:            AssetProofPathVersionV0,
 		ConfirmedBaseProof: baseProofFile,
 		Steps: []AssetProofPathStep{{
 			TransitionProof: transitionProof,
@@ -295,7 +290,6 @@ func TestAssetProofPathRejectsImmutableIdentityMutation(t *testing.T) {
 	validTransitionBytes, err := validTransition.Bytes()
 	require.NoError(t, err)
 	validPath := &AssetProofPath{
-		Version:            AssetProofPathVersionV0,
 		ConfirmedBaseProof: baseProofFile,
 		Steps: []AssetProofPathStep{{
 			TransitionProof: validTransitionBytes,
@@ -364,7 +358,6 @@ func TestAssetProofPathRejectsImmutableIdentityMutation(t *testing.T) {
 			transitionBytes, err := transition.Bytes()
 			require.NoError(t, err)
 			path := &AssetProofPath{
-				Version:            AssetProofPathVersionV0,
 				ConfirmedBaseProof: baseProofFile,
 				Steps: []AssetProofPathStep{{
 					TransitionProof: transitionBytes,
@@ -390,7 +383,6 @@ func TestAssetProofPathRejectsSplitRootIdentityMutation(t *testing.T) {
 	transitionBytes, err := transition.Bytes()
 	require.NoError(t, err)
 	validPath := &AssetProofPath{
-		Version:            AssetProofPathVersionV0,
 		ConfirmedBaseProof: baseProofFile,
 		Steps: []AssetProofPathStep{{
 			TransitionProof: transitionBytes,
@@ -444,7 +436,6 @@ func TestAssetProofPathRejectsSplitRootIdentityMutation(t *testing.T) {
 				},
 			)
 			path := &AssetProofPath{
-				Version:            AssetProofPathVersionV0,
 				ConfirmedBaseProof: baseProofFile,
 				Steps: []AssetProofPathStep{{
 					TransitionProof: mutated,
@@ -548,7 +539,6 @@ func TestAssetProofPathRejectsUnsafeTransitions(t *testing.T) {
 				t, fixture.transitionProof, testCase.mutate,
 			)
 			path := &AssetProofPath{
-				Version:            AssetProofPathVersionV0,
 				ConfirmedBaseProof: fixture.baseProofFile,
 				Steps: []AssetProofPathStep{{
 					TransitionProof: step,
@@ -568,7 +558,6 @@ func TestAssetProofPathVerifierFailsClosed(t *testing.T) {
 
 	fixture := newAssetProofPathFixture(t)
 	path := &AssetProofPath{
-		Version:            AssetProofPathVersionV0,
 		ConfirmedBaseProof: fixture.baseProofFile,
 		Steps: []AssetProofPathStep{{
 			TransitionProof: fixture.transitionProof,
@@ -681,7 +670,6 @@ func TestAssetProofPathEncodingRejectsCorruption(t *testing.T) {
 
 	fixture := newAssetProofPathFixture(t)
 	path := &AssetProofPath{
-		Version:            AssetProofPathVersionV0,
 		ConfirmedBaseProof: fixture.baseProofFile,
 		Steps: []AssetProofPathStep{{
 			TransitionProof: fixture.transitionProof,
@@ -692,11 +680,11 @@ func TestAssetProofPathEncodingRejectsCorruption(t *testing.T) {
 
 	badChecksum := cloneBytes(encoded)
 	badChecksum[len(badChecksum)-1] ^= 1
-	unknownVersion := cloneBytes(encoded)
+	unknownFormat := cloneBytes(encoded)
 	binary.BigEndian.PutUint16(
-		unknownVersion[len(assetProofPathMagic):], 99,
+		unknownFormat[len(assetProofPathMagic):], 99,
 	)
-	recomputeAssetProofPathChecksum(unknownVersion)
+	recomputeAssetProofPathChecksum(unknownFormat)
 	badMagic := cloneBytes(encoded)
 	badMagic[0] ^= 1
 	recomputeAssetProofPathChecksum(badMagic)
@@ -719,9 +707,9 @@ func TestAssetProofPathEncodingRejectsCorruption(t *testing.T) {
 			target:  ErrAssetProofPathInvalid,
 		},
 		{
-			name:    "version",
-			encoded: unknownVersion,
-			target:  ErrAssetProofPathUnknownVersion,
+			name:    "format",
+			encoded: unknownFormat,
+			target:  ErrAssetProofPathUnknownFormat,
 		},
 		{
 			name:    "magic",
@@ -740,13 +728,13 @@ func TestAssetProofPathEncodingRejectsCorruption(t *testing.T) {
 			t.Parallel()
 
 			receiver := AssetProofPath{
-				Version: AssetProofPathVersion(42),
+				ConfirmedBaseProof: []byte("unchanged"),
 			}
 			err := receiver.UnmarshalBinary(testCase.encoded)
 			require.ErrorIs(t, err, testCase.target)
-			require.Equal(t, AssetProofPathVersion(42),
-				receiver.Version)
-			require.Nil(t, receiver.ConfirmedBaseProof)
+			require.Equal(
+				t, []byte("unchanged"), receiver.ConfirmedBaseProof,
+			)
 			require.Nil(t, receiver.Steps)
 		})
 	}
