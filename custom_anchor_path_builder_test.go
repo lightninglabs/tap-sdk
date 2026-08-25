@@ -384,7 +384,6 @@ func newCustomAnchorPathBuilderFixture(
 	require.NoError(t, err)
 
 	path := &AssetProofPath{
-		Version:            AssetProofPathVersionV0,
 		ConfirmedBaseProof: baseProofFile,
 		Steps: []AssetProofPathStep{{
 			TransitionProof: transitionBytes,
