@@ -194,7 +194,7 @@ sentinel errors such as `ErrAssetUnknown`, `ErrInsufficientBalance`,
 
 ## Compatibility Boundary
 
-The SDK targets tapd v0.8.0 or newer. Older versions do not expose enough
+The current SDK is validated against tapd v0.8.3. Older versions may lack
 asset type data for the SDK to reliably distinguish grouped fungibles from NFT
 collection items across transfers, burns, and events.
 

@@ -8,14 +8,20 @@ the data needed for correct business-level `AssetRef` mapping.
 
 | tap-sdk line | tapd / Taproot Assets | lnd | Go | Status |
 |--------------|------------------------|-----|----|--------|
-| `main` | tapd `main` after v0.8.0 | v0.21.0-beta or newer | 1.25.10+ | Development |
-| `v0.1.x` | v0.8.0 or newer | v0.21.0-beta or newer | 1.25.10+ | Current release line |
-| unsupported | v0.7.x and older | any | any | Unsupported |
+| `main` / planned `v0.2.x` | v0.8.3 | v0.21.3-beta | 1.26.0+ | Release candidate |
+| `v0.1.x` | v0.8.0 or newer | v0.21.0-beta or newer | 1.25.10+ | Released |
 
-The lnd column tracks the SDK's validated integration-test target and the
-released Taproot Assets v0.8.0 module graph. Taproot Assets v0.8.0 documents
-runtime support for lnd v0.20.0-beta or newer, but this SDK release line is
-validated against v0.21.0-beta.
+The full gRPC and REST integration suite is validated against tapd v0.8.3
+and lnd v0.21.3-beta, including custom-anchor commitments, MuSig2 spends,
+timeout spends, and proof paths. Advanced custom-anchor operations require
+transition proof v1 support; the v0.8.0 daemon does not expose that field.
+
+Daemon compatibility and Go module compatibility are separate. Current SDK
+source uses btcd v2 packages and the corresponding Taproot Assets and lnd
+revisions. The v0.8.3 Taproot Assets Go module and taprpc v1.3.3 still depend
+on the older btcd packages, so those tags cannot replace the SDK's pinned
+source revisions without a coordinated module migration. Applications can
+use the SDK's own types without importing taprpc or Taproot Assets directly.
 
 ## Why v0.8 Is Required
 
