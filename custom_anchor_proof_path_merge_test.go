@@ -254,6 +254,9 @@ func newAssetProofPathMergeTransition(t *testing.T, sources []*proof.Proof,
 	require.NoError(t, tapCommitment.MergeAltLeaves(
 		asset.ToAltLeaves(spentAssets),
 	))
+	spenders, err := asset.CollectSpenders(newAsset)
+	require.NoError(t, err)
+	require.NoError(t, tapCommitment.MergeAltLeaves(spenders))
 
 	anchorTx := &wire.MsgTx{
 		Version: 3,

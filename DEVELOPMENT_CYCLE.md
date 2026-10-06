@@ -6,8 +6,8 @@ around Taproot Assets v0.8 and the planned multi-language model.
 
 The first release line targets:
 
-- tapd / Taproot Assets v0.8.0 or newer
-- lnd v0.21.0-beta or newer
+- tapd / Taproot Assets v0.8.5 or newer
+- lnd v0.21.4-beta
 - Go 1.25.10+
 
 The first public tag is `v0.1.0`, not `v1.0.0`. The SDK is still missing some

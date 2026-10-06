@@ -345,7 +345,9 @@ func (p *CustomAnchorPlan) PreviewOutputCommitments() (
 	allPackets := append(
 		append([]*tappsbt.VPacket(nil), active...), passive...,
 	)
-	commitments, err := tapsend.CreateOutputCommitments(allPackets)
+	commitments, err := tapsend.CreateOutputCommitments(
+		allPackets, tapsend.WithSpenderLeaves(),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("preview output commitments: %w", err)
 	}

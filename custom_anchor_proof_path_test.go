@@ -23,6 +23,141 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestAssetProofPathRequiresActivationEvidence rejects incomplete new
+// transitions even when a caller supplies a pre-activation confirmed base.
+func TestAssetProofPathRequiresActivationEvidence(t *testing.T) {
+	t.Parallel()
+
+	fixture := newAssetProofPathFixture(t)
+	split := newAssetProofPathSplitTransition(
+		t, fixture.baseProof, testPrivateKey(t, 1),
+	)
+	tests := []struct {
+		name       string
+		transition *proof.Proof
+		mutate     func(*proof.Proof)
+		wantErr    error
+	}{
+		{
+			name:       "spender proofs",
+			transition: fixture.transition,
+			mutate: func(p *proof.Proof) {
+				p.InclusionProof.CommitmentProof.
+					SpenderProofs = nil
+			},
+			wantErr: proof.ErrMissingSpenderProofs,
+		},
+		{
+			name:       "root locator",
+			transition: split,
+			mutate: func(p *proof.Proof) {
+				p.RootLocatorProof = nil
+			},
+			wantErr: proof.ErrMissingRootLocatorProof,
+		},
+		{
+			name:       "split root STXOs",
+			transition: split,
+			mutate: func(p *proof.Proof) {
+				p.SplitRootProof.CommitmentProof.
+					STXOProofs = nil
+			},
+			wantErr: proof.ErrMissingSplitSTXOProofs,
+		},
+		{
+			name:       "split root spenders",
+			transition: split,
+			mutate: func(p *proof.Proof) {
+				p.SplitRootProof.CommitmentProof.
+					SpenderProofs = nil
+			},
+			wantErr: proof.ErrMissingSpenderProofs,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			raw, err := test.transition.Bytes()
+			require.NoError(t, err)
+			transition, err := proof.Decode(raw)
+			require.NoError(t, err)
+			test.mutate(transition)
+			raw, err = transition.Bytes()
+			require.NoError(t, err)
+			path := &AssetProofPath{
+				ConfirmedBaseProof: fixture.baseProofFile,
+				Steps: []AssetProofPathStep{{
+					TransitionProof: raw,
+				}},
+			}
+			err = path.Validate()
+			require.ErrorIs(t, err, ErrAssetProofPathInvalid)
+			require.ErrorIs(t, err, test.wantErr)
+		})
+	}
+}
+
+// TestAssetProofPathVerifiesSpenders rejects a present but invalid spender
+// inclusion proof using the native proof verifier.
+func TestAssetProofPathVerifiesSpenders(t *testing.T) {
+	t.Parallel()
+
+	fixture := newAssetProofPathFixture(t)
+	commitmentProof := fixture.transition.InclusionProof.CommitmentProof
+	for key := range commitmentProof.SpenderProofs {
+		for _, stxoProof := range commitmentProof.STXOProofs {
+			commitmentProof.SpenderProofs[key] = stxoProof
+		}
+	}
+	transition, err := fixture.transition.Bytes()
+	require.NoError(t, err)
+	path := &AssetProofPath{
+		ConfirmedBaseProof: fixture.baseProofFile,
+		Steps: []AssetProofPathStep{{
+			TransitionProof: transition,
+		}},
+	}
+	require.NoError(t, path.Validate())
+	_, err = path.Verify(context.Background(), &testConfirmedProofVerifier{
+		result: &ConfirmedProofVerification{
+			AnchorAssetInventoryComplete: true,
+		},
+	})
+	require.ErrorIs(t, err, commitment.ErrInvalidTaprootProof)
+}
+
+// TestAssetProofPathSpendsHistoricalV0Base keeps activation policy for the
+// confirmed history with the confirmed verifier, while checking each new step.
+func TestAssetProofPathSpendsHistoricalV0Base(t *testing.T) {
+	t.Parallel()
+
+	fixture := newAssetProofPathFixture(t)
+	legacy := fixture.transition
+	legacy.Version = proof.TransitionV0
+	legacy.InclusionProof.CommitmentProof.SpenderProofs = nil
+	base, err := proof.NewFile(proof.V0, *fixture.baseProof, *legacy)
+	require.NoError(t, err)
+	var encodedBase bytes.Buffer
+	require.NoError(t, base.Encode(&encodedBase))
+
+	transition := newAssetProofPathTransition(
+		t, legacy, testPrivateKey(t, 3), testPrivateKey(t, 4),
+	)
+	raw, err := transition.Bytes()
+	require.NoError(t, err)
+	path := &AssetProofPath{
+		ConfirmedBaseProof: encodedBase.Bytes(),
+		Steps: []AssetProofPathStep{{
+			TransitionProof: raw,
+		}},
+	}
+	_, err = path.Verify(context.Background(), &testConfirmedProofVerifier{
+		result: &ConfirmedProofVerification{
+			AnchorAssetInventoryComplete: true,
+		},
+	})
+	require.NoError(t, err)
+}
+
 // TestAssetProofPathRoundTripAndVerify exercises the persistence boundary and
 // the real local Taproot Assets proof verifier as one flow.
 func TestAssetProofPathRoundTripAndVerify(t *testing.T) {
@@ -302,7 +437,7 @@ func TestAssetProofPathRejectsImmutableIdentityMutation(t *testing.T) {
 		name                 string
 		mutate               func(*asset.Asset)
 		errMsg               string
-		nativeVerifierAccept bool
+		nativeVerifierReject bool
 	}{
 		{
 			name: "genesis",
@@ -310,7 +445,7 @@ func TestAssetProofPathRejectsImmutableIdentityMutation(t *testing.T) {
 				a.Genesis.Tag += "-mutated"
 			},
 			errMsg:               "selected asset genesis changed",
-			nativeVerifierAccept: true,
+			nativeVerifierReject: true,
 		},
 		{
 			name: "type",
@@ -326,7 +461,7 @@ func TestAssetProofPathRejectsImmutableIdentityMutation(t *testing.T) {
 				a.GroupKey.GroupPubKey = *testPrivateKey(t, 10).PubKey()
 			},
 			errMsg:               "selected asset group key changed",
-			nativeVerifierAccept: true,
+			nativeVerifierReject: true,
 		},
 		{
 			name: "group removed",
@@ -334,7 +469,7 @@ func TestAssetProofPathRejectsImmutableIdentityMutation(t *testing.T) {
 				a.GroupKey = nil
 			},
 			errMsg:               "selected asset group key changed",
-			nativeVerifierAccept: true,
+			nativeVerifierReject: true,
 		},
 	}
 
@@ -344,7 +479,7 @@ func TestAssetProofPathRejectsImmutableIdentityMutation(t *testing.T) {
 				t, baseProof, senderKey, testPrivateKey(t, 3), false,
 				testCase.mutate,
 			)
-			if testCase.nativeVerifierAccept {
+			if testCase.nativeVerifierReject {
 				_, err := transition.Verify(
 					context.Background(), &proof.AssetSnapshot{
 						Asset:    baseProof.Asset.Copy(),
@@ -352,7 +487,9 @@ func TestAssetProofPathRejectsImmutableIdentityMutation(t *testing.T) {
 					}, assetProofPathChainLookup{}, nativeContext,
 					proof.WithSkipChainVerification(),
 				)
-				require.NoError(t, err)
+				require.ErrorContains(
+					t, err, "asset id mismatch",
+				)
 			}
 
 			transitionBytes, err := transition.Bytes()
@@ -984,6 +1121,9 @@ func newAssetProofPathTransitionWithMutator(t *testing.T,
 	require.NoError(t, tapCommitment.MergeAltLeaves(
 		asset.ToAltLeaves([]*asset.Asset{spentAsset}),
 	))
+	spenders, err := asset.CollectSpenders(newAsset)
+	require.NoError(t, err)
+	require.NoError(t, tapCommitment.MergeAltLeaves(spenders))
 	if hiddenAsset {
 		hiddenGenesis := asset.Genesis{
 			FirstPrevOut: previous.OutPoint(),
@@ -1058,6 +1198,8 @@ func newAssetProofPathSplitTransition(t *testing.T, previous *proof.Proof,
 	require.NoError(t, err)
 
 	rootAsset := splitCommitment.RootAsset
+	rootSplit := splitCommitment.SplitAssets[*rootLocator]
+	rootLocatorProof := &rootSplit.PrevWitnesses[0].SplitCommitment.Proof
 	selectedAsset := &splitCommitment.SplitAssets[*selectedLocator].Asset
 	signAssetProofPathTransition(
 		t, previous, rootAsset, spendKey, []*asset.Asset{selectedAsset},
@@ -1086,6 +1228,9 @@ func newAssetProofPathSplitTransition(t *testing.T, previous *proof.Proof,
 	require.NoError(t, rootTapCommitment.MergeAltLeaves(
 		asset.ToAltLeaves([]*asset.Asset{spentAsset}),
 	))
+	spenders, err := asset.CollectSpenders(rootAsset)
+	require.NoError(t, err)
+	require.NoError(t, rootTapCommitment.MergeAltLeaves(spenders))
 
 	rootInternalKey := testPrivateKey(t, 6).PubKey()
 	selectedInternalKey := testPrivateKey(t, 7).PubKey()
@@ -1131,6 +1276,7 @@ func newAssetProofPathSplitTransition(t *testing.T, previous *proof.Proof,
 			RootOutputIndex:      0,
 			RootInternalKey:      rootInternalKey,
 			RootTaprootAssetTree: rootTapCommitment,
+			RootLocatorProof:     rootLocatorProof,
 		}, proof.WithVersion(proof.TransitionV1),
 	)
 	require.NoError(t, err)

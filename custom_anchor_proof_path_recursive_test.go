@@ -443,6 +443,8 @@ func newAssetProofPathMergeSplitTransition(t *testing.T,
 	require.NoError(t, err)
 
 	rootAsset := splitCommitment.RootAsset
+	rootSplit := splitCommitment.SplitAssets[*changeLocator]
+	rootLocatorProof := &rootSplit.PrevWitnesses[0].SplitCommitment.Proof
 	selectedAsset := &splitCommitment.SplitAssets[*recipientLocator].Asset
 
 	// Sign every root witness with the key of the source it spends, then
@@ -510,6 +512,9 @@ func newAssetProofPathMergeSplitTransition(t *testing.T,
 	require.NoError(t, rootTapCommitment.MergeAltLeaves(
 		asset.ToAltLeaves(spentAssets),
 	))
+	spenders, err := asset.CollectSpenders(rootAsset)
+	require.NoError(t, err)
+	require.NoError(t, rootTapCommitment.MergeAltLeaves(spenders))
 
 	changeInternalKey := testPrivateKey(t, 23).PubKey()
 	recipientInternalKey := testPrivateKey(t, 24).PubKey()
@@ -558,6 +563,7 @@ func newAssetProofPathMergeSplitTransition(t *testing.T,
 			RootOutputIndex:      0,
 			RootInternalKey:      changeInternalKey,
 			RootTaprootAssetTree: rootTapCommitment,
+			RootLocatorProof:     rootLocatorProof,
 		}, proof.WithVersion(proof.TransitionV1),
 	)
 	require.NoError(t, err)

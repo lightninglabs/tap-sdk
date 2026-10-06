@@ -56,25 +56,14 @@ func TestCustomAnchorTransferPackageSealValidate(t *testing.T) {
 	require.NotSame(t, pkg, sealed)
 }
 
-func TestCustomAnchorTransferPackageValidatesLegacyV0Proofs(t *testing.T) {
+func TestCustomAnchorTransferPackageRejectsLegacyV0Proofs(t *testing.T) {
 	t.Parallel()
 
 	pkg := newCustomAnchorTestFixture(t).unsealed.Clone()
 	setCustomAnchorPackageProofVersion(t, pkg, proof.TransitionV0)
 
-	sealed, err := pkg.Seal()
-	require.NoError(t, err)
-	require.NoError(t, sealed.Validate())
-
-	updateProof, err := proof.Decode(sealed.ProofUpdates[0].ProofBlob)
-	require.NoError(t, err)
-	require.Equal(t, proof.TransitionV0, updateProof.Version)
-	active, err := tappsbt.Decode(sealed.ActiveVirtualPsbts[0])
-	require.NoError(t, err)
-	require.Equal(
-		t, proof.TransitionV0,
-		active.Outputs[0].ProofSuffix.Version,
-	)
+	_, err := pkg.Seal()
+	require.ErrorIs(t, err, proof.ErrTransitionV1Required)
 }
 
 func TestCustomAnchorTransferPackageSealErrors(t *testing.T) {

@@ -10,19 +10,6 @@ const maxCustomAnchorLockExpirationSeconds = uint64(
 	math.MaxInt64 / int64(time.Second),
 )
 
-// TransitionProofVersion identifies the state transition proof encoding tapd
-// should produce while committing virtual PSBTs.
-type TransitionProofVersion uint8
-
-const (
-	// TransitionProofVersionV0 is the original transition proof encoding.
-	TransitionProofVersionV0 TransitionProofVersion = iota
-
-	// TransitionProofVersionV1 includes spent transaction output inclusion
-	// and exclusion proofs.
-	TransitionProofVersionV1
-)
-
 // AnchorChangeOutputMode identifies how anchor change should be handled while
 // funding an anchor PSBT.
 type AnchorChangeOutputMode uint8
@@ -99,7 +86,8 @@ type AnchorFundingPlan struct {
 	SkipFunding bool
 }
 
-// CommitVirtualPsbtsRequest commits virtual PSBTs into an anchor PSBT template.
+// CommitVirtualPsbtsRequest commits virtual PSBTs into an anchor PSBT template
+// with V1 transition proofs.
 type CommitVirtualPsbtsRequest struct {
 	// AnchorPsbt is the caller-supplied BTC-level anchor PSBT template.
 	AnchorPsbt []byte
@@ -110,10 +98,6 @@ type CommitVirtualPsbtsRequest struct {
 	// PassiveAssetPsbts are passive virtual asset PSBTs to commit alongside the
 	// active PSBTs.
 	PassiveAssetPsbts [][]byte
-
-	// TransitionProofVersion selects the proof encoding for output proof
-	// suffixes. The zero value preserves tapd's legacy V0 behavior.
-	TransitionProofVersion TransitionProofVersion
 
 	// Funding controls backend anchor funding.
 	Funding AnchorFundingPlan
@@ -129,9 +113,6 @@ func (r *CommitVirtualPsbtsRequest) Validate() error {
 	}
 	if len(r.VirtualPsbts) == 0 {
 		return fmt.Errorf("at least one virtual PSBT is required")
-	}
-	if err := r.TransitionProofVersion.validate(); err != nil {
-		return err
 	}
 	if err := validateCustomAnchorLockID(r.Funding.CustomLockID); err != nil {
 		return err
@@ -151,16 +132,6 @@ func (r *CommitVirtualPsbtsRequest) Validate() error {
 	}
 
 	return r.Funding.Fee.validate()
-}
-
-func (v TransitionProofVersion) validate() error {
-	switch v {
-	case TransitionProofVersionV0, TransitionProofVersionV1:
-		return nil
-
-	default:
-		return fmt.Errorf("unknown transition proof version %d", v)
-	}
 }
 
 func validateCustomAnchorLockID(lockID []byte) error {

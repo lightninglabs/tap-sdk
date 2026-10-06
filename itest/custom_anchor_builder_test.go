@@ -38,9 +38,9 @@ func TestCustomAnchorBuilderEndToEnd(t *testing.T) {
 		name := uniqueEventLabel(fmt.Sprintf(
 			"custom-anchor-%s", transport,
 		))
-		minted, err := h.CreateFungibleAndConfirm(
-			t, ctx, name, 1_000,
-		)
+		mintSpec := mintGroupedAssetSpec(name, 1_000)
+		mintSpec.AssetVersion = tapsdk.AssetVersionV1
+		minted, err := h.MintAssetAndConfirm(t, ctx, mintSpec)
 		require.NoError(t, err)
 		require.True(t, minted.Ref.IsGroupRef())
 
@@ -143,6 +143,36 @@ func TestCustomAnchorBuilderEndToEnd(t *testing.T) {
 		require.Equal(t, receiverKeys.ScriptKey.PubKey,
 			sealed.Outputs[0].ScriptKey)
 		requireCustomAnchorTxShape(t, sealed.AnchorPsbt, anchorValue)
+
+		// Persist the daemon suffix as an unconfirmed path before
+		// it gains block inclusion data.
+		path := &tapsdk.AssetProofPath{
+			ConfirmedBaseProof: inputProof.RawProofFile,
+			Steps: []tapsdk.AssetProofPathStep{{
+				TransitionProof: sealed.ProofUpdates[0].
+					ProofBlob,
+			}},
+		}
+		pathBytes, err := path.MarshalBinary()
+		require.NoError(t, err)
+		var restored tapsdk.AssetProofPath
+		require.NoError(t, restored.UnmarshalBinary(pathBytes))
+		step, err := restored.Steps[0].Summary()
+		require.NoError(t, err)
+		require.Equal(t, sealed.Outputs[0].AnchorOutpoint,
+			step.AnchorOutpoint)
+		transition, err := proof.Decode(
+			restored.Steps[0].TransitionProof,
+		)
+		require.NoError(t, err)
+		require.Equal(t, proof.TransitionV1, transition.Version)
+		require.NoError(t, transition.CheckActivationEvidence())
+
+		transition.InclusionProof.CommitmentProof.SpenderProofs = nil
+		restored.Steps[0].TransitionProof, err = transition.Bytes()
+		require.NoError(t, err)
+		require.ErrorIs(t, restored.Validate(),
+			proof.ErrMissingSpenderProofs)
 
 		signingRequests, err := sealed.SigningRequests()
 		require.NoError(t, err)

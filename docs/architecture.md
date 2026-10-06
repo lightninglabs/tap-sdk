@@ -194,9 +194,9 @@ sentinel errors such as `ErrAssetUnknown`, `ErrInsufficientBalance`,
 
 ## Compatibility Boundary
 
-The current SDK is validated against tapd v0.8.3. Older versions may lack
-asset type data for the SDK to reliably distinguish grouped fungibles from NFT
-collection items across transfers, burns, and events.
+The current SDK requires tapd v0.8.5. Custom-anchor commitment construction
+and verification use its spender and split-proof rules. New transition proofs
+are always V1; confirmed histories retain their original proof versions.
 
 See [Compatibility](compatibility.md).
 

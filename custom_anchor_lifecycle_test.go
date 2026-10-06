@@ -162,10 +162,6 @@ func TestCustomAnchorLifecycleBackendSigningAndPublish(t *testing.T) {
 	require.Equal(t, 1, signCalls)
 	require.NotNil(t, commitRequest)
 	require.True(t, commitRequest.Funding.SkipFunding)
-	require.Equal(
-		t, TransitionProofVersionV1,
-		commitRequest.TransitionProofVersion,
-	)
 	require.Equal(t, plan.AnchorPSBT(), commitRequest.AnchorPsbt)
 	require.Len(t, commitRequest.VirtualPsbts, 1)
 	require.NotEqual(t, plan.ActiveVirtualPSBTs()[0],
@@ -835,7 +831,8 @@ func TestCustomAnchorCommitRejectsBackendResponseDrift(t *testing.T) {
 					output.SplitAsset.ScriptKey = scriptKey
 				}
 			},
-			wantErr: "committed active virtual packet 0 changed fields",
+			wantErr: "committed active virtual packet 0 output 0 " +
+				"alternate leaves changed",
 		},
 		{
 			name: "virtual anchor internal key",
@@ -1196,7 +1193,9 @@ func customAnchorTestCommitResponseWithMutation(t *testing.T,
 	if mutate != nil {
 		mutate(anchor, active)
 	}
-	outputCommitments, err := tapsend.CreateOutputCommitments(allPackets)
+	outputCommitments, err := tapsend.CreateOutputCommitments(
+		allPackets, tapsend.WithSpenderLeaves(),
+	)
 	require.NoError(t, err)
 	for _, packet := range allPackets {
 		require.NoError(t, tapsend.UpdateTaprootOutputKeys(
@@ -1205,14 +1204,10 @@ func customAnchorTestCommitResponseWithMutation(t *testing.T,
 	}
 	for _, packet := range allPackets {
 		for outputIndex := range packet.Outputs {
-			version, err := transitionProofVersion(
-				req.TransitionProofVersion,
-			)
-			require.NoError(t, err)
 			suffix, err := tapsend.CreateProofSuffix(
 				anchor.UnsignedTx, anchor.Outputs, packet,
 				outputCommitments, outputIndex, allPackets,
-				proof.WithVersion(version),
+				proof.WithVersion(proof.TransitionV1),
 			)
 			require.NoError(t, err)
 			packet.Outputs[outputIndex].ProofSuffix = suffix

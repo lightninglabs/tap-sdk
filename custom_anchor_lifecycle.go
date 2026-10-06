@@ -229,8 +229,7 @@ func (p *CustomAnchorPlan) Commit(ctx context.Context,
 		PassiveAssetPsbts: cloneByteSlices(
 			p.passiveVirtualPSBTs,
 		),
-		TransitionProofVersion: TransitionProofVersionV1,
-		Funding:                funding,
+		Funding: funding,
 	}
 	response, err := advancedClient.CommitVirtualPsbtsWithRequest(
 		ctx, commitRequest,
@@ -344,7 +343,7 @@ func (p *CustomAnchorPlan) Commit(ctx context.Context,
 		expectedPassivePackets...,
 	)
 	expectedOutputCommitments, err := tapsend.CreateOutputCommitments(
-		expectedAllPackets,
+		expectedAllPackets, tapsend.WithSpenderLeaves(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("derive expected committed virtual packets: %w",
@@ -366,7 +365,7 @@ func (p *CustomAnchorPlan) Commit(ctx context.Context,
 	)
 	if err := verifyCommittedProofSuffixes(
 		committedAnchor, expectedAllPackets, allPackets,
-		expectedOutputCommitments, commitRequest.TransitionProofVersion,
+		expectedOutputCommitments,
 	); err != nil {
 		return nil, err
 	}
@@ -1485,20 +1484,14 @@ func encodeVirtualPacketWithoutProofSuffixes(
 
 func verifyCommittedProofSuffixes(anchor *psbt.Packet, expected,
 	committed []*tappsbt.VPacket,
-	outputCommitments tappsbt.OutputCommitments,
-	version TransitionProofVersion) error {
-
-	proofVersion, err := transitionProofVersion(version)
-	if err != nil {
-		return err
-	}
+	outputCommitments tappsbt.OutputCommitments) error {
 
 	for packetIdx := range expected {
 		for outputIdx := range expected[packetIdx].Outputs {
 			expectedSuffix, err := tapsend.CreateProofSuffix(
 				anchor.UnsignedTx, anchor.Outputs, expected[packetIdx],
 				outputCommitments, outputIdx, expected,
-				proof.WithVersion(proofVersion),
+				proof.WithVersion(proof.TransitionV1),
 			)
 			if err != nil {
 				return fmt.Errorf("recompute committed proof suffix %d:%d: %w",
@@ -1519,21 +1512,6 @@ func verifyCommittedProofSuffixes(anchor *psbt.Packet, expected,
 	}
 
 	return nil
-}
-
-func transitionProofVersion(
-	version TransitionProofVersion) (proof.TransitionVersion, error) {
-
-	switch version {
-	case TransitionProofVersionV0:
-		return proof.TransitionV0, nil
-
-	case TransitionProofVersionV1:
-		return proof.TransitionV1, nil
-
-	default:
-		return 0, fmt.Errorf("unknown transition proof version %d", version)
-	}
 }
 
 func verifyFinalAnchorWitnesses(packet *psbt.Packet,
