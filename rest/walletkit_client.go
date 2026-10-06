@@ -302,7 +302,7 @@ type jsonCommitVirtualPsbtsRequest struct {
 	VirtualPsbts           []string `json:"virtual_psbts"`
 	PassiveAssetPsbts      []string `json:"passive_asset_psbts,omitempty"`
 	AnchorPsbt             string   `json:"anchor_psbt"`
-	TransitionProofVersion string   `json:"transition_proof_version,omitempty"`
+	TransitionProofVersion string   `json:"transition_proof_version"`
 	ExistingOutputIndex    *int32   `json:"existing_output_index,omitempty"`
 	Add                    *bool    `json:"add,omitempty"`
 	TargetConf             *uint32  `json:"target_conf,omitempty"`
@@ -387,11 +387,9 @@ func marshalCommitVirtualPsbtsRequest(
 		PassiveAssetPsbts: hexEncodeByteSlices(
 			req.PassiveAssetPsbts,
 		),
-		AnchorPsbt: hex.EncodeToString(req.AnchorPsbt),
-		TransitionProofVersion: marshalTransitionProofVersionJSON(
-			req.TransitionProofVersion,
-		),
-		SkipFunding: req.Funding.SkipFunding,
+		AnchorPsbt:             hex.EncodeToString(req.AnchorPsbt),
+		TransitionProofVersion: "TRANSITION_PROOF_VERSION_V1",
+		SkipFunding:            req.Funding.SkipFunding,
 	}
 
 	if len(req.Funding.CustomLockID) > 0 {
@@ -433,20 +431,6 @@ func marshalCommitVirtualPsbtsRequest(
 	}
 
 	return body, nil
-}
-
-func marshalTransitionProofVersionJSON(
-	version tapsdk.TransitionProofVersion) string {
-
-	switch version {
-	case tapsdk.TransitionProofVersionV1:
-		return "TRANSITION_PROOF_VERSION_V1"
-
-	default:
-		// Omitting V0 retains compatibility with tapd versions that predate
-		// the selector and uses the protocol's V0 default on newer versions.
-		return ""
-	}
 }
 
 func unmarshalCommitVirtualPsbtsResponse(

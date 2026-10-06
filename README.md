@@ -48,7 +48,8 @@ go mod tidy
 
 | tap-sdk | tapd / Taproot Assets | lnd | Go |
 |---------|------------------------|-----|----|
-| `main` / `v0.2.x` | v0.8.3 | v0.21.3-beta | 1.26.0+ |
+| `main` | v0.8.5 or newer | v0.21.4-beta | 1.26.0+ |
+| `v0.2.x` | v0.8.3 | v0.21.3-beta | 1.26.0+ |
 | `v0.1.x` | v0.8.0 or newer | v0.21.0-beta or newer | 1.25.10+ |
 
 Older `tapd` versions are unsupported. See [Compatibility](docs/compatibility.md) for the detailed matrix.

@@ -372,10 +372,9 @@ func (b *TxBuilder) commitVirtualPsbts(ctx context.Context) (
 
 	return advanced.CommitVirtualPsbtsWithRequest(
 		ctx, &CommitVirtualPsbtsRequest{
-			AnchorPsbt:             anchorPsbt,
-			VirtualPsbts:           virtualPsbts,
-			PassiveAssetPsbts:      b.passivePsbts,
-			TransitionProofVersion: TransitionProofVersionV1,
+			AnchorPsbt:        anchorPsbt,
+			VirtualPsbts:      virtualPsbts,
+			PassiveAssetPsbts: b.passivePsbts,
 			Funding: AnchorFundingPlan{
 				ChangeOutput: AnchorChangeOutput{
 					Mode: AnchorChangeOutputAdd,

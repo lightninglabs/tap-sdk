@@ -38,7 +38,9 @@ make itest-down-main
 
 ## Version Targets
 
-The pinned compose stack uses the tapd and lnd images in
+The pinned compose stack uses tapd v0.8.5 and lnd v0.21.4-beta. Both tapd
+nodes set `proofactivationheight=1` so the suite exercises the new proof
+rules even on regtest. Image pins are in
 [`docker-compose.yml`](docker-compose.yml). The local override
 [`docker-compose.local.yml`](docker-compose.local.yml) rebuilds tapd from the
 upstream `taproot-assets` `main` branch.
