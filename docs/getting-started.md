@@ -15,7 +15,7 @@ bitcoind, lnd, and two tapd nodes in regtest.
 ## Install
 
 ```bash
-go get github.com/lightninglabs/tap-sdk
+go get github.com/lightninglabs/tap-sdk@v0.3.0
 ```
 
 ## Connect
