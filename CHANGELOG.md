@@ -5,6 +5,25 @@ settles around Taproot Assets v0.8 and the planned multi-language model.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-07
+
+### Changed
+
+- Require tapd v0.8.5 or newer. New commitments always use V1 transition
+  proofs; valid historical confirmed proof histories remain spendable.
+- Include spender leaves in commitment previews and commit verification.
+- Require split-root, spender, and root-locator evidence in new custom-anchor
+  packages and unconfirmed proof paths.
+- Integration tests use tapd v0.8.5 and lnd v0.21.4-beta, with proof rules
+  activated from regtest height 1 on both nodes.
+
+### Removed
+
+- The public `TransitionProofVersion` type and constants, and the
+  `CommitVirtualPsbtsRequest.TransitionProofVersion` selector. Callers must
+  remove the selector when upgrading; V0 proof construction is no longer
+  supported.
+
 ## [0.2.0] - 2026-09-08
 
 ### Added
@@ -44,6 +63,7 @@ tapd v0.8.0 or newer.
 `v0.1.0` is intentionally pre-v1 because the SDK is still missing some planned
 workflows and has not yet been broadly tested by external developers.
 
-[Unreleased]: https://github.com/lightninglabs/tap-sdk/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/lightninglabs/tap-sdk/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/lightninglabs/tap-sdk/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/lightninglabs/tap-sdk/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/lightninglabs/tap-sdk/releases/tag/v0.1.0
