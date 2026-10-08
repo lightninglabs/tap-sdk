@@ -1140,6 +1140,19 @@ func customAnchorSibling(plan CustomAnchorTapscriptPlan) (
 		)
 		return preimage, err
 	}
+	if plan.TapBranch != nil {
+		branch, err := asset.DecodeTapBranchNodes([][]byte{
+			plan.TapBranch.LeftTapHash[:],
+			plan.TapBranch.RightTapHash[:],
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		return commitment.NewPreimageFromTapscriptTreeNodes(
+			asset.FromBranch(*branch),
+		)
+	}
 	if len(plan.TapLeaves) == 0 {
 		return nil, nil
 	}
