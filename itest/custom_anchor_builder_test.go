@@ -13,6 +13,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/mempool"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	tapsdk "github.com/lightninglabs/tap-sdk"
@@ -616,11 +617,6 @@ func broadcastCustomAnchorP2APackage(t testing.TB, h *TestHarness,
 	require.Zero(t, p2aOutput.Value)
 	require.Equal(t, customAnchorITestP2AScript(), p2aOutput.PkScript)
 
-	utxo := customAnchorITestMinerUTXO(t, h)
-	utxoAmount, err := btcutil.NewAmount(utxo.Amount)
-	require.NoError(t, err)
-	require.Greater(t, int64(utxoAmount), customAnchorITestChildFee)
-
 	addressJSON := h.bitcoindRPCWallet(
 		t, "miner", "getnewaddress", `""`, `"bech32"`,
 	)
@@ -638,6 +634,10 @@ func broadcastCustomAnchorP2APackage(t testing.TB, h *TestHarness,
 		[]byte(addressInfoJSON), &addressInfo,
 	))
 	outputScript, err := hex.DecodeString(addressInfo.ScriptPubKey)
+	require.NoError(t, err)
+
+	utxo := customAnchorITestMinerUTXO(t, h, outputScript)
+	utxoAmount, err := btcutil.NewAmount(utxo.Amount)
 	require.NoError(t, err)
 
 	minerHash, err := chainhash.NewHashFromStr(utxo.TxID)
@@ -739,7 +739,7 @@ type customAnchorMinerUTXO struct {
 }
 
 func customAnchorITestMinerUTXO(t testing.TB,
-	h *TestHarness) customAnchorMinerUTXO {
+	h *TestHarness, outputScript []byte) customAnchorMinerUTXO {
 
 	t.Helper()
 	listJSON := h.bitcoindRPCWallet(
@@ -750,7 +750,14 @@ func customAnchorITestMinerUTXO(t testing.TB,
 	for _, utxo := range utxos {
 		amount, err := btcutil.NewAmount(utxo.Amount)
 		require.NoError(t, err)
-		if int64(amount) > customAnchorITestChildFee {
+		// Earlier tests can leave small miner outputs. The child must
+		// cover its fee and leave a standard, non-dust change output.
+		change := wire.NewTxOut(
+			int64(amount)-customAnchorITestChildFee, outputScript,
+		)
+		if change.Value > 0 &&
+			!mempool.IsDust(change, mempool.DefaultMinRelayTxFee) {
+
 			return utxo
 		}
 	}
