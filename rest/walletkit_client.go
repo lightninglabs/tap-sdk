@@ -2,6 +2,7 @@ package rest
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 
@@ -668,9 +669,9 @@ func (w *walletKitClient) QueryInternalKey(ctx context.Context,
 func (w *walletKitClient) QueryScriptKey(ctx context.Context,
 	tweakedScriptKey []byte) (*tapsdk.ScriptKey, error) {
 
-	keyHex := hex.EncodeToString(tweakedScriptKey)
+	keyBytes := base64.URLEncoding.EncodeToString(tweakedScriptKey)
 	path := fmt.Sprintf(
-		"/v1/taproot-assets/wallet/script-key/%s", keyHex,
+		"/v1/taproot-assets/wallet/script-key/%s", keyBytes,
 	)
 
 	var resp jsonQueryScriptKeyResponse

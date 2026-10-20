@@ -920,6 +920,13 @@ func (b *CustomAnchorTxBuilder) buildActivePackets(ctx context.Context,
 			if err != nil {
 				return nil, nil, nil, err
 			}
+			if mode == CustomAssetWitnessBackendSigner {
+				if err := b.resolveInputSigningKeys(
+					ctx, packet,
+				); err != nil {
+					return nil, nil, nil, err
+				}
+			}
 			backendSigning = append(
 				backendSigning,
 				mode == CustomAssetWitnessBackendSigner,
@@ -995,6 +1002,56 @@ func (b *CustomAnchorTxBuilder) customAssetScriptKey(ctx context.Context,
 		return nil, fmt.Errorf("unsupported asset script mode %d",
 			plan.Mode)
 	}
+}
+
+// resolveInputSigningKeys carries the authenticated wallet's complete key
+// derivation into each backend-signed input. Proofs contain the output key but
+// omit wallet metadata. In particular, a received unique script key requires
+// its Taproot tweak; a raw key locator alone would produce a BIP-86 signature.
+func (b *CustomAnchorTxBuilder) resolveInputSigningKeys(ctx context.Context,
+	packet *tappsbt.VPacket) error {
+
+	for idx, input := range packet.Inputs {
+		proofKey := schnorr.SerializePubKey(
+			input.Asset().ScriptKey.PubKey,
+		)
+		resolved, err := b.wallet.client.QueryScriptKey(ctx, proofKey)
+		if err != nil {
+			return fmt.Errorf(
+				"resolve input %d signing key: %w", idx, err,
+			)
+		}
+		if resolved == nil || (len(resolved.TapTweak) != 0 &&
+			len(resolved.TapTweak) != 32) {
+
+			return fmt.Errorf(
+				"input %d signing key is incomplete", idx,
+			)
+		}
+		key, err := tapAssetScriptKey(*resolved)
+		if err != nil || key.TweakedScriptKey == nil {
+			return fmt.Errorf(
+				"input %d signing key metadata is invalid", idx,
+			)
+		}
+		derived := txscript.ComputeTaprootOutputKey(
+			key.RawKey.PubKey, key.Tweak,
+		)
+		keyBytes := schnorr.SerializePubKey(key.PubKey)
+		derivedBytes := schnorr.SerializePubKey(derived)
+		if !bytes.Equal(keyBytes, proofKey) ||
+			!bytes.Equal(derivedBytes, proofKey) {
+
+			return fmt.Errorf(
+				"input %d signing key does not match proof",
+				idx,
+			)
+		}
+		inputAsset := input.Asset().Copy()
+		inputAsset.ScriptKey = key
+		packet.SetInputAsset(idx, inputAsset)
+	}
+	return nil
 }
 
 func uniqueScriptKeyGen(base asset.ScriptKey) (tapsend.ScriptKeyGen, error) {

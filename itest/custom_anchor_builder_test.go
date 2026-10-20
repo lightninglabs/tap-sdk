@@ -32,6 +32,16 @@ const (
 // the caller's transaction version, sequence, and fee survive virtual signing,
 // commitment, external anchor signing, and publishing unchanged.
 func TestCustomAnchorBuilderEndToEnd(t *testing.T) {
+	testCustomAnchorBuilderEndToEnd(t, false)
+}
+
+// TestCustomAnchorBuilderReceivedAsset exercises backend signing after a
+// transfer to a V2 address, whose unique script key requires a Taproot tweak.
+func TestCustomAnchorBuilderReceivedAsset(t *testing.T) {
+	testCustomAnchorBuilderEndToEnd(t, true)
+}
+
+func testCustomAnchorBuilderEndToEnd(t *testing.T, received bool) {
 	runForTransports(t, func(t *testing.T, transport Transport) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
@@ -44,12 +54,64 @@ func TestCustomAnchorBuilderEndToEnd(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, minted.Ref.IsGroupRef())
 
+		inputKey := minted.Asset.ScriptKey.PubKey
+		var inputPoint *tapsdk.Outpoint
+		if received {
+			// Move the whole asset to a fresh V2 address in Alice's
+			// wallet so the custom spend starts from a received key.
+			v1 := tapsdk.AssetVersionV1
+			v2 := tapsdk.AddressVersionV2
+			addr, err := h.AliceClient.NewAddr(
+				ctx, &tapsdk.NewAddressRequest{
+					AssetRef:       minted.Ref,
+					AssetVersion:   &v1,
+					AddressVersion: &v2,
+					ProofCourierAddr: envOr(
+						"TAPD_ALICE_PROOF_COURIER_ADDR",
+						"authmailbox+universerpc://"+
+							"tapd-alice:10029",
+					),
+				},
+			)
+			require.NoError(t, err)
+			transfer, err := h.AliceWallet.Send(
+				ctx, addr.Encoded,
+				tapsdk.WithAmount(minted.Asset.Amount),
+			)
+			require.NoError(t, err)
+			for _, output := range transfer.Outputs {
+				if output.Amount == minted.Asset.Amount &&
+					output.IssuanceID ==
+						minted.Asset.Genesis.IssuanceID {
+
+					inputKey = output.ScriptKey
+					point := output.AnchorOutpoint
+					inputPoint = &point
+				}
+			}
+			require.NotNil(t, inputPoint)
+			h.MineBlocks(t, defaultMineBlocks)
+			h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
+			h.WaitForProofFile(
+				t, ctx, h.AliceWallet,
+				tapsdk.AssetRefFromAssetID(
+					minted.Asset.Genesis.IssuanceID,
+				),
+				inputKey, inputPoint,
+			)
+			key, err := h.AliceClient.QueryScriptKey(
+				ctx, inputKey[1:],
+			)
+			require.NoError(t, err)
+			require.Len(t, key.TapTweak, 32)
+		}
+
 		inputProof, err := h.AliceWallet.ExportProofFile(
 			ctx,
 			tapsdk.AssetRefFromAssetID(
 				minted.Asset.Genesis.IssuanceID,
 			),
-			minted.Asset.ScriptKey.PubKey, nil,
+			inputKey, inputPoint,
 		)
 		require.NoError(t, err)
 		require.NotEmpty(t, inputProof.RawProofFile)
