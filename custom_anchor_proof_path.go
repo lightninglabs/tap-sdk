@@ -1267,7 +1267,7 @@ func decodeAssetProofPathStep(step *AssetProofPathStep,
 			ErrAssetProofPathInvalid,
 		)
 	}
-	if err := transition.CheckActivationEvidence(); err != nil {
+	if err := checkActivationEvidence(transition); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrAssetProofPathInvalid, err)
 	}
 	if transition.Asset.LockTime != 0 ||

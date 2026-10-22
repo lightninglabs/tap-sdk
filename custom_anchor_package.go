@@ -1107,7 +1107,7 @@ func validatePackageOutputMapping(anchor *psbt.Packet, txID chainhash.Hash,
 		return fmt.Errorf("proof suffix transition proof versions do not " +
 			"match")
 	}
-	if err := updateProof.CheckActivationEvidence(); err != nil {
+	if err := checkActivationEvidence(updateProof); err != nil {
 		return err
 	}
 	expectedSuffix, err := tapsend.CreateProofSuffix(
