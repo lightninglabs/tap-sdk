@@ -48,6 +48,7 @@ type jsonAsset struct {
 	ScriptVersion    int32            `json:"script_version"`
 	ScriptKey        string           `json:"script_key"`
 	AssetGroup       *jsonAssetGroup  `json:"asset_group"`
+	ChainAnchor      *jsonChainAnchor `json:"chain_anchor"`
 }
 
 // jsonListAssetsResponse is the JSON shape of taprpc.ListAssetResponse.

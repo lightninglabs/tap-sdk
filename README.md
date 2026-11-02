@@ -117,6 +117,12 @@ Most application code imports the root package plus one transport package.
 Advanced integrations can use `wallet.Client()` to reach low-level methods
 without importing `taprpc`.
 
+Low-level `ListAssetRecords` results include an optional `AnchorOutpoint` for
+each concrete wallet output. Pass this outpoint to `Wallet.ExportProofFile`
+when a script key has been reused, so the archive selects the exact output's
+proof. Records without chain anchor information leave the field nil. Both
+transports reject noncanonical anchor outpoint strings.
+
 ## What You Can Build Today
 
 - Wallet apps that issue, receive, send, burn, and list Taproot Assets.
