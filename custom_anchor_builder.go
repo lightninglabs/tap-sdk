@@ -1012,41 +1012,50 @@ func (b *CustomAnchorTxBuilder) resolveInputSigningKeys(ctx context.Context,
 	packet *tappsbt.VPacket) error {
 
 	for idx, input := range packet.Inputs {
-		proofKey := schnorr.SerializePubKey(
-			input.Asset().ScriptKey.PubKey,
-		)
+		proofPubKey := input.Asset().ScriptKey.PubKey
+		proofKey := schnorr.SerializePubKey(proofPubKey)
 		resolved, err := b.wallet.client.QueryScriptKey(ctx, proofKey)
 		if err != nil {
 			return fmt.Errorf(
 				"resolve input %d signing key: %w", idx, err,
 			)
 		}
-		if resolved == nil || (len(resolved.TapTweak) != 0 &&
-			len(resolved.TapTweak) != 32) {
-
-			return fmt.Errorf(
-				"input %d signing key is incomplete", idx,
-			)
+		if resolved == nil {
+			return fmt.Errorf("wallet returned no key for "+
+				"input %d signing key %x", idx, proofKey)
+		}
+		if len(resolved.TapTweak) != 0 && len(resolved.TapTweak) != 32 {
+			return fmt.Errorf("input %d signing key has %d-byte "+
+				"tweak, want 0 or 32", idx,
+				len(resolved.TapTweak))
 		}
 		key, err := tapAssetScriptKey(*resolved)
-		if err != nil || key.TweakedScriptKey == nil {
+		if err != nil {
 			return fmt.Errorf(
-				"input %d signing key metadata is invalid", idx,
+				"input %d signing key metadata: %w", idx, err,
 			)
+		}
+		if key.TweakedScriptKey == nil {
+			return fmt.Errorf("input %d signing key has no raw "+
+				"key derivation", idx)
+		}
+		keyBytes := schnorr.SerializePubKey(key.PubKey)
+		if !bytes.Equal(keyBytes, proofKey) {
+			return fmt.Errorf("wallet returned key %x for "+
+				"input %d signing key %x", keyBytes, idx,
+				proofKey)
 		}
 		derived := txscript.ComputeTaprootOutputKey(
 			key.RawKey.PubKey, key.Tweak,
 		)
-		keyBytes := schnorr.SerializePubKey(key.PubKey)
-		derivedBytes := schnorr.SerializePubKey(derived)
-		if !bytes.Equal(keyBytes, proofKey) ||
-			!bytes.Equal(derivedBytes, proofKey) {
-
-			return fmt.Errorf(
-				"input %d signing key does not match proof",
-				idx,
-			)
+		if !bytes.Equal(schnorr.SerializePubKey(derived), proofKey) {
+			return fmt.Errorf("input %d raw key and tweak do not "+
+				"derive signing key %x", idx, proofKey)
 		}
+
+		// tapAssetScriptKey normalizes to even parity. Keep the proof's
+		// key so the input asset still encodes the committed leaf.
+		key.PubKey = proofPubKey
 		inputAsset := input.Asset().Copy()
 		inputAsset.ScriptKey = key
 		packet.SetInputAsset(idx, inputAsset)
