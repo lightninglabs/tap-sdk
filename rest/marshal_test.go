@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/stretchr/testify/require"
 )

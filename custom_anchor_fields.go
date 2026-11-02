@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/btcsuite/btcd/psbt/v2"
+	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/lightninglabs/taproot-assets/tappsbt"
 )
 

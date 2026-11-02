@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/btcsuite/btcd/wire/v2"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/taproot-assets/proof"
 )
 

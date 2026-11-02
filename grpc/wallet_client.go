@@ -7,7 +7,7 @@ import (
 	"maps"
 	"time"
 
-	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/internal/codec"
 	"github.com/lightninglabs/tap-sdk/macaroon"

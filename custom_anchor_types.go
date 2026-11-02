@@ -6,7 +6,7 @@ import (
 	"math/bits"
 
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
-	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/txscript"
 )
 
 // CustomAnchorRequest contains the SDK-owned inputs needed to build an

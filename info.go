@@ -1,6 +1,6 @@
 package tapsdk
 
-import "github.com/btcsuite/btcd/chainhash/v2"
+import "github.com/btcsuite/btcd/chaincfg/chainhash"
 
 // Info contains info about the connected tapd instance.
 type Info struct {

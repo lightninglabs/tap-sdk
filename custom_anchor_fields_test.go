@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/btcsuite/btcd/psbt/v2"
-	"github.com/btcsuite/btcd/wire/v2"
+	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/taproot-assets/tappsbt"
 	"github.com/stretchr/testify/require"
 )

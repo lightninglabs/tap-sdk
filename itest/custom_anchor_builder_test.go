@@ -10,11 +10,11 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil/v2"
-	"github.com/btcsuite/btcd/chainhash/v2"
-	"github.com/btcsuite/btcd/psbt/v2"
-	"github.com/btcsuite/btcd/txscript/v2"
-	"github.com/btcsuite/btcd/wire/v2"
+	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/btcutil/psbt"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/wire"
 	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/proof"
 	"github.com/stretchr/testify/require"
@@ -166,7 +166,7 @@ func TestCustomAnchorBuilderEndToEnd(t *testing.T) {
 		)
 		require.NoError(t, err)
 		require.Equal(t, proof.TransitionV1, transition.Version)
-		require.NoError(t, transition.CheckActivationEvidence())
+		require.NoError(t, restored.Validate())
 
 		transition.InclusionProof.CommitmentProof.SpenderProofs = nil
 		restored.Steps[0].TransitionProof, err = transition.Bytes()

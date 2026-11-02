@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 	"google.golang.org/grpc"
