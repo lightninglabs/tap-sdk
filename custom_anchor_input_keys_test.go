@@ -91,28 +91,69 @@ func TestCustomAnchorReceivedKeyTweak(t *testing.T) {
 		customAnchorTestWitnessValidator{},
 	))
 
+	// Resolving metadata must not rewrite an odd-parity proof key to its
+	// even twin, and the input must still sign.
+	t.Run("odd parity proof key", func(t *testing.T) {
+		odd := tapscript.FlipParity(unique.PubKey)
+		fresh, err := tappsbt.Decode(raw)
+		require.NoError(t, err)
+		oddAsset := fresh.Inputs[0].Asset().Copy()
+		oddAsset.ScriptKey = asset.ScriptKey{PubKey: odd}
+		fresh.SetInputAsset(0, oddAsset)
+		fresh.Inputs[0].PrevID.ScriptKey = asset.ToSerialized(odd)
+		require.NoError(t, tapsend.PrepareOutputAssets(
+			t.Context(), fresh,
+		))
+		fixture.client.queryScriptKey = func(context.Context,
+			[]byte) (*ScriptKey, error) {
+
+			return &resolved, nil
+		}
+		require.NoError(t, builder.resolveInputSigningKeys(
+			t.Context(), fresh,
+		))
+		inputKey := fresh.Inputs[0].Asset().ScriptKey.PubKey
+		require.True(t, inputKey.IsEqual(odd))
+		encoded, err := tappsbt.Encode(fresh)
+		require.NoError(t, err)
+		hydrated, err := tappsbt.Decode(encoded)
+		require.NoError(t, err)
+		require.NoError(t, tapsend.SignVirtualTransaction(
+			hydrated,
+			tapscript.NewMockSigner(fixture.assetSpendKey),
+			customAnchorTestWitnessValidator{},
+		))
+	})
+
 	for _, test := range []struct {
 		name   string
 		mutate func(*ScriptKey) *ScriptKey
+		want   string
 	}{
-		{"missing key", func(*ScriptKey) *ScriptKey { return nil }},
+		{"missing key", func(*ScriptKey) *ScriptKey {
+			return nil
+		}, "wallet returned no key for input 0"},
 		{"missing raw key", func(k *ScriptKey) *ScriptKey {
 			k.KeyDesc.RawKeyBytes = PubKey{}
 			return k
-		}},
+		}, "input 0 signing key has no raw key derivation"},
+		{"short tweak", func(k *ScriptKey) *ScriptKey {
+			k.TapTweak = k.TapTweak[:31]
+			return k
+		}, "input 0 signing key has 31-byte tweak"},
 		{"missing tweak", func(k *ScriptKey) *ScriptKey {
 			k.TapTweak = nil
 			return k
-		}},
+		}, "input 0 raw key and tweak do not derive"},
 		{"wrong tweak", func(k *ScriptKey) *ScriptKey {
 			k.TapTweak[0] ^= 1
 			return k
-		}},
+		}, "input 0 raw key and tweak do not derive"},
 		{"wrong proof key", func(k *ScriptKey) *ScriptKey {
 			k.PubKey = mustCustomAnchorPubKey(t,
 				testPrivateKey(t, 99).PubKey())
 			return k
-		}},
+		}, "for input 0 signing key"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			candidate := resolved
@@ -124,9 +165,10 @@ func TestCustomAnchorReceivedKeyTweak(t *testing.T) {
 			}
 			fresh, err := tappsbt.Decode(raw)
 			require.NoError(t, err)
-			require.Error(t, builder.resolveInputSigningKeys(
+			err = builder.resolveInputSigningKeys(
 				t.Context(), fresh,
-			))
+			)
+			require.ErrorContains(t, err, test.want)
 		})
 	}
 }
