@@ -53,6 +53,44 @@ func TestQueryScriptKeyPathEncoding(t *testing.T) {
 	}
 }
 
+// TestQueryInternalKeyPathEncoding checks the gateway's bytes path parameter
+// for both compressed and x-only internal keys.
+func TestQueryInternalKeyPathEncoding(t *testing.T) {
+	const prefix = "/v1/taproot-assets/wallet/internal-key/"
+	body := fmt.Sprintf(`{"internal_key":{"raw_key_bytes":%q,`+
+		`"key_loc":{"key_family":212,"key_index":3}}}`,
+		hex.EncodeToString(restTestPubKey))
+
+	for _, key := range [][]byte{restTestPubKey, restTestPubKey[1:]} {
+		t.Run(fmt.Sprintf("%d bytes", len(key)), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(
+				func(w http.ResponseWriter, r *http.Request) {
+					decoded, err := base64.URLEncoding.
+						DecodeString(strings.TrimPrefix(
+							r.URL.Path, prefix,
+						))
+					assert.NoError(t, err)
+					assert.Equal(t, key, decoded)
+					_, err = io.WriteString(w, body)
+					assert.NoError(t, err)
+				},
+			))
+			defer srv.Close()
+			client := newWalletKitClient(&transport{
+				baseURL:   srv.URL,
+				client:    srv.Client(),
+				timeout:   time.Second,
+				macaroons: macaroon.Pouch{},
+			})
+			result, err := client.QueryInternalKey(t.Context(), key)
+			require.NoError(t, err)
+			require.Equal(t, restTestPubKey, result.RawKeyBytes[:])
+			require.EqualValues(t, 212, result.KeyLocator.Family)
+			require.EqualValues(t, 3, result.KeyLocator.Index)
+		})
+	}
+}
+
 func TestCustomAnchorCapabilities(t *testing.T) {
 	client := newWalletKitClient(&transport{
 		baseURL:   "http://example.invalid",

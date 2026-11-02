@@ -645,9 +645,9 @@ func hexEncodeByteSlices(values [][]byte) []string {
 func (w *walletKitClient) QueryInternalKey(ctx context.Context,
 	internalKey []byte) (*tapsdk.KeyDescriptor, error) {
 
-	keyHex := hex.EncodeToString(internalKey)
+	keyBytes := base64.URLEncoding.EncodeToString(internalKey)
 	path := fmt.Sprintf(
-		"/v1/taproot-assets/wallet/internal-key/%s", keyHex,
+		"/v1/taproot-assets/wallet/internal-key/%s", keyBytes,
 	)
 
 	var resp jsonQueryInternalKeyResponse
