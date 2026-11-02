@@ -121,6 +121,11 @@ type AssetRecord struct {
 	// ScriptKey is the script key.
 	ScriptKey ScriptKey
 
+	// AnchorOutpoint identifies this concrete wallet output when tapd
+	// supplies its chain anchor. It is nil for records without an anchor.
+	// Use it when exporting proofs for a reused script key.
+	AnchorOutpoint *Outpoint
+
 	// AltLeaves are the auxiliary leaves.
 	AltLeaves []AltLeaf
 }
