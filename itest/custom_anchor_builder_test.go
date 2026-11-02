@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil/v2"
 	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/mempool"
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
@@ -32,6 +33,16 @@ const (
 // the caller's transaction version, sequence, and fee survive virtual signing,
 // commitment, external anchor signing, and publishing unchanged.
 func TestCustomAnchorBuilderEndToEnd(t *testing.T) {
+	testCustomAnchorBuilderEndToEnd(t, false)
+}
+
+// TestCustomAnchorBuilderReceivedAsset exercises backend signing after a
+// transfer to a V2 address, whose unique script key requires a Taproot tweak.
+func TestCustomAnchorBuilderReceivedAsset(t *testing.T) {
+	testCustomAnchorBuilderEndToEnd(t, true)
+}
+
+func testCustomAnchorBuilderEndToEnd(t *testing.T, received bool) {
 	runForTransports(t, func(t *testing.T, transport Transport) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
@@ -44,12 +55,64 @@ func TestCustomAnchorBuilderEndToEnd(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, minted.Ref.IsGroupRef())
 
+		inputKey := minted.Asset.ScriptKey.PubKey
+		var inputPoint *tapsdk.Outpoint
+		if received {
+			// Move the whole asset to a fresh V2 address in Alice's
+			// wallet so the custom spend starts from a received key.
+			v1 := tapsdk.AssetVersionV1
+			v2 := tapsdk.AddressVersionV2
+			addr, err := h.AliceClient.NewAddr(
+				ctx, &tapsdk.NewAddressRequest{
+					AssetRef:       minted.Ref,
+					AssetVersion:   &v1,
+					AddressVersion: &v2,
+					ProofCourierAddr: envOr(
+						"TAPD_ALICE_PROOF_COURIER_ADDR",
+						"authmailbox+universerpc://"+
+							"tapd-alice:10029",
+					),
+				},
+			)
+			require.NoError(t, err)
+			transfer, err := h.AliceWallet.Send(
+				ctx, addr.Encoded,
+				tapsdk.WithAmount(minted.Asset.Amount),
+			)
+			require.NoError(t, err)
+			for _, output := range transfer.Outputs {
+				if output.Amount == minted.Asset.Amount &&
+					output.IssuanceID ==
+						minted.Asset.Genesis.IssuanceID {
+
+					inputKey = output.ScriptKey
+					point := output.AnchorOutpoint
+					inputPoint = &point
+				}
+			}
+			require.NotNil(t, inputPoint)
+			h.MineBlocks(t, defaultMineBlocks)
+			h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
+			h.WaitForProofFile(
+				t, ctx, h.AliceWallet,
+				tapsdk.AssetRefFromAssetID(
+					minted.Asset.Genesis.IssuanceID,
+				),
+				inputKey, inputPoint,
+			)
+			key, err := h.AliceClient.QueryScriptKey(
+				ctx, inputKey[1:],
+			)
+			require.NoError(t, err)
+			require.Len(t, key.TapTweak, 32)
+		}
+
 		inputProof, err := h.AliceWallet.ExportProofFile(
 			ctx,
 			tapsdk.AssetRefFromAssetID(
 				minted.Asset.Genesis.IssuanceID,
 			),
-			minted.Asset.ScriptKey.PubKey, nil,
+			inputKey, inputPoint,
 		)
 		require.NoError(t, err)
 		require.NotEmpty(t, inputProof.RawProofFile)
@@ -554,11 +617,6 @@ func broadcastCustomAnchorP2APackage(t testing.TB, h *TestHarness,
 	require.Zero(t, p2aOutput.Value)
 	require.Equal(t, customAnchorITestP2AScript(), p2aOutput.PkScript)
 
-	utxo := customAnchorITestMinerUTXO(t, h)
-	utxoAmount, err := btcutil.NewAmount(utxo.Amount)
-	require.NoError(t, err)
-	require.Greater(t, int64(utxoAmount), customAnchorITestChildFee)
-
 	addressJSON := h.bitcoindRPCWallet(
 		t, "miner", "getnewaddress", `""`, `"bech32"`,
 	)
@@ -576,6 +634,10 @@ func broadcastCustomAnchorP2APackage(t testing.TB, h *TestHarness,
 		[]byte(addressInfoJSON), &addressInfo,
 	))
 	outputScript, err := hex.DecodeString(addressInfo.ScriptPubKey)
+	require.NoError(t, err)
+
+	utxo := customAnchorITestMinerUTXO(t, h, outputScript)
+	utxoAmount, err := btcutil.NewAmount(utxo.Amount)
 	require.NoError(t, err)
 
 	minerHash, err := chainhash.NewHashFromStr(utxo.TxID)
@@ -677,7 +739,7 @@ type customAnchorMinerUTXO struct {
 }
 
 func customAnchorITestMinerUTXO(t testing.TB,
-	h *TestHarness) customAnchorMinerUTXO {
+	h *TestHarness, outputScript []byte) customAnchorMinerUTXO {
 
 	t.Helper()
 	listJSON := h.bitcoindRPCWallet(
@@ -688,7 +750,14 @@ func customAnchorITestMinerUTXO(t testing.TB,
 	for _, utxo := range utxos {
 		amount, err := btcutil.NewAmount(utxo.Amount)
 		require.NoError(t, err)
-		if int64(amount) > customAnchorITestChildFee {
+		// Earlier tests can leave small miner outputs. The child must
+		// cover its fee and leave a standard, non-dust change output.
+		change := wire.NewTxOut(
+			int64(amount)-customAnchorITestChildFee, outputScript,
+		)
+		if change.Value > 0 &&
+			!mempool.IsDust(change, mempool.DefaultMinRelayTxFee) {
+
 			return utxo
 		}
 	}

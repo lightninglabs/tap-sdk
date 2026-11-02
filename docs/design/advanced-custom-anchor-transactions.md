@@ -142,6 +142,14 @@ read-only inventory check that can prove this precondition, so the integration
 must import selected proofs as a separate, authenticated setup step and retain
 the proof source in its recovery state.
 
+For `CustomAssetWitnessBackendSigner`, the builder also queries the local
+wallet's complete script-key descriptor and checks that its raw key and
+Taproot tweak derive the exact proof-selected output key. It serializes both
+the derivation and the tweak into the virtual input before signing. A proof
+contains only the output key: recovering a raw key locator alone cannot sign
+assets received at unique Pedersen addresses, whose non-empty tweak must be
+preserved. Caller-provided witnesses do not require a wallet key lookup.
+
 Local, host-attested, and backend-trusted checks are distinct entries in
 `CustomAnchorVerificationResult`.
 
