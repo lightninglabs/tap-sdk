@@ -254,6 +254,7 @@ func TestGroupedProofExportRequiresIssuanceEnumeration(t *testing.T) {
 
 			asset := assetsByIssuance[groupedAsset.IssuanceID]
 			require.NotNil(t, asset)
+			require.NotNil(t, asset.AnchorOutpoint)
 
 			_, err := h.AliceClient.ExportProof(
 				ctx, first.Ref, asset.ScriptKey.PubKey, nil,
@@ -265,7 +266,7 @@ func TestGroupedProofExportRequiresIssuanceEnumeration(t *testing.T) {
 			proof, err := h.AliceClient.ExportProof(
 				ctx,
 				tapsdk.AssetRefFromAssetID(groupedAsset.IssuanceID),
-				asset.ScriptKey.PubKey, nil,
+				asset.ScriptKey.PubKey, asset.AnchorOutpoint,
 			)
 			require.NoError(t, err)
 			require.NotEmpty(t, proof.RawProofFile)
@@ -283,6 +284,7 @@ func TestGroupedProofExportRequiresIssuanceEnumeration(t *testing.T) {
 			require.True(t, decoded.AssetRef.Equivalent(first.Ref))
 			require.Equal(t, groupedAsset.IssuanceID,
 				decoded.IssuanceID)
+			require.Equal(t, *asset.AnchorOutpoint, decoded.Outpoint)
 
 			expected[groupedAsset.IssuanceID] = true
 		}

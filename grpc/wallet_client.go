@@ -346,6 +346,18 @@ func unmarshalAsset(rpcAsset *taprpc.Asset) (*tapsdk.AssetRecord, error) {
 			PubKey: scriptKeyPub,
 		},
 	}
+	if rpcAsset.ChainAnchor != nil &&
+		rpcAsset.ChainAnchor.AnchorOutpoint != "" {
+
+		raw := rpcAsset.ChainAnchor.AnchorOutpoint
+		point, err := tapsdk.NewOutpointFromStr(raw)
+		if err != nil || point.String() != raw {
+			return nil, fmt.Errorf(
+				"invalid canonical anchor outpoint",
+			)
+		}
+		asset.AnchorOutpoint = &point
+	}
 
 	// tapd keys every queryable map (ListBalances, ListAssetGroups,
 	// ListAssets filters) by the tweaked group key, so that's what

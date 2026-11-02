@@ -319,6 +319,16 @@ func unmarshalAsset(a *jsonAsset) (*tapsdk.AssetRecord, error) {
 			PubKey: scriptKeyPub,
 		},
 	}
+	if a.ChainAnchor != nil && a.ChainAnchor.AnchorOutpoint != "" {
+		raw := a.ChainAnchor.AnchorOutpoint
+		point, err := tapsdk.NewOutpointFromStr(raw)
+		if err != nil || point.String() != raw {
+			return nil, fmt.Errorf(
+				"invalid canonical anchor outpoint",
+			)
+		}
+		asset.AnchorOutpoint = &point
+	}
 
 	// tapd keys every queryable map by the tweaked group key, so
 	// that's what AssetRef must encode.

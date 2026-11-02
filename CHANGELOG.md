@@ -10,6 +10,12 @@ settles around Taproot Assets v0.8 and the planned multi-language model.
 The v0.1 line carries the v0.3.0 API on the btcd v1 modules. It includes the
 0.2.0 and 0.3.0 changes below, except the move to btcd v2 modules.
 
+### Added
+
+- `AssetRecord.AnchorOutpoint`, filled from tapd's chain anchor by both
+  transports. Pass it to `Wallet.ExportProofFile` to export the exact
+  output's proof when a script key is reused.
+
 ### Changed
 
 - Build with the btcd v1 modules, lnd v0.21.3-beta, tapd v0.8.6, and taprpc
@@ -17,6 +23,14 @@ The v0.1 line carries the v0.3.0 API on the btcd v1 modules. It includes the
 - Check custom-anchor activation evidence in the SDK, because tapd v0.8.6 does
   not export its check.
 - Require the lnd/tlv replacement from tapd v0.8.6 in consuming modules.
+
+### Fixed
+
+- Backend-signed custom-anchor inputs carry the wallet's key derivation and
+  Taproot tweak, so assets received at V2 addresses can be spent. The input
+  keeps the proof's script key.
+- The REST transport sends script-key and internal-key lookups as base64 path
+  parameters, which the gateway requires.
 
 ## [0.3.0] - 2026-10-07
 
