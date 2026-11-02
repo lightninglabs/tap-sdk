@@ -121,6 +121,12 @@ func (m *refMockClient) RegisterTransfer(ctx context.Context,
 
 // --- WalletKitClient ---
 
+func (m *refMockClient) CustomAnchorCapabilities(
+	ctx context.Context) (*CustomAnchorCapabilities, error) {
+
+	panic("CustomAnchorCapabilities: unexpected call")
+}
+
 func (m *refMockClient) DeriveScriptKey(
 	ctx context.Context) (*ScriptKey, error) {
 

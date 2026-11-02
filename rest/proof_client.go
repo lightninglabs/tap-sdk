@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
+	"github.com/lightninglabs/tap-sdk/internal/codec"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 )
 
@@ -280,18 +281,25 @@ func unmarshalDecodedProof(
 		return nil, fmt.Errorf("nil decoded asset")
 	}
 
-	if asset.AssetGenesis != nil {
-		assetIDBytes, err := parseHexBytes(
-			asset.AssetGenesis.AssetID,
-		)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"invalid asset ID: %w", err,
-			)
-		}
+	if asset.AssetGenesis == nil {
+		return nil, fmt.Errorf("nil proof asset genesis")
+	}
 
-		if len(assetIDBytes) == 32 {
-			copy(result.IssuanceID[:], assetIDBytes)
+	assetIDBytes, err := parseHexBytes(asset.AssetGenesis.AssetID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid asset ID: %w", err)
+	}
+
+	assetID, err := tapsdk.ParseAssetID(assetIDBytes)
+	if err != nil {
+		return nil, fmt.Errorf("invalid asset ID: %w", err)
+	}
+	result.IssuanceID = assetID
+	assetType := tapsdk.AssetTypeFungible
+	if asset.AssetGenesis.AssetType != "" {
+		assetType, err = parseAssetType(asset.AssetGenesis.AssetType)
+		if err != nil {
+			return nil, fmt.Errorf("invalid asset type: %w", err)
 		}
 	}
 
@@ -302,9 +310,11 @@ func unmarshalDecodedProof(
 		)
 	}
 
-	if len(scriptKeyBytes) == 33 {
-		copy(result.ScriptKey[:], scriptKeyBytes)
+	scriptKey, err := tapsdk.ParsePubKey(scriptKeyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("invalid script key: %w", err)
 	}
+	result.ScriptKey = scriptKey
 
 	amount, err := parseUint64(asset.Amount)
 	if err != nil {
@@ -345,13 +355,29 @@ func unmarshalDecodedProof(
 			)
 		}
 
-		result.AssetRef = tapsdk.AssetRefFromGroupKey(groupKey)
+		result.AssetRef = tapsdk.AssetRefFromTypedAsset(
+			result.IssuanceID, &groupKey, assetType,
+		)
 	}
 
 	if result.AssetRef.IsZero() {
-		result.AssetRef = tapsdk.AssetRefFromAssetID(
-			result.IssuanceID,
+		result.AssetRef = tapsdk.AssetRefFromTypedAsset(
+			result.IssuanceID, nil, assetType,
 		)
+	}
+
+	if d.AltLeaves != "" {
+		encodedAltLeaves, err := parseHexBytes(d.AltLeaves)
+		if err != nil {
+			return nil, fmt.Errorf("invalid alt leaves: %w", err)
+		}
+
+		altLeaves, err := codec.DecodeAltLeaves(encodedAltLeaves)
+		if err != nil {
+			return nil, fmt.Errorf("decode alt leaves: %w", err)
+		}
+
+		result.AltLeaves = altLeaves
 	}
 
 	// Populate prev IDs.
@@ -389,12 +415,11 @@ func unmarshalDecodedProof(
 				)
 			}
 
-			if len(assetIDBytes) != 32 {
+			prevAssetID, err := tapsdk.ParseAssetID(assetIDBytes)
+			if err != nil {
 				return nil, fmt.Errorf(
-					"invalid prev_id asset_id "+
-						"length for witness "+
-						"%d: %d",
-					idx, len(assetIDBytes),
+					"invalid prev_id asset_id for "+
+						"witness %d: %w", idx, err,
 				)
 			}
 
@@ -408,34 +433,56 @@ func unmarshalDecodedProof(
 					idx, err,
 				)
 			}
+			if isZeroDecodedProofPrevID(
+				prevOutpoint, prevAssetID, scriptKeyBytes,
+			) {
 
-			if len(scriptKeyBytes) != 33 {
+				if d.GenesisReveal == nil &&
+					witness.SplitCommitment == nil {
+
+					return nil, fmt.Errorf("zero prev_id is only "+
+						"valid for issuance or split witness %d", idx)
+				}
+
+				continue
+			}
+
+			prevScriptKey, err := tapsdk.ParsePubKey(scriptKeyBytes)
+			if err != nil {
 				return nil, fmt.Errorf(
-					"invalid prev_id "+
-						"script_key length "+
-						"for witness %d: %d",
-					idx, len(scriptKeyBytes),
+					"invalid prev_id script_key for "+
+						"witness %d: %w", idx, err,
 				)
 			}
 
-			var decodedPrev tapsdk.PrevID
-			decodedPrev.Outpoint = prevOutpoint
-			copy(
-				decodedPrev.IssuanceID[:],
-				assetIDBytes,
-			)
-			copy(
-				decodedPrev.ScriptKey[:],
-				scriptKeyBytes,
-			)
-
-			prevIDs = append(prevIDs, decodedPrev)
+			prevIDs = append(prevIDs, tapsdk.PrevID{
+				Outpoint:   prevOutpoint,
+				IssuanceID: prevAssetID,
+				ScriptKey:  prevScriptKey,
+			})
 		}
 
 		result.PrevIDs = prevIDs
 	}
 
 	return result, nil
+}
+
+func isZeroDecodedProofPrevID(outpoint tapsdk.Outpoint,
+	assetID tapsdk.AssetID, scriptKey []byte) bool {
+
+	if outpoint != (tapsdk.Outpoint{}) || assetID != (tapsdk.AssetID{}) ||
+		len(scriptKey) != len(tapsdk.PubKey{}) {
+
+		return false
+	}
+	for _, value := range scriptKey {
+		if value != 0 {
+			return false
+		}
+	}
+
+	return true
 }
 
 // unmarshalRegisteredAsset converts a JSON registered asset to the

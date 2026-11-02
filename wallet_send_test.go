@@ -167,6 +167,17 @@ func (m *mockClient) RegisterTransfer(ctx context.Context,
 
 // --- WalletKitClient (AssetWallet service) ---
 
+func (m *mockClient) CustomAnchorCapabilities(
+	ctx context.Context) (*CustomAnchorCapabilities, error) {
+
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+
+	return args.Get(0).(*CustomAnchorCapabilities), args.Error(1)
+}
+
 func (m *mockClient) DeriveScriptKey(
 	ctx context.Context) (*ScriptKey, error) {
 
@@ -250,8 +261,10 @@ func (m *mockClient) PublishAndLogTransfer(ctx context.Context,
 	anchorPsbt []byte, virtualPsbts [][]byte, passivePsbts [][]byte,
 	skipAnchorTxBroadcast bool) (*AssetPacket, error) {
 
-	args := m.Called(ctx, anchorPsbt, virtualPsbts, passivePsbts,
-		skipAnchorTxBroadcast)
+	args := m.Called(
+		ctx, anchorPsbt, virtualPsbts, passivePsbts,
+		skipAnchorTxBroadcast,
+	)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}

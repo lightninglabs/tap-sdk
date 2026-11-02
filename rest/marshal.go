@@ -1606,9 +1606,18 @@ func unmarshalVerifyProofResponse(
 	if r == nil {
 		return nil, fmt.Errorf("nil verify proof response")
 	}
+	var decoded *tapsdk.DecodedProof
+	if r.DecodedProof != nil {
+		var err error
+		decoded, err = unmarshalDecodedProof(r.DecodedProof)
+		if err != nil {
+			return nil, fmt.Errorf("decoded proof: %w", err)
+		}
+	}
 
 	return &tapsdk.VerifyProofResponse{
-		Valid: r.Valid,
+		Valid:        r.Valid,
+		DecodedProof: decoded,
 	}, nil
 }
 
