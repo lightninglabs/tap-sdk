@@ -8,7 +8,7 @@ The v0.3.x release line targets:
 
 - tapd / Taproot Assets v0.8.5 or newer
 - lnd v0.21.4-beta
-- Go 1.26.0+
+- Go 1.26.8+
 
 The first public tag was `v0.1.0`, not `v1.0.0`. The SDK is still missing some
 planned workflows and has not yet had broad external developer testing, so
