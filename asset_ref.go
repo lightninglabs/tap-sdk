@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/btcsuite/btcd/btcutil/bech32"
+	"github.com/btcsuite/btcd/address/v2/bech32"
 )
 
 // assetRefKind distinguishes the two protocol encodings hidden behind an

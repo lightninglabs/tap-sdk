@@ -5,8 +5,8 @@ and send them, inspect balances, export proofs, and query the universe.
 
 ## Prerequisites
 
-- Go 1.25.10+
-- `tapd` v0.8.0 or newer
+- Go 1.26.0+
+- `tapd` v0.8.5 or newer
 - TLS certificate and macaroon for the `tapd` node
 
 For local development, the integration-test stack in [itest](../itest) starts
@@ -15,7 +15,7 @@ bitcoind, lnd, and two tapd nodes in regtest.
 ## Install
 
 ```bash
-go get github.com/lightninglabs/tap-sdk
+go get github.com/lightninglabs/tap-sdk@v0.3.0
 ```
 
 ## Connect

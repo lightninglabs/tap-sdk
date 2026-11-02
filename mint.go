@@ -54,7 +54,7 @@ func (o IssuanceOperation) String() string {
 	case IssuanceOperationMintCollectionItem:
 		return "mint_collection_item"
 	default:
-		return "unknown"
+		return unknownString
 	}
 }
 
@@ -182,7 +182,7 @@ const (
 func (s BatchState) String() string {
 	switch s {
 	case BatchStateUnknown:
-		return "unknown"
+		return unknownString
 	case BatchStatePending:
 		return "pending"
 	case BatchStateFrozen:
