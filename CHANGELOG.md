@@ -5,6 +5,19 @@ settles around Taproot Assets v0.8 and the planned multi-language model.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-02
+
+The v0.1 line carries the v0.3.0 API on the btcd v1 modules. It includes the
+0.2.0 and 0.3.0 changes below, except the move to btcd v2 modules.
+
+### Changed
+
+- Build with the btcd v1 modules, lnd v0.21.3-beta, tapd v0.8.6, and taprpc
+  v1.3.3, so the SDK can share a build with the released daemons.
+- Check custom-anchor activation evidence in the SDK, because tapd v0.8.6 does
+  not export its check.
+- Require the lnd/tlv replacement from tapd v0.8.6 in consuming modules.
+
 ## [0.3.0] - 2026-10-07
 
 ### Changed
