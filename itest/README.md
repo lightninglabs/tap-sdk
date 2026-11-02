@@ -7,7 +7,7 @@ lock-step.
 ## Prerequisites
 
 - Docker and Docker Compose
-- Go 1.26.0+
+- Go 1.26.8+
 - `curl` for bitcoind RPC fallback when `bitcoin-cli` is unavailable
 
 ## Run the Suite
