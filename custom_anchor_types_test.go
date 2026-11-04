@@ -290,12 +290,34 @@ func TestCustomAnchorTapscriptPlanValidate(t *testing.T) {
 			},
 		},
 		{
-			name: "both forms",
+			name: "tap branch",
+			plan: CustomAnchorTapscriptPlan{
+				TapBranch: &TapBranch{},
+			},
+		},
+		{
+			name: "leaves and serialized sibling",
 			plan: CustomAnchorTapscriptPlan{
 				TapLeaves:         []TapLeaf{{Script: []byte{1}}},
 				SerializedSibling: []byte{2},
 			},
-			wantErr: "cannot contain both",
+			wantErr: "at most one",
+		},
+		{
+			name: "leaves and tap branch",
+			plan: CustomAnchorTapscriptPlan{
+				TapLeaves: []TapLeaf{{Script: []byte{1}}},
+				TapBranch: &TapBranch{},
+			},
+			wantErr: "at most one",
+		},
+		{
+			name: "tap branch and serialized sibling",
+			plan: CustomAnchorTapscriptPlan{
+				TapBranch:         &TapBranch{},
+				SerializedSibling: []byte{2},
+			},
+			wantErr: "at most one",
 		},
 		{
 			name: "empty leaf",
@@ -1219,6 +1241,7 @@ func TestCustomAnchorRequestCloneNoAlias(t *testing.T) {
 	request.Outputs[1].Script.External.ScriptKey.TapTweak[0] = 96
 	request.Outputs[1].Anchor.Tapscript.SerializedSibling[0] = 97
 	request.Outputs[2].Script.OPTrue.InternalKey.KeyLocator.Index = 98
+	request.Outputs[2].Anchor.Tapscript.TapBranch.LeftTapHash[0] = 105
 	request.Outputs[3].Script.Burn = nil
 	request.Funding.WalletFunded.CustomLockID[0] = 99
 	request.PassiveAssets.Packets[0].VirtualPSBT[0] = 100
@@ -1253,6 +1276,10 @@ func TestCustomAnchorRequestCloneNoAlias(t *testing.T) {
 	require.Equal(
 		t, uint32(3),
 		clone.Outputs[2].Script.OPTrue.InternalKey.KeyLocator.Index,
+	)
+	require.Equal(
+		t, Hash{17},
+		clone.Outputs[2].Anchor.Tapscript.TapBranch.LeftTapHash,
 	)
 	require.NotNil(t, clone.Outputs[3].Script.Burn)
 	require.Equal(t, bytes.Repeat([]byte{15, 16}, 16),
@@ -1446,6 +1473,12 @@ func richCustomAnchorRequest(t *testing.T) *CustomAnchorRequest {
 			Anchor: CustomAnchorOutputPlan{
 				InternalKey: InternalKey{
 					PubKey: key,
+				},
+				Tapscript: CustomAnchorTapscriptPlan{
+					TapBranch: &TapBranch{
+						LeftTapHash:  Hash{17},
+						RightTapHash: Hash{18},
+					},
 				},
 			},
 		},

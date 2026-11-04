@@ -295,10 +295,16 @@ type CustomAnchorOutputPlan struct {
 
 // CustomAnchorTapscriptPlan represents the non-asset sibling committed at a
 // BTC anchor output. At most one representation may be populated; leaving
-// both empty selects a direct/BIP86-style anchor policy.
+// all empty selects a direct/BIP86-style anchor policy.
 type CustomAnchorTapscriptPlan struct {
-	// TapLeaves is an ordered set of SDK tapscript leaves.
+	// TapLeaves is an ordered set of SDK tapscript leaves, assembled into a
+	// tree by pairing adjacent leaves.
 	TapLeaves []TapLeaf
+
+	// TapBranch commits to an existing tapscript tree by its root
+	// children. Callers whose tree layout differs from the TapLeaves
+	// pairing use it to keep their own merkle root and control blocks.
+	TapBranch *TapBranch
 
 	// SerializedSibling is an opaque serialized tapscript sibling.
 	SerializedSibling []byte
@@ -854,11 +860,13 @@ func (p *CustomAnchorTapscriptPlan) Validate() error {
 		return fmt.Errorf("nil anchor tapscript plan")
 	}
 
-	hasLeaves := len(p.TapLeaves) != 0
-	hasSerialized := len(p.SerializedSibling) != 0
-	if hasLeaves && hasSerialized {
-		return fmt.Errorf("anchor tapscript cannot contain both tap leaves " +
-			"and a serialized sibling")
+	representations := countCustomAnchorVariants(
+		len(p.TapLeaves) != 0, p.TapBranch != nil,
+		len(p.SerializedSibling) != 0,
+	)
+	if representations > 1 {
+		return fmt.Errorf("anchor tapscript must use at most one of tap " +
+			"leaves, a tap branch, or a serialized sibling")
 	}
 
 	for idx, leaf := range p.TapLeaves {
@@ -1350,6 +1358,10 @@ func cloneCustomAssetOutput(output CustomAssetOutput) CustomAssetOutput {
 			)
 		}
 	}
+	if branch := output.Anchor.Tapscript.TapBranch; branch != nil {
+		branchClone := *branch
+		clone.Anchor.Tapscript.TapBranch = &branchClone
+	}
 	clone.Anchor.Tapscript.SerializedSibling = bytes.Clone(
 		output.Anchor.Tapscript.SerializedSibling,
 	)
@@ -1457,6 +1469,12 @@ func sameCustomAnchorTapscript(left,
 
 	if !bytes.Equal(left.SerializedSibling, right.SerializedSibling) ||
 		len(left.TapLeaves) != len(right.TapLeaves) {
+
+		return false
+	}
+
+	if (left.TapBranch == nil) != (right.TapBranch == nil) ||
+		left.TapBranch != nil && *left.TapBranch != *right.TapBranch {
 
 		return false
 	}

@@ -169,6 +169,66 @@ func TestCustomAnchorOutputCommitmentPreviewSupportsBackendSigning(
 		sealed.Outputs[0].TaprootMerkleRoot)
 }
 
+// TestCustomAnchorTapBranchSibling commits the asset root next to the
+// caller's branch, so the anchor keeps a tree layout that the TapLeaves
+// pairing would not reproduce.
+func TestCustomAnchorTapBranchSibling(t *testing.T) {
+	t.Parallel()
+
+	fixture := newCustomAnchorBuilderFixture(t)
+	left, right := chainhash.Hash{1}, chainhash.Hash{2}
+	fixture.request.Outputs[0].Anchor.Tapscript = CustomAnchorTapscriptPlan{
+		TapBranch: &TapBranch{
+			LeftTapHash:  Hash(left),
+			RightTapHash: Hash(right),
+		},
+	}
+	capabilities := DefaultTapdCustomAnchorCapabilities()
+	client := &capableCustomAnchorBuilderTestClient{
+		customAnchorBuilderTestClient: fixture.client,
+		capabilities:                  &capabilities,
+	}
+	plan, err := NewWallet(client, NetworkRegtest).
+		NewCustomAnchorTxBuilder().Build(
+		context.Background(), fixture.request,
+	)
+	require.NoError(t, err)
+
+	previews, err := plan.PreviewOutputCommitments()
+	require.NoError(t, err)
+	require.Len(t, previews, 1)
+	sibling := asset.NewTapBranchHash(left, right)
+	require.Equal(
+		t, Hash(asset.NewTapBranchHash(
+			chainhash.Hash(previews[0].TaprootAssetRoot), sibling,
+		)),
+		previews[0].TaprootMerkleRoot,
+	)
+}
+
+// TestSameCustomAnchorTapscriptTapBranch distinguishes tap branches by their
+// child hashes and from an absent branch.
+func TestSameCustomAnchorTapscriptTapBranch(t *testing.T) {
+	t.Parallel()
+
+	plan := func(left, right byte) CustomAnchorTapscriptPlan {
+		return CustomAnchorTapscriptPlan{
+			TapBranch: &TapBranch{
+				LeftTapHash:  Hash{left},
+				RightTapHash: Hash{right},
+			},
+		}
+	}
+
+	require.True(t, sameCustomAnchorTapscript(plan(1, 2), plan(1, 2)))
+	require.False(t, sameCustomAnchorTapscript(plan(1, 2), plan(1, 3)))
+	require.False(
+		t, sameCustomAnchorTapscript(
+			plan(1, 2), CustomAnchorTapscriptPlan{},
+		),
+	)
+}
+
 // TestCustomAnchorOutputCommitmentPreviewRejectsEmptyPlan prevents a manually
 // constructed zero-value plan from appearing to have a valid empty preview.
 func TestCustomAnchorOutputCommitmentPreviewRejectsEmptyPlan(t *testing.T) {
