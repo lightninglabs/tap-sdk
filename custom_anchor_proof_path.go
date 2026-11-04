@@ -133,6 +133,36 @@ type ConfirmedProofVerifier interface {
 		proofFile []byte) (*ConfirmedProofVerification, error)
 }
 
+// DeriveConfirmedProofInventory derives the anchor inventory of a confirmed
+// proof file from the proof itself. The tip's anchor output must commit to the
+// tip asset and its disclosed alternate leaves alone, which proves that the
+// anchor holds no passive assets. A verifier that only checks the proof chain,
+// such as one for an anchor outside its own wallet, can return this result.
+// It does not verify the proof chain.
+func DeriveConfirmedProofInventory(
+	proofFile []byte) (*ConfirmedProofVerification, error) {
+
+	if len(proofFile) > AssetProofPathMaxConfirmedProofSize {
+		return nil, fmt.Errorf(
+			"%w: confirmed proof exceeds %d bytes",
+			ErrAssetProofPathInvalid,
+			AssetProofPathMaxConfirmedProofSize,
+		)
+	}
+
+	tip, err := decodeAssetProofPathBase(proofFile)
+	if err != nil {
+		return nil, err
+	}
+	if err := verifyAssetProofPathIsolatedOutput(tip); err != nil {
+		return nil, err
+	}
+
+	return &ConfirmedProofVerification{
+		AnchorAssetInventoryComplete: true,
+	}, nil
+}
+
 // UnconfirmedAnchorVerification contains the SDK-derived Bitcoin transition
 // context that a host must verify against its complete signed transaction
 // graph. Native Taproot Asset proof verification cannot prove the values or

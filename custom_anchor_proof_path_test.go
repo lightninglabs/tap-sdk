@@ -1451,3 +1451,171 @@ func (confirmedOnlyProofVerifier) VerifyConfirmedProof(
 		AnchorAssetInventoryComplete: true,
 	}, nil
 }
+
+// TestDeriveConfirmedProofInventory checks that a confirmed tip proves its
+// anchor inventory complete only when the anchor holds nothing else.
+func TestDeriveConfirmedProofInventory(t *testing.T) {
+	t.Parallel()
+
+	fixture := newAssetProofPathFixture(t)
+	transfer, err := proof.NewFile(
+		proof.V0, *fixture.baseProof, *fixture.transition,
+	)
+	require.NoError(t, err)
+	var transferFile bytes.Buffer
+	require.NoError(t, transfer.Encode(&transferFile))
+
+	complete := &ConfirmedProofVerification{
+		AnchorAssetInventoryComplete: true,
+	}
+	testCases := []struct {
+		name      string
+		proofFile []byte
+		target    error
+	}{
+		{
+			name:      "isolated issuance",
+			proofFile: fixture.baseProofFile,
+		},
+		{
+			name:      "isolated transfer with alternate leaves",
+			proofFile: transferFile.Bytes(),
+		},
+		{
+			name:      "co-anchored asset",
+			proofFile: newCoAnchoredAssetProofFile(t),
+			target:    ErrAssetProofPathPassiveAssets,
+		},
+		{
+			name:      "malformed proof file",
+			proofFile: []byte("not a proof file"),
+			target:    ErrAssetProofPathInvalid,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
+			inventory, err := DeriveConfirmedProofInventory(
+				testCase.proofFile,
+			)
+			if testCase.target != nil {
+				require.ErrorIs(t, err, testCase.target)
+				require.Nil(t, inventory)
+
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, complete, inventory)
+		})
+	}
+}
+
+// TestAssetProofPathChainOnlyVerifier checks that a verifier which only
+// checks the proof chain completes a path with the derived inventory.
+func TestAssetProofPathChainOnlyVerifier(t *testing.T) {
+	t.Parallel()
+
+	fixture := newAssetProofPathFixture(t)
+	path := &AssetProofPath{
+		ConfirmedBaseProof: fixture.baseProofFile,
+		Steps: []AssetProofPathStep{{
+			TransitionProof: fixture.transitionProof,
+		}},
+	}
+
+	summary, err := path.Verify(
+		context.Background(), chainOnlyProofVerifier{},
+	)
+	require.NoError(t, err)
+	require.Equal(t, fixture.transition.Asset.Amount, summary.Amount)
+}
+
+// chainOnlyProofVerifier verifies the proof chain and derives the anchor
+// inventory from the proof, as a verifier without wallet access must.
+type chainOnlyProofVerifier struct{}
+
+func (chainOnlyProofVerifier) VerifyConfirmedProof(ctx context.Context,
+	proofFileBytes []byte) (*ConfirmedProofVerification, error) {
+
+	var proofFile proof.File
+	err := proofFile.Decode(bytes.NewReader(proofFileBytes))
+	if err != nil {
+		return nil, err
+	}
+	if _, err := proofFile.Verify(ctx, proof.MockVerifierCtx); err != nil {
+		return nil, err
+	}
+
+	return DeriveConfirmedProofInventory(proofFileBytes)
+}
+
+func (chainOnlyProofVerifier) VerifyUnconfirmedAnchor(context.Context,
+	UnconfirmedAnchorVerification) error {
+
+	return nil
+}
+
+// newCoAnchoredAssetProofFile mints two assets into one anchor output and
+// returns the proof file of the first, which discloses only that asset.
+func newCoAnchoredAssetProofFile(t *testing.T) []byte {
+	t.Helper()
+
+	var genesisHash chainhash.Hash
+	genesisHash[0] = 2
+	genesis := asset.Genesis{
+		FirstPrevOut: wire.OutPoint{
+			Hash:  genesisHash,
+			Index: 1,
+		},
+		Tag:         "co-anchored",
+		OutputIndex: 0,
+		Type:        asset.Normal,
+	}
+	amount := uint64(100)
+	details := func(key byte) *commitment.AssetDetails {
+		return &commitment.AssetDetails{
+			Version: asset.V1,
+			Type:    asset.Normal,
+			ScriptKey: keychain.KeyDescriptor{
+				PubKey: testPrivateKey(t, key).PubKey(),
+			},
+			Amount: &amount,
+		}
+	}
+	commitmentVersion := commitment.TapCommitmentV2
+	tapCommitment, assets, err := commitment.Mint(
+		&commitmentVersion, genesis, nil, details(1), details(5),
+	)
+	require.NoError(t, err)
+	require.Len(t, assets, 2)
+
+	internalKey := testPrivateKey(t, 2)
+	anchorTx := assetProofPathAnchorTx(
+		t, genesis.FirstPrevOut, internalKey.PubKey(), tapCommitment,
+	)
+	proofs, err := proof.NewMintingBlobs(
+		&proof.MintParams{
+			BaseProofParams: proof.BaseProofParams{
+				Block:            assetProofPathBlock(anchorTx),
+				BlockHeight:      100,
+				Tx:               anchorTx,
+				TxIndex:          0,
+				OutputIndex:      0,
+				InternalKey:      internalKey.PubKey(),
+				TaprootAssetRoot: tapCommitment,
+			},
+			GenesisPoint: genesis.FirstPrevOut,
+		}, proof.MockVerifierCtx,
+		proof.WithGenOption(proof.WithVersion(proof.TransitionV1)),
+	)
+	require.NoError(t, err)
+
+	tip, ok := proofs[asset.ToSerialized(assets[0].ScriptKey.PubKey)]
+	require.True(t, ok)
+	proofFile, err := proof.EncodeAsProofFile(tip)
+	require.NoError(t, err)
+
+	return proofFile
+}
