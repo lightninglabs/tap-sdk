@@ -35,6 +35,7 @@ tapd
 | Package | Boundary |
 |---------|----------|
 | `tapsdk` | Business API, domain types, high-level wallet/issuer/universe surfaces, builders, errors |
+| `customanchor` | Advanced custom-anchor transaction builder, transfer packages, proof paths, and capability profiles |
 | `grpc` | Native gRPC client, TLS setup, macaroon auth, proto marshal/unmarshal |
 | `rest` | REST client, TLS setup, macaroon auth, JSON marshal/unmarshal, WebSocket event streams |
 | `macaroon` | Low-level macaroon source helpers shared by transports |
@@ -42,9 +43,10 @@ tapd
 | `internal/codec` | Internal TLV/alt-leaf/STXO encoding helpers |
 | `internal/vpsbt` | Virtual PSBT encoding for interactive transfers |
 
-The root package must not import transport packages. Transports import the
-root package and return root SDK types. That one-way dependency keeps the
-business API stable even if the repo layout changes later.
+The root package must not import transport or feature packages. Transports
+and `customanchor` import the root package and return root SDK types. That
+one-way dependency keeps the business API stable even if the repo layout
+changes later.
 
 ## Domain Model
 

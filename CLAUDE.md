@@ -45,6 +45,8 @@ bleeding-edge tapd does not always have a pre-built image yet. Use plain
 tap-sdk/
 ├── Root (wallet.go, tx_builder.go, asset.go, clients.go, errors.go)
 │   High-level SDK facade, transaction builders, and public domain types
+├── customanchor/  Advanced custom-anchor builder (imports root, never the
+│                  reverse)
 ├── grpc/          gRPC client implementation
 ├── rest/          REST client implementation
 ├── internal/vpsbt/ Virtual PSBT encoding for interactive transfers
