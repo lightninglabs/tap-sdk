@@ -539,7 +539,7 @@ func (s *Wallet) PublishCustomAnchorTransfer(ctx context.Context,
 	packageSnapshot *CustomAnchorTransferPackage,
 	finalAnchorPSBT []byte) (*AssetPacket, error) {
 
-	if s == nil || s.client == nil {
+	if s == nil || s.Client() == nil {
 		return nil, fmt.Errorf("wallet has no client")
 	}
 	if err := packageSnapshot.Validate(); err != nil {
@@ -596,13 +596,13 @@ func (s *Wallet) PublishCustomAnchorTransfer(ctx context.Context,
 
 	if packageSnapshot.Publish.SkipAnchorTxBroadcast {
 		if err := requireCustomAnchorCapability(
-			ctx, s.client, CustomAnchorCapabilitySkipBroadcast,
+			ctx, s.Client(), CustomAnchorCapabilitySkipBroadcast,
 		); err != nil {
 			return nil, err
 		}
 	}
 	advancedClient, err := requireCustomAnchorWalletKitClient(
-		s.client, CustomAnchorCapabilityCommit,
+		s.Client(), CustomAnchorCapabilityCommit,
 	)
 	if err != nil {
 		return nil, err

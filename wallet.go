@@ -16,6 +16,7 @@ import (
 type Wallet struct {
 	client Client
 
+	network                 Network
 	networkHRP              string
 	coinType                uint32
 	defaultProofCourierAddr string
@@ -56,13 +57,14 @@ func WithAuthMailboxCourier(host string) WalletOption {
 func NewWallet(client Client, network Network,
 	opts ...WalletOption) *Wallet {
 
-	networkHRP, coinType, err := getNetworkParams(network)
+	networkHRP, coinType, err := vpsbt.NetworkParams(string(network))
 	if err != nil {
 		panic(err)
 	}
 
 	wallet := &Wallet{
 		client:     client,
+		network:    network,
 		networkHRP: networkHRP,
 		coinType:   coinType,
 	}
@@ -92,6 +94,11 @@ func (s *Wallet) NewInteractiveTxBuilder() *InteractiveTxBuilder {
 // the high-level wallet surface.
 func (s *Wallet) Client() Client {
 	return s.client
+}
+
+// Network returns the network the wallet was created for.
+func (s *Wallet) Network() Network {
+	return s.network
 }
 
 // CustomAnchorCapabilities reports the optional capability profile exposed by
@@ -1102,24 +1109,4 @@ func validateSingleAssetSendBatch(addrs []*Address) error {
 	}
 
 	return nil
-}
-
-// getNetworkParams returns the HRP and coin type for a given network.
-func getNetworkParams(network Network) (string, uint32, error) {
-	switch network {
-	case NetworkMainnet:
-		return vpsbt.MainnetHRP, 0, nil
-	case NetworkTestnet:
-		return vpsbt.TestnetHRP, 1, nil
-	case NetworkTestnet4:
-		return vpsbt.Testnet4HRP, 1, nil
-	case NetworkSignet:
-		return vpsbt.SigNetHRP, 1, nil
-	case NetworkSimnet:
-		return vpsbt.SimNetHRP, 1, nil
-	case NetworkRegtest:
-		return vpsbt.RegTestHRP, 1, nil
-	default:
-		return "", 0, fmt.Errorf("unsupported network: %s", network)
-	}
 }

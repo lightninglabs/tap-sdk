@@ -15,6 +15,7 @@ import (
 	btcpsbt "github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
+	"github.com/lightninglabs/tap-sdk/internal/anchor"
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/proof"
 	"github.com/lightninglabs/taproot-assets/tappsbt"
@@ -132,7 +133,7 @@ func TestCustomAnchorTransferPackageSealErrors(t *testing.T) {
 			name: "lock expiration too long",
 			mutate: func(pkg *CustomAnchorTransferPackage) {
 				pkg.FundingLock.LockExpirationSeconds =
-					maxCustomAnchorLockExpirationSeconds + 1
+					anchor.MaxLockExpirationSeconds + 1
 			},
 			wantErr: "lock expiration exceeds the maximum safe duration",
 		},

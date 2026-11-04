@@ -5,6 +5,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/lightninglabs/tap-sdk/internal/anchor"
 	"github.com/stretchr/testify/require"
 )
 
@@ -558,11 +559,11 @@ func TestCustomAnchorFundingLockExpiration(t *testing.T) {
 	}{
 		{
 			name:    "maximum",
-			seconds: maxCustomAnchorLockExpirationSeconds,
+			seconds: anchor.MaxLockExpirationSeconds,
 		},
 		{
 			name:    "overflow",
-			seconds: maxCustomAnchorLockExpirationSeconds + 1,
+			seconds: anchor.MaxLockExpirationSeconds + 1,
 			wantErr: true,
 		},
 	}

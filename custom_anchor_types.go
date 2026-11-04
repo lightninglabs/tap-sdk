@@ -7,6 +7,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/lightninglabs/tap-sdk/internal/anchor"
 )
 
 // CustomAnchorRequest contains the SDK-owned inputs needed to build an
@@ -889,10 +890,10 @@ func (p *CustomAnchorFundingPlan) Validate() error {
 		if p.WalletFunded == nil {
 			return fmt.Errorf("wallet-funded mode requires wallet variant")
 		}
-		if err := p.WalletFunded.ChangeOutput.validate(); err != nil {
+		if err := p.WalletFunded.ChangeOutput.Validate(); err != nil {
 			return err
 		}
-		if err := p.WalletFunded.Fee.validate(); err != nil {
+		if err := p.WalletFunded.Fee.Validate(); err != nil {
 			return err
 		}
 		if p.WalletFunded.MaxFeeSat == 0 {
@@ -901,12 +902,12 @@ func (p *CustomAnchorFundingPlan) Validate() error {
 		if len(p.WalletFunded.CustomLockID) == 0 {
 			return fmt.Errorf("wallet-funded custom lock ID is required")
 		}
-		if err := validateCustomAnchorLockID(
+		if err := anchor.ValidateLockID(
 			p.WalletFunded.CustomLockID,
 		); err != nil {
 			return err
 		}
-		if err := validateCustomAnchorLockExpiration(
+		if err := anchor.ValidateLockExpiration(
 			p.WalletFunded.LockExpirationSeconds,
 		); err != nil {
 			return err

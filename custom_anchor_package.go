@@ -13,6 +13,7 @@ import (
 
 	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/btcsuite/btcd/psbt/v2"
+	"github.com/lightninglabs/tap-sdk/internal/anchor"
 	"github.com/lightninglabs/taproot-assets/proof"
 	"github.com/lightninglabs/taproot-assets/tappsbt"
 	"github.com/lightninglabs/taproot-assets/tapsend"
@@ -522,10 +523,10 @@ func (p *CustomAnchorTransferPackage) validateStructure() error {
 	if p.ChangeOutputIndex < -1 {
 		return fmt.Errorf("change output index must be -1 or greater")
 	}
-	if err := validateCustomAnchorLockID(p.FundingLock.CustomLockID); err != nil {
+	if err := anchor.ValidateLockID(p.FundingLock.CustomLockID); err != nil {
 		return err
 	}
-	if err := validateCustomAnchorLockExpiration(
+	if err := anchor.ValidateLockExpiration(
 		p.FundingLock.LockExpirationSeconds,
 	); err != nil {
 		return err

@@ -2,12 +2,8 @@ package tapsdk
 
 import (
 	"fmt"
-	"math"
-	"time"
-)
 
-const maxCustomAnchorLockExpirationSeconds = uint64(
-	math.MaxInt64 / int64(time.Second),
+	"github.com/lightninglabs/tap-sdk/internal/anchor"
 )
 
 // AnchorChangeOutputMode identifies how anchor change should be handled while
@@ -114,10 +110,10 @@ func (r *CommitVirtualPsbtsRequest) Validate() error {
 	if len(r.VirtualPsbts) == 0 {
 		return fmt.Errorf("at least one virtual PSBT is required")
 	}
-	if err := validateCustomAnchorLockID(r.Funding.CustomLockID); err != nil {
+	if err := anchor.ValidateLockID(r.Funding.CustomLockID); err != nil {
 		return err
 	}
-	if err := validateCustomAnchorLockExpiration(
+	if err := anchor.ValidateLockExpiration(
 		r.Funding.LockExpirationSeconds,
 	); err != nil {
 		return err
@@ -127,27 +123,11 @@ func (r *CommitVirtualPsbtsRequest) Validate() error {
 		return nil
 	}
 
-	if err := r.Funding.ChangeOutput.validate(); err != nil {
+	if err := r.Funding.ChangeOutput.Validate(); err != nil {
 		return err
 	}
 
-	return r.Funding.Fee.validate()
-}
-
-func validateCustomAnchorLockID(lockID []byte) error {
-	if len(lockID) != 0 && len(lockID) != 32 {
-		return fmt.Errorf("custom lock ID must be exactly 32 bytes")
-	}
-
-	return nil
-}
-
-func validateCustomAnchorLockExpiration(seconds uint64) error {
-	if seconds > maxCustomAnchorLockExpirationSeconds {
-		return fmt.Errorf("lock expiration exceeds the maximum safe duration")
-	}
-
-	return nil
+	return r.Funding.Fee.Validate()
 }
 
 // CommitVirtualPsbtsResponse is the result of committing virtual PSBTs into an
@@ -212,7 +192,8 @@ func (r *PublishAndLogTransferRequest) Validate() error {
 	return nil
 }
 
-func (c AnchorChangeOutput) validate() error {
+// Validate checks that the change-output mode and index are consistent.
+func (c AnchorChangeOutput) Validate() error {
 	switch c.Mode {
 	case AnchorChangeOutputAdd, AnchorChangeOutputNoNew:
 		return nil
@@ -229,7 +210,8 @@ func (c AnchorChangeOutput) validate() error {
 	}
 }
 
-func (f AnchorFee) validate() error {
+// Validate checks that the fee mode has the parameters it requires.
+func (f AnchorFee) Validate() error {
 	switch f.Mode {
 	case AnchorFeeSatPerVByte:
 		if f.FeeRate.IsZero() {

@@ -17,6 +17,7 @@ import (
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
+	"github.com/lightninglabs/tap-sdk/internal/vpsbt"
 	"github.com/lightninglabs/taproot-assets/address"
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/commitment"
@@ -44,8 +45,9 @@ var canonicalP2AScript = []byte{0x51, 0x02, 0x4e, 0x73}
 // from TxBuilder: callers that don't need exact anchor control should continue
 // to use the simpler send APIs.
 type CustomAnchorTxBuilder struct {
-	wallet                 *Wallet
+	client                 Client
 	params                 *address.ChainParams
+	coinType               uint32
 	confirmedProofVerifier ConfirmedProofVerifier
 }
 
@@ -208,15 +210,20 @@ type CustomAnchorOutputCommitmentPreview struct {
 
 // NewCustomAnchorTxBuilder creates the advanced proof-selected builder.
 func (s *Wallet) NewCustomAnchorTxBuilder() *CustomAnchorTxBuilder {
-	params, err := address.Net(s.networkHRP)
+	hrp, coinType, err := vpsbt.NetworkParams(string(s.Network()))
 	if err != nil {
-		panic(fmt.Sprintf("invalid wallet network HRP %q: %v",
-			s.networkHRP, err))
+		panic(fmt.Sprintf("invalid wallet network: %v", err))
+	}
+	params, err := address.Net(hrp)
+	if err != nil {
+		panic(fmt.Sprintf("invalid wallet network HRP %q: %v", hrp,
+			err))
 	}
 
 	return &CustomAnchorTxBuilder{
-		wallet: s,
-		params: params,
+		client:   s.Client(),
+		params:   params,
+		coinType: coinType,
 	}
 }
 
@@ -417,7 +424,7 @@ func (p *CustomAnchorPlan) Verification() CustomAnchorVerificationResult {
 func (b *CustomAnchorTxBuilder) Build(ctx context.Context,
 	req *CustomAnchorRequest) (*CustomAnchorPlan, error) {
 
-	if b == nil || b.wallet == nil || b.wallet.client == nil {
+	if b == nil || b.client == nil {
 		return nil, fmt.Errorf("custom anchor builder has no wallet client")
 	}
 	if err := req.Validate(); err != nil {
@@ -528,7 +535,7 @@ func (b *CustomAnchorTxBuilder) Build(ctx context.Context,
 	plannedOutputs = append(plannedOutputs, passiveOutputs...)
 
 	return &CustomAnchorPlan{
-		client:              b.wallet.client,
+		client:              b.client,
 		request:             request,
 		anchorPSBT:          anchorBytes,
 		activeVirtualPSBTs:  activeBytes,
@@ -652,7 +659,7 @@ func (b *CustomAnchorTxBuilder) resolveInputs(ctx context.Context,
 					"match its verified tip", idx)
 			}
 		} else {
-			verified, err := b.wallet.client.VerifyProof(
+			verified, err := b.client.VerifyProof(
 				ctx, requested.ProofFile,
 			)
 			if err != nil {
@@ -853,7 +860,7 @@ func (b *CustomAnchorTxBuilder) buildActivePackets(ctx context.Context,
 			}
 
 			bip32, taprootBip32 := customAnchorKeyDerivations(
-				output.request.Anchor.InternalKey, b.wallet.coinType,
+				output.request.Anchor.InternalKey, b.coinType,
 			)
 			allocations = append(allocations, &tapsend.Allocation{
 				Type:                   tapsend.CommitAllocationToRemote,
@@ -954,7 +961,7 @@ func (b *CustomAnchorTxBuilder) customAssetScriptKey(ctx context.Context,
 			return nil, fmt.Errorf("selecting a wallet script key locator " +
 				"is not supported by the current tapd API")
 		}
-		derived, err := b.wallet.client.DeriveScriptKey(ctx)
+		derived, err := b.client.DeriveScriptKey(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("derive wallet script key: %w", err)
 		}
@@ -1014,7 +1021,7 @@ func (b *CustomAnchorTxBuilder) resolveInputSigningKeys(ctx context.Context,
 	for idx, input := range packet.Inputs {
 		proofPubKey := input.Asset().ScriptKey.PubKey
 		proofKey := schnorr.SerializePubKey(proofPubKey)
-		resolved, err := b.wallet.client.QueryScriptKey(ctx, proofKey)
+		resolved, err := b.client.QueryScriptKey(ctx, proofKey)
 		if err != nil {
 			return fmt.Errorf(
 				"resolve input %d signing key: %w", idx, err,
@@ -1612,7 +1619,7 @@ func (b *CustomAnchorTxBuilder) resolvePassivePackets(ctx context.Context,
 				err)
 		}
 
-		verified, err := b.wallet.client.VerifyProof(ctx, planned.ProofFile)
+		verified, err := b.client.VerifyProof(ctx, planned.ProofFile)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("verify passive packet %d proof "+
 				"chain: %w", idx, err)

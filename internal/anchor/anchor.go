@@ -3,6 +3,8 @@ package anchor
 import (
 	"bytes"
 	"fmt"
+	"math"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/psbt/v2"
@@ -12,6 +14,10 @@ import (
 )
 
 const dummyAmtSats = 1_000
+
+// MaxLockExpirationSeconds is the longest UTXO lock duration that still fits
+// in a time.Duration.
+const MaxLockExpirationSeconds = uint64(math.MaxInt64 / int64(time.Second))
 
 var dummyP2TRScript = append(
 	[]byte{txscript.OP_1, txscript.OP_DATA_32},
@@ -176,4 +182,23 @@ func hasInput(tx *wire.MsgTx, outpoint wire.OutPoint) bool {
 	}
 
 	return false
+}
+
+// ValidateLockID checks that an optional lnd UTXO lock ID is 32 bytes.
+func ValidateLockID(lockID []byte) error {
+	if len(lockID) != 0 && len(lockID) != 32 {
+		return fmt.Errorf("custom lock ID must be exactly 32 bytes")
+	}
+
+	return nil
+}
+
+// ValidateLockExpiration checks that a UTXO lock duration fits in a
+// time.Duration.
+func ValidateLockExpiration(seconds uint64) error {
+	if seconds > MaxLockExpirationSeconds {
+		return fmt.Errorf("lock expiration exceeds the maximum safe duration")
+	}
+
+	return nil
 }
