@@ -1,10 +1,11 @@
-package tapsdk
+package customanchor
 
 import (
 	"bytes"
 	"fmt"
 
 	"github.com/btcsuite/btcd/wire/v2"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/proof"
 )
 
@@ -32,8 +33,8 @@ type AnchorConfirmation struct {
 // backend performs full validation, including chain anchoring, when the file
 // is imported or spent; this assembly only guarantees structural
 // completeness.
-func (p *AssetProofPath) ConfirmProofFile(
-	confirmations map[Hash]AnchorConfirmation) ([]byte, error) {
+func (p *ProofPath) ConfirmProofFile(
+	confirmations map[tapsdk.Hash]AnchorConfirmation) ([]byte, error) {
 
 	if err := p.Validate(); err != nil {
 		return nil, err
@@ -115,10 +116,10 @@ func (p *AssetProofPath) ConfirmProofFile(
 // confirmTransitionProof fills a transition proof's block inclusion fields
 // from the raw block that confirmed its anchor transaction.
 func confirmTransitionProof(transition *proof.Proof,
-	confirmations map[Hash]AnchorConfirmation) error {
+	confirmations map[tapsdk.Hash]AnchorConfirmation) error {
 
 	anchorTxid := transition.AnchorTx.TxHash()
-	confirmation, ok := confirmations[Hash(anchorTxid)]
+	confirmation, ok := confirmations[tapsdk.Hash(anchorTxid)]
 	if !ok {
 		return fmt.Errorf("missing block confirmation for anchor "+
 			"transaction %s", anchorTxid)

@@ -1,4 +1,4 @@
-package tapsdk
+package customanchor
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/address"
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/commitment"
@@ -32,7 +33,7 @@ const (
 )
 
 type customAnchorPassiveFixture struct {
-	request          *CustomAnchorRequest
+	request          *Request
 	client           *customAnchorBuilderTestClient
 	activeProofFile  []byte
 	passiveProofFile []byte
@@ -54,18 +55,18 @@ func TestCustomAnchorPassiveCallerReanchor(t *testing.T) {
 		), nil
 	}
 	fixture.client.commit = func(_ context.Context,
-		req *CommitVirtualPsbtsRequest) (*CommitVirtualPsbtsResponse, error) {
+		req *tapsdk.CommitVirtualPsbtsRequest) (
+		*tapsdk.CommitVirtualPsbtsResponse, error) {
 
 		return customAnchorTestCommitResponse(t, req), nil
 	}
 
-	capabilities := DefaultTapdCustomAnchorCapabilities()
+	capabilities := DefaultTapdCapabilities()
 	client := &capableCustomAnchorBuilderTestClient{
 		customAnchorBuilderTestClient: fixture.client,
 		capabilities:                  &capabilities,
 	}
-	plan, err := NewWallet(client, NetworkRegtest).
-		NewCustomAnchorTxBuilder().Build(
+	plan, err := newTestTxBuilder(client).Build(
 		context.Background(), fixture.request,
 	)
 	require.NoError(t, err)
@@ -86,12 +87,12 @@ func TestCustomAnchorPassiveCallerReanchor(t *testing.T) {
 
 	inputs := plan.Inputs()
 	require.Len(t, inputs, 2)
-	require.Equal(t, CustomAnchorPacketRoleActive, inputs[0].PacketRole)
-	require.Equal(t, CustomAnchorPacketRolePassive, inputs[1].PacketRole)
+	require.Equal(t, PacketRoleActive, inputs[0].PacketRole)
+	require.Equal(t, PacketRolePassive, inputs[1].PacketRole)
 	require.Equal(t, "passive-asset", inputs[1].LogicalInputID)
 	outputs := plan.Outputs()
 	require.Len(t, outputs, 2)
-	require.Equal(t, CustomAnchorPacketRolePassive, outputs[1].PacketRole)
+	require.Equal(t, PacketRolePassive, outputs[1].PacketRole)
 	require.Equal(t, customAnchorPassiveCourier,
 		outputs[1].ProofDelivery.CourierAddress)
 
@@ -103,9 +104,9 @@ func TestCustomAnchorPassiveCallerReanchor(t *testing.T) {
 	require.Len(t, packageSnapshot.Inputs, 2)
 	require.Len(t, packageSnapshot.Outputs, 2)
 	require.Len(t, packageSnapshot.ProofUpdates, 2)
-	require.Equal(t, CustomAnchorPacketRolePassive,
+	require.Equal(t, PacketRolePassive,
 		packageSnapshot.Inputs[1].PacketRole)
-	require.Equal(t, CustomAnchorPacketRolePassive,
+	require.Equal(t, PacketRolePassive,
 		packageSnapshot.Outputs[1].PacketRole)
 	require.Equal(t, customAnchorPassiveCourier,
 		packageSnapshot.Outputs[1].ProofDelivery.CourierAddress)
@@ -258,8 +259,7 @@ func TestCustomAnchorPassiveCallerReanchorRejectsMutation(t *testing.T) {
 			fixture := newCustomAnchorPassiveFixture(t)
 			test.mutate(t, fixture)
 
-			_, err := NewWallet(fixture.client, NetworkRegtest).
-				NewCustomAnchorTxBuilder().Build(
+			_, err := newTestTxBuilder(fixture.client).Build(
 				context.Background(), fixture.request,
 			)
 			require.ErrorContains(t, err, test.wantErr)
@@ -279,19 +279,18 @@ func TestCustomAnchorPassiveCallerReanchorRequiresCoAnchor(t *testing.T) {
 	)
 	separateRef, _, _, err := assetIdentity(&separateProof.Asset)
 	require.NoError(t, err)
-	fixture.request.PassiveAssets.Packets[0] = CustomAnchorPassivePacket{
+	fixture.request.PassiveAssets.Packets[0] = PassivePacket{
 		ID:          "separate-passive",
 		AssetRef:    separateRef,
 		Amount:      separateProof.Asset.Amount,
 		VirtualPSBT: separatePacket,
 		ProofFile:   separateFile,
-		ProofDelivery: CustomAssetProofDelivery{
+		ProofDelivery: AssetProofDelivery{
 			CourierAddress: customAnchorPassiveCourier,
 		},
 	}
 
-	_, err = NewWallet(fixture.client, NetworkRegtest).
-		NewCustomAnchorTxBuilder().Build(
+	_, err = newTestTxBuilder(fixture.client).Build(
 		context.Background(), fixture.request,
 	)
 	require.ErrorContains(t, err, "is not co-anchored with an active input")
@@ -302,13 +301,13 @@ func TestCustomAnchorPassivePackageBindsProofDelivery(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		mutate  func(*testing.T, *CustomAnchorTransferPackage)
+		mutate  func(*testing.T, *TransferPackage)
 		wantErr string
 	}{
 		{
 			name: "output summary courier",
 			mutate: func(_ *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				pkg.Outputs[1].ProofDelivery.CourierAddress =
 					customAnchorPassiveOtherCourier
@@ -318,7 +317,7 @@ func TestCustomAnchorPassivePackageBindsProofDelivery(t *testing.T) {
 		{
 			name: "virtual output courier",
 			mutate: func(t *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				packet, err := tappsbt.Decode(
 					pkg.PassiveVirtualPsbts[0],
@@ -336,7 +335,7 @@ func TestCustomAnchorPassivePackageBindsProofDelivery(t *testing.T) {
 		{
 			name: "proof update courier",
 			mutate: func(_ *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				pkg.ProofUpdates[1].ProofDelivery.CourierAddress =
 					customAnchorPassiveOtherCourier
@@ -396,15 +395,15 @@ func newCustomAnchorPassiveFixture(
 		t, request.Outputs[0], passiveProof, passiveSpendKey,
 		customAnchorPassiveCourier,
 	)
-	request.PassiveAssets = CustomAnchorPassiveAssets{
-		Policy: CustomAnchorPassiveCallerReanchor,
-		Packets: []CustomAnchorPassivePacket{{
+	request.PassiveAssets = PassiveAssets{
+		Policy: PassiveCallerReanchor,
+		Packets: []PassivePacket{{
 			ID:          "passive-asset",
 			AssetRef:    passiveRef,
 			Amount:      passiveProof.Asset.Amount,
 			VirtualPSBT: passivePacket,
 			ProofFile:   cloneBytes(passiveFile),
-			ProofDelivery: CustomAssetProofDelivery{
+			ProofDelivery: AssetProofDelivery{
 				RecipientID:    "passive-recipient",
 				CourierAddress: customAnchorPassiveCourier,
 				OpaqueMetadata: []byte{1, 2, 3},
@@ -415,7 +414,7 @@ func newCustomAnchorPassiveFixture(
 	client := &customAnchorBuilderTestClient{
 		verifyProof: customAnchorSuccessfulProofVerification,
 		queryScriptKey: func(_ context.Context,
-			key []byte) (*ScriptKey, error) {
+			key []byte) (*tapsdk.ScriptKey, error) {
 
 			require.Equal(t, schnorr.SerializePubKey(
 				activeProof.Asset.ScriptKey.PubKey,
@@ -532,7 +531,7 @@ func newCustomAnchorCoAnchoredProofs(t *testing.T) ([]byte, []byte,
 }
 
 func newCustomAnchorPassiveVPacket(t *testing.T,
-	output CustomAssetOutput, inputProof *proof.Proof,
+	output AssetOutput, inputProof *proof.Proof,
 	spendKey *btcec.PrivateKey, courierAddress string) []byte {
 
 	t.Helper()
@@ -572,7 +571,7 @@ func newCustomAnchorPassiveVPacket(t *testing.T,
 }
 
 func mutateCustomAnchorPassiveVPacket(t *testing.T,
-	request *CustomAnchorRequest, mutate func(*tappsbt.VPacket)) {
+	request *Request, mutate func(*tappsbt.VPacket)) {
 
 	t.Helper()
 
@@ -587,7 +586,7 @@ func mutateCustomAnchorPassiveVPacket(t *testing.T,
 }
 
 func newCommittedCustomAnchorPassivePackage(
-	t *testing.T) *CustomAnchorTransferPackage {
+	t *testing.T) *TransferPackage {
 
 	t.Helper()
 
@@ -600,17 +599,17 @@ func newCommittedCustomAnchorPassivePackage(
 		), nil
 	}
 	fixture.client.commit = func(_ context.Context,
-		req *CommitVirtualPsbtsRequest) (*CommitVirtualPsbtsResponse, error) {
+		req *tapsdk.CommitVirtualPsbtsRequest) (
+		*tapsdk.CommitVirtualPsbtsResponse, error) {
 
 		return customAnchorTestCommitResponse(t, req), nil
 	}
-	capabilities := DefaultTapdCustomAnchorCapabilities()
+	capabilities := DefaultTapdCapabilities()
 	client := &capableCustomAnchorBuilderTestClient{
 		customAnchorBuilderTestClient: fixture.client,
 		capabilities:                  &capabilities,
 	}
-	plan, err := NewWallet(client, NetworkRegtest).
-		NewCustomAnchorTxBuilder().Build(
+	plan, err := newTestTxBuilder(client).Build(
 		context.Background(), fixture.request,
 	)
 	require.NoError(t, err)

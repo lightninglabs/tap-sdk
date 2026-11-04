@@ -1,4 +1,4 @@
-package tapsdk
+package customanchor
 
 import (
 	"bytes"
@@ -7,6 +7,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/psbt/v2"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/tappsbt"
 	"github.com/lightninglabs/taproot-assets/tapscript"
@@ -21,8 +22,7 @@ import (
 // and assets received at a unique Pedersen address.
 func TestCustomAnchorReceivedKeyTweak(t *testing.T) {
 	fixture := newCustomAnchorBuilderFixture(t)
-	builder := NewWallet(fixture.client, NetworkRegtest).
-		NewCustomAnchorTxBuilder()
+	builder := newTestTxBuilder(fixture.client)
 	plan, err := builder.Build(t.Context(), fixture.request)
 	require.NoError(t, err)
 	packet, err := tappsbt.Decode(plan.ActiveVirtualPSBTs()[0])
@@ -65,9 +65,9 @@ func TestCustomAnchorReceivedKeyTweak(t *testing.T) {
 	)
 	require.ErrorContains(t, err, "invalid transfer asset witness")
 
-	resolved := ScriptKey{
+	resolved := tapsdk.ScriptKey{
 		PubKey: mustCustomAnchorPubKey(t, unique.PubKey),
-		KeyDesc: KeyDescriptor{
+		KeyDesc: tapsdk.KeyDescriptor{
 			RawKeyBytes: mustCustomAnchorPubKey(
 				t, fixture.assetSpendKey.PubKey(),
 			),
@@ -75,7 +75,7 @@ func TestCustomAnchorReceivedKeyTweak(t *testing.T) {
 		TapTweak: bytes.Clone(unique.Tweak),
 	}
 	fixture.client.queryScriptKey = func(_ context.Context,
-		key []byte) (*ScriptKey, error) {
+		key []byte) (*tapsdk.ScriptKey, error) {
 
 		require.Equal(t, schnorr.SerializePubKey(unique.PubKey), key)
 		return &resolved, nil
@@ -105,7 +105,7 @@ func TestCustomAnchorReceivedKeyTweak(t *testing.T) {
 			t.Context(), fresh,
 		))
 		fixture.client.queryScriptKey = func(context.Context,
-			[]byte) (*ScriptKey, error) {
+			[]byte) (*tapsdk.ScriptKey, error) {
 
 			return &resolved, nil
 		}
@@ -127,29 +127,29 @@ func TestCustomAnchorReceivedKeyTweak(t *testing.T) {
 
 	for _, test := range []struct {
 		name   string
-		mutate func(*ScriptKey) *ScriptKey
+		mutate func(*tapsdk.ScriptKey) *tapsdk.ScriptKey
 		want   string
 	}{
-		{"missing key", func(*ScriptKey) *ScriptKey {
+		{"missing key", func(*tapsdk.ScriptKey) *tapsdk.ScriptKey {
 			return nil
 		}, "wallet returned no key for input 0"},
-		{"missing raw key", func(k *ScriptKey) *ScriptKey {
-			k.KeyDesc.RawKeyBytes = PubKey{}
+		{"missing raw key", func(k *tapsdk.ScriptKey) *tapsdk.ScriptKey {
+			k.KeyDesc.RawKeyBytes = tapsdk.PubKey{}
 			return k
 		}, "input 0 signing key has no raw key derivation"},
-		{"short tweak", func(k *ScriptKey) *ScriptKey {
+		{"short tweak", func(k *tapsdk.ScriptKey) *tapsdk.ScriptKey {
 			k.TapTweak = k.TapTweak[:31]
 			return k
 		}, "input 0 signing key has 31-byte tweak"},
-		{"missing tweak", func(k *ScriptKey) *ScriptKey {
+		{"missing tweak", func(k *tapsdk.ScriptKey) *tapsdk.ScriptKey {
 			k.TapTweak = nil
 			return k
 		}, "input 0 raw key and tweak do not derive"},
-		{"wrong tweak", func(k *ScriptKey) *ScriptKey {
+		{"wrong tweak", func(k *tapsdk.ScriptKey) *tapsdk.ScriptKey {
 			k.TapTweak[0] ^= 1
 			return k
 		}, "input 0 raw key and tweak do not derive"},
-		{"wrong proof key", func(k *ScriptKey) *ScriptKey {
+		{"wrong proof key", func(k *tapsdk.ScriptKey) *tapsdk.ScriptKey {
 			k.PubKey = mustCustomAnchorPubKey(t,
 				testPrivateKey(t, 99).PubKey())
 			return k
@@ -159,7 +159,7 @@ func TestCustomAnchorReceivedKeyTweak(t *testing.T) {
 			candidate := resolved
 			candidate.TapTweak = bytes.Clone(resolved.TapTweak)
 			fixture.client.queryScriptKey = func(context.Context,
-				[]byte) (*ScriptKey, error) {
+				[]byte) (*tapsdk.ScriptKey, error) {
 
 				return test.mutate(&candidate), nil
 			}

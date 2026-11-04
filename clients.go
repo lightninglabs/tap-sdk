@@ -233,19 +233,6 @@ type CustomAnchorWalletKitClient interface {
 		req *PublishAndLogTransferRequest) (*AssetPacket, error)
 }
 
-// CustomAnchorCapabilityProvider is an optional extension implemented by
-// clients that can provide a custom-anchor capability profile. It is kept
-// separate from WalletKitClient so existing clients and test doubles aren't
-// forced to implement an SDK-specific discovery method that tapd does not
-// expose over RPC.
-//
-// Implementations must distinguish an explicitly unsupported feature from an
-// unknown one. Callers fail closed for both states.
-type CustomAnchorCapabilityProvider interface {
-	CustomAnchorCapabilities(ctx context.Context) (
-		*CustomAnchorCapabilities, error)
-}
-
 // UniverseClient exposes the Universe service gRPC client.
 type UniverseClient interface {
 	// InsertProof inserts a proof into the local universe.

@@ -1,4 +1,4 @@
-package tapsdk
+package customanchor
 
 import (
 	"bytes"
@@ -10,6 +10,7 @@ import (
 	btcpsbt "github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/stretchr/testify/require"
 )
 
@@ -72,49 +73,49 @@ func TestCustomAnchorSigningPlanValidation(t *testing.T) {
 	)
 	tests := []struct {
 		name    string
-		mutate  func(*CustomAnchorTransferPackage)
+		mutate  func(*TransferPackage)
 		wantErr string
 	}{
 		{
 			name: "no variant",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.SigningPlans[0].KeyPath = nil
 			},
 			wantErr: "must set exactly one spending path",
 		},
 		{
 			name: "multiple variants",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.SigningPlans[0].ScriptPath =
-					&CustomAnchorScriptPathSigningPlan{LeafHash: Hash{1}}
+					&ScriptPathSigningPlan{LeafHash: tapsdk.Hash{1}}
 			},
 			wantErr: "must set exactly one spending path",
 		},
 		{
 			name: "duplicate input",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.SigningPlans[1].InputIndex = 0
 			},
 			wantErr: "duplicate signing plan for input 0",
 		},
 		{
 			name: "input out of range",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.SigningPlans[0].InputIndex = 3
 			},
 			wantErr: "input index is out of range",
 		},
 		{
 			name: "invalid key path signer",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
-				pkg.SigningPlans[0].KeyPath.Signer = XOnlyPubKey{}
+			mutate: func(pkg *TransferPackage) {
+				pkg.SigningPlans[0].KeyPath.Signer = tapsdk.XOnlyPubKey{}
 			},
 			wantErr: "invalid key-path signer",
 		},
 		{
 			name: "too few musig participants",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
-				pkg.SigningPlans[1].MuSig2.Participants = []PubKey{
+			mutate: func(pkg *TransferPackage) {
+				pkg.SigningPlans[1].MuSig2.Participants = []tapsdk.PubKey{
 					validParticipant,
 				}
 			},
@@ -122,14 +123,14 @@ func TestCustomAnchorSigningPlanValidation(t *testing.T) {
 		},
 		{
 			name: "missing musig session context",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.SigningPlans[1].MuSig2.SessionContext = nil
 			},
 			wantErr: "MuSig2 session context is required",
 		},
 		{
 			name: "duplicate musig participant",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				participant := pkg.SigningPlans[1].MuSig2.Participants[0]
 				pkg.SigningPlans[1].MuSig2.Participants[1] = participant
 			},
@@ -137,8 +138,8 @@ func TestCustomAnchorSigningPlanValidation(t *testing.T) {
 		},
 		{
 			name: "missing script leaf",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
-				pkg.SigningPlans[2].ScriptPath.LeafHash = Hash{}
+			mutate: func(pkg *TransferPackage) {
+				pkg.SigningPlans[2].ScriptPath.LeafHash = tapsdk.Hash{}
 			},
 			wantErr: "script-path leaf hash is required",
 		},
@@ -158,13 +159,13 @@ func TestCustomAnchorSigningPlanValidation(t *testing.T) {
 func TestCustomAnchorSigningRequestMismatch(t *testing.T) {
 	tests := []struct {
 		name    string
-		mutate  func(*CustomAnchorTransferPackage)
+		mutate  func(*TransferPackage)
 		wantErr string
 		sealErr bool
 	}{
 		{
 			name: "key-path signer",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.SigningPlans[0].KeyPath.Signer = customAnchorTestXOnly(
 					customAnchorTestPrivateKey(10).PubKey(),
 				)
@@ -173,8 +174,8 @@ func TestCustomAnchorSigningRequestMismatch(t *testing.T) {
 		},
 		{
 			name: "musig aggregate",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
-				pkg.SigningPlans[1].MuSig2.Participants = []PubKey{
+			mutate: func(pkg *TransferPackage) {
+				pkg.SigningPlans[1].MuSig2.Participants = []tapsdk.PubKey{
 					customAnchorTestPubKey(
 						customAnchorTestPrivateKey(11).PubKey(),
 					),
@@ -187,14 +188,14 @@ func TestCustomAnchorSigningRequestMismatch(t *testing.T) {
 		},
 		{
 			name: "script leaf",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
-				pkg.SigningPlans[2].ScriptPath.LeafHash = Hash{99}
+			mutate: func(pkg *TransferPackage) {
+				pkg.SigningPlans[2].ScriptPath.LeafHash = tapsdk.Hash{99}
 			},
 			wantErr: "script-path leaf matched 0 PSBT entries",
 		},
 		{
 			name: "missing previous output",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				packet := mustDecodeAnchorPSBT(t, pkg.AnchorPsbt)
 				packet.Inputs[0].WitnessUtxo = nil
 				anchorPsbt := mustSerializeAnchorPSBT(t, packet)
@@ -280,13 +281,13 @@ func TestApplyCustomAnchorKeyPathSignatureErrors(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		requestID Hash
+		requestID tapsdk.Hash
 		signature []byte
 		wantErr   string
 	}{
 		{
 			name:      "unknown request",
-			requestID: Hash{99},
+			requestID: tapsdk.Hash{99},
 			signature: bytes.Repeat([]byte{1}, schnorr.SignatureSize),
 			wantErr:   "unknown key-path signing request",
 		},
@@ -328,7 +329,7 @@ func TestVerifyTaprootKeyPathSignatureRequiresNonDefaultSuffix(t *testing.T) {
 
 	err := verifyTaprootKeyPathSignature(
 		make([]byte, schnorr.SignatureSize),
-		uint32(txscript.SigHashAll), Hash{}, nil,
+		uint32(txscript.SigHashAll), tapsdk.Hash{}, nil,
 	)
 	require.ErrorContains(t, err, "non-default taproot sighash requires a suffix")
 }
@@ -375,13 +376,13 @@ func TestApplyCustomAnchorScriptPathWitnessErrors(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		requestID Hash
+		requestID tapsdk.Hash
 		witness   [][]byte
 		wantErr   string
 	}{
 		{
 			name:      "unknown request",
-			requestID: Hash{99},
+			requestID: tapsdk.Hash{99},
 			wantErr:   "unknown script-path signing request",
 		},
 		{
@@ -653,12 +654,12 @@ func TestCustomAnchorFinalSigningPlanRejectsScriptForKeyPlan(t *testing.T) {
 	pkg, fixture, secondKey := customAnchorSimpleSigningPackage(t)
 	unsealed := pkg.Clone()
 	unsealed.SchemaVersion = 0
-	unsealed.CommittedPackageDigest = Hash{}
-	unsealed.UnsignedTxDigest = Hash{}
-	unsealed.PackageDigest = Hash{}
-	unsealed.SigningPlans[2] = CustomAnchorInputSigningPlan{
+	unsealed.CommittedPackageDigest = tapsdk.Hash{}
+	unsealed.UnsignedTxDigest = tapsdk.Hash{}
+	unsealed.PackageDigest = tapsdk.Hash{}
+	unsealed.SigningPlans[2] = InputSigningPlan{
 		InputIndex: 2,
-		KeyPath: &CustomAnchorKeyPathSigningPlan{
+		KeyPath: &KeyPathSigningPlan{
 			Signer: customAnchorTestXOnly(
 				customAnchorTestPrivateKey(4).PubKey(),
 			),
@@ -698,10 +699,10 @@ func TestCustomAnchorFinalScriptPathSighashEnforcement(t *testing.T) {
 
 	unsealed := pkg.Clone()
 	unsealed.SchemaVersion = 0
-	unsealed.CommittedPackageDigest = Hash{}
-	unsealed.UnsignedTxDigest = Hash{}
-	unsealed.PackageDigest = Hash{}
-	unsealed.SigningPlans[2].ScriptPath.RequiredSigners = []XOnlyPubKey{
+	unsealed.CommittedPackageDigest = tapsdk.Hash{}
+	unsealed.UnsignedTxDigest = tapsdk.Hash{}
+	unsealed.PackageDigest = tapsdk.Hash{}
+	unsealed.SigningPlans[2].ScriptPath.RequiredSigners = []tapsdk.XOnlyPubKey{
 		customAnchorTestXOnly(scriptKey.PubKey()),
 	}
 	pkg, err = unsealed.Seal()
@@ -733,14 +734,14 @@ func TestCustomAnchorBackendManagedSigningRemainsConsensusOnly(t *testing.T) {
 	pkg, fixture, secondKey := customAnchorSimpleSigningPackage(t)
 	unsealed := pkg.Clone()
 	unsealed.SchemaVersion = 0
-	unsealed.CommittedPackageDigest = Hash{}
-	unsealed.UnsignedTxDigest = Hash{}
-	unsealed.PackageDigest = Hash{}
+	unsealed.CommittedPackageDigest = tapsdk.Hash{}
+	unsealed.UnsignedTxDigest = tapsdk.Hash{}
+	unsealed.PackageDigest = tapsdk.Hash{}
 	unsealed.SigningPlans = unsealed.SigningPlans[:2]
 	unsealed.BackendManagedInputIndices = []uint32{2}
 	markCustomAnchorWalletFundedTestPackage(t, unsealed)
 	anchor := mustDecodeAnchorPSBT(t, unsealed.CommittedAnchorPsbt)
-	unsealed.LockedUTXOs = []CustomAnchorLockedUTXO{{
+	unsealed.LockedUTXOs = []LockedUTXO{{
 		Outpoint: outpointFromWire(
 			anchor.UnsignedTx.TxIn[2].PreviousOutPoint,
 		),
@@ -777,7 +778,7 @@ func TestCustomAnchorCodeSeparatorRejected(t *testing.T) {
 
 	_, err := pkg.SigningRequests()
 	require.ErrorContains(t, err, "OP_CODESEPARATOR is unsupported")
-	result, err := pkg.ApplyScriptPathWitness(Hash{}, nil)
+	result, err := pkg.ApplyScriptPathWitness(tapsdk.Hash{}, nil)
 	require.Nil(t, result)
 	require.ErrorContains(t, err, "OP_CODESEPARATOR is unsupported")
 
@@ -808,7 +809,7 @@ func TestCustomAnchorCodeSeparatorRejected(t *testing.T) {
 }
 
 func customAnchorSimpleSigningPackage(t *testing.T) (
-	*CustomAnchorTransferPackage, *customAnchorTestFixture,
+	*TransferPackage, *customAnchorTestFixture,
 	*btcec.PrivateKey) {
 
 	t.Helper()
@@ -821,7 +822,7 @@ func customAnchorSimpleSigningPackage(t *testing.T) (
 }
 
 func customAnchorScriptSigningPackage(t *testing.T, scripts ...[]byte) (
-	*CustomAnchorTransferPackage, *customAnchorTestFixture,
+	*TransferPackage, *customAnchorTestFixture,
 	*btcec.PrivateKey, []*btcpsbt.TaprootTapLeafScript) {
 
 	t.Helper()
@@ -842,9 +843,9 @@ func customAnchorScriptSigningPackage(t *testing.T, scripts ...[]byte) (
 		},
 		TaprootInternalKey: schnorr.SerializePubKey(secondKey.PubKey()),
 	}
-	unsealed.SigningPlans[1] = CustomAnchorInputSigningPlan{
+	unsealed.SigningPlans[1] = InputSigningPlan{
 		InputIndex: 1,
-		KeyPath: &CustomAnchorKeyPathSigningPlan{
+		KeyPath: &KeyPathSigningPlan{
 			Signer: customAnchorTestXOnly(secondKey.PubKey()),
 		},
 	}
@@ -883,7 +884,7 @@ func customAnchorScriptSigningPackage(t *testing.T, scripts ...[]byte) (
 		TaprootLeafScript:  leafScripts,
 	}
 	selectedHash := leaves[0].TapHash()
-	unsealed.SigningPlans[2].ScriptPath.LeafHash = Hash(selectedHash)
+	unsealed.SigningPlans[2].ScriptPath.LeafHash = tapsdk.Hash(selectedHash)
 
 	unsealed.AnchorPsbt = mustSerializeAnchorPSBT(t, packet)
 	unsealed.CommittedAnchorPsbt = nil
@@ -894,7 +895,7 @@ func customAnchorScriptSigningPackage(t *testing.T, scripts ...[]byte) (
 }
 
 func finalizeCustomAnchorSigningPackage(t *testing.T,
-	pkg *CustomAnchorTransferPackage, firstKey,
+	pkg *TransferPackage, firstKey,
 	secondKey *btcec.PrivateKey) []byte {
 
 	t.Helper()
@@ -920,7 +921,7 @@ func finalizeCustomAnchorSigningPackage(t *testing.T,
 }
 
 func finalizeCustomAnchorSigningPackageWithoutRequests(t *testing.T,
-	pkg *CustomAnchorTransferPackage, firstKey,
+	pkg *TransferPackage, firstKey,
 	secondKey *btcec.PrivateKey) []byte {
 
 	t.Helper()
@@ -942,7 +943,7 @@ func finalizeCustomAnchorSigningPackageWithoutRequests(t *testing.T,
 }
 
 func finalizeCustomAnchorScriptSignaturePackage(t *testing.T,
-	pkg *CustomAnchorTransferPackage, firstKey, secondKey,
+	pkg *TransferPackage, firstKey, secondKey,
 	scriptKey *btcec.PrivateKey, scriptSighash txscript.SigHashType) []byte {
 
 	t.Helper()
@@ -1008,7 +1009,7 @@ func setCustomAnchorTestWitness(t *testing.T, input *btcpsbt.PInput,
 }
 
 func customAnchorScriptRequest(t *testing.T,
-	pkg *CustomAnchorTransferPackage) CustomAnchorScriptPathSigningRequest {
+	pkg *TransferPackage) ScriptPathSigningRequest {
 
 	t.Helper()
 	requests, err := pkg.SigningRequests()

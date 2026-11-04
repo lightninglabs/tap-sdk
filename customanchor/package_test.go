@@ -1,4 +1,4 @@
-package tapsdk
+package customanchor
 
 import (
 	"bytes"
@@ -15,6 +15,7 @@ import (
 	btcpsbt "github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/internal/anchor"
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/proof"
@@ -36,7 +37,7 @@ func TestCustomAnchorTransferPackageSealValidate(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, sealed.Validate())
 	require.Equal(
-		t, CustomAnchorTransferPackageVersion, sealed.SchemaVersion,
+		t, TransferPackageVersion, sealed.SchemaVersion,
 	)
 	require.NotEmpty(t, sealed.CommittedPackageDigest)
 	require.NotEmpty(t, sealed.UnsignedTxDigest)
@@ -70,68 +71,68 @@ func TestCustomAnchorTransferPackageRejectsLegacyV0Proofs(t *testing.T) {
 func TestCustomAnchorTransferPackageSealErrors(t *testing.T) {
 	tests := []struct {
 		name    string
-		mutate  func(*CustomAnchorTransferPackage)
+		mutate  func(*TransferPackage)
 		wantErr string
 	}{
 		{
 			name: "missing plan id",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
-				pkg.PlanID = Hash{}
+			mutate: func(pkg *TransferPackage) {
+				pkg.PlanID = tapsdk.Hash{}
 			},
 			wantErr: "plan ID is required",
 		},
 		{
 			name: "missing anchor psbt",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.AnchorPsbt = nil
 			},
 			wantErr: "anchor PSBT",
 		},
 		{
 			name: "malformed anchor psbt",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.AnchorPsbt = []byte{1, 2}
 			},
 			wantErr: "anchor PSBT",
 		},
 		{
 			name: "missing active psbt",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.ActiveVirtualPsbts = nil
 			},
 			wantErr: "at least one active virtual PSBT is required",
 		},
 		{
 			name: "empty active psbt",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.ActiveVirtualPsbts[0] = nil
 			},
 			wantErr: "active virtual PSBT 0 is empty",
 		},
 		{
 			name: "empty passive psbt",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.PassiveVirtualPsbts = [][]byte{nil}
 			},
 			wantErr: "passive virtual PSBT 0 is empty",
 		},
 		{
 			name: "change index below sentinel",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.ChangeOutputIndex = -2
 			},
 			wantErr: "change output index must be -1 or greater",
 		},
 		{
 			name: "change index out of range",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.ChangeOutputIndex = 3
 			},
 			wantErr: "change output index is out of range",
 		},
 		{
 			name: "lock expiration too long",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.FundingLock.LockExpirationSeconds =
 					anchor.MaxLockExpirationSeconds + 1
 			},
@@ -139,63 +140,63 @@ func TestCustomAnchorTransferPackageSealErrors(t *testing.T) {
 		},
 		{
 			name: "invalid input ref",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
-				pkg.Inputs[0].AssetRef = AssetRef("invalid")
+			mutate: func(pkg *TransferPackage) {
+				pkg.Inputs[0].AssetRef = tapsdk.AssetRef("invalid")
 			},
 			wantErr: "input 0 asset ref",
 		},
 		{
 			name: "zero input amount",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.Inputs[0].Amount = 0
 			},
 			wantErr: "input 0 amount is required",
 		},
 		{
 			name: "input packet index out of range",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.Inputs[0].PacketIndex = 2
 			},
 			wantErr: "input 0 packet index is out of range",
 		},
 		{
 			name: "input anchor index out of range",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.Inputs[0].AnchorInputIndex = 3
 			},
 			wantErr: "input 0 anchor input index is out of range",
 		},
 		{
 			name: "invalid output ref",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
-				pkg.Outputs[0].AssetRef = AssetRef("invalid")
+			mutate: func(pkg *TransferPackage) {
+				pkg.Outputs[0].AssetRef = tapsdk.AssetRef("invalid")
 			},
 			wantErr: "output 0 asset ref",
 		},
 		{
 			name: "zero output amount",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.Outputs[0].Amount = 0
 			},
 			wantErr: "output 0 amount is required",
 		},
 		{
 			name: "negative output anchor value",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.Outputs[0].AnchorValueSat = -1
 			},
 			wantErr: "output 0 anchor value is negative",
 		},
 		{
 			name: "output anchor index out of range",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.Outputs[0].AnchorOutputIndex = 3
 			},
 			wantErr: "output 0 anchor output index is out of range",
 		},
 		{
 			name: "OP_TRUE spend leaf changed",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.Outputs[0].OPTrueSpend.LeafScript[0] =
 					txscript.OP_FALSE
 			},
@@ -203,14 +204,14 @@ func TestCustomAnchorTransferPackageSealErrors(t *testing.T) {
 		},
 		{
 			name: "OP_TRUE spend leaf version changed",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.Outputs[0].OPTrueSpend.LeafVersion--
 			},
 			wantErr: "unsupported OP_TRUE spend leaf version",
 		},
 		{
 			name: "OP_TRUE spend internal key changed",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.Outputs[0].OPTrueSpend.InternalKey =
 					customAnchorTestPubKey(
 						customAnchorTestPrivateKey(20).PubKey(),
@@ -220,7 +221,7 @@ func TestCustomAnchorTransferPackageSealErrors(t *testing.T) {
 		},
 		{
 			name: "OP_TRUE spend control block changed",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				controlBlock := pkg.Outputs[0].OPTrueSpend.ControlBlock
 				controlBlock[len(controlBlock)-1] ^= 1
 			},
@@ -228,28 +229,28 @@ func TestCustomAnchorTransferPackageSealErrors(t *testing.T) {
 		},
 		{
 			name: "invalid proof update ref",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
-				pkg.ProofUpdates[0].AssetRef = AssetRef("invalid")
+			mutate: func(pkg *TransferPackage) {
+				pkg.ProofUpdates[0].AssetRef = tapsdk.AssetRef("invalid")
 			},
 			wantErr: "proof update 0 asset ref",
 		},
 		{
 			name: "proof anchor index out of range",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.ProofUpdates[0].AnchorOutputIndex = 3
 			},
 			wantErr: "proof update 0 anchor output index is out of range",
 		},
 		{
 			name: "missing signing plan",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.SigningPlans = pkg.SigningPlans[:2]
 			},
 			wantErr: "signing plans and backend-managed inputs must cover all 3",
 		},
 		{
 			name: "backend-managed input out of range",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.SigningPlans = pkg.SigningPlans[:2]
 				pkg.BackendManagedInputIndices = []uint32{3}
 				pkg.FundingLock.CustomLockID = bytes.Repeat(
@@ -260,7 +261,7 @@ func TestCustomAnchorTransferPackageSealErrors(t *testing.T) {
 		},
 		{
 			name: "external and backend overlap",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.SigningPlans = pkg.SigningPlans[:2]
 				pkg.BackendManagedInputIndices = []uint32{1}
 				pkg.FundingLock.CustomLockID = bytes.Repeat(
@@ -271,7 +272,7 @@ func TestCustomAnchorTransferPackageSealErrors(t *testing.T) {
 		},
 		{
 			name: "duplicate backend input",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.SigningPlans = pkg.SigningPlans[:1]
 				pkg.BackendManagedInputIndices = []uint32{1, 1}
 				pkg.FundingLock.CustomLockID = bytes.Repeat(
@@ -298,12 +299,12 @@ func TestCustomAnchorTransferPackageBackendManagedInput(t *testing.T) {
 	pkg := newCustomAnchorTestFixture(t).unsealed
 	markCustomAnchorWalletFundedTestPackage(t, pkg)
 	pkg.SigningPlans = append(
-		[]CustomAnchorInputSigningPlan(nil),
+		[]InputSigningPlan(nil),
 		pkg.SigningPlans[0], pkg.SigningPlans[2],
 	)
 	pkg.BackendManagedInputIndices = []uint32{1}
 	anchor := mustDecodeAnchorPSBT(t, pkg.CommittedAnchorPsbt)
-	pkg.LockedUTXOs = []CustomAnchorLockedUTXO{{
+	pkg.LockedUTXOs = []LockedUTXO{{
 		Outpoint: outpointFromWire(
 			anchor.UnsignedTx.TxIn[1].PreviousOutPoint,
 		),
@@ -379,35 +380,35 @@ func TestCustomAnchorTransferPackageFundingLockInventory(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		pkg     func(*testing.T) *CustomAnchorTransferPackage
-		mutate  func(*CustomAnchorTransferPackage)
+		pkg     func(*testing.T) *TransferPackage
+		mutate  func(*TransferPackage)
 		wantErr string
 	}{
 		{
 			name: "wallet funding without lock ID",
-			pkg: func(t *testing.T) *CustomAnchorTransferPackage {
+			pkg: func(t *testing.T) *TransferPackage {
 				pkg := newCustomAnchorWalletFundedTestPackage(t, 0)
-				pkg.FundingLock = CustomAnchorFundingLockMetadata{}
+				pkg.FundingLock = FundingLockMetadata{}
 				pkg.LockedUTXOs = nil
 				pkg.BackendManagedInputIndices = nil
 
 				return pkg
 			},
-			mutate:  func(*CustomAnchorTransferPackage) {},
+			mutate:  func(*TransferPackage) {},
 			wantErr: "wallet-funded package requires a custom lock ID",
 		},
 		{
 			name: "caller funding with lock metadata",
-			pkg: func(t *testing.T) *CustomAnchorTransferPackage {
+			pkg: func(t *testing.T) *TransferPackage {
 				pkg := newCustomAnchorTestFixture(t).unsealed
-				pkg.Funding = CustomAnchorFundingSummary{
-					Mode:         CustomAnchorFundingCallerFundedExact,
+				pkg.Funding = FundingSummary{
+					Mode:         FundingCallerFundedExact,
 					ActualFeeSat: pkg.Funding.ActualFeeSat,
 				}
 
 				return pkg
 			},
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.FundingLock.CustomLockID = bytes.Repeat([]byte{1}, 32)
 			},
 			wantErr: "caller-funded exact package cannot contain backend " +
@@ -415,16 +416,16 @@ func TestCustomAnchorTransferPackageFundingLockInventory(t *testing.T) {
 		},
 		{
 			name: "caller funding with change metadata",
-			pkg: func(t *testing.T) *CustomAnchorTransferPackage {
+			pkg: func(t *testing.T) *TransferPackage {
 				pkg := newCustomAnchorTestFixture(t).unsealed
-				pkg.Funding = CustomAnchorFundingSummary{
-					Mode:         CustomAnchorFundingCallerFundedExact,
+				pkg.Funding = FundingSummary{
+					Mode:         FundingCallerFundedExact,
 					ActualFeeSat: pkg.Funding.ActualFeeSat,
 				}
 
 				return pkg
 			},
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.ChangeOutputIndex = 0
 			},
 			wantErr: "caller-funded exact package cannot contain backend " +
@@ -432,10 +433,10 @@ func TestCustomAnchorTransferPackageFundingLockInventory(t *testing.T) {
 		},
 		{
 			name: "external P2A with change metadata",
-			pkg: func(t *testing.T) *CustomAnchorTransferPackage {
+			pkg: func(t *testing.T) *TransferPackage {
 				return newCustomAnchorTestFixture(t).unsealed
 			},
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.ChangeOutputIndex = 0
 			},
 			wantErr: "external P2A package cannot contain backend funding " +
@@ -443,45 +444,45 @@ func TestCustomAnchorTransferPackageFundingLockInventory(t *testing.T) {
 		},
 		{
 			name: "expiration without lock ID",
-			pkg: func(t *testing.T) *CustomAnchorTransferPackage {
+			pkg: func(t *testing.T) *TransferPackage {
 				return newCustomAnchorTestFixture(t).unsealed
 			},
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.FundingLock.LockExpirationSeconds = 1
 			},
 			wantErr: "backend-funded package requires a custom lock ID",
 		},
 		{
 			name: "locked UTXO without lock ID",
-			pkg: func(t *testing.T) *CustomAnchorTransferPackage {
+			pkg: func(t *testing.T) *TransferPackage {
 				pkg := newCustomAnchorTestFixture(t).unsealed
 				anchor := mustDecodeAnchorPSBT(t, pkg.CommittedAnchorPsbt)
-				pkg.LockedUTXOs = []CustomAnchorLockedUTXO{{
+				pkg.LockedUTXOs = []LockedUTXO{{
 					Outpoint: outpointFromWire(
 						anchor.UnsignedTx.TxIn[0].PreviousOutPoint,
 					),
 				}}
 				return pkg
 			},
-			mutate:  func(*CustomAnchorTransferPackage) {},
+			mutate:  func(*TransferPackage) {},
 			wantErr: "backend-funded package requires a custom lock ID",
 		},
 		{
 			name: "missing locked UTXO",
-			pkg: func(t *testing.T) *CustomAnchorTransferPackage {
+			pkg: func(t *testing.T) *TransferPackage {
 				return newCustomAnchorWalletFundedTestPackage(t, 0)
 			},
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.LockedUTXOs = nil
 			},
 			wantErr: "do not cover backend-funded inputs",
 		},
 		{
 			name: "duplicate locked UTXO",
-			pkg: func(t *testing.T) *CustomAnchorTransferPackage {
+			pkg: func(t *testing.T) *TransferPackage {
 				return newCustomAnchorWalletFundedTestPackage(t, 0)
 			},
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.LockedUTXOs = append(
 					pkg.LockedUTXOs, pkg.LockedUTXOs[0],
 				)
@@ -490,13 +491,13 @@ func TestCustomAnchorTransferPackageFundingLockInventory(t *testing.T) {
 		},
 		{
 			name: "extra locked UTXO",
-			pkg: func(t *testing.T) *CustomAnchorTransferPackage {
+			pkg: func(t *testing.T) *TransferPackage {
 				return newCustomAnchorWalletFundedTestPackage(t, 0)
 			},
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.LockedUTXOs = append(
-					pkg.LockedUTXOs, CustomAnchorLockedUTXO{
-						Outpoint: Outpoint{Txid: [32]byte{99}},
+					pkg.LockedUTXOs, LockedUTXO{
+						Outpoint: tapsdk.Outpoint{Txid: [32]byte{99}},
 					},
 				)
 			},
@@ -504,13 +505,13 @@ func TestCustomAnchorTransferPackageFundingLockInventory(t *testing.T) {
 		},
 		{
 			name: "inventory differs from backend inputs",
-			pkg: func(t *testing.T) *CustomAnchorTransferPackage {
+			pkg: func(t *testing.T) *TransferPackage {
 				pkg := newCustomAnchorWalletFundedTestPackage(t, 1)
 				other := newCustomAnchorWalletFundedTestPackage(t, 0)
 				pkg.LockedUTXOs = other.LockedUTXOs
 				return pkg
 			},
-			mutate:  func(*CustomAnchorTransferPackage) {},
+			mutate:  func(*TransferPackage) {},
 			wantErr: "do not cover backend-funded inputs",
 		},
 	}
@@ -529,16 +530,16 @@ func TestCustomAnchorTransferPackageFundingLockInventory(t *testing.T) {
 func TestCustomAnchorTransferPackageRejectsSemanticTamper(t *testing.T) {
 	tests := []struct {
 		name    string
-		mutate  func(*testing.T, *CustomAnchorTransferPackage)
+		mutate  func(*testing.T, *TransferPackage)
 		wantErr string
 	}{
 		{
 			name: "input previous ID asset ID",
 			mutate: func(t *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				mutateCustomAnchorPackageVPacket(
-					t, pkg, CustomAnchorPacketRoleActive, 0,
+					t, pkg, PacketRoleActive, 0,
 					func(packet *tappsbt.VPacket) {
 						packet.Inputs[0].PrevID.ID[0] ^= 1
 					},
@@ -549,10 +550,10 @@ func TestCustomAnchorTransferPackageRejectsSemanticTamper(t *testing.T) {
 		{
 			name: "input previous ID script key",
 			mutate: func(t *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				mutateCustomAnchorPackageVPacket(
-					t, pkg, CustomAnchorPacketRoleActive, 0,
+					t, pkg, PacketRoleActive, 0,
 					func(packet *tappsbt.VPacket) {
 						packet.Inputs[0].PrevID.ScriptKey =
 							asset.ToSerialized(
@@ -566,10 +567,10 @@ func TestCustomAnchorTransferPackageRejectsSemanticTamper(t *testing.T) {
 		{
 			name: "input previous ID outpoint",
 			mutate: func(t *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				mutateCustomAnchorPackageVPacket(
-					t, pkg, CustomAnchorPacketRoleActive, 0,
+					t, pkg, PacketRoleActive, 0,
 					func(packet *tappsbt.VPacket) {
 						packet.Inputs[0].PrevID.OutPoint.Hash[0] ^= 1
 					},
@@ -580,10 +581,10 @@ func TestCustomAnchorTransferPackageRejectsSemanticTamper(t *testing.T) {
 		{
 			name: "output asset amount",
 			mutate: func(t *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				mutateCustomAnchorPackageVPacket(
-					t, pkg, CustomAnchorPacketRoleActive, 0,
+					t, pkg, PacketRoleActive, 0,
 					func(packet *tappsbt.VPacket) {
 						packet.Outputs[0].Asset.Amount--
 					},
@@ -594,10 +595,10 @@ func TestCustomAnchorTransferPackageRejectsSemanticTamper(t *testing.T) {
 		{
 			name: "output asset script key",
 			mutate: func(t *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				mutateCustomAnchorPackageVPacket(
-					t, pkg, CustomAnchorPacketRoleActive, 0,
+					t, pkg, PacketRoleActive, 0,
 					func(packet *tappsbt.VPacket) {
 						packet.Outputs[0].Asset.ScriptKey =
 							asset.NewScriptKey(
@@ -611,10 +612,10 @@ func TestCustomAnchorTransferPackageRejectsSemanticTamper(t *testing.T) {
 		{
 			name: "output proof courier",
 			mutate: func(t *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				mutateCustomAnchorPackageVPacket(
-					t, pkg, CustomAnchorPacketRoleActive, 0,
+					t, pkg, PacketRoleActive, 0,
 					func(packet *tappsbt.VPacket) {
 						var err error
 						packet.Outputs[0].ProofDeliveryAddress, err =
@@ -628,7 +629,7 @@ func TestCustomAnchorTransferPackageRejectsSemanticTamper(t *testing.T) {
 		{
 			name: "output taproot asset root",
 			mutate: func(_ *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				pkg.Outputs[0].TaprootAssetRoot[0] ^= 1
 			},
@@ -637,7 +638,7 @@ func TestCustomAnchorTransferPackageRejectsSemanticTamper(t *testing.T) {
 		{
 			name: "output taproot merkle root",
 			mutate: func(_ *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				pkg.Outputs[0].TaprootMerkleRoot[0] ^= 1
 			},
@@ -646,10 +647,10 @@ func TestCustomAnchorTransferPackageRejectsSemanticTamper(t *testing.T) {
 		{
 			name: "output anchor index",
 			mutate: func(t *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				mutateCustomAnchorPackageVPacket(
-					t, pkg, CustomAnchorPacketRoleActive, 0,
+					t, pkg, PacketRoleActive, 0,
 					func(packet *tappsbt.VPacket) {
 						packet.Outputs[0].AnchorOutputIndex = 0
 					},
@@ -660,10 +661,10 @@ func TestCustomAnchorTransferPackageRejectsSemanticTamper(t *testing.T) {
 		{
 			name: "virtual proof suffix",
 			mutate: func(t *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				mutateCustomAnchorPackageVPacket(
-					t, pkg, CustomAnchorPacketRoleActive, 0,
+					t, pkg, PacketRoleActive, 0,
 					func(packet *tappsbt.VPacket) {
 						packet.Outputs[0].ProofSuffix.AnchorTx.
 							LockTime++
@@ -675,7 +676,7 @@ func TestCustomAnchorTransferPackageRejectsSemanticTamper(t *testing.T) {
 		{
 			name: "proof update suffix",
 			mutate: func(t *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				transition, err := proof.Decode(
 					pkg.ProofUpdates[0].ProofBlob,
@@ -691,7 +692,7 @@ func TestCustomAnchorTransferPackageRejectsSemanticTamper(t *testing.T) {
 		{
 			name: "unsupported proof update version",
 			mutate: func(t *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				transition, err := proof.Decode(
 					pkg.ProofUpdates[0].ProofBlob,
@@ -707,10 +708,10 @@ func TestCustomAnchorTransferPackageRejectsSemanticTamper(t *testing.T) {
 		{
 			name: "unsupported virtual proof version",
 			mutate: func(t *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				mutateCustomAnchorPackageVPacket(
-					t, pkg, CustomAnchorPacketRoleActive, 0,
+					t, pkg, PacketRoleActive, 0,
 					func(packet *tappsbt.VPacket) {
 						packet.Outputs[0].ProofSuffix.Version =
 							proof.TransitionVersion(2)
@@ -722,7 +723,7 @@ func TestCustomAnchorTransferPackageRejectsSemanticTamper(t *testing.T) {
 		{
 			name: "proof suffix version mismatch",
 			mutate: func(t *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				transition, err := proof.Decode(
 					pkg.ProofUpdates[0].ProofBlob,
@@ -738,7 +739,7 @@ func TestCustomAnchorTransferPackageRejectsSemanticTamper(t *testing.T) {
 		{
 			name: "missing input mapping",
 			mutate: func(_ *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				pkg.Inputs = nil
 			},
@@ -747,7 +748,7 @@ func TestCustomAnchorTransferPackageRejectsSemanticTamper(t *testing.T) {
 		{
 			name: "duplicate input mapping",
 			mutate: func(_ *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				pkg.Inputs = append(pkg.Inputs, pkg.Inputs[0])
 			},
@@ -756,7 +757,7 @@ func TestCustomAnchorTransferPackageRejectsSemanticTamper(t *testing.T) {
 		{
 			name: "extra input mapping",
 			mutate: func(_ *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				extra := pkg.Inputs[0]
 				extra.LogicalInputID = "extra-input"
@@ -769,7 +770,7 @@ func TestCustomAnchorTransferPackageRejectsSemanticTamper(t *testing.T) {
 		{
 			name: "proof source tip",
 			mutate: func(t *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				otherFile, _, _ := newGroupedAssetProofPathBase(t)
 				pkg.Inputs[0].ProofSource.Blob = otherFile
@@ -782,7 +783,7 @@ func TestCustomAnchorTransferPackageRejectsSemanticTamper(t *testing.T) {
 		{
 			name: "missing proof source",
 			mutate: func(_ *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				pkg.Inputs[0].ProofSource.Blob = nil
 			},
@@ -791,7 +792,7 @@ func TestCustomAnchorTransferPackageRejectsSemanticTamper(t *testing.T) {
 		{
 			name: "missing output mapping",
 			mutate: func(_ *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				pkg.Outputs = nil
 			},
@@ -800,7 +801,7 @@ func TestCustomAnchorTransferPackageRejectsSemanticTamper(t *testing.T) {
 		{
 			name: "duplicate output mapping",
 			mutate: func(_ *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				pkg.Outputs = append(pkg.Outputs, pkg.Outputs[0])
 			},
@@ -809,7 +810,7 @@ func TestCustomAnchorTransferPackageRejectsSemanticTamper(t *testing.T) {
 		{
 			name: "extra output mapping",
 			mutate: func(_ *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				extra := pkg.Outputs[0]
 				extra.LogicalOutputID = "extra-output"
@@ -822,7 +823,7 @@ func TestCustomAnchorTransferPackageRejectsSemanticTamper(t *testing.T) {
 		{
 			name: "missing proof update",
 			mutate: func(_ *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				pkg.ProofUpdates = nil
 			},
@@ -831,7 +832,7 @@ func TestCustomAnchorTransferPackageRejectsSemanticTamper(t *testing.T) {
 		{
 			name: "duplicate proof update",
 			mutate: func(_ *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				pkg.ProofUpdates = append(
 					pkg.ProofUpdates, pkg.ProofUpdates[0],
@@ -842,7 +843,7 @@ func TestCustomAnchorTransferPackageRejectsSemanticTamper(t *testing.T) {
 		{
 			name: "extra proof update",
 			mutate: func(_ *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				extra := pkg.ProofUpdates[0]
 				extra.LogicalOutputID = "extra-output"
@@ -939,16 +940,16 @@ func TestCustomAnchorTransferPackageRejectsPassiveSemanticTamper(
 
 	tests := []struct {
 		name    string
-		mutate  func(*testing.T, *CustomAnchorTransferPackage)
+		mutate  func(*testing.T, *TransferPackage)
 		wantErr string
 	}{
 		{
 			name: "previous ID asset ID",
 			mutate: func(t *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				mutateCustomAnchorPackageVPacket(
-					t, pkg, CustomAnchorPacketRolePassive, 0,
+					t, pkg, PacketRolePassive, 0,
 					func(packet *tappsbt.VPacket) {
 						packet.Inputs[0].PrevID.ID[0] ^= 1
 					},
@@ -959,10 +960,10 @@ func TestCustomAnchorTransferPackageRejectsPassiveSemanticTamper(
 		{
 			name: "output asset amount",
 			mutate: func(t *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				mutateCustomAnchorPackageVPacket(
-					t, pkg, CustomAnchorPacketRolePassive, 0,
+					t, pkg, PacketRolePassive, 0,
 					func(packet *tappsbt.VPacket) {
 						packet.Outputs[0].Asset.Amount--
 					},
@@ -973,10 +974,10 @@ func TestCustomAnchorTransferPackageRejectsPassiveSemanticTamper(
 		{
 			name: "output asset script key",
 			mutate: func(t *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				mutateCustomAnchorPackageVPacket(
-					t, pkg, CustomAnchorPacketRolePassive, 0,
+					t, pkg, PacketRolePassive, 0,
 					func(packet *tappsbt.VPacket) {
 						packet.Outputs[0].Asset.ScriptKey =
 							asset.NewScriptKey(
@@ -990,10 +991,10 @@ func TestCustomAnchorTransferPackageRejectsPassiveSemanticTamper(
 		{
 			name: "output anchor index",
 			mutate: func(t *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				mutateCustomAnchorPackageVPacket(
-					t, pkg, CustomAnchorPacketRolePassive, 0,
+					t, pkg, PacketRolePassive, 0,
 					func(packet *tappsbt.VPacket) {
 						packet.Outputs[0].AnchorOutputIndex = 0
 					},
@@ -1004,10 +1005,10 @@ func TestCustomAnchorTransferPackageRejectsPassiveSemanticTamper(
 		{
 			name: "proof suffix",
 			mutate: func(t *testing.T,
-				pkg *CustomAnchorTransferPackage) {
+				pkg *TransferPackage) {
 
 				mutateCustomAnchorPackageVPacket(
-					t, pkg, CustomAnchorPacketRolePassive, 0,
+					t, pkg, PacketRolePassive, 0,
 					func(packet *tappsbt.VPacket) {
 						packet.Outputs[0].ProofSuffix.AnchorTx.
 							LockTime++
@@ -1059,7 +1060,7 @@ func TestCustomAnchorTransferPackageProofSuffixAltLeafOrder(t *testing.T) {
 
 	mutated := newCommittedCustomAnchorPassivePackage(t)
 	mutateCustomAnchorPackageVPacket(
-		t, mutated, CustomAnchorPacketRoleActive, 0,
+		t, mutated, PacketRoleActive, 0,
 		func(packet *tappsbt.VPacket) {
 			altLeaves := asset.FromAltLeaves(
 				packet.Outputs[0].ProofSuffix.AltLeaves,
@@ -1106,7 +1107,7 @@ func TestCustomAnchorTransferPackageRejectsSplitAssetTamper(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			pkg := newCustomAnchorSplitTestPackage(t)
 			mutateCustomAnchorPackageVPacket(
-				t, pkg, CustomAnchorPacketRoleActive, 0,
+				t, pkg, PacketRoleActive, 0,
 				func(packet *tappsbt.VPacket) {
 					var splitOutput *tappsbt.VOutput
 					for _, output := range packet.Outputs {
@@ -1131,40 +1132,40 @@ func TestCustomAnchorTransferPackageRejectsSplitAssetTamper(t *testing.T) {
 func TestCustomAnchorTransferPackageValidateTamper(t *testing.T) {
 	tests := []struct {
 		name    string
-		mutate  func(*CustomAnchorTransferPackage)
+		mutate  func(*TransferPackage)
 		wantErr string
 	}{
 		{
 			name: "unsupported version",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.SchemaVersion++
 			},
 			wantErr: "unsupported custom anchor package version",
 		},
 		{
 			name: "unsigned transaction digest",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.UnsignedTxDigest[0] ^= 1
 			},
 			wantErr: "unsigned transaction digest mismatch",
 		},
 		{
 			name: "committed metadata",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.Publish.Label = "tampered"
 			},
 			wantErr: "committed package digest mismatch",
 		},
 		{
 			name: "actual funding fee",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.Funding.ActualFeeSat++
 			},
 			wantErr: "funding summary fee",
 		},
 		{
 			name: "P2A funding index",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				index := uint32(0)
 				pkg.Funding.P2AOutputIndex = &index
 			},
@@ -1172,21 +1173,21 @@ func TestCustomAnchorTransferPackageValidateTamper(t *testing.T) {
 		},
 		{
 			name: "committed digest",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.CommittedPackageDigest[0] ^= 1
 			},
 			wantErr: "committed package digest mismatch",
 		},
 		{
 			name: "current digest",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				pkg.PackageDigest[0] ^= 1
 			},
 			wantErr: "package digest mismatch",
 		},
 		{
 			name: "signature field",
-			mutate: func(pkg *CustomAnchorTransferPackage) {
+			mutate: func(pkg *TransferPackage) {
 				packet := mustDecodeAnchorPSBT(t, pkg.AnchorPsbt)
 				packet.Inputs[0].TaprootKeySpendSig = bytes.Repeat(
 					[]byte{1}, schnorr.SignatureSize,
@@ -1217,7 +1218,7 @@ func TestCustomAnchorTransferPackageRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.JSONEq(t, string(jsonOne), string(jsonTwo))
 
-	var jsonDecoded CustomAnchorTransferPackage
+	var jsonDecoded TransferPackage
 	require.NoError(t, json.Unmarshal(jsonOne, &jsonDecoded))
 	require.Equal(t, pkg, &jsonDecoded)
 	jsonRoundTrip, err := json.Marshal(&jsonDecoded)
@@ -1230,7 +1231,7 @@ func TestCustomAnchorTransferPackageRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, binaryOne, binaryTwo)
 
-	var binaryDecoded CustomAnchorTransferPackage
+	var binaryDecoded TransferPackage
 	require.NoError(t, binaryDecoded.UnmarshalBinary(binaryOne))
 	require.Equal(t, pkg, &binaryDecoded)
 	binaryRoundTrip, err := binaryDecoded.MarshalBinary()
@@ -1250,7 +1251,7 @@ func TestCustomAnchorTransferPackageDecodeErrors(t *testing.T) {
 			jsonBytes, []byte("custom-anchor"), []byte("custom-Xnchor"),
 			1,
 		)
-		var decoded CustomAnchorTransferPackage
+		var decoded TransferPackage
 		err := json.Unmarshal(tampered, &decoded)
 		require.ErrorContains(t, err, "committed package digest mismatch")
 	})
@@ -1258,13 +1259,13 @@ func TestCustomAnchorTransferPackageDecodeErrors(t *testing.T) {
 	t.Run("json unknown field", func(t *testing.T) {
 		tampered := append([]byte(nil), jsonBytes[:len(jsonBytes)-1]...)
 		tampered = append(tampered, []byte(`,"unknown":true}`)...)
-		var decoded CustomAnchorTransferPackage
+		var decoded TransferPackage
 		err := json.Unmarshal(tampered, &decoded)
 		require.ErrorContains(t, err, "unknown field")
 	})
 
 	t.Run("json trailing value", func(t *testing.T) {
-		var decoded CustomAnchorTransferPackage
+		var decoded TransferPackage
 		err := json.Unmarshal(
 			append(jsonBytes, []byte(` {}`)...), &decoded,
 		)
@@ -1324,7 +1325,7 @@ func TestCustomAnchorTransferPackageDecodeErrors(t *testing.T) {
 	for _, test := range tests {
 		t.Run("binary "+test.name, func(t *testing.T) {
 			data := test.mutate(append([]byte(nil), binaryBytes...))
-			var decoded CustomAnchorTransferPackage
+			var decoded TransferPackage
 			err := decoded.UnmarshalBinary(data)
 			require.ErrorContains(t, err, test.wantErr)
 		})
@@ -1382,7 +1383,7 @@ func TestCustomAnchorTransferPackageClone(t *testing.T) {
 	pkg.SigningPlans[1].MuSig2.SessionContext[0] ^= 1
 	pkg.SigningPlans[2].ScriptPath.RequiredSigners = append(
 		pkg.SigningPlans[2].ScriptPath.RequiredSigners,
-		XOnlyPubKey{1},
+		tapsdk.XOnlyPubKey{1},
 	)
 	pkg.BackendManagedInputIndices[0] = 2
 
@@ -1415,7 +1416,7 @@ func TestCustomAnchorTransferPackageClone(t *testing.T) {
 }
 
 func TestCustomAnchorTransferPackageNil(t *testing.T) {
-	var pkg *CustomAnchorTransferPackage
+	var pkg *TransferPackage
 
 	sealed, err := pkg.Seal()
 	require.Nil(t, sealed)
@@ -1427,8 +1428,8 @@ func TestCustomAnchorTransferPackageNil(t *testing.T) {
 }
 
 type customAnchorTestFixture struct {
-	unsealed          *CustomAnchorTransferPackage
-	sealed            *CustomAnchorTransferPackage
+	unsealed          *TransferPackage
+	sealed            *TransferPackage
 	keyPathPrivateKey *btcec.PrivateKey
 	muSigPrivateKeys  []*btcec.PrivateKey
 }
@@ -1521,32 +1522,32 @@ func newCustomAnchorTestFixture(t *testing.T) *customAnchorTestFixture {
 
 	destinationKey := customAnchorTestPrivateKey(5)
 	request.AnchorPSBT = mustSerializeAnchorPSBT(t, anchor)
-	request.Outputs[0].Script = CustomAssetScriptPlan{
-		Mode: CustomAssetScriptOPTrue,
-		OPTrue: &CustomAssetOPTrueScriptPlan{
-			InternalKey: KeyDescriptor{
+	request.Outputs[0].Script = AssetScriptPlan{
+		Mode: AssetScriptOPTrue,
+		OPTrue: &AssetOPTrueScriptPlan{
+			InternalKey: tapsdk.KeyDescriptor{
 				RawKeyBytes: mustCustomAnchorPubKey(
 					t, destinationKey.PubKey(),
 				),
 			},
 		},
 	}
-	request.Outputs[0].ProofDelivery = CustomAssetProofDelivery{
+	request.Outputs[0].ProofDelivery = AssetProofDelivery{
 		CourierAddress: "universerpc://proof.example",
 	}
 
 	leafHash := tapLeaf.TapHash()
-	request.SigningPlans = []CustomAnchorInputSigningPlan{
+	request.SigningPlans = []InputSigningPlan{
 		{
 			InputIndex: 0,
-			KeyPath: &CustomAnchorKeyPathSigningPlan{
+			KeyPath: &KeyPathSigningPlan{
 				Signer: customAnchorTestXOnly(keyPathPrivateKey.PubKey()),
 			},
 		},
 		{
 			InputIndex: 1,
-			MuSig2: &CustomAnchorMuSig2SigningPlan{
-				Participants: []PubKey{
+			MuSig2: &MuSig2SigningPlan{
+				Participants: []tapsdk.PubKey{
 					customAnchorTestPubKey(muSigKeys[0]),
 					customAnchorTestPubKey(muSigKeys[1]),
 				},
@@ -1555,8 +1556,8 @@ func newCustomAnchorTestFixture(t *testing.T) *customAnchorTestFixture {
 		},
 		{
 			InputIndex: 2,
-			ScriptPath: &CustomAnchorScriptPathSigningPlan{
-				LeafHash: Hash(leafHash),
+			ScriptPath: &ScriptPathSigningPlan{
+				LeafHash: tapsdk.Hash(leafHash),
 			},
 		},
 	}
@@ -1569,22 +1570,22 @@ func newCustomAnchorTestFixture(t *testing.T) *customAnchorTestFixture {
 		), nil
 	}
 	fixture.client.commit = func(_ context.Context,
-		req *CommitVirtualPsbtsRequest) (*CommitVirtualPsbtsResponse, error) {
+		req *tapsdk.CommitVirtualPsbtsRequest) (
+		*tapsdk.CommitVirtualPsbtsResponse, error) {
 
 		return customAnchorTestCommitResponse(t, req), nil
 	}
-	capabilities := DefaultTapdCustomAnchorCapabilities()
+	capabilities := DefaultTapdCapabilities()
 	client := &capableCustomAnchorBuilderTestClient{
 		customAnchorBuilderTestClient: fixture.client,
 		capabilities:                  &capabilities,
 	}
-	plan, err := NewWallet(client, NetworkRegtest).
-		NewCustomAnchorTxBuilder().Build(context.Background(), request)
+	plan, err := newTestTxBuilder(client).Build(context.Background(), request)
 	require.NoError(t, err)
 
 	sealed, err := plan.Commit(
-		context.Background(), CustomAnchorCommitOptions{
-			Publish: CustomAnchorPublishMetadata{
+		context.Background(), CommitOptions{
+			Publish: PublishMetadata{
 				SkipAnchorTxBroadcast: true,
 				Label:                 "custom-anchor",
 				ExternalBroadcast:     true,
@@ -1595,9 +1596,9 @@ func newCustomAnchorTestFixture(t *testing.T) *customAnchorTestFixture {
 
 	unsealed := sealed.Clone()
 	unsealed.SchemaVersion = 0
-	unsealed.CommittedPackageDigest = Hash{}
-	unsealed.UnsignedTxDigest = Hash{}
-	unsealed.PackageDigest = Hash{}
+	unsealed.CommittedPackageDigest = tapsdk.Hash{}
+	unsealed.UnsignedTxDigest = tapsdk.Hash{}
+	unsealed.PackageDigest = tapsdk.Hash{}
 
 	return &customAnchorTestFixture{
 		unsealed:          unsealed,
@@ -1608,7 +1609,7 @@ func newCustomAnchorTestFixture(t *testing.T) *customAnchorTestFixture {
 }
 
 func setCustomAnchorPackageProofVersion(t *testing.T,
-	pkg *CustomAnchorTransferPackage, version proof.TransitionVersion) {
+	pkg *TransferPackage, version proof.TransitionVersion) {
 
 	t.Helper()
 
@@ -1646,7 +1647,7 @@ func setCustomAnchorPackageProofVersion(t *testing.T,
 	for idx := range pkg.ProofUpdates {
 		update := &pkg.ProofUpdates[idx]
 		packets := active
-		if update.PacketRole == CustomAnchorPacketRolePassive {
+		if update.PacketRole == PacketRolePassive {
 			packets = passive
 		}
 		require.Less(t, update.PacketIndex, uint32(len(packets)))
@@ -1669,20 +1670,20 @@ func customAnchorTestPrivateKey(value byte) *btcec.PrivateKey {
 	return privateKey
 }
 
-func customAnchorTestXOnly(key *btcec.PublicKey) XOnlyPubKey {
-	var result XOnlyPubKey
+func customAnchorTestXOnly(key *btcec.PublicKey) tapsdk.XOnlyPubKey {
+	var result tapsdk.XOnlyPubKey
 	copy(result[:], schnorr.SerializePubKey(key))
 	return result
 }
 
-func customAnchorTestPubKey(key *btcec.PublicKey) PubKey {
-	var result PubKey
+func customAnchorTestPubKey(key *btcec.PublicKey) tapsdk.PubKey {
+	var result tapsdk.PubKey
 	copy(result[:], key.SerializeCompressed())
 	return result
 }
 
 func newCustomAnchorSplitTestPackage(
-	t *testing.T) *CustomAnchorTransferPackage {
+	t *testing.T) *TransferPackage {
 
 	t.Helper()
 
@@ -1695,15 +1696,15 @@ func newCustomAnchorSplitTestPackage(
 	second.Amount = 40
 	second.AnchorOutputIndex = 0
 	second.AnchorValueSat = 12_345
-	second.Script = CustomAssetScriptPlan{
-		Mode: CustomAssetScriptExternal,
-		External: &CustomAssetExternalScriptPlan{
+	second.Script = AssetScriptPlan{
+		Mode: AssetScriptExternal,
+		External: &AssetExternalScriptPlan{
 			ScriptKey: customAnchorExternalScriptKey(
 				t, testPrivateKey(t, 96),
 			),
 		},
 	}
-	request.Outputs = []CustomAssetOutput{first, second}
+	request.Outputs = []AssetOutput{first, second}
 
 	fixture.client.signVirtual = func(_ context.Context, packet []byte) (
 		[]byte, error) {
@@ -1713,17 +1714,17 @@ func newCustomAnchorSplitTestPackage(
 		), nil
 	}
 	fixture.client.commit = func(_ context.Context,
-		req *CommitVirtualPsbtsRequest) (*CommitVirtualPsbtsResponse, error) {
+		req *tapsdk.CommitVirtualPsbtsRequest) (
+		*tapsdk.CommitVirtualPsbtsResponse, error) {
 
 		return customAnchorTestCommitResponse(t, req), nil
 	}
-	capabilities := DefaultTapdCustomAnchorCapabilities()
+	capabilities := DefaultTapdCapabilities()
 	client := &capableCustomAnchorBuilderTestClient{
 		customAnchorBuilderTestClient: fixture.client,
 		capabilities:                  &capabilities,
 	}
-	plan, err := NewWallet(client, NetworkRegtest).
-		NewCustomAnchorTxBuilder().Build(context.Background(), request)
+	plan, err := newTestTxBuilder(client).Build(context.Background(), request)
 	require.NoError(t, err)
 	pkg, err := plan.Commit(context.Background())
 	require.NoError(t, err)
@@ -1733,12 +1734,12 @@ func newCustomAnchorSplitTestPackage(
 }
 
 func newCustomAnchorWalletFundedTestPackage(t *testing.T,
-	backendInput uint32) *CustomAnchorTransferPackage {
+	backendInput uint32) *TransferPackage {
 
 	t.Helper()
 
 	pkg := newCustomAnchorTestFixture(t).unsealed
-	plans := make([]CustomAnchorInputSigningPlan, 0, len(pkg.SigningPlans)-1)
+	plans := make([]InputSigningPlan, 0, len(pkg.SigningPlans)-1)
 	for _, plan := range pkg.SigningPlans {
 		if plan.InputIndex != backendInput {
 			plans = append(plans, plan)
@@ -1751,7 +1752,7 @@ func newCustomAnchorWalletFundedTestPackage(t *testing.T,
 
 	anchor := mustDecodeAnchorPSBT(t, pkg.CommittedAnchorPsbt)
 	require.Less(t, backendInput, uint32(len(anchor.UnsignedTx.TxIn)))
-	pkg.LockedUTXOs = []CustomAnchorLockedUTXO{{
+	pkg.LockedUTXOs = []LockedUTXO{{
 		Outpoint: outpointFromWire(
 			anchor.UnsignedTx.TxIn[backendInput].PreviousOutPoint,
 		),
@@ -1761,18 +1762,18 @@ func newCustomAnchorWalletFundedTestPackage(t *testing.T,
 }
 
 func markCustomAnchorWalletFundedTestPackage(t *testing.T,
-	pkg *CustomAnchorTransferPackage) {
+	pkg *TransferPackage) {
 
 	t.Helper()
 	anchor := mustDecodeAnchorPSBT(t, pkg.CommittedAnchorPsbt)
 	actualFee, err := customAnchorTransactionFee(anchor)
 	require.NoError(t, err)
-	pkg.Funding = CustomAnchorFundingSummary{
-		Mode:         CustomAnchorFundingWalletFunded,
+	pkg.Funding = FundingSummary{
+		Mode:         FundingWalletFunded,
 		ActualFeeSat: actualFee,
 		MaxFeeSat:    actualFee + 1,
 	}
-	pkg.FundingLock = CustomAnchorFundingLockMetadata{
+	pkg.FundingLock = FundingLockMetadata{
 		CustomLockID:          bytes.Repeat([]byte{1}, 32),
 		LockExpirationSeconds: 600,
 	}
@@ -1780,17 +1781,17 @@ func markCustomAnchorWalletFundedTestPackage(t *testing.T,
 
 //nolint:unparam // The packet index keeps this adversarial helper reusable.
 func mutateCustomAnchorPackageVPacket(t *testing.T,
-	pkg *CustomAnchorTransferPackage, role CustomAnchorPacketRole,
+	pkg *TransferPackage, role PacketRole,
 	packetIndex int, mutate func(*tappsbt.VPacket)) {
 
 	t.Helper()
 
 	var packets *[][]byte
 	switch role {
-	case CustomAnchorPacketRoleActive:
+	case PacketRoleActive:
 		packets = &pkg.ActiveVirtualPsbts
 
-	case CustomAnchorPacketRolePassive:
+	case PacketRolePassive:
 		packets = &pkg.PassiveVirtualPsbts
 
 	default:

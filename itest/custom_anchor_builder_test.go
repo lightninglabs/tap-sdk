@@ -17,6 +17,7 @@ import (
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
 	tapsdk "github.com/lightninglabs/tap-sdk"
+	"github.com/lightninglabs/tap-sdk/customanchor"
 	"github.com/lightninglabs/taproot-assets/proof"
 	"github.com/stretchr/testify/require"
 )
@@ -134,52 +135,52 @@ func testCustomAnchorBuilderEndToEnd(t *testing.T, received bool) {
 			lastProof.InclusionProof.InternalKey.SerializeCompressed(),
 		)
 		require.NoError(t, err)
-		request := &tapsdk.CustomAnchorRequest{
-			Inputs: []tapsdk.CustomAssetInput{{
+		request := &customanchor.Request{
+			Inputs: []customanchor.AssetInput{{
 				ID:        "mint-output",
 				AssetRef:  minted.Ref,
 				Amount:    minted.Asset.Amount,
 				ProofFile: inputProof.RawProofFile,
-				Witness: tapsdk.CustomAssetWitnessPlan{
-					Mode: tapsdk.CustomAssetWitnessBackendSigner,
+				Witness: customanchor.AssetWitnessPlan{
+					Mode: customanchor.AssetWitnessBackendSigner,
 				},
 			}},
-			Outputs: []tapsdk.CustomAssetOutput{{
+			Outputs: []customanchor.AssetOutput{{
 				ID:                "bob-output",
 				AssetRef:          minted.Ref,
 				Amount:            minted.Asset.Amount,
 				AnchorOutputIndex: 0,
 				AnchorValueSat:    uint64(anchorValue),
-				Script: tapsdk.CustomAssetScriptPlan{
-					Mode: tapsdk.CustomAssetScriptExternal,
-					External: &tapsdk.CustomAssetExternalScriptPlan{
+				Script: customanchor.AssetScriptPlan{
+					Mode: customanchor.AssetScriptExternal,
+					External: &customanchor.AssetExternalScriptPlan{
 						ScriptKey: receiverKeys.ScriptKey,
 					},
 				},
-				Anchor: tapsdk.CustomAnchorOutputPlan{
+				Anchor: customanchor.OutputPlan{
 					InternalKey: receiverKeys.InternalKey,
 				},
 			}},
 			AnchorPSBT: anchorPsbt,
-			Funding: tapsdk.CustomAnchorFundingPlan{
-				Mode:              tapsdk.CustomAnchorFundingCallerFundedExact,
-				CallerFundedExact: &tapsdk.CustomAnchorCallerFundedExact{},
+			Funding: customanchor.FundingPlan{
+				Mode:              customanchor.FundingCallerFundedExact,
+				CallerFundedExact: &customanchor.CallerFundedExact{},
 			},
-			PassiveAssets: tapsdk.CustomAnchorPassiveAssets{
-				Policy: tapsdk.CustomAnchorPassiveReject,
+			PassiveAssets: customanchor.PassiveAssets{
+				Policy: customanchor.PassiveReject,
 			},
-			LossPolicy: tapsdk.CustomAnchorLossPolicy{
-				Mode: tapsdk.CustomAnchorLossReject,
+			LossPolicy: customanchor.LossPolicy{
+				Mode: customanchor.LossReject,
 			},
-			SigningPlans: []tapsdk.CustomAnchorInputSigningPlan{{
+			SigningPlans: []customanchor.InputSigningPlan{{
 				InputIndex: 0,
-				KeyPath: &tapsdk.CustomAnchorKeyPathSigningPlan{
+				KeyPath: &customanchor.KeyPathSigningPlan{
 					Signer: anchorSigner.XOnly(),
 				},
 			}},
 		}
 
-		plan, err := h.AliceWallet.NewCustomAnchorTxBuilder().Build(
+		plan, err := customanchor.NewTxBuilder(h.AliceWallet).Build(
 			ctx, request,
 		)
 		require.NoError(t, err)
@@ -188,8 +189,8 @@ func testCustomAnchorBuilderEndToEnd(t *testing.T, received bool) {
 		require.NotEmpty(t, plan.ActiveVirtualPSBTs())
 		requireCustomAnchorTxShape(t, plan.AnchorPSBT(), anchorValue)
 
-		sealed, err := plan.Commit(ctx, tapsdk.CustomAnchorCommitOptions{
-			Publish: tapsdk.CustomAnchorPublishMetadata{Label: name},
+		sealed, err := plan.Commit(ctx, customanchor.CommitOptions{
+			Publish: customanchor.PublishMetadata{Label: name},
 		})
 		require.NoError(t, err)
 		require.NoError(t, sealed.Validate())
@@ -209,16 +210,16 @@ func testCustomAnchorBuilderEndToEnd(t *testing.T, received bool) {
 
 		// Persist the daemon suffix as an unconfirmed path before
 		// it gains block inclusion data.
-		path := &tapsdk.AssetProofPath{
+		path := &customanchor.ProofPath{
 			ConfirmedBaseProof: inputProof.RawProofFile,
-			Steps: []tapsdk.AssetProofPathStep{{
+			Steps: []customanchor.ProofPathStep{{
 				TransitionProof: sealed.ProofUpdates[0].
 					ProofBlob,
 			}},
 		}
 		pathBytes, err := path.MarshalBinary()
 		require.NoError(t, err)
-		var restored tapsdk.AssetProofPath
+		var restored customanchor.ProofPath
 		require.NoError(t, restored.UnmarshalBinary(pathBytes))
 		step, err := restored.Steps[0].Summary()
 		require.NoError(t, err)
@@ -256,8 +257,8 @@ func testCustomAnchorBuilderEndToEnd(t *testing.T, received bool) {
 		finalPacket := decodeCustomAnchorITestPSBT(t, finalAnchorPsbt)
 		require.NotEmpty(t, finalPacket.Inputs[0].FinalScriptWitness)
 
-		published, err := h.AliceWallet.PublishCustomAnchorTransfer(
-			ctx, sealed, finalAnchorPsbt,
+		published, err := customanchor.PublishTransfer(
+			ctx, h.AliceWallet, sealed, finalAnchorPsbt,
 		)
 		require.NoError(t, err)
 		require.NotEmpty(t, published.AnchorTransaction)
@@ -336,58 +337,58 @@ func TestCustomAnchorBuilderExternalP2AEndToEnd(t *testing.T) {
 			lastProof.InclusionProof.InternalKey.SerializeCompressed(),
 		)
 		require.NoError(t, err)
-		externalFeeBump := &tapsdk.CustomAnchorExternalP2AFeeBump{
+		externalFeeBump := &customanchor.ExternalP2AFeeBump{
 			P2AOutputIndex: 1,
 		}
 		externalFundingMode :=
-			tapsdk.CustomAnchorFundingExternalP2AFeeBump
+			customanchor.FundingExternalP2AFeeBump
 
-		request := &tapsdk.CustomAnchorRequest{
-			Inputs: []tapsdk.CustomAssetInput{{
+		request := &customanchor.Request{
+			Inputs: []customanchor.AssetInput{{
 				ID:        "mint-output",
 				AssetRef:  minted.Ref,
 				Amount:    minted.Asset.Amount,
 				ProofFile: inputProof.RawProofFile,
-				Witness: tapsdk.CustomAssetWitnessPlan{
-					Mode: tapsdk.CustomAssetWitnessBackendSigner,
+				Witness: customanchor.AssetWitnessPlan{
+					Mode: customanchor.AssetWitnessBackendSigner,
 				},
 			}},
-			Outputs: []tapsdk.CustomAssetOutput{{
+			Outputs: []customanchor.AssetOutput{{
 				ID:                "bob-output",
 				AssetRef:          minted.Ref,
 				Amount:            minted.Asset.Amount,
 				AnchorOutputIndex: 0,
 				AnchorValueSat:    uint64(anchorValue),
-				Script: tapsdk.CustomAssetScriptPlan{
-					Mode: tapsdk.CustomAssetScriptExternal,
-					External: &tapsdk.CustomAssetExternalScriptPlan{
+				Script: customanchor.AssetScriptPlan{
+					Mode: customanchor.AssetScriptExternal,
+					External: &customanchor.AssetExternalScriptPlan{
 						ScriptKey: receiverKeys.ScriptKey,
 					},
 				},
-				Anchor: tapsdk.CustomAnchorOutputPlan{
+				Anchor: customanchor.OutputPlan{
 					InternalKey: receiverKeys.InternalKey,
 				},
 			}},
 			AnchorPSBT: anchorPsbt,
-			Funding: tapsdk.CustomAnchorFundingPlan{
+			Funding: customanchor.FundingPlan{
 				Mode:               externalFundingMode,
 				ExternalP2AFeeBump: externalFeeBump,
 			},
-			PassiveAssets: tapsdk.CustomAnchorPassiveAssets{
-				Policy: tapsdk.CustomAnchorPassiveReject,
+			PassiveAssets: customanchor.PassiveAssets{
+				Policy: customanchor.PassiveReject,
 			},
-			LossPolicy: tapsdk.CustomAnchorLossPolicy{
-				Mode: tapsdk.CustomAnchorLossReject,
+			LossPolicy: customanchor.LossPolicy{
+				Mode: customanchor.LossReject,
 			},
-			SigningPlans: []tapsdk.CustomAnchorInputSigningPlan{{
+			SigningPlans: []customanchor.InputSigningPlan{{
 				InputIndex: 0,
-				KeyPath: &tapsdk.CustomAnchorKeyPathSigningPlan{
+				KeyPath: &customanchor.KeyPathSigningPlan{
 					Signer: anchorSigner.XOnly(),
 				},
 			}},
 		}
 
-		plan, err := h.AliceWallet.NewCustomAnchorTxBuilder().Build(
+		plan, err := customanchor.NewTxBuilder(h.AliceWallet).Build(
 			ctx, request,
 		)
 		require.NoError(t, err)
@@ -398,8 +399,8 @@ func TestCustomAnchorBuilderExternalP2AEndToEnd(t *testing.T) {
 			t, plan.AnchorPSBT(), anchorValue,
 		)
 
-		sealed, err := plan.Commit(ctx, tapsdk.CustomAnchorCommitOptions{
-			Publish: tapsdk.CustomAnchorPublishMetadata{
+		sealed, err := plan.Commit(ctx, customanchor.CommitOptions{
+			Publish: customanchor.PublishMetadata{
 				SkipAnchorTxBroadcast: true,
 				Label:                 name,
 				ExternalBroadcast:     true,
@@ -450,8 +451,8 @@ func TestCustomAnchorBuilderExternalP2AEndToEnd(t *testing.T) {
 			finalPacket.Inputs[0].WitnessUtxo.Value,
 			"ephemeral P2A parent must pay zero fee")
 
-		logged, err := h.AliceWallet.PublishCustomAnchorTransfer(
-			ctx, sealed, finalAnchorPsbt,
+		logged, err := customanchor.PublishTransfer(
+			ctx, h.AliceWallet, sealed, finalAnchorPsbt,
 		)
 		require.NoError(t, err)
 		require.NotEmpty(t, logged.AnchorTransaction)

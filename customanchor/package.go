@@ -1,10 +1,11 @@
-package tapsdk
+package customanchor
 
 import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/btcsuite/btcd/psbt/v2"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/internal/anchor"
 	"github.com/lightninglabs/taproot-assets/proof"
 	"github.com/lightninglabs/taproot-assets/tappsbt"
@@ -20,13 +22,20 @@ import (
 )
 
 const (
-	// CustomAnchorTransferPackageVersion is the current on-disk schema
+	// TransferPackageVersion is the current on-disk schema
 	// version. Unknown versions are rejected instead of being decoded as the
 	// current schema.
-	CustomAnchorTransferPackageVersion uint16 = 1
+	TransferPackageVersion uint16 = 1
 
 	customAnchorPackageMagic = "TAPCAPKG"
 	customAnchorBinaryHeader = len(customAnchorPackageMagic) + 2 + 4
+)
+
+// ErrUnconfirmedPublish is returned when a package contains compact
+// unconfirmed proof-path steps. Current tapd publish/log requires
+// chain-confirmed input proofs in its local archive.
+var ErrUnconfirmedPublish = errors.New(
+	"unconfirmed custom-anchor package cannot be published through tapd",
 )
 
 var (
@@ -44,71 +53,71 @@ var (
 	)
 )
 
-// CustomAnchorPacketRole identifies which committed virtual-packet collection
+// PacketRole identifies which committed virtual-packet collection
 // a mapping indexes. Active and passive packet indices are independent.
-type CustomAnchorPacketRole uint8
+type PacketRole uint8
 
 const (
-	// CustomAnchorPacketRoleUnknown is not valid in a sealed package.
-	CustomAnchorPacketRoleUnknown CustomAnchorPacketRole = iota
+	// PacketRoleUnknown is not valid in a sealed package.
+	PacketRoleUnknown PacketRole = iota
 
-	// CustomAnchorPacketRoleActive indexes ActiveVirtualPsbts.
-	CustomAnchorPacketRoleActive
+	// PacketRoleActive indexes ActiveVirtualPsbts.
+	PacketRoleActive
 
-	// CustomAnchorPacketRolePassive indexes PassiveVirtualPsbts.
-	CustomAnchorPacketRolePassive
+	// PacketRolePassive indexes PassiveVirtualPsbts.
+	PacketRolePassive
 )
 
-// CustomAnchorProofSourceKind identifies the persisted source used to select
+// ProofSourceKind identifies the persisted source used to select
 // an exact asset input.
-type CustomAnchorProofSourceKind uint8
+type ProofSourceKind uint8
 
 const (
-	// CustomAnchorProofSourceUnknown is not valid in a sealed package.
-	CustomAnchorProofSourceUnknown CustomAnchorProofSourceKind = iota
+	// ProofSourceUnknown is not valid in a sealed package.
+	ProofSourceUnknown ProofSourceKind = iota
 
-	// CustomAnchorProofSourceConfirmedFile is a complete confirmed proof file.
-	CustomAnchorProofSourceConfirmedFile
+	// ProofSourceConfirmedFile is a complete confirmed proof file.
+	ProofSourceConfirmedFile
 
-	// CustomAnchorProofSourceCompactPath is a checksummed AssetProofPath.
-	CustomAnchorProofSourceCompactPath
+	// ProofSourceCompactPath is a checksummed ProofPath.
+	ProofSourceCompactPath
 )
 
-// CustomAnchorProofSourceSummary makes the transfer package self-contained for
+// ProofSourceSummary makes the transfer package self-contained for
 // proof-source recovery while binding the potentially large blob by content ID.
-type CustomAnchorProofSourceSummary struct {
-	Kind      CustomAnchorProofSourceKind `json:"kind"`
-	ContentID Hash                        `json:"content_id"`
-	Blob      []byte                      `json:"blob"`
+type ProofSourceSummary struct {
+	Kind      ProofSourceKind `json:"kind"`
+	ContentID tapsdk.Hash     `json:"content_id"`
+	Blob      []byte          `json:"blob"`
 }
 
-// CustomAnchorTransferPackage is the persistable post-commit recovery
+// TransferPackage is the persistable post-commit recovery
 // boundary for an advanced custom-anchor asset transaction.
 //
 // Callers should persist this package before handing AnchorPsbt to an external
 // signer or broadcaster. Publish/log retries after process restart should be
 // driven from the persisted package plus the final signed anchor PSBT bytes.
-type CustomAnchorTransferPackage struct {
+type TransferPackage struct {
 	// SchemaVersion identifies the persisted package schema.
 	SchemaVersion uint16 `json:"schema_version"`
 
 	// PlanID binds the committed package to the immutable inspected plan.
-	PlanID Hash `json:"plan_id"`
+	PlanID tapsdk.Hash `json:"plan_id"`
 
 	// CommittedPackageDigest binds all committed package fields while
 	// excluding signature and finalization fields in the anchor PSBT. It is
 	// stable as external signatures are applied and is used by signing
 	// request IDs.
-	CommittedPackageDigest Hash `json:"committed_package_digest"`
+	CommittedPackageDigest tapsdk.Hash `json:"committed_package_digest"`
 
 	// UnsignedTxDigest binds the complete ordered unsigned anchor
 	// transaction, including version, locktime, inputs, sequences, output
 	// scripts, and output values.
-	UnsignedTxDigest Hash `json:"unsigned_tx_digest"`
+	UnsignedTxDigest tapsdk.Hash `json:"unsigned_tx_digest"`
 
 	// PackageDigest detects changes to the current persisted snapshot,
 	// including signature and finalization fields.
-	PackageDigest Hash `json:"package_digest"`
+	PackageDigest tapsdk.Hash `json:"package_digest"`
 
 	// CommittedAnchorPsbt is the immutable post-commit BTC-level PSBT used
 	// to derive signing requests and verify the current/final PSBT. It keeps
@@ -132,33 +141,33 @@ type CustomAnchorTransferPackage struct {
 	ChangeOutputIndex int32 `json:"change_output_index"`
 
 	// LockedUTXOs are wallet UTXO locks held for backend-funded anchors.
-	LockedUTXOs []CustomAnchorLockedUTXO `json:"locked_utxos"`
+	LockedUTXOs []LockedUTXO `json:"locked_utxos"`
 
 	// FundingLock preserves caller-supplied lease credentials and requested
 	// expiration for recovery. Current tapd still returns no lease IDs.
-	FundingLock CustomAnchorFundingLockMetadata `json:"funding_lock"`
+	FundingLock FundingLockMetadata `json:"funding_lock"`
 
 	// Funding records the exact high-level funding policy and the actual
 	// committed miner fee. It makes fee limits and the P2A output durable
 	// across signing, restart, and external broadcast handoffs.
-	Funding CustomAnchorFundingSummary `json:"funding"`
+	Funding FundingSummary `json:"funding"`
 
 	// Inputs summarize the committed asset inputs without exposing
 	// taproot-assets implementation types.
-	Inputs []CustomAnchorAssetInputSummary `json:"inputs"`
+	Inputs []AssetInputSummary `json:"inputs"`
 
 	// Outputs summarize the committed asset outputs without exposing
 	// taproot-assets implementation types.
-	Outputs []CustomAnchorAssetOutputSummary `json:"outputs"`
+	Outputs []AssetOutputSummary `json:"outputs"`
 
 	// ProofUpdates carry the proof metadata callers must keep for receiver
 	// proof delivery, import, register, export, or retry flows.
-	ProofUpdates []CustomAnchorProofUpdate `json:"proof_updates"`
+	ProofUpdates []ProofUpdate `json:"proof_updates"`
 
 	// SigningPlans select exactly one required external spending path for
 	// each anchor input. The committed PSBT alone cannot safely infer that
 	// intent when both key and script paths are available.
-	SigningPlans []CustomAnchorInputSigningPlan `json:"signing_plans"`
+	SigningPlans []InputSigningPlan `json:"signing_plans"`
 
 	// BackendManagedInputIndices identifies anchor inputs that the backend
 	// added or owns and will finalize through its anchor signer. Together
@@ -168,29 +177,29 @@ type CustomAnchorTransferPackage struct {
 
 	// Publish stores publish/log retry metadata that is independent from
 	// the final signed anchor PSBT bytes.
-	Publish CustomAnchorPublishMetadata `json:"publish"`
+	Publish PublishMetadata `json:"publish"`
 }
 
-// CustomAnchorLockedUTXO identifies a BTC UTXO locked while funding an
+// LockedUTXO identifies a BTC UTXO locked while funding an
 // anchor. CommitVirtualPsbts currently returns only the outpoint, so the DTO
 // deliberately does not invent lock IDs, values, or expiration metadata.
-type CustomAnchorLockedUTXO struct {
+type LockedUTXO struct {
 	// Outpoint identifies the locked BTC output.
-	Outpoint Outpoint `json:"outpoint"`
+	Outpoint tapsdk.Outpoint `json:"outpoint"`
 }
 
-// CustomAnchorFundingLockMetadata preserves the lock inputs known before the
+// FundingLockMetadata preserves the lock inputs known before the
 // backend funding call. It does not invent lease IDs absent from tapd's reply.
-type CustomAnchorFundingLockMetadata struct {
+type FundingLockMetadata struct {
 	CustomLockID          []byte `json:"custom_lock_id"`
 	LockExpirationSeconds uint64 `json:"lock_expiration_seconds"`
 }
 
-// CustomAnchorFundingSummary binds the committed transaction to the funding
+// FundingSummary binds the committed transaction to the funding
 // policy that authorized it.
-type CustomAnchorFundingSummary struct {
+type FundingSummary struct {
 	// Mode is the high-level funding mode selected by the inspected plan.
-	Mode CustomAnchorFundingMode `json:"mode"`
+	Mode FundingMode `json:"mode"`
 
 	// P2AOutputIndex is present only for external P2A fee-bump parents.
 	P2AOutputIndex *uint32 `json:"p2a_output_index,omitempty"`
@@ -203,8 +212,8 @@ type CustomAnchorFundingSummary struct {
 	MaxFeeSat uint64 `json:"max_fee_sat"`
 }
 
-// CustomAnchorAssetInputSummary describes one committed asset input.
-type CustomAnchorAssetInputSummary struct {
+// AssetInputSummary describes one committed asset input.
+type AssetInputSummary struct {
 	// LogicalInputID is the stable caller-defined input identifier.
 	LogicalInputID string `json:"logical_input_id"`
 
@@ -216,7 +225,7 @@ type CustomAnchorAssetInputSummary struct {
 	PacketIndex uint32 `json:"packet_index"`
 
 	// PacketRole selects the active or passive packet collection.
-	PacketRole CustomAnchorPacketRole `json:"packet_role"`
+	PacketRole PacketRole `json:"packet_role"`
 
 	// VirtualInputIndex identifies the input within PacketIndex.
 	VirtualInputIndex uint32 `json:"virtual_input_index"`
@@ -225,32 +234,32 @@ type CustomAnchorAssetInputSummary struct {
 	AnchorInputIndex uint32 `json:"anchor_input_index"`
 
 	// AssetRef is the caller-facing asset identity requested for the input.
-	AssetRef AssetRef `json:"asset_ref"`
+	AssetRef tapsdk.AssetRef `json:"asset_ref"`
 
 	// IssuanceID is the concrete asset issuance/tranche spent by this
 	// input.
-	IssuanceID AssetID `json:"issuance_id"`
+	IssuanceID tapsdk.AssetID `json:"issuance_id"`
 
 	// AssetType is the concrete asset type for the input.
-	AssetType AssetType `json:"asset_type"`
+	AssetType tapsdk.AssetType `json:"asset_type"`
 
 	// AnchorOutpoint is the BTC output that held the spent asset
 	// commitment.
-	AnchorOutpoint Outpoint `json:"anchor_outpoint"`
+	AnchorOutpoint tapsdk.Outpoint `json:"anchor_outpoint"`
 
 	// ScriptKey is the spent asset script key.
-	ScriptKey PubKey `json:"script_key"`
+	ScriptKey tapsdk.PubKey `json:"script_key"`
 
 	// Amount is the number of asset units spent.
 	Amount uint64 `json:"amount"`
 
 	// ProofSource identifies and persists the confirmed file or compact path
 	// that selected this exact input.
-	ProofSource CustomAnchorProofSourceSummary `json:"proof_source"`
+	ProofSource ProofSourceSummary `json:"proof_source"`
 }
 
-// CustomAnchorAssetOutputSummary describes one committed asset output.
-type CustomAnchorAssetOutputSummary struct {
+// AssetOutputSummary describes one committed asset output.
+type AssetOutputSummary struct {
 	// LogicalOutputID is the stable caller-defined output identifier.
 	LogicalOutputID string `json:"logical_output_id"`
 
@@ -262,7 +271,7 @@ type CustomAnchorAssetOutputSummary struct {
 	PacketIndex uint32 `json:"packet_index"`
 
 	// PacketRole selects the active or passive packet collection.
-	PacketRole CustomAnchorPacketRole `json:"packet_role"`
+	PacketRole PacketRole `json:"packet_role"`
 
 	// VirtualOutputIndex identifies the output within PacketIndex.
 	VirtualOutputIndex uint32 `json:"virtual_output_index"`
@@ -271,17 +280,17 @@ type CustomAnchorAssetOutputSummary struct {
 	AnchorOutputIndex uint32 `json:"anchor_output_index"`
 
 	// AssetRef is the caller-facing asset identity created at this output.
-	AssetRef AssetRef `json:"asset_ref"`
+	AssetRef tapsdk.AssetRef `json:"asset_ref"`
 
 	// IssuanceID is the concrete asset issuance/tranche created at this
 	// output.
-	IssuanceID AssetID `json:"issuance_id"`
+	IssuanceID tapsdk.AssetID `json:"issuance_id"`
 
 	// AssetType is the concrete asset type for the output.
-	AssetType AssetType `json:"asset_type"`
+	AssetType tapsdk.AssetType `json:"asset_type"`
 
 	// AnchorOutpoint is the BTC output that holds the new asset commitment.
-	AnchorOutpoint Outpoint `json:"anchor_outpoint"`
+	AnchorOutpoint tapsdk.Outpoint `json:"anchor_outpoint"`
 
 	// AnchorValueSat is the BTC value assigned to the asset-bearing output.
 	AnchorValueSat int64 `json:"anchor_value_sat"`
@@ -289,34 +298,34 @@ type CustomAnchorAssetOutputSummary struct {
 	// TaprootAssetRoot is the root of the Taproot Asset commitment before
 	// combining it with the host-supplied tapscript sibling. Hosts such as
 	// SwapDK use this root to compose their policy tree and control blocks.
-	TaprootAssetRoot Hash `json:"taproot_asset_root"`
+	TaprootAssetRoot tapsdk.Hash `json:"taproot_asset_root"`
 
 	// TaprootMerkleRoot is the final BIP341 root that combines the Taproot
 	// Asset commitment with the optional host-supplied tapscript sibling.
 	// It is the tweak committed to by the anchor output key.
-	TaprootMerkleRoot Hash `json:"taproot_merkle_root"`
+	TaprootMerkleRoot tapsdk.Hash `json:"taproot_merkle_root"`
 
 	// ScriptKey is the asset script key for the new output.
-	ScriptKey PubKey `json:"script_key"`
+	ScriptKey tapsdk.PubKey `json:"script_key"`
 
 	// Amount is the number of asset units created at this output.
 	Amount uint64 `json:"amount"`
 
 	// ScriptMode records how the active output script was constructed. Passive
-	// reanchors use CustomAssetScriptUnspecified because their key is retained.
-	ScriptMode CustomAssetScriptMode `json:"script_mode"`
+	// reanchors use AssetScriptUnspecified because their key is retained.
+	ScriptMode AssetScriptMode `json:"script_mode"`
 
 	// ProofDelivery preserves the complete host-owned delivery metadata.
-	ProofDelivery CustomAssetProofDelivery `json:"proof_delivery"`
+	ProofDelivery AssetProofDelivery `json:"proof_delivery"`
 
 	// OPTrueSpend contains the exact asset script-path witness data when the
-	// output was built with CustomAssetScriptOPTrue. Other output modes leave
+	// output was built with AssetScriptOPTrue. Other output modes leave
 	// it nil.
-	OPTrueSpend *CustomAssetOPTrueSpendInfo `json:"op_true_spend,omitempty"`
+	OPTrueSpend *AssetOPTrueSpendInfo `json:"op_true_spend,omitempty"`
 }
 
-// CustomAnchorProofUpdate describes proof data needed after commit.
-type CustomAnchorProofUpdate struct {
+// ProofUpdate describes proof data needed after commit.
+type ProofUpdate struct {
 	// LogicalOutputID identifies the caller-facing output allocation.
 	LogicalOutputID string `json:"logical_output_id"`
 
@@ -327,7 +336,7 @@ type CustomAnchorProofUpdate struct {
 	PacketIndex uint32 `json:"packet_index"`
 
 	// PacketRole selects the active or passive packet collection.
-	PacketRole CustomAnchorPacketRole `json:"packet_role"`
+	PacketRole PacketRole `json:"packet_role"`
 
 	// VirtualOutputIndex identifies the output within PacketIndex.
 	VirtualOutputIndex uint32 `json:"virtual_output_index"`
@@ -336,28 +345,28 @@ type CustomAnchorProofUpdate struct {
 	AnchorOutputIndex uint32 `json:"anchor_output_index"`
 
 	// AssetRef is the caller-facing asset identity for the proof update.
-	AssetRef AssetRef `json:"asset_ref"`
+	AssetRef tapsdk.AssetRef `json:"asset_ref"`
 
 	// IssuanceID is the concrete asset issuance/tranche in the proof
 	// update.
-	IssuanceID AssetID `json:"issuance_id"`
+	IssuanceID tapsdk.AssetID `json:"issuance_id"`
 
 	// ScriptKey identifies the receiver asset script key.
-	ScriptKey PubKey `json:"script_key"`
+	ScriptKey tapsdk.PubKey `json:"script_key"`
 
 	// AnchorOutpoint identifies the anchor output referenced by the proof.
-	AnchorOutpoint Outpoint `json:"anchor_outpoint"`
+	AnchorOutpoint tapsdk.Outpoint `json:"anchor_outpoint"`
 
 	// ProofBlob is the proof suffix or proof metadata returned by the
 	// backend.
 	ProofBlob []byte `json:"proof_blob"`
 
 	// ProofDelivery preserves the receiver and host delivery metadata.
-	ProofDelivery CustomAssetProofDelivery `json:"proof_delivery"`
+	ProofDelivery AssetProofDelivery `json:"proof_delivery"`
 }
 
-// CustomAnchorPublishMetadata contains publish/log retry metadata.
-type CustomAnchorPublishMetadata struct {
+// PublishMetadata contains publish/log retry metadata.
+type PublishMetadata struct {
 	// SkipAnchorTxBroadcast asks the backend to log without broadcasting
 	// the final anchor transaction.
 	SkipAnchorTxBroadcast bool `json:"skip_anchor_tx_broadcast"`
@@ -373,18 +382,18 @@ type CustomAnchorPublishMetadata struct {
 
 // Seal returns a validated deep copy with the current schema and all package
 // digests populated. It never mutates caller-owned fields or byte slices.
-func (p *CustomAnchorTransferPackage) Seal() (
-	*CustomAnchorTransferPackage, error) {
+func (p *TransferPackage) Seal() (
+	*TransferPackage, error) {
 
 	if p == nil {
 		return nil, fmt.Errorf("nil custom anchor transfer package")
 	}
 
 	sealed := p.Clone()
-	sealed.SchemaVersion = CustomAnchorTransferPackageVersion
-	sealed.CommittedPackageDigest = Hash{}
-	sealed.UnsignedTxDigest = Hash{}
-	sealed.PackageDigest = Hash{}
+	sealed.SchemaVersion = TransferPackageVersion
+	sealed.CommittedPackageDigest = tapsdk.Hash{}
+	sealed.UnsignedTxDigest = tapsdk.Hash{}
+	sealed.PackageDigest = tapsdk.Hash{}
 
 	anchorPsbt, err := canonicalAnchorPSBT(sealed.AnchorPsbt, false)
 	if err != nil {
@@ -444,11 +453,11 @@ func (p *CustomAnchorTransferPackage) Seal() (
 // Validate checks the package schema, structure, and all three digest
 // bindings. A package must be sealed before it can be persisted or used for
 // signing.
-func (p *CustomAnchorTransferPackage) Validate() error {
+func (p *TransferPackage) Validate() error {
 	if p == nil {
 		return fmt.Errorf("nil custom anchor transfer package")
 	}
-	if p.SchemaVersion != CustomAnchorTransferPackageVersion {
+	if p.SchemaVersion != TransferPackageVersion {
 		return fmt.Errorf(
 			"unsupported custom anchor package version %d",
 			p.SchemaVersion,
@@ -505,8 +514,8 @@ func (p *CustomAnchorTransferPackage) Validate() error {
 	return nil
 }
 
-func (p *CustomAnchorTransferPackage) validateStructure() error {
-	if p.PlanID == (Hash{}) {
+func (p *TransferPackage) validateStructure() error {
+	if p.PlanID == (tapsdk.Hash{}) {
 		return fmt.Errorf("plan ID is required")
 	}
 	if len(p.AnchorPsbt) == 0 {
@@ -557,7 +566,7 @@ func (p *CustomAnchorTransferPackage) validateStructure() error {
 			p.Funding.ActualFeeSat, actualFee)
 	}
 	switch p.Funding.Mode {
-	case CustomAnchorFundingWalletFunded:
+	case FundingWalletFunded:
 		if len(p.FundingLock.CustomLockID) == 0 {
 			return fmt.Errorf("wallet-funded package requires a custom lock ID")
 		}
@@ -573,7 +582,7 @@ func (p *CustomAnchorTransferPackage) validateStructure() error {
 				p.Funding.ActualFeeSat, p.Funding.MaxFeeSat)
 		}
 
-	case CustomAnchorFundingCallerFundedExact:
+	case FundingCallerFundedExact:
 		if p.Funding.P2AOutputIndex != nil || p.Funding.MaxFeeSat != 0 {
 			return fmt.Errorf("caller-funded exact package has invalid " +
 				"funding metadata")
@@ -582,7 +591,7 @@ func (p *CustomAnchorTransferPackage) validateStructure() error {
 			return err
 		}
 
-	case CustomAnchorFundingExternalP2AFeeBump:
+	case FundingExternalP2AFeeBump:
 		if p.Funding.P2AOutputIndex == nil {
 			return fmt.Errorf("external P2A package requires an output index")
 		}
@@ -696,17 +705,17 @@ func (p *CustomAnchorTransferPackage) validateStructure() error {
 				"output %d anchor output index is out of range", i,
 			)
 		}
-		if output.PacketRole == CustomAnchorPacketRoleActive &&
-			output.ScriptMode == CustomAssetScriptUnspecified {
+		if output.PacketRole == PacketRoleActive &&
+			output.ScriptMode == AssetScriptUnspecified {
 
 			return fmt.Errorf("output %d script mode is required", i)
 		}
-		if output.ScriptMode == CustomAssetScriptOPTrue &&
+		if output.ScriptMode == AssetScriptOPTrue &&
 			output.OPTrueSpend == nil {
 
 			return fmt.Errorf("output %d OP_TRUE spend info is required", i)
 		}
-		if output.ScriptMode != CustomAssetScriptOPTrue &&
+		if output.ScriptMode != AssetScriptOPTrue &&
 			output.OPTrueSpend != nil {
 
 			return fmt.Errorf("output %d OP_TRUE spend info requires OP_TRUE "+
@@ -785,8 +794,8 @@ func (p *CustomAnchorTransferPackage) validateStructure() error {
 		return err
 	}
 	if len(p.FundingLock.CustomLockID) != 0 {
-		funding := CustomAnchorFundingPlan{
-			Mode: CustomAnchorFundingWalletFunded,
+		funding := FundingPlan{
+			Mode: FundingWalletFunded,
 		}
 		if err := validateCustomAnchorLockInventory(
 			funding, anchorPacket, p.BackendManagedInputIndices,
@@ -799,7 +808,7 @@ func (p *CustomAnchorTransferPackage) validateStructure() error {
 	return nil
 }
 
-func (p *CustomAnchorTransferPackage) rejectBackendFundingMetadata(
+func (p *TransferPackage) rejectBackendFundingMetadata(
 	mode string) error {
 
 	if p.ChangeOutputIndex != -1 ||
@@ -815,7 +824,7 @@ func (p *CustomAnchorTransferPackage) rejectBackendFundingMetadata(
 	return nil
 }
 
-func (p *CustomAnchorTransferPackage) validateSemanticMappings(
+func (p *TransferPackage) validateSemanticMappings(
 	anchor *psbt.Packet, inputMappings, outputMappings,
 	updateMappings map[string]struct{}) error {
 
@@ -828,11 +837,11 @@ func (p *CustomAnchorTransferPackage) validateSemanticMappings(
 		return err
 	}
 	collections := []struct {
-		role    CustomAnchorPacketRole
+		role    PacketRole
 		packets []*tappsbt.VPacket
 	}{
-		{CustomAnchorPacketRoleActive, active},
-		{CustomAnchorPacketRolePassive, passive},
+		{PacketRoleActive, active},
+		{PacketRolePassive, passive},
 	}
 	allPackets := append(
 		append([]*tappsbt.VPacket(nil), active...), passive...,
@@ -863,7 +872,7 @@ func (p *CustomAnchorTransferPackage) validateSemanticMappings(
 		return fmt.Errorf("package output commitments: %w", err)
 	}
 
-	inputByMapping := make(map[string]CustomAnchorAssetInputSummary,
+	inputByMapping := make(map[string]AssetInputSummary,
 		len(p.Inputs))
 	for idx := range p.Inputs {
 		input := p.Inputs[idx]
@@ -871,7 +880,7 @@ func (p *CustomAnchorTransferPackage) validateSemanticMappings(
 			input.PacketRole, input.PacketIndex, input.VirtualInputIndex,
 		)] = input
 	}
-	outputByMapping := make(map[string]CustomAnchorAssetOutputSummary,
+	outputByMapping := make(map[string]AssetOutputSummary,
 		len(p.Outputs))
 	for idx := range p.Outputs {
 		output := p.Outputs[idx]
@@ -880,7 +889,7 @@ func (p *CustomAnchorTransferPackage) validateSemanticMappings(
 			output.VirtualOutputIndex,
 		)] = output
 	}
-	updateByMapping := make(map[string]CustomAnchorProofUpdate,
+	updateByMapping := make(map[string]ProofUpdate,
 		len(p.ProofUpdates))
 	for idx := range p.ProofUpdates {
 		update := p.ProofUpdates[idx]
@@ -956,7 +965,7 @@ func (p *CustomAnchorTransferPackage) validateSemanticMappings(
 
 func validatePackageInputMapping(anchor *psbt.Packet,
 	virtualInput *tappsbt.VInput,
-	summary CustomAnchorAssetInputSummary) error {
+	summary AssetInputSummary) error {
 
 	if virtualInput == nil || virtualInput.Asset() == nil {
 		return fmt.Errorf("virtual input asset is missing")
@@ -973,7 +982,7 @@ func validatePackageInputMapping(anchor *psbt.Packet,
 	if err != nil {
 		return err
 	}
-	scriptKey, err := ParsePubKey(scriptPubKey.SerializeCompressed())
+	scriptKey, err := tapsdk.ParsePubKey(scriptPubKey.SerializeCompressed())
 	if err != nil {
 		return err
 	}
@@ -999,7 +1008,7 @@ func validatePackageInputMapping(anchor *psbt.Packet,
 
 func validatePackageOutputMapping(anchor *psbt.Packet, txID chainhash.Hash,
 	packet *tappsbt.VPacket, virtualOutput *tappsbt.VOutput,
-	summary CustomAnchorAssetOutputSummary, update CustomAnchorProofUpdate,
+	summary AssetOutputSummary, update ProofUpdate,
 	commitments tappsbt.OutputCommitments, allPackets []*tappsbt.VPacket,
 	virtualIndex int) error {
 
@@ -1030,10 +1039,10 @@ func validatePackageOutputMapping(anchor *psbt.Packet, txID chainhash.Hash,
 		return err
 	}
 	isBurn := virtualOutput.Asset.IsBurn()
-	if (summary.ScriptMode == CustomAssetScriptBurn) != isBurn {
+	if (summary.ScriptMode == AssetScriptBurn) != isBurn {
 		return fmt.Errorf("output burn state does not match script mode")
 	}
-	scriptKey, err := ParsePubKey(
+	scriptKey, err := tapsdk.ParsePubKey(
 		virtualOutput.ScriptKey.PubKey.SerializeCompressed(),
 	)
 	if err != nil {
@@ -1043,7 +1052,7 @@ func validatePackageOutputMapping(anchor *psbt.Packet, txID chainhash.Hash,
 	if anchorIndex >= uint32(len(anchor.UnsignedTx.TxOut)) {
 		return fmt.Errorf("anchor output is out of range")
 	}
-	anchorOutpoint := Outpoint{Txid: [32]byte(txID), Index: anchorIndex}
+	anchorOutpoint := tapsdk.Outpoint{Txid: [32]byte(txID), Index: anchorIndex}
 	anchorValue := anchor.UnsignedTx.TxOut[anchorIndex].Value
 	taprootAssetRoot, taprootMerkleRoot, err :=
 		deriveCustomAnchorOutputRoots(virtualOutput, commitments)
@@ -1138,17 +1147,18 @@ func validatePackageOutputMapping(anchor *psbt.Packet, txID chainhash.Hash,
 }
 
 func deriveCustomAnchorOutputRoots(output *tappsbt.VOutput,
-	commitments tappsbt.OutputCommitments) (Hash, Hash, error) {
+	commitments tappsbt.OutputCommitments) (tapsdk.Hash, tapsdk.Hash, error) {
 
 	if output == nil {
-		return Hash{}, Hash{}, fmt.Errorf("virtual output is missing")
+		return tapsdk.Hash{}, tapsdk.Hash{}, fmt.Errorf("virtual output is missing")
 	}
 	if output.AnchorOutputInternalKey == nil {
-		return Hash{}, Hash{}, fmt.Errorf("anchor output internal key is missing")
+		return tapsdk.Hash{}, tapsdk.Hash{}, fmt.Errorf("anchor output " +
+			"internal key is missing")
 	}
 	anchorCommitment, ok := commitments[output.AnchorOutputIndex]
 	if !ok || anchorCommitment == nil {
-		return Hash{}, Hash{}, fmt.Errorf(
+		return tapsdk.Hash{}, tapsdk.Hash{}, fmt.Errorf(
 			"anchor output %d commitment is missing",
 			output.AnchorOutputIndex,
 		)
@@ -1159,14 +1169,14 @@ func deriveCustomAnchorOutputRoots(output *tappsbt.VOutput,
 		output.AnchorOutputTapscriptSibling, anchorCommitment,
 	)
 	if err != nil {
-		return Hash{}, Hash{}, err
+		return tapsdk.Hash{}, tapsdk.Hash{}, err
 	}
 
-	return Hash(assetRoot), Hash(merkleRoot), nil
+	return tapsdk.Hash(assetRoot), tapsdk.Hash(merkleRoot), nil
 }
 
 func validateCustomAnchorOutputRootHints(anchor *psbt.Packet,
-	anchorIndex uint32, assetRoot, merkleRoot Hash) error {
+	anchorIndex uint32, assetRoot, merkleRoot tapsdk.Hash) error {
 
 	if anchorIndex >= uint32(len(anchor.Outputs)) {
 		return fmt.Errorf("anchor output metadata is out of range")
@@ -1202,7 +1212,7 @@ func validateCustomAnchorOutputRootHints(anchor *psbt.Packet,
 
 // Clone returns a deep copy of the package so callers can snapshot a committed
 // state before external signing or broadcast mutates host-owned buffers.
-func (p *CustomAnchorTransferPackage) Clone() *CustomAnchorTransferPackage {
+func (p *TransferPackage) Clone() *TransferPackage {
 	if p == nil {
 		return nil
 	}
@@ -1213,7 +1223,7 @@ func (p *CustomAnchorTransferPackage) Clone() *CustomAnchorTransferPackage {
 	clone.ActiveVirtualPsbts = cloneByteSlices(p.ActiveVirtualPsbts)
 	clone.PassiveVirtualPsbts = cloneByteSlices(p.PassiveVirtualPsbts)
 	clone.LockedUTXOs = append(
-		[]CustomAnchorLockedUTXO(nil), p.LockedUTXOs...,
+		[]LockedUTXO(nil), p.LockedUTXOs...,
 	)
 	clone.FundingLock.CustomLockID = cloneBytes(
 		p.FundingLock.CustomLockID,
@@ -1232,12 +1242,12 @@ func (p *CustomAnchorTransferPackage) Clone() *CustomAnchorTransferPackage {
 
 // MarshalJSON returns the deterministic JSON representation of a validated
 // package.
-func (p *CustomAnchorTransferPackage) MarshalJSON() ([]byte, error) {
+func (p *TransferPackage) MarshalJSON() ([]byte, error) {
 	if err := p.Validate(); err != nil {
 		return nil, err
 	}
 
-	type packageJSON CustomAnchorTransferPackage
+	type packageJSON TransferPackage
 	// The package DTO has explicit tags on its wire fields. The alias avoids
 	// recursively invoking this method.
 	//nolint:musttag
@@ -1246,12 +1256,12 @@ func (p *CustomAnchorTransferPackage) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON decodes a package and rejects unknown fields, unsupported
 // schema versions, and digest mismatches.
-func (p *CustomAnchorTransferPackage) UnmarshalJSON(data []byte) error {
+func (p *TransferPackage) UnmarshalJSON(data []byte) error {
 	if p == nil {
 		return fmt.Errorf("nil custom anchor transfer package")
 	}
 
-	type packageJSON CustomAnchorTransferPackage
+	type packageJSON TransferPackage
 	var decoded packageJSON
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
@@ -1265,7 +1275,7 @@ func (p *CustomAnchorTransferPackage) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	temporary := CustomAnchorTransferPackage(decoded)
+	temporary := TransferPackage(decoded)
 	if err := temporary.Validate(); err != nil {
 		return err
 	}
@@ -1276,7 +1286,7 @@ func (p *CustomAnchorTransferPackage) UnmarshalJSON(data []byte) error {
 
 // MarshalBinary returns a versioned deterministic binary envelope containing
 // the canonical JSON package.
-func (p *CustomAnchorTransferPackage) MarshalBinary() ([]byte, error) {
+func (p *TransferPackage) MarshalBinary() ([]byte, error) {
 	jsonBytes, err := p.MarshalJSON()
 	if err != nil {
 		return nil, err
@@ -1300,7 +1310,7 @@ func (p *CustomAnchorTransferPackage) MarshalBinary() ([]byte, error) {
 
 // UnmarshalBinary decodes a versioned binary envelope and validates both its
 // header and embedded package.
-func (p *CustomAnchorTransferPackage) UnmarshalBinary(data []byte) error {
+func (p *TransferPackage) UnmarshalBinary(data []byte) error {
 	if p == nil {
 		return fmt.Errorf("nil custom anchor transfer package")
 	}
@@ -1315,7 +1325,7 @@ func (p *CustomAnchorTransferPackage) UnmarshalBinary(data []byte) error {
 
 	versionOffset := len(customAnchorPackageMagic)
 	version := binary.BigEndian.Uint16(data[versionOffset:])
-	if version != CustomAnchorTransferPackageVersion {
+	if version != TransferPackageVersion {
 		return fmt.Errorf(
 			"unsupported custom anchor package version %d", version,
 		)
@@ -1327,7 +1337,7 @@ func (p *CustomAnchorTransferPackage) UnmarshalBinary(data []byte) error {
 		return fmt.Errorf("custom anchor package binary length mismatch")
 	}
 
-	var decoded CustomAnchorTransferPackage
+	var decoded TransferPackage
 	if err := json.Unmarshal(
 		data[customAnchorBinaryHeader:], &decoded,
 	); err != nil {
@@ -1405,52 +1415,52 @@ func compareCommittedAnchorPSBTMetadata(committed, current []byte) error {
 	return nil
 }
 
-func (p *CustomAnchorTransferPackage) committedDigest() (Hash, error) {
+func (p *TransferPackage) committedDigest() (tapsdk.Hash, error) {
 	clone := p.Clone()
-	clone.CommittedPackageDigest = Hash{}
-	clone.UnsignedTxDigest = Hash{}
-	clone.PackageDigest = Hash{}
+	clone.CommittedPackageDigest = tapsdk.Hash{}
+	clone.UnsignedTxDigest = tapsdk.Hash{}
+	clone.PackageDigest = tapsdk.Hash{}
 
 	anchorPsbt, err := canonicalAnchorPSBT(
 		clone.CommittedAnchorPsbt, true,
 	)
 	if err != nil {
-		return Hash{}, fmt.Errorf("anchor PSBT: %w", err)
+		return tapsdk.Hash{}, fmt.Errorf("anchor PSBT: %w", err)
 	}
 	clone.CommittedAnchorPsbt = cloneBytes(anchorPsbt)
 	clone.AnchorPsbt = anchorPsbt
 
-	type packageJSON CustomAnchorTransferPackage
+	type packageJSON TransferPackage
 	//nolint:musttag // The package DTO owns the persisted JSON tags.
 	payload, err := json.Marshal((*packageJSON)(clone))
 	if err != nil {
-		return Hash{}, fmt.Errorf("encode committed package digest: %w", err)
+		return tapsdk.Hash{}, fmt.Errorf("encode committed package digest: %w", err)
 	}
 
 	return customAnchorDigest(customAnchorCommittedDigestDomain, payload), nil
 }
 
-func (p *CustomAnchorTransferPackage) currentPackageDigest() (Hash, error) {
+func (p *TransferPackage) currentPackageDigest() (tapsdk.Hash, error) {
 	clone := p.Clone()
-	clone.PackageDigest = Hash{}
+	clone.PackageDigest = tapsdk.Hash{}
 
 	anchorPsbt, err := canonicalAnchorPSBT(clone.AnchorPsbt, false)
 	if err != nil {
-		return Hash{}, fmt.Errorf("anchor PSBT: %w", err)
+		return tapsdk.Hash{}, fmt.Errorf("anchor PSBT: %w", err)
 	}
 	clone.AnchorPsbt = anchorPsbt
 
-	type packageJSON CustomAnchorTransferPackage
+	type packageJSON TransferPackage
 	//nolint:musttag // The package DTO owns the persisted JSON tags.
 	payload, err := json.Marshal((*packageJSON)(clone))
 	if err != nil {
-		return Hash{}, fmt.Errorf("encode package digest: %w", err)
+		return tapsdk.Hash{}, fmt.Errorf("encode package digest: %w", err)
 	}
 
 	return customAnchorDigest(customAnchorPackageDigestDomain, payload), nil
 }
 
-func (p *CustomAnchorTransferPackage) refreshPackageDigest() error {
+func (p *TransferPackage) refreshPackageDigest() error {
 	digest, err := p.currentPackageDigest()
 	if err != nil {
 		return err
@@ -1460,13 +1470,13 @@ func (p *CustomAnchorTransferPackage) refreshPackageDigest() error {
 	return nil
 }
 
-func customAnchorDigest(domain, payload []byte) Hash {
+func customAnchorDigest(domain, payload []byte) tapsdk.Hash {
 	hasher := sha256.New()
 	_, _ = hasher.Write(domain)
 	_, _ = hasher.Write([]byte{0})
 	_, _ = hasher.Write(payload)
 
-	var digest Hash
+	var digest tapsdk.Hash
 	copy(digest[:], hasher.Sum(nil))
 	return digest
 }
@@ -1481,7 +1491,9 @@ func validatePackagePsbts(label string, psbts [][]byte) error {
 	return nil
 }
 
-func validatePackageAssetRef(scope string, index int, ref AssetRef) error {
+func validatePackageAssetRef(scope string, index int,
+	ref tapsdk.AssetRef) error {
+
 	if ref.IsZero() {
 		return fmt.Errorf("%s %d asset ref is required", scope, index)
 	}
@@ -1492,14 +1504,14 @@ func validatePackageAssetRef(scope string, index int, ref AssetRef) error {
 	return nil
 }
 
-func customAnchorPacketCount(role CustomAnchorPacketRole, active,
+func customAnchorPacketCount(role PacketRole, active,
 	passive [][]byte) (int, error) {
 
 	switch role {
-	case CustomAnchorPacketRoleActive:
+	case PacketRoleActive:
 		return len(active), nil
 
-	case CustomAnchorPacketRolePassive:
+	case PacketRolePassive:
 		return len(passive), nil
 
 	default:
@@ -1507,7 +1519,7 @@ func customAnchorPacketCount(role CustomAnchorPacketRole, active,
 	}
 }
 
-func customAnchorMappingKey(role CustomAnchorPacketRole, packetIndex,
+func customAnchorMappingKey(role PacketRole, packetIndex,
 	virtualIndex uint32) string {
 
 	var key [9]byte
@@ -1519,7 +1531,7 @@ func customAnchorMappingKey(role CustomAnchorPacketRole, packetIndex,
 }
 
 func validateCustomAnchorProofSource(
-	input CustomAnchorAssetInputSummary) error {
+	input AssetInputSummary) error {
 
 	if len(input.ProofSource.Blob) == 0 {
 		return fmt.Errorf("proof source blob is required")
@@ -1527,7 +1539,7 @@ func validateCustomAnchorProofSource(
 
 	var tip *proof.Proof
 	switch input.ProofSource.Kind {
-	case CustomAnchorProofSourceConfirmedFile:
+	case ProofSourceConfirmedFile:
 		expectedID := customAnchorDigest(
 			customAnchorProofFileDigestDomain, input.ProofSource.Blob,
 		)
@@ -1543,8 +1555,8 @@ func validateCustomAnchorProofSource(
 			return fmt.Errorf("read confirmed proof tip: %w", err)
 		}
 
-	case CustomAnchorProofSourceCompactPath:
-		var path AssetProofPath
+	case ProofSourceCompactPath:
+		var path ProofPath
 		if err := path.UnmarshalBinary(input.ProofSource.Blob); err != nil {
 			return fmt.Errorf("decode compact proof path: %w", err)
 		}
@@ -1576,7 +1588,7 @@ func validateCustomAnchorProofSource(
 	if err != nil {
 		return err
 	}
-	scriptKey, err := ParsePubKey(
+	scriptKey, err := tapsdk.ParsePubKey(
 		tip.Asset.ScriptKey.PubKey.SerializeCompressed(),
 	)
 	if err != nil {
@@ -1595,19 +1607,19 @@ func validateCustomAnchorProofSource(
 	return nil
 }
 
-func (p *CustomAnchorTransferPackage) rejectUnconfirmedProofPaths() error {
+func (p *TransferPackage) rejectUnconfirmedProofPaths() error {
 	for idx := range p.Inputs {
 		source := p.Inputs[idx].ProofSource
-		if source.Kind != CustomAnchorProofSourceCompactPath {
+		if source.Kind != ProofSourceCompactPath {
 			continue
 		}
-		var path AssetProofPath
+		var path ProofPath
 		if err := path.UnmarshalBinary(source.Blob); err != nil {
 			return fmt.Errorf("input %d compact proof path: %w", idx, err)
 		}
 		if len(path.Steps) != 0 {
 			return fmt.Errorf("input %d: %w", idx,
-				ErrUnconfirmedCustomAnchorPublish)
+				ErrUnconfirmedPublish)
 		}
 	}
 
@@ -1636,13 +1648,13 @@ func cloneByteSlices(src [][]byte) [][]byte {
 }
 
 func cloneProofUpdates(
-	src []CustomAnchorProofUpdate) []CustomAnchorProofUpdate {
+	src []ProofUpdate) []ProofUpdate {
 
 	if src == nil {
 		return nil
 	}
 
-	clone := append([]CustomAnchorProofUpdate(nil), src...)
+	clone := append([]ProofUpdate(nil), src...)
 	for i := range clone {
 		clone[i].ProofBlob = cloneBytes(src[i].ProofBlob)
 		clone[i].ProofDelivery.OpaqueMetadata = cloneBytes(
@@ -1654,13 +1666,13 @@ func cloneProofUpdates(
 }
 
 func cloneCustomAnchorInputSummaries(
-	src []CustomAnchorAssetInputSummary) []CustomAnchorAssetInputSummary {
+	src []AssetInputSummary) []AssetInputSummary {
 
 	if src == nil {
 		return nil
 	}
 
-	clone := append([]CustomAnchorAssetInputSummary(nil), src...)
+	clone := append([]AssetInputSummary(nil), src...)
 	for idx := range clone {
 		clone[idx].ProofSource.Blob = cloneBytes(
 			src[idx].ProofSource.Blob,
@@ -1671,13 +1683,13 @@ func cloneCustomAnchorInputSummaries(
 }
 
 func cloneCustomAnchorOutputSummaries(
-	src []CustomAnchorAssetOutputSummary) []CustomAnchorAssetOutputSummary {
+	src []AssetOutputSummary) []AssetOutputSummary {
 
 	if src == nil {
 		return nil
 	}
 
-	clone := append([]CustomAnchorAssetOutputSummary(nil), src...)
+	clone := append([]AssetOutputSummary(nil), src...)
 	for idx := range clone {
 		clone[idx].OPTrueSpend = src[idx].OPTrueSpend.Clone()
 		clone[idx].ProofDelivery.OpaqueMetadata = cloneBytes(

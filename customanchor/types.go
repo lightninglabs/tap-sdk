@@ -1,4 +1,4 @@
-package tapsdk
+package customanchor
 
 import (
 	"bytes"
@@ -7,44 +7,45 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/txscript/v2"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/internal/anchor"
 )
 
-// CustomAnchorRequest contains the SDK-owned inputs needed to build an
+// Request contains the SDK-owned inputs needed to build an
 // advanced custom-anchor asset transaction.
-type CustomAnchorRequest struct {
+type Request struct {
 	// Inputs are the proof-selected asset inputs to spend.
-	Inputs []CustomAssetInput
+	Inputs []AssetInput
 
 	// Outputs are the logical asset outputs to create.
-	Outputs []CustomAssetOutput
+	Outputs []AssetOutput
 
 	// AnchorPSBT is the caller-visible BTC anchor transaction template.
 	AnchorPSBT []byte
 
 	// Funding selects exactly one high-level anchor funding mode.
-	Funding CustomAnchorFundingPlan
+	Funding FundingPlan
 
 	// PassiveAssets controls how co-anchored passive assets are handled.
-	PassiveAssets CustomAnchorPassiveAssets
+	PassiveAssets PassiveAssets
 
 	// LossPolicy bounds explicitly requested protocol burn outputs. Asset
 	// amounts must otherwise be conserved exactly.
-	LossPolicy CustomAnchorLossPolicy
+	LossPolicy LossPolicy
 
 	// SigningPlans select the trusted external spend path for each BTC anchor
 	// input. PSBT-bound validation occurs after the anchor template is decoded.
-	SigningPlans []CustomAnchorInputSigningPlan
+	SigningPlans []InputSigningPlan
 }
 
-// CustomAssetInput identifies exact asset units selected by a proof file.
-type CustomAssetInput struct {
+// AssetInput identifies exact asset units selected by a proof file.
+type AssetInput struct {
 	// ID is a stable caller-defined identifier for this logical input.
 	ID string
 
 	// AssetRef is the semantic asset identity expected at the selected proof
 	// source tip.
-	AssetRef AssetRef
+	AssetRef tapsdk.AssetRef
 
 	// Amount must exactly match the amount at the selected proof source tip.
 	Amount uint64
@@ -57,45 +58,45 @@ type CustomAssetInput struct {
 	// unconfirmed transitions. It requires a ConfirmedProofVerifier on the
 	// builder, its UnconfirmedAnchorVerifier extension when steps are present,
 	// and caller-provided asset witnesses.
-	ProofPath *AssetProofPath
+	ProofPath *ProofPath
 
 	// Witness selects how the virtual asset input is authorized.
-	Witness CustomAssetWitnessPlan
+	Witness AssetWitnessPlan
 }
 
-// CustomAssetWitnessMode selects who supplies the virtual asset witness.
-type CustomAssetWitnessMode uint8
+// AssetWitnessMode selects who supplies the virtual asset witness.
+type AssetWitnessMode uint8
 
 const (
-	// CustomAssetWitnessUnspecified is not a usable witness mode.
-	CustomAssetWitnessUnspecified CustomAssetWitnessMode = iota
+	// AssetWitnessUnspecified is not a usable witness mode.
+	AssetWitnessUnspecified AssetWitnessMode = iota
 
-	// CustomAssetWitnessBackendSigner asks the backend to sign the asset
+	// AssetWitnessBackendSigner asks the backend to sign the asset
 	// input. No caller witness stack may be present.
-	CustomAssetWitnessBackendSigner
+	AssetWitnessBackendSigner
 
-	// CustomAssetWitnessCallerProvided uses the exact caller-provided asset
+	// AssetWitnessCallerProvided uses the exact caller-provided asset
 	// witness stack.
-	CustomAssetWitnessCallerProvided
+	AssetWitnessCallerProvided
 )
 
-// CustomAssetWitnessPlan describes how a virtual asset input is authorized.
-type CustomAssetWitnessPlan struct {
+// AssetWitnessPlan describes how a virtual asset input is authorized.
+type AssetWitnessPlan struct {
 	// Mode selects backend signing or a caller-provided stack.
-	Mode CustomAssetWitnessMode
+	Mode AssetWitnessMode
 
 	// Stack is the final witness stack for caller-provided mode.
 	Stack [][]byte
 }
 
-// CustomAssetOutput is one logical asset output in a custom-anchor plan.
-type CustomAssetOutput struct {
+// AssetOutput is one logical asset output in a custom-anchor plan.
+type AssetOutput struct {
 	// ID is a stable caller-defined identifier used across planning, signing,
 	// proof delivery, and persistence.
 	ID string
 
 	// AssetRef is the semantic identity of the asset being created.
-	AssetRef AssetRef
+	AssetRef tapsdk.AssetRef
 
 	// Amount is the number of asset units assigned to this output.
 	Amount uint64
@@ -107,82 +108,82 @@ type CustomAssetOutput struct {
 	AnchorValueSat uint64
 
 	// Script selects exactly one asset script construction mode.
-	Script CustomAssetScriptPlan
+	Script AssetScriptPlan
 
 	// Anchor describes the anchor internal key and BTC tapscript sibling.
-	Anchor CustomAnchorOutputPlan
+	Anchor OutputPlan
 
 	// ProofDelivery contains opaque receiver proof-delivery metadata.
-	ProofDelivery CustomAssetProofDelivery
+	ProofDelivery AssetProofDelivery
 
 	// Timelocks contains asset-level lock times. Nonzero values are rejected
 	// by the first custom-anchor implementation.
-	Timelocks CustomAssetTimelocks
+	Timelocks AssetTimelocks
 }
 
-// CustomAssetScriptMode identifies an asset output script construction mode.
-type CustomAssetScriptMode uint8
+// AssetScriptMode identifies an asset output script construction mode.
+type AssetScriptMode uint8
 
 const (
-	// CustomAssetScriptUnspecified is not a usable script mode.
-	CustomAssetScriptUnspecified CustomAssetScriptMode = iota
+	// AssetScriptUnspecified is not a usable script mode.
+	AssetScriptUnspecified AssetScriptMode = iota
 
-	// CustomAssetScriptWallet derives a script key from the backend wallet.
-	CustomAssetScriptWallet
+	// AssetScriptWallet derives a script key from the backend wallet.
+	AssetScriptWallet
 
-	// CustomAssetScriptExternal uses an externally supplied script key.
-	CustomAssetScriptExternal
+	// AssetScriptExternal uses an externally supplied script key.
+	AssetScriptExternal
 
-	// CustomAssetScriptOPTrue creates a unique OP_TRUE asset tapscript.
-	CustomAssetScriptOPTrue
+	// AssetScriptOPTrue creates a unique OP_TRUE asset tapscript.
+	AssetScriptOPTrue
 
-	// CustomAssetScriptBurn creates an explicitly unspendable burn output.
-	CustomAssetScriptBurn
+	// AssetScriptBurn creates an explicitly unspendable burn output.
+	AssetScriptBurn
 )
 
-// CustomAssetScriptPlan is a tagged asset script construction plan. Exactly
+// AssetScriptPlan is a tagged asset script construction plan. Exactly
 // one variant must be non-nil and must match Mode.
-type CustomAssetScriptPlan struct {
+type AssetScriptPlan struct {
 	// Mode selects the active script variant.
-	Mode CustomAssetScriptMode
+	Mode AssetScriptMode
 
 	// Wallet selects a backend wallet-derived script key.
-	Wallet *CustomAssetWalletScriptPlan
+	Wallet *AssetWalletScriptPlan
 
 	// External selects a caller-supplied script key.
-	External *CustomAssetExternalScriptPlan
+	External *AssetExternalScriptPlan
 
 	// OPTrue selects a unique OP_TRUE asset tapscript.
-	OPTrue *CustomAssetOPTrueScriptPlan
+	OPTrue *AssetOPTrueScriptPlan
 
 	// Burn selects an explicitly unspendable asset output.
-	Burn *CustomAssetBurnScriptPlan
+	Burn *AssetBurnScriptPlan
 }
 
-// CustomAssetWalletScriptPlan asks the backend wallet for an asset script key.
-type CustomAssetWalletScriptPlan struct {
+// AssetWalletScriptPlan asks the backend wallet for an asset script key.
+type AssetWalletScriptPlan struct {
 	// KeyLocator optionally requests a specific wallet key. Nil asks the
 	// backend to derive a fresh key using its normal asset key family.
-	KeyLocator *KeyLocator
+	KeyLocator *tapsdk.KeyLocator
 }
 
-// CustomAssetExternalScriptPlan uses a complete caller-supplied script key.
-type CustomAssetExternalScriptPlan struct {
+// AssetExternalScriptPlan uses a complete caller-supplied script key.
+type AssetExternalScriptPlan struct {
 	// ScriptKey is the external Taproot Asset script key.
-	ScriptKey ScriptKey
+	ScriptKey tapsdk.ScriptKey
 }
 
-// CustomAssetOPTrueScriptPlan describes a unique OP_TRUE asset tapscript.
-type CustomAssetOPTrueScriptPlan struct {
+// AssetOPTrueScriptPlan describes a unique OP_TRUE asset tapscript.
+type AssetOPTrueScriptPlan struct {
 	// InternalKey is unique to this logical output. Reusing it can produce a
 	// duplicate asset commitment key and is rejected by the builder.
-	InternalKey KeyDescriptor
+	InternalKey tapsdk.KeyDescriptor
 }
 
-// CustomAssetOPTrueSpendInfo contains the complete Taproot script-path data
+// AssetOPTrueSpendInfo contains the complete Taproot script-path data
 // needed to spend an SDK-built OP_TRUE asset output. It deliberately uses only
 // SDK and primitive types so applications do not need taproot-assets imports.
-type CustomAssetOPTrueSpendInfo struct {
+type AssetOPTrueSpendInfo struct {
 	// LeafScript is the OP_TRUE tapscript program.
 	LeafScript []byte `json:"leaf_script"`
 
@@ -193,13 +194,13 @@ type CustomAssetOPTrueSpendInfo struct {
 	ControlBlock []byte `json:"control_block"`
 
 	// InternalKey is the Taproot internal key committed by ControlBlock.
-	InternalKey PubKey `json:"internal_key"`
+	InternalKey tapsdk.PubKey `json:"internal_key"`
 }
 
 // Validate checks that the spend data reveals the expected OP_TRUE leaf and
 // commits to scriptKey. This lets a persisted package be checked without
 // importing taproot-assets implementation packages.
-func (i *CustomAssetOPTrueSpendInfo) Validate(scriptKey PubKey) error {
+func (i *AssetOPTrueSpendInfo) Validate(scriptKey tapsdk.PubKey) error {
 	if i == nil {
 		return fmt.Errorf("nil OP_TRUE spend info")
 	}
@@ -257,7 +258,7 @@ func (i *CustomAssetOPTrueSpendInfo) Validate(scriptKey PubKey) error {
 
 // Clone returns a deep copy whose script and control block do not alias the
 // source spend information.
-func (i *CustomAssetOPTrueSpendInfo) Clone() *CustomAssetOPTrueSpendInfo {
+func (i *AssetOPTrueSpendInfo) Clone() *AssetOPTrueSpendInfo {
 	if i == nil {
 		return nil
 	}
@@ -271,7 +272,7 @@ func (i *CustomAssetOPTrueSpendInfo) Clone() *CustomAssetOPTrueSpendInfo {
 
 // WitnessStack returns the complete zero-argument asset witness for the
 // OP_TRUE leaf. The returned byte slices never alias the spend information.
-func (i *CustomAssetOPTrueSpendInfo) WitnessStack() [][]byte {
+func (i *AssetOPTrueSpendInfo) WitnessStack() [][]byte {
 	if i == nil {
 		return nil
 	}
@@ -282,31 +283,31 @@ func (i *CustomAssetOPTrueSpendInfo) WitnessStack() [][]byte {
 	}
 }
 
-// CustomAssetBurnScriptPlan marks an explicitly unspendable asset output.
-type CustomAssetBurnScriptPlan struct{}
+// AssetBurnScriptPlan marks an explicitly unspendable asset output.
+type AssetBurnScriptPlan struct{}
 
-// CustomAnchorOutputPlan describes an asset-bearing BTC output.
-type CustomAnchorOutputPlan struct {
+// OutputPlan describes an asset-bearing BTC output.
+type OutputPlan struct {
 	// InternalKey is the Taproot internal key for the BTC anchor output.
-	InternalKey InternalKey
+	InternalKey tapsdk.InternalKey
 
 	// Tapscript optionally supplies an inspectable or opaque sibling form.
-	Tapscript CustomAnchorTapscriptPlan
+	Tapscript TapscriptPlan
 }
 
-// CustomAnchorTapscriptPlan represents the non-asset sibling committed at a
+// TapscriptPlan represents the non-asset sibling committed at a
 // BTC anchor output. At most one representation may be populated; leaving
 // both empty selects a direct/BIP86-style anchor policy.
-type CustomAnchorTapscriptPlan struct {
+type TapscriptPlan struct {
 	// TapLeaves is an ordered set of SDK tapscript leaves.
-	TapLeaves []TapLeaf
+	TapLeaves []tapsdk.TapLeaf
 
 	// SerializedSibling is an opaque serialized tapscript sibling.
 	SerializedSibling []byte
 }
 
-// CustomAssetProofDelivery stores host-owned proof-delivery metadata.
-type CustomAssetProofDelivery struct {
+// AssetProofDelivery stores host-owned proof-delivery metadata.
+type AssetProofDelivery struct {
 	// RecipientID is an optional stable recipient or delivery identifier.
 	RecipientID string `json:"recipient_id"`
 
@@ -317,8 +318,8 @@ type CustomAssetProofDelivery struct {
 	OpaqueMetadata []byte `json:"opaque_metadata"`
 }
 
-// CustomAssetTimelocks contains asset-level absolute and relative lock times.
-type CustomAssetTimelocks struct {
+// AssetTimelocks contains asset-level absolute and relative lock times.
+type AssetTimelocks struct {
 	// Absolute is the asset-level absolute lock time.
 	Absolute uint64
 
@@ -326,49 +327,49 @@ type CustomAssetTimelocks struct {
 	Relative uint64
 }
 
-// CustomAnchorFundingMode selects a high-level anchor funding policy.
-type CustomAnchorFundingMode uint8
+// FundingMode selects a high-level anchor funding policy.
+type FundingMode uint8
 
 const (
-	// CustomAnchorFundingUnspecified is not a usable funding mode.
-	CustomAnchorFundingUnspecified CustomAnchorFundingMode = iota
+	// FundingUnspecified is not a usable funding mode.
+	FundingUnspecified FundingMode = iota
 
-	// CustomAnchorFundingWalletFunded lets the backend wallet fund and add
+	// FundingWalletFunded lets the backend wallet fund and add
 	// change to the anchor transaction.
-	CustomAnchorFundingWalletFunded
+	FundingWalletFunded
 
-	// CustomAnchorFundingCallerFundedExact preserves the exact caller-funded
+	// FundingCallerFundedExact preserves the exact caller-funded
 	// anchor template without backend funding.
-	CustomAnchorFundingCallerFundedExact
+	FundingCallerFundedExact
 
-	// CustomAnchorFundingExternalP2AFeeBump preserves an externally funded
+	// FundingExternalP2AFeeBump preserves an externally funded
 	// parent containing a caller-selected P2A output.
-	CustomAnchorFundingExternalP2AFeeBump
+	FundingExternalP2AFeeBump
 )
 
-// CustomAnchorFundingPlan is a tagged high-level funding plan. Exactly one
+// FundingPlan is a tagged high-level funding plan. Exactly one
 // variant must be non-nil and must match Mode.
-type CustomAnchorFundingPlan struct {
+type FundingPlan struct {
 	// Mode selects the active funding variant.
-	Mode CustomAnchorFundingMode
+	Mode FundingMode
 
 	// WalletFunded configures backend wallet funding.
-	WalletFunded *CustomAnchorWalletFunding
+	WalletFunded *WalletFunding
 
 	// CallerFundedExact selects an exact caller-funded template.
-	CallerFundedExact *CustomAnchorCallerFundedExact
+	CallerFundedExact *CallerFundedExact
 
 	// ExternalP2AFeeBump selects an external P2A fee-bump plan.
-	ExternalP2AFeeBump *CustomAnchorExternalP2AFeeBump
+	ExternalP2AFeeBump *ExternalP2AFeeBump
 }
 
-// CustomAnchorWalletFunding configures backend wallet anchor funding.
-type CustomAnchorWalletFunding struct {
+// WalletFunding configures backend wallet anchor funding.
+type WalletFunding struct {
 	// ChangeOutput selects backend change handling.
-	ChangeOutput AnchorChangeOutput
+	ChangeOutput tapsdk.AnchorChangeOutput
 
 	// Fee selects the backend fee policy.
-	Fee AnchorFee
+	Fee tapsdk.AnchorFee
 
 	// MaxFeeSat is the hard absolute fee ceiling for the committed anchor.
 	// It is checked locally before any Bitcoin input is signed. This remains
@@ -384,47 +385,47 @@ type CustomAnchorWalletFunding struct {
 	LockExpirationSeconds uint64
 }
 
-// CustomAnchorCallerFundedExact selects an exact caller-funded anchor PSBT.
-type CustomAnchorCallerFundedExact struct{}
+// CallerFundedExact selects an exact caller-funded anchor PSBT.
+type CallerFundedExact struct{}
 
-// CustomAnchorExternalP2AFeeBump identifies the caller's P2A output.
-type CustomAnchorExternalP2AFeeBump struct {
+// ExternalP2AFeeBump identifies the caller's P2A output.
+type ExternalP2AFeeBump struct {
 	// P2AOutputIndex is the zero-based P2A output index in AnchorPSBT.
 	P2AOutputIndex uint32
 }
 
-// CustomAnchorPassivePolicy selects how co-anchored passive assets are handled.
-type CustomAnchorPassivePolicy uint8
+// PassivePolicy selects how co-anchored passive assets are handled.
+type PassivePolicy uint8
 
 const (
-	// CustomAnchorPassiveReject rejects any discovered passive asset. This is
+	// PassiveReject rejects any discovered passive asset. This is
 	// the safe zero-value default.
-	CustomAnchorPassiveReject CustomAnchorPassivePolicy = iota
+	PassiveReject PassivePolicy = iota
 
-	// CustomAnchorPassivePreserve asks the backend to preserve every passive
+	// PassivePreserve asks the backend to preserve every passive
 	// asset it discovers.
-	CustomAnchorPassivePreserve
+	PassivePreserve
 
-	// CustomAnchorPassiveCallerReanchor uses caller-supplied passive packets.
-	CustomAnchorPassiveCallerReanchor
+	// PassiveCallerReanchor uses caller-supplied passive packets.
+	PassiveCallerReanchor
 )
 
-// CustomAnchorPassiveAssets describes passive-asset handling for a plan.
-type CustomAnchorPassiveAssets struct {
+// PassiveAssets describes passive-asset handling for a plan.
+type PassiveAssets struct {
 	// Policy selects reject, backend preserve, or caller re-anchor behavior.
-	Policy CustomAnchorPassivePolicy
+	Policy PassivePolicy
 
 	// Packets are required only for caller re-anchor behavior.
-	Packets []CustomAnchorPassivePacket
+	Packets []PassivePacket
 }
 
-// CustomAnchorPassivePacket is a caller-supplied passive virtual packet.
-type CustomAnchorPassivePacket struct {
+// PassivePacket is a caller-supplied passive virtual packet.
+type PassivePacket struct {
 	// ID is a stable caller-defined identifier for the passive packet.
 	ID string
 
 	// AssetRef is the semantic identity of the passive asset.
-	AssetRef AssetRef
+	AssetRef tapsdk.AssetRef
 
 	// Amount is the exact passive asset amount represented by the packet.
 	Amount uint64
@@ -437,147 +438,147 @@ type CustomAnchorPassivePacket struct {
 
 	// ProofDelivery contains host-owned delivery metadata for the reanchored
 	// passive proof.
-	ProofDelivery CustomAssetProofDelivery
+	ProofDelivery AssetProofDelivery
 }
 
-// CustomAnchorLossMode identifies whether irreversible asset loss is allowed.
-type CustomAnchorLossMode uint8
+// LossMode identifies whether irreversible asset loss is allowed.
+type LossMode uint8
 
 const (
-	// CustomAnchorLossReject rejects burn outputs and any amount imbalance.
+	// LossReject rejects burn outputs and any amount imbalance.
 	// This is the safe zero-value default.
-	CustomAnchorLossReject CustomAnchorLossMode = iota
+	LossReject LossMode = iota
 
-	// CustomAnchorLossBurn permits only confirmed, per-asset bounded burns.
-	CustomAnchorLossBurn
+	// LossBurn permits only confirmed, per-asset bounded burns.
+	LossBurn
 )
 
-// CustomAnchorLossPolicy bounds explicitly requested asset destruction.
-type CustomAnchorLossPolicy struct {
+// LossPolicy bounds explicitly requested asset destruction.
+type LossPolicy struct {
 	// Mode selects reject or explicitly bounded burn behavior.
-	Mode CustomAnchorLossMode
+	Mode LossMode
 
 	// Allowances contains the maximum explicit burn for each asset.
-	Allowances []CustomAnchorLossAllowance
+	Allowances []LossAllowance
 
 	// ConfirmIrreversibleLoss must be true before any burn is allowed.
 	ConfirmIrreversibleLoss bool
 }
 
-// CustomAnchorLossAllowance caps explicit burns for one semantic asset.
-type CustomAnchorLossAllowance struct {
+// LossAllowance caps explicit burns for one semantic asset.
+type LossAllowance struct {
 	// AssetRef identifies the asset whose burn is being authorized.
-	AssetRef AssetRef
+	AssetRef tapsdk.AssetRef
 
 	// MaxAmount is the maximum number of units that may be destroyed.
 	MaxAmount uint64
 }
 
-// CustomAnchorVerificationOrigin identifies where a check was performed.
-type CustomAnchorVerificationOrigin uint8
+// VerificationOrigin identifies where a check was performed.
+type VerificationOrigin uint8
 
 const (
-	// CustomAnchorVerificationOriginUnknown is not a trusted origin.
-	CustomAnchorVerificationOriginUnknown CustomAnchorVerificationOrigin = iota
+	// VerificationOriginUnknown is not a trusted origin.
+	VerificationOriginUnknown VerificationOrigin = iota
 
-	// CustomAnchorVerificationOriginLocal identifies an SDK-local check.
-	CustomAnchorVerificationOriginLocal
+	// VerificationOriginLocal identifies an SDK-local check.
+	VerificationOriginLocal
 
-	// CustomAnchorVerificationOriginBackend identifies a backend-trusted
+	// VerificationOriginBackend identifies a backend-trusted
 	// check.
-	CustomAnchorVerificationOriginBackend
+	VerificationOriginBackend
 
-	// CustomAnchorVerificationOriginHost identifies a check performed by the
+	// VerificationOriginHost identifies a check performed by the
 	// integrating host through an injected verifier. It is trusted by the
 	// host application, not independently reproduced by the SDK.
-	CustomAnchorVerificationOriginHost
+	VerificationOriginHost
 )
 
-// CustomAnchorVerificationSeverity describes the impact of an issue.
-type CustomAnchorVerificationSeverity uint8
+// VerificationSeverity describes the impact of an issue.
+type VerificationSeverity uint8
 
 const (
-	// CustomAnchorVerificationSeverityUnknown is not a usable severity.
-	CustomAnchorVerificationSeverityUnknown CustomAnchorVerificationSeverity = iota
+	// VerificationSeverityUnknown is not a usable severity.
+	VerificationSeverityUnknown VerificationSeverity = iota
 
-	// CustomAnchorVerificationSeverityInfo is informational.
-	CustomAnchorVerificationSeverityInfo
+	// VerificationSeverityInfo is informational.
+	VerificationSeverityInfo
 
-	// CustomAnchorVerificationSeverityWarning does not invalidate a plan.
-	CustomAnchorVerificationSeverityWarning
+	// VerificationSeverityWarning does not invalidate a plan.
+	VerificationSeverityWarning
 
-	// CustomAnchorVerificationSeverityError invalidates a plan.
-	CustomAnchorVerificationSeverityError
+	// VerificationSeverityError invalidates a plan.
+	VerificationSeverityError
 )
 
-// CustomAnchorVerificationScope identifies the subject of a check or issue.
-type CustomAnchorVerificationScope string
+// VerificationScope identifies the subject of a check or issue.
+type VerificationScope string
 
 const (
-	// CustomAnchorVerificationScopeRequest covers the complete request.
-	CustomAnchorVerificationScopeRequest CustomAnchorVerificationScope = "request"
+	// VerificationScopeRequest covers the complete request.
+	VerificationScopeRequest VerificationScope = "request"
 
-	// CustomAnchorVerificationScopeInputProof covers proof-selected inputs.
-	CustomAnchorVerificationScopeInputProof = CustomAnchorVerificationScope(
+	// VerificationScopeInputProof covers proof-selected inputs.
+	VerificationScopeInputProof = VerificationScope(
 		"input_proof",
 	)
 
-	// CustomAnchorVerificationScopeAssetIdentity covers semantic and concrete
+	// VerificationScopeAssetIdentity covers semantic and concrete
 	// asset identity.
-	CustomAnchorVerificationScopeAssetIdentity = CustomAnchorVerificationScope(
+	VerificationScopeAssetIdentity = VerificationScope(
 		"asset_identity",
 	)
 
-	// CustomAnchorVerificationScopeAmount covers asset conservation.
-	CustomAnchorVerificationScopeAmount CustomAnchorVerificationScope = "amount"
+	// VerificationScopeAmount covers asset conservation.
+	VerificationScopeAmount VerificationScope = "amount"
 
-	// CustomAnchorVerificationScopeOutputCommitment covers output asset
+	// VerificationScopeOutputCommitment covers output asset
 	// commitments.
-	CustomAnchorVerificationScopeOutputCommitment = CustomAnchorVerificationScope(
+	VerificationScopeOutputCommitment = VerificationScope(
 		"output_commitment",
 	)
 
-	// CustomAnchorVerificationScopeAnchorOutput covers the BTC anchor template.
-	CustomAnchorVerificationScopeAnchorOutput = CustomAnchorVerificationScope(
+	// VerificationScopeAnchorOutput covers the BTC anchor template.
+	VerificationScopeAnchorOutput = VerificationScope(
 		"anchor_output",
 	)
 
-	// CustomAnchorVerificationScopePassiveAssets covers passive-asset policy.
-	CustomAnchorVerificationScopePassiveAssets = CustomAnchorVerificationScope(
+	// VerificationScopePassiveAssets covers passive-asset policy.
+	VerificationScopePassiveAssets = VerificationScope(
 		"passive_assets",
 	)
 
-	// CustomAnchorVerificationScopeLossPolicy covers burn and loss bounds.
-	CustomAnchorVerificationScopeLossPolicy = CustomAnchorVerificationScope(
+	// VerificationScopeLossPolicy covers burn and loss bounds.
+	VerificationScopeLossPolicy = VerificationScope(
 		"loss_policy",
 	)
 
-	// CustomAnchorVerificationScopeCapability covers backend capabilities.
-	CustomAnchorVerificationScopeCapability = CustomAnchorVerificationScope(
+	// VerificationScopeCapability covers backend capabilities.
+	VerificationScopeCapability = VerificationScope(
 		"capability",
 	)
 
-	// CustomAnchorVerificationScopeBackendTrust covers backend-only checks.
-	CustomAnchorVerificationScopeBackendTrust = CustomAnchorVerificationScope(
+	// VerificationScopeBackendTrust covers backend-only checks.
+	VerificationScopeBackendTrust = VerificationScope(
 		"backend_trust",
 	)
 )
 
-// CustomAnchorVerificationCode is a stable machine-readable check or issue
+// VerificationCode is a stable machine-readable check or issue
 // code. Concrete verifiers own their code vocabulary.
-type CustomAnchorVerificationCode string
+type VerificationCode string
 
-// CustomAnchorVerificationCheck records one verification checkpoint.
-type CustomAnchorVerificationCheck struct {
+// VerificationCheck records one verification checkpoint.
+type VerificationCheck struct {
 	// Code is the stable machine-readable check code.
-	Code CustomAnchorVerificationCode
+	Code VerificationCode
 
 	// Scope identifies the subject being checked.
-	Scope CustomAnchorVerificationScope
+	Scope VerificationScope
 
 	// Origin identifies whether the SDK, backend, or integrating host
 	// performed the check.
-	Origin CustomAnchorVerificationOrigin
+	Origin VerificationOrigin
 
 	// Passed reports whether the check succeeded.
 	Passed bool
@@ -595,20 +596,20 @@ type CustomAnchorVerificationCheck struct {
 	Message string
 }
 
-// CustomAnchorVerificationIssue records a structured verification finding.
-type CustomAnchorVerificationIssue struct {
+// VerificationIssue records a structured verification finding.
+type VerificationIssue struct {
 	// Code is the stable machine-readable issue code.
-	Code CustomAnchorVerificationCode
+	Code VerificationCode
 
 	// Scope identifies the affected part of the plan or package.
-	Scope CustomAnchorVerificationScope
+	Scope VerificationScope
 
 	// Origin identifies whether the SDK, backend, or integrating host reported
 	// the issue.
-	Origin CustomAnchorVerificationOrigin
+	Origin VerificationOrigin
 
 	// Severity determines whether the issue invalidates the result.
-	Severity CustomAnchorVerificationSeverity
+	Severity VerificationSeverity
 
 	// InputIndex optionally identifies an asset input.
 	InputIndex *uint32
@@ -623,18 +624,18 @@ type CustomAnchorVerificationIssue struct {
 	Message string
 }
 
-// CustomAnchorVerificationResult contains inspectable checks and issues.
-type CustomAnchorVerificationResult struct {
+// VerificationResult contains inspectable checks and issues.
+type VerificationResult struct {
 	// Checks are the verification checkpoints that were attempted.
-	Checks []CustomAnchorVerificationCheck
+	Checks []VerificationCheck
 
 	// Issues are structured informational, warning, and error findings.
-	Issues []CustomAnchorVerificationIssue
+	Issues []VerificationIssue
 }
 
 // Validate checks that the request is internally consistent before proof or
 // PSBT decoding begins.
-func (r *CustomAnchorRequest) Validate() error {
+func (r *Request) Validate() error {
 	if r == nil {
 		return fmt.Errorf("nil custom anchor request")
 	}
@@ -673,7 +674,7 @@ func (r *CustomAnchorRequest) Validate() error {
 	}
 
 	outputIDs := make(map[string]struct{}, len(r.Outputs))
-	anchorOutputs := make(map[uint32]CustomAssetOutput)
+	anchorOutputs := make(map[uint32]AssetOutput)
 	for idx := range r.Outputs {
 		output := &r.Outputs[idx]
 		if err := output.Validate(); err != nil {
@@ -697,7 +698,7 @@ func (r *CustomAnchorRequest) Validate() error {
 }
 
 // Validate checks a proof-file asset input before proof decoding.
-func (i *CustomAssetInput) Validate() error {
+func (i *AssetInput) Validate() error {
 	if i == nil {
 		return fmt.Errorf("nil asset input")
 	}
@@ -717,7 +718,7 @@ func (i *CustomAssetInput) Validate() error {
 		if err := i.ProofPath.Validate(); err != nil {
 			return fmt.Errorf("proof path: %w", err)
 		}
-		if i.Witness.Mode == CustomAssetWitnessBackendSigner {
+		if i.Witness.Mode == AssetWitnessBackendSigner {
 			return fmt.Errorf("proof path inputs require caller-provided " +
 				"witnesses")
 		}
@@ -727,13 +728,13 @@ func (i *CustomAssetInput) Validate() error {
 }
 
 // Validate checks that exactly one supported asset witness mode is selected.
-func (p *CustomAssetWitnessPlan) Validate() error {
+func (p *AssetWitnessPlan) Validate() error {
 	if p == nil {
 		return fmt.Errorf("nil asset witness plan")
 	}
 
 	switch p.Mode {
-	case CustomAssetWitnessBackendSigner:
+	case AssetWitnessBackendSigner:
 		if len(p.Stack) != 0 {
 			return fmt.Errorf("backend signer mode cannot include a " +
 				"caller witness stack")
@@ -741,7 +742,7 @@ func (p *CustomAssetWitnessPlan) Validate() error {
 
 		return nil
 
-	case CustomAssetWitnessCallerProvided:
+	case AssetWitnessCallerProvided:
 		if len(p.Stack) == 0 {
 			return fmt.Errorf("caller-provided witness stack is required")
 		}
@@ -754,7 +755,7 @@ func (p *CustomAssetWitnessPlan) Validate() error {
 }
 
 // Validate checks a logical asset output before proof or PSBT decoding.
-func (o *CustomAssetOutput) Validate() error {
+func (o *AssetOutput) Validate() error {
 	if o == nil {
 		return fmt.Errorf("nil asset output")
 	}
@@ -784,7 +785,7 @@ func (o *CustomAssetOutput) Validate() error {
 }
 
 // Validate checks that exactly one asset script variant is selected.
-func (p *CustomAssetScriptPlan) Validate() error {
+func (p *AssetScriptPlan) Validate() error {
 	if p == nil {
 		return fmt.Errorf("nil asset script plan")
 	}
@@ -798,12 +799,12 @@ func (p *CustomAssetScriptPlan) Validate() error {
 	}
 
 	switch p.Mode {
-	case CustomAssetScriptWallet:
+	case AssetScriptWallet:
 		if p.Wallet == nil {
 			return fmt.Errorf("wallet script mode requires wallet variant")
 		}
 
-	case CustomAssetScriptExternal:
+	case AssetScriptExternal:
 		if p.External == nil {
 			return fmt.Errorf("external script mode requires external variant")
 		}
@@ -813,7 +814,7 @@ func (p *CustomAssetScriptPlan) Validate() error {
 			return err
 		}
 
-	case CustomAssetScriptOPTrue:
+	case AssetScriptOPTrue:
 		if p.OPTrue == nil {
 			return fmt.Errorf("OP_TRUE script mode requires OP_TRUE variant")
 		}
@@ -823,7 +824,7 @@ func (p *CustomAssetScriptPlan) Validate() error {
 			return err
 		}
 
-	case CustomAssetScriptBurn:
+	case AssetScriptBurn:
 		if p.Burn == nil {
 			return fmt.Errorf("burn script mode requires burn variant")
 		}
@@ -836,7 +837,7 @@ func (p *CustomAssetScriptPlan) Validate() error {
 }
 
 // Validate checks the anchor internal key and sibling representation.
-func (p *CustomAnchorOutputPlan) Validate() error {
+func (p *OutputPlan) Validate() error {
 	if p == nil {
 		return fmt.Errorf("nil anchor output plan")
 	}
@@ -850,7 +851,7 @@ func (p *CustomAnchorOutputPlan) Validate() error {
 }
 
 // Validate checks that at most one anchor sibling representation is present.
-func (p *CustomAnchorTapscriptPlan) Validate() error {
+func (p *TapscriptPlan) Validate() error {
 	if p == nil {
 		return fmt.Errorf("nil anchor tapscript plan")
 	}
@@ -872,7 +873,7 @@ func (p *CustomAnchorTapscriptPlan) Validate() error {
 }
 
 // Validate checks that exactly one high-level funding variant is selected.
-func (p *CustomAnchorFundingPlan) Validate() error {
+func (p *FundingPlan) Validate() error {
 	if p == nil {
 		return fmt.Errorf("nil custom anchor funding plan")
 	}
@@ -886,7 +887,7 @@ func (p *CustomAnchorFundingPlan) Validate() error {
 	}
 
 	switch p.Mode {
-	case CustomAnchorFundingWalletFunded:
+	case FundingWalletFunded:
 		if p.WalletFunded == nil {
 			return fmt.Errorf("wallet-funded mode requires wallet variant")
 		}
@@ -913,12 +914,12 @@ func (p *CustomAnchorFundingPlan) Validate() error {
 			return err
 		}
 
-	case CustomAnchorFundingCallerFundedExact:
+	case FundingCallerFundedExact:
 		if p.CallerFundedExact == nil {
 			return fmt.Errorf("caller-funded mode requires exact variant")
 		}
 
-	case CustomAnchorFundingExternalP2AFeeBump:
+	case FundingExternalP2AFeeBump:
 		if p.ExternalP2AFeeBump == nil {
 			return fmt.Errorf("external P2A mode requires fee-bump variant")
 		}
@@ -931,13 +932,13 @@ func (p *CustomAnchorFundingPlan) Validate() error {
 }
 
 // Validate checks passive-asset policy and caller packet consistency.
-func (p *CustomAnchorPassiveAssets) Validate() error {
+func (p *PassiveAssets) Validate() error {
 	if p == nil {
 		return fmt.Errorf("nil passive-asset plan")
 	}
 
 	switch p.Policy {
-	case CustomAnchorPassiveReject, CustomAnchorPassivePreserve:
+	case PassiveReject, PassivePreserve:
 		if len(p.Packets) != 0 {
 			return fmt.Errorf("passive packets require caller re-anchor " +
 				"policy")
@@ -945,7 +946,7 @@ func (p *CustomAnchorPassiveAssets) Validate() error {
 
 		return nil
 
-	case CustomAnchorPassiveCallerReanchor:
+	case PassiveCallerReanchor:
 		if len(p.Packets) == 0 {
 			return fmt.Errorf("caller re-anchor requires passive packets")
 		}
@@ -997,13 +998,13 @@ func (p *CustomAnchorPassiveAssets) Validate() error {
 }
 
 // Validate checks that any irreversible loss is explicit and bounded.
-func (p *CustomAnchorLossPolicy) Validate() error {
+func (p *LossPolicy) Validate() error {
 	if p == nil {
 		return fmt.Errorf("nil custom anchor loss policy")
 	}
 
 	switch p.Mode {
-	case CustomAnchorLossReject:
+	case LossReject:
 		if len(p.Allowances) != 0 || p.ConfirmIrreversibleLoss {
 			return fmt.Errorf("reject loss mode cannot include allowances " +
 				"or confirmation")
@@ -1011,7 +1012,7 @@ func (p *CustomAnchorLossPolicy) Validate() error {
 
 		return nil
 
-	case CustomAnchorLossBurn:
+	case LossBurn:
 		if !p.ConfirmIrreversibleLoss {
 			return fmt.Errorf("irreversible asset loss is not confirmed")
 		}
@@ -1053,7 +1054,7 @@ func (p *CustomAnchorLossPolicy) Validate() error {
 
 // Clone returns a deep copy whose byte slices, witness stacks, variants, and
 // metadata do not alias the request.
-func (r *CustomAnchorRequest) Clone() *CustomAnchorRequest {
+func (r *Request) Clone() *Request {
 	if r == nil {
 		return nil
 	}
@@ -1062,7 +1063,7 @@ func (r *CustomAnchorRequest) Clone() *CustomAnchorRequest {
 	clone.AnchorPSBT = bytes.Clone(r.AnchorPSBT)
 
 	if r.Inputs != nil {
-		clone.Inputs = make([]CustomAssetInput, len(r.Inputs))
+		clone.Inputs = make([]AssetInput, len(r.Inputs))
 		for idx := range r.Inputs {
 			clone.Inputs[idx] = r.Inputs[idx]
 			clone.Inputs[idx].ProofFile = bytes.Clone(
@@ -1077,7 +1078,7 @@ func (r *CustomAnchorRequest) Clone() *CustomAnchorRequest {
 	}
 
 	if r.Outputs != nil {
-		clone.Outputs = make([]CustomAssetOutput, len(r.Outputs))
+		clone.Outputs = make([]AssetOutput, len(r.Outputs))
 		for idx := range r.Outputs {
 			clone.Outputs[idx] = cloneCustomAssetOutput(r.Outputs[idx])
 		}
@@ -1086,7 +1087,7 @@ func (r *CustomAnchorRequest) Clone() *CustomAnchorRequest {
 	clone.Funding = cloneCustomAnchorFunding(r.Funding)
 	if r.PassiveAssets.Packets != nil {
 		clone.PassiveAssets.Packets = make(
-			[]CustomAnchorPassivePacket, len(r.PassiveAssets.Packets),
+			[]PassivePacket, len(r.PassiveAssets.Packets),
 		)
 		for idx := range r.PassiveAssets.Packets {
 			clone.PassiveAssets.Packets[idx] =
@@ -1104,7 +1105,7 @@ func (r *CustomAnchorRequest) Clone() *CustomAnchorRequest {
 		}
 	}
 	clone.LossPolicy.Allowances = append(
-		[]CustomAnchorLossAllowance(nil), r.LossPolicy.Allowances...,
+		[]LossAllowance(nil), r.LossPolicy.Allowances...,
 	)
 	clone.SigningPlans = cloneCustomAnchorSigningPlans(r.SigningPlans)
 
@@ -1113,7 +1114,7 @@ func (r *CustomAnchorRequest) Clone() *CustomAnchorRequest {
 
 // Validate checks the structure of a verification result. An empty result is
 // invalid so an uninitialized verifier cannot be mistaken for success.
-func (r *CustomAnchorVerificationResult) Validate() error {
+func (r *VerificationResult) Validate() error {
 	if r == nil {
 		return fmt.Errorf("nil custom anchor verification result")
 	}
@@ -1160,7 +1161,7 @@ func (r *CustomAnchorVerificationResult) Validate() error {
 
 // Valid reports whether the result is well-formed, every check passed, and no
 // error-severity issue was reported.
-func (r *CustomAnchorVerificationResult) Valid() bool {
+func (r *VerificationResult) Valid() bool {
 	if err := r.Validate(); err != nil {
 		return false
 	}
@@ -1171,7 +1172,7 @@ func (r *CustomAnchorVerificationResult) Valid() bool {
 		}
 	}
 	for _, issue := range r.Issues {
-		if issue.Severity == CustomAnchorVerificationSeverityError {
+		if issue.Severity == VerificationSeverityError {
 			return false
 		}
 	}
@@ -1182,14 +1183,14 @@ func (r *CustomAnchorVerificationResult) Valid() bool {
 // Clone returns a deep copy of the verification result and optional indices.
 //
 //nolint:lll // Keeping the exported receiver and return type explicit is clearer.
-func (r *CustomAnchorVerificationResult) Clone() *CustomAnchorVerificationResult {
+func (r *VerificationResult) Clone() *VerificationResult {
 	if r == nil {
 		return nil
 	}
 
 	clone := *r
 	clone.Checks = append(
-		[]CustomAnchorVerificationCheck(nil), r.Checks...,
+		[]VerificationCheck(nil), r.Checks...,
 	)
 	for idx := range clone.Checks {
 		clone.Checks[idx].InputIndex = cloneUint32(
@@ -1201,7 +1202,7 @@ func (r *CustomAnchorVerificationResult) Clone() *CustomAnchorVerificationResult
 	}
 
 	clone.Issues = append(
-		[]CustomAnchorVerificationIssue(nil), r.Issues...,
+		[]VerificationIssue(nil), r.Issues...,
 	)
 	for idx := range clone.Issues {
 		clone.Issues[idx].InputIndex = cloneUint32(
@@ -1215,7 +1216,7 @@ func (r *CustomAnchorVerificationResult) Clone() *CustomAnchorVerificationResult
 	return &clone
 }
 
-func (r *CustomAnchorRequest) validateAmounts() error {
+func (r *Request) validateAmounts() error {
 	totals := make(map[string]*customAnchorAmountTotals)
 	for idx := range r.Inputs {
 		input := &r.Inputs[idx]
@@ -1240,7 +1241,7 @@ func (r *CustomAnchorRequest) validateAmounts() error {
 		}
 		entry.Outputs = amount
 
-		if output.Script.Mode == CustomAssetScriptBurn {
+		if output.Script.Mode == AssetScriptBurn {
 			amount, err = checkedCustomAnchorAdd(entry.Burned, output.Amount)
 			if err != nil {
 				return fmt.Errorf("burn amount for asset %q: %w",
@@ -1299,14 +1300,14 @@ func (r *CustomAnchorRequest) validateAmounts() error {
 }
 
 type customAnchorAmountTotals struct {
-	Ref     AssetRef
+	Ref     tapsdk.AssetRef
 	Inputs  uint64
 	Outputs uint64
 	Burned  uint64
 }
 
 func customAnchorTotals(totals map[string]*customAnchorAmountTotals,
-	ref AssetRef) *customAnchorAmountTotals {
+	ref tapsdk.AssetRef) *customAnchorAmountTotals {
 
 	key := customAnchorAssetKey(ref)
 	entry, ok := totals[key]
@@ -1322,8 +1323,8 @@ func customAnchorTotals(totals map[string]*customAnchorAmountTotals,
 	return entry
 }
 
-func (p *CustomAnchorLossPolicy) allowance(ref AssetRef) uint64 {
-	if p.Mode != CustomAnchorLossBurn || !p.ConfirmIrreversibleLoss {
+func (p *LossPolicy) allowance(ref tapsdk.AssetRef) uint64 {
+	if p.Mode != LossBurn || !p.ConfirmIrreversibleLoss {
 		return 0
 	}
 
@@ -1337,12 +1338,12 @@ func (p *CustomAnchorLossPolicy) allowance(ref AssetRef) uint64 {
 	return 0
 }
 
-func cloneCustomAssetOutput(output CustomAssetOutput) CustomAssetOutput {
+func cloneCustomAssetOutput(output AssetOutput) AssetOutput {
 	clone := output
 	clone.Script = cloneCustomAssetScript(output.Script)
 	if output.Anchor.Tapscript.TapLeaves != nil {
 		clone.Anchor.Tapscript.TapLeaves = make(
-			[]TapLeaf, len(output.Anchor.Tapscript.TapLeaves),
+			[]tapsdk.TapLeaf, len(output.Anchor.Tapscript.TapLeaves),
 		)
 		for idx, leaf := range output.Anchor.Tapscript.TapLeaves {
 			clone.Anchor.Tapscript.TapLeaves[idx] = leaf
@@ -1362,7 +1363,7 @@ func cloneCustomAssetOutput(output CustomAssetOutput) CustomAssetOutput {
 }
 
 func cloneCustomAssetScript(
-	plan CustomAssetScriptPlan) CustomAssetScriptPlan {
+	plan AssetScriptPlan) AssetScriptPlan {
 
 	clone := plan
 	if plan.Wallet != nil {
@@ -1390,7 +1391,7 @@ func cloneCustomAssetScript(
 }
 
 func cloneCustomAnchorFunding(
-	plan CustomAnchorFundingPlan) CustomAnchorFundingPlan {
+	plan FundingPlan) FundingPlan {
 
 	clone := plan
 	if plan.WalletFunded != nil {
@@ -1423,7 +1424,7 @@ func cloneCustomAnchorByteSlices(values [][]byte) [][]byte {
 	return clone
 }
 
-func cloneKeyLocator(locator *KeyLocator) *KeyLocator {
+func cloneKeyLocator(locator *tapsdk.KeyLocator) *tapsdk.KeyLocator {
 	if locator == nil {
 		return nil
 	}
@@ -1441,7 +1442,7 @@ func cloneUint32(value *uint32) *uint32 {
 	return &clone
 }
 
-func sameCustomAnchorOutput(left, right CustomAssetOutput) bool {
+func sameCustomAnchorOutput(left, right AssetOutput) bool {
 	if left.AnchorValueSat != right.AnchorValueSat ||
 		left.Anchor.InternalKey != right.Anchor.InternalKey {
 
@@ -1454,7 +1455,7 @@ func sameCustomAnchorOutput(left, right CustomAssetOutput) bool {
 }
 
 func sameCustomAnchorTapscript(left,
-	right CustomAnchorTapscriptPlan) bool {
+	right TapscriptPlan) bool {
 
 	if !bytes.Equal(left.SerializedSibling, right.SerializedSibling) ||
 		len(left.TapLeaves) != len(right.TapLeaves) {
@@ -1475,7 +1476,7 @@ func sameCustomAnchorTapscript(left,
 	return true
 }
 
-func customAnchorAssetKey(ref AssetRef) string {
+func customAnchorAssetKey(ref tapsdk.AssetRef) string {
 	if id, ok := ref.AssetID(); ok {
 		return "asset:" + string(id[:])
 	}
@@ -1507,25 +1508,25 @@ func countCustomAnchorVariants(values ...bool) int {
 	return count
 }
 
-func validateCustomAnchorPubKey(name string, key PubKey) error {
-	if _, err := ParsePubKey(key[:]); err != nil {
+func validateCustomAnchorPubKey(name string, key tapsdk.PubKey) error {
+	if _, err := tapsdk.ParsePubKey(key[:]); err != nil {
 		return fmt.Errorf("%s: %w", name, err)
 	}
 
 	return nil
 }
 
-func (o CustomAnchorVerificationOrigin) valid() bool {
-	return o == CustomAnchorVerificationOriginLocal ||
-		o == CustomAnchorVerificationOriginBackend ||
-		o == CustomAnchorVerificationOriginHost
+func (o VerificationOrigin) valid() bool {
+	return o == VerificationOriginLocal ||
+		o == VerificationOriginBackend ||
+		o == VerificationOriginHost
 }
 
-func (s CustomAnchorVerificationSeverity) valid() bool {
+func (s VerificationSeverity) valid() bool {
 	switch s {
-	case CustomAnchorVerificationSeverityInfo,
-		CustomAnchorVerificationSeverityWarning,
-		CustomAnchorVerificationSeverityError:
+	case VerificationSeverityInfo,
+		VerificationSeverityWarning,
+		VerificationSeverityError:
 
 		return true
 
@@ -1534,18 +1535,18 @@ func (s CustomAnchorVerificationSeverity) valid() bool {
 	}
 }
 
-func (s CustomAnchorVerificationScope) valid() bool {
+func (s VerificationScope) valid() bool {
 	switch s {
-	case CustomAnchorVerificationScopeRequest,
-		CustomAnchorVerificationScopeInputProof,
-		CustomAnchorVerificationScopeAssetIdentity,
-		CustomAnchorVerificationScopeAmount,
-		CustomAnchorVerificationScopeOutputCommitment,
-		CustomAnchorVerificationScopeAnchorOutput,
-		CustomAnchorVerificationScopePassiveAssets,
-		CustomAnchorVerificationScopeLossPolicy,
-		CustomAnchorVerificationScopeCapability,
-		CustomAnchorVerificationScopeBackendTrust:
+	case VerificationScopeRequest,
+		VerificationScopeInputProof,
+		VerificationScopeAssetIdentity,
+		VerificationScopeAmount,
+		VerificationScopeOutputCommitment,
+		VerificationScopeAnchorOutput,
+		VerificationScopePassiveAssets,
+		VerificationScopeLossPolicy,
+		VerificationScopeCapability,
+		VerificationScopeBackendTrust:
 
 		return true
 

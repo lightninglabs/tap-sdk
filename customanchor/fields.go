@@ -1,10 +1,11 @@
-package tapsdk
+package customanchor
 
 import (
 	"bytes"
 	"fmt"
 
 	"github.com/btcsuite/btcd/psbt/v2"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/tappsbt"
 )
 
@@ -19,9 +20,9 @@ import (
 // to recover an output's commitment root without depending on tapd's
 // internal PSBT conventions.
 func AnchorOutputTaprootAssetRoot(anchorPSBT []byte,
-	outputIndex int) (Hash, bool, error) {
+	outputIndex int) (tapsdk.Hash, bool, error) {
 
-	var root Hash
+	var root tapsdk.Hash
 
 	packet, err := psbt.NewFromRawBytes(
 		bytes.NewReader(anchorPSBT), false,
@@ -62,7 +63,7 @@ func AnchorOutputTaprootAssetRoot(anchorPSBT []byte,
 // template tooling and test fixtures; in normal operation tapd records
 // the field itself.
 func SetAnchorOutputTaprootAssetRoot(anchorPSBT []byte, outputIndex int,
-	root Hash) ([]byte, error) {
+	root tapsdk.Hash) ([]byte, error) {
 
 	packet, err := psbt.NewFromRawBytes(
 		bytes.NewReader(anchorPSBT), false,

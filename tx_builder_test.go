@@ -25,17 +25,6 @@ type legacyOnlyWalletKitClient struct {
 	WalletKitClient
 }
 
-func (m *MockWalletKitClient) CustomAnchorCapabilities(
-	ctx context.Context) (*CustomAnchorCapabilities, error) {
-
-	args := m.Called(ctx)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-
-	return args.Get(0).(*CustomAnchorCapabilities), args.Error(1)
-}
-
 func (m *MockWalletKitClient) FundTransfer(ctx context.Context,
 	recipients []Recipient, inputs []PrevID) (
 	*FundedTransfer, error) {

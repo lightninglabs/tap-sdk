@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
+	"github.com/lightninglabs/tap-sdk/customanchor"
 	"github.com/lightninglabs/tap-sdk/internal/anchor"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 )
@@ -23,13 +24,13 @@ func newWalletKitClient(tp *transport) *walletKitClient {
 // CustomAnchorCapabilities returns the SDK-version-pinned tapd capability
 // assumptions. tapd does not expose runtime capability discovery over REST.
 func (w *walletKitClient) CustomAnchorCapabilities(
-	ctx context.Context) (*tapsdk.CustomAnchorCapabilities, error) {
+	ctx context.Context) (*customanchor.Capabilities, error) {
 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	caps := tapsdk.DefaultTapdCustomAnchorCapabilities()
+	caps := customanchor.DefaultTapdCapabilities()
 	return &caps, nil
 }
 

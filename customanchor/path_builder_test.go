@@ -1,4 +1,4 @@
-package tapsdk
+package customanchor
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/proof"
 	"github.com/lightninglabs/taproot-assets/tappsbt"
@@ -24,8 +25,7 @@ func TestCustomAnchorPathBuilderConsumesUnconfirmedTip(t *testing.T) {
 	t.Parallel()
 
 	fixture := newCustomAnchorPathBuilderFixture(t)
-	builder := NewWallet(fixture.client, NetworkRegtest).
-		NewCustomAnchorTxBuilder()
+	builder := newTestTxBuilder(fixture.client)
 	builder.SetConfirmedProofVerifier(fixture.verifier)
 
 	plan, err := builder.Build(
@@ -40,13 +40,13 @@ func TestCustomAnchorPathBuilderConsumesUnconfirmedTip(t *testing.T) {
 	for _, check := range plan.Verification().Checks {
 		switch check.Code {
 		case customAnchorCheckProofChain:
-			baseCheck = check.Origin == CustomAnchorVerificationOriginHost
+			baseCheck = check.Origin == VerificationOriginHost
 
 		case customAnchorCheckBTCPath:
-			hostCheck = check.Origin == CustomAnchorVerificationOriginHost
+			hostCheck = check.Origin == VerificationOriginHost
 
 		case customAnchorCheckAssetPath:
-			localCheck = check.Origin == CustomAnchorVerificationOriginLocal
+			localCheck = check.Origin == VerificationOriginLocal
 		}
 	}
 	require.True(t, baseCheck,
@@ -105,26 +105,24 @@ func TestCustomAnchorOutputCommitmentPreviewMatchesCommit(t *testing.T) {
 	change.Anchor.InternalKey.PubKey = mustCustomAnchorPubKey(
 		t, testPrivateKey(t, 57).PubKey(),
 	)
-	request.Outputs = []CustomAssetOutput{receiver, change}
-	witnessBuilder := NewWallet(fixture.client, NetworkRegtest).
-		NewCustomAnchorTxBuilder()
+	request.Outputs = []AssetOutput{receiver, change}
+	witnessBuilder := newTestTxBuilder(fixture.client)
 	request.Inputs[0].Witness.Stack = customAnchorPathSpendWitness(
 		t, witnessBuilder, fixture.transition, request.Outputs,
 		fixture.tipSpendKey,
 	)
 	fixture.client.commit = func(_ context.Context,
-		req *CommitVirtualPsbtsRequest) (*CommitVirtualPsbtsResponse,
+		req *tapsdk.CommitVirtualPsbtsRequest) (*tapsdk.CommitVirtualPsbtsResponse,
 		error) {
 
 		return customAnchorTestCommitResponse(t, req), nil
 	}
-	capabilities := DefaultTapdCustomAnchorCapabilities()
+	capabilities := DefaultTapdCapabilities()
 	client := &capableCustomAnchorBuilderTestClient{
 		customAnchorBuilderTestClient: fixture.client,
 		capabilities:                  &capabilities,
 	}
-	builder := NewWallet(client, NetworkRegtest).
-		NewCustomAnchorTxBuilder().SetConfirmedProofVerifier(
+	builder := newTestTxBuilder(client).SetConfirmedProofVerifier(
 		fixture.verifier,
 	)
 
@@ -209,19 +207,19 @@ func TestCustomAnchorPathBuilderRequiresOneProofSource(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		mutate func(*CustomAssetInput, *AssetProofPath)
+		mutate func(*AssetInput, *ProofPath)
 	}{
 		{
 			name: "neither source",
-			mutate: func(input *CustomAssetInput, _ *AssetProofPath) {
+			mutate: func(input *AssetInput, _ *ProofPath) {
 				input.ProofFile = nil
 				input.ProofPath = nil
 			},
 		},
 		{
 			name: "both sources",
-			mutate: func(input *CustomAssetInput,
-				path *AssetProofPath) {
+			mutate: func(input *AssetInput,
+				path *ProofPath) {
 
 				input.ProofFile = cloneBytes(path.ConfirmedBaseProof)
 				input.ProofPath = path.Clone()
@@ -236,8 +234,7 @@ func TestCustomAnchorPathBuilderRequiresOneProofSource(t *testing.T) {
 			fixture := newCustomAnchorPathBuilderFixture(t)
 			request := fixture.request.Clone()
 			test.mutate(&request.Inputs[0], fixture.path)
-			builder := NewWallet(fixture.client, NetworkRegtest).
-				NewCustomAnchorTxBuilder()
+			builder := newTestTxBuilder(fixture.client)
 			builder.SetConfirmedProofVerifier(fixture.verifier)
 
 			_, err := builder.Build(context.Background(), request)
@@ -252,8 +249,7 @@ func TestCustomAnchorPathBuilderRequiresVerifier(t *testing.T) {
 	t.Parallel()
 
 	fixture := newCustomAnchorPathBuilderFixture(t)
-	builder := NewWallet(fixture.client, NetworkRegtest).
-		NewCustomAnchorTxBuilder()
+	builder := newTestTxBuilder(fixture.client)
 
 	_, err := builder.Build(context.Background(), fixture.request)
 	require.ErrorContains(t, err, "confirmed proof verifier is required")
@@ -266,11 +262,10 @@ func TestCustomAnchorPathBuilderRejectsBackendSigner(t *testing.T) {
 
 	fixture := newCustomAnchorPathBuilderFixture(t)
 	request := fixture.request.Clone()
-	request.Inputs[0].Witness = CustomAssetWitnessPlan{
-		Mode: CustomAssetWitnessBackendSigner,
+	request.Inputs[0].Witness = AssetWitnessPlan{
+		Mode: AssetWitnessBackendSigner,
 	}
-	builder := NewWallet(fixture.client, NetworkRegtest).
-		NewCustomAnchorTxBuilder()
+	builder := newTestTxBuilder(fixture.client)
 	builder.SetConfirmedProofVerifier(fixture.verifier)
 
 	_, err := builder.Build(context.Background(), request)
@@ -285,15 +280,15 @@ func TestCustomAnchorPathBuilderRejectsTipMismatches(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		mutate  func(*CustomAnchorRequest)
+		mutate  func(*Request)
 		wantErr string
 	}{
 		{
 			name: "asset identity",
-			mutate: func(request *CustomAnchorRequest) {
-				var otherID AssetID
+			mutate: func(request *Request) {
+				var otherID tapsdk.AssetID
 				otherID[0] = 99
-				otherRef := AssetRefFromAssetID(otherID)
+				otherRef := tapsdk.AssetRefFromAssetID(otherID)
 				request.Inputs[0].AssetRef = otherRef
 				request.Outputs[0].AssetRef = otherRef
 			},
@@ -301,7 +296,7 @@ func TestCustomAnchorPathBuilderRejectsTipMismatches(t *testing.T) {
 		},
 		{
 			name: "amount",
-			mutate: func(request *CustomAnchorRequest) {
+			mutate: func(request *Request) {
 				request.Inputs[0].Amount = 99
 				request.Outputs[0].Amount = 99
 			},
@@ -316,8 +311,7 @@ func TestCustomAnchorPathBuilderRejectsTipMismatches(t *testing.T) {
 			fixture := newCustomAnchorPathBuilderFixture(t)
 			request := fixture.request.Clone()
 			test.mutate(request)
-			builder := NewWallet(fixture.client, NetworkRegtest).
-				NewCustomAnchorTxBuilder()
+			builder := newTestTxBuilder(fixture.client)
 			builder.SetConfirmedProofVerifier(fixture.verifier)
 
 			_, err := builder.Build(context.Background(), request)
@@ -338,8 +332,7 @@ func TestCustomAnchorPathBuilderRejectsDuplicateTip(t *testing.T) {
 	duplicate.ProofPath = duplicate.ProofPath.Clone()
 	request.Inputs = append(request.Inputs, duplicate)
 	request.Outputs[0].Amount *= 2
-	builder := NewWallet(fixture.client, NetworkRegtest).
-		NewCustomAnchorTxBuilder()
+	builder := newTestTxBuilder(fixture.client)
 	builder.SetConfirmedProofVerifier(fixture.verifier)
 
 	_, err := builder.Build(context.Background(), request)
@@ -347,8 +340,8 @@ func TestCustomAnchorPathBuilderRejectsDuplicateTip(t *testing.T) {
 }
 
 type customAnchorPathBuilderFixture struct {
-	request     *CustomAnchorRequest
-	path        *AssetProofPath
+	request     *Request
+	path        *ProofPath
 	transition  *proof.Proof
 	tipSpendKey *btcec.PrivateKey
 	verifier    *testConfirmedProofVerifier
@@ -383,9 +376,9 @@ func newCustomAnchorPathBuilderFixture(
 	transition, err = proof.Decode(transitionBytes)
 	require.NoError(t, err)
 
-	path := &AssetProofPath{
+	path := &ProofPath{
 		ConfirmedBaseProof: baseProofFile,
-		Steps: []AssetProofPathStep{{
+		Steps: []ProofPathStep{{
 			TransitionProof: transitionBytes,
 		}},
 	}
@@ -401,29 +394,29 @@ func newCustomAnchorPathBuilderFixture(
 			{Value: 0, PkScript: cloneBytes(canonicalP2AScript)},
 		},
 	)
-	request := &CustomAnchorRequest{
-		Inputs: []CustomAssetInput{{
+	request := &Request{
+		Inputs: []AssetInput{{
 			ID:        "unconfirmed-path-tip",
 			AssetRef:  assetRef,
 			Amount:    transition.Asset.Amount,
 			ProofPath: path,
 		}},
-		Outputs: []CustomAssetOutput{{
+		Outputs: []AssetOutput{{
 			ID:                "next-ark-edge",
 			AssetRef:          assetRef,
 			Amount:            transition.Asset.Amount,
 			AnchorOutputIndex: 1,
 			AnchorValueSat:    777,
-			Script: CustomAssetScriptPlan{
-				Mode: CustomAssetScriptExternal,
-				External: &CustomAssetExternalScriptPlan{
+			Script: AssetScriptPlan{
+				Mode: AssetScriptExternal,
+				External: &AssetExternalScriptPlan{
 					ScriptKey: customAnchorExternalScriptKey(
 						t, testPrivateKey(t, 54),
 					),
 				},
 			},
-			Anchor: CustomAnchorOutputPlan{
-				InternalKey: InternalKey{
+			Anchor: OutputPlan{
+				InternalKey: tapsdk.InternalKey{
 					PubKey: mustCustomAnchorPubKey(
 						t, testPrivateKey(t, 55).PubKey(),
 					),
@@ -431,19 +424,19 @@ func newCustomAnchorPathBuilderFixture(
 			},
 		}},
 		AnchorPSBT: anchor,
-		Funding: CustomAnchorFundingPlan{
-			Mode: CustomAnchorFundingExternalP2AFeeBump,
-			ExternalP2AFeeBump: &CustomAnchorExternalP2AFeeBump{
+		Funding: FundingPlan{
+			Mode: FundingExternalP2AFeeBump,
+			ExternalP2AFeeBump: &ExternalP2AFeeBump{
 				P2AOutputIndex: 2,
 			},
 		},
-		PassiveAssets: CustomAnchorPassiveAssets{
-			Policy: CustomAnchorPassiveReject,
+		PassiveAssets: PassiveAssets{
+			Policy: PassiveReject,
 		},
-		SigningPlans: []CustomAnchorInputSigningPlan{
+		SigningPlans: []InputSigningPlan{
 			{
 				InputIndex: 0,
-				KeyPath: &CustomAnchorKeyPathSigningPlan{
+				KeyPath: &KeyPathSigningPlan{
 					Signer: mustCustomAnchorXOnly(
 						t, btcInputKey.PubKey(),
 					),
@@ -451,7 +444,7 @@ func newCustomAnchorPathBuilderFixture(
 			},
 			{
 				InputIndex: 1,
-				KeyPath: &CustomAnchorKeyPathSigningPlan{
+				KeyPath: &KeyPathSigningPlan{
 					Signer: mustCustomAnchorXOnly(
 						t,
 						transition.InclusionProof.InternalKey,
@@ -462,10 +455,9 @@ func newCustomAnchorPathBuilderFixture(
 	}
 
 	client := &customAnchorBuilderTestClient{}
-	builder := NewWallet(client, NetworkRegtest).
-		NewCustomAnchorTxBuilder()
-	request.Inputs[0].Witness = CustomAssetWitnessPlan{
-		Mode: CustomAssetWitnessCallerProvided,
+	builder := newTestTxBuilder(client)
+	request.Inputs[0].Witness = AssetWitnessPlan{
+		Mode: AssetWitnessCallerProvided,
 		Stack: customAnchorPathSpendWitness(
 			t, builder, transition, request.Outputs, tipSpendKey,
 		),
@@ -486,8 +478,8 @@ func newCustomAnchorPathBuilderFixture(
 }
 
 func customAnchorPathSpendWitness(t *testing.T,
-	builder *CustomAnchorTxBuilder, inputProof *proof.Proof,
-	outputs []CustomAssetOutput, spendKey *btcec.PrivateKey) [][]byte {
+	builder *TxBuilder, inputProof *proof.Proof,
+	outputs []AssetOutput, spendKey *btcec.PrivateKey) [][]byte {
 
 	t.Helper()
 

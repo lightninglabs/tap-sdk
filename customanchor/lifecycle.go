@@ -1,4 +1,4 @@
-package tapsdk
+package customanchor
 
 import (
 	"bytes"
@@ -13,6 +13,7 @@ import (
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/proof"
 	"github.com/lightninglabs/taproot-assets/tappsbt"
@@ -25,42 +26,42 @@ var customAnchorPlanDigestDomain = []byte(
 	"tap-sdk/custom-anchor/plan/v1",
 )
 
-// CustomAnchorCommitOptions contains metadata that must be bound into the
+// CommitOptions contains metadata that must be bound into the
 // persisted package before external signing begins.
-type CustomAnchorCommitOptions struct {
+type CommitOptions struct {
 	// Publish is the publish/log policy persisted for crash recovery.
-	Publish CustomAnchorPublishMetadata
+	Publish PublishMetadata
 }
 
-// CustomAnchorCommitResponseError reports a local verification or persistence
+// CommitResponseError reports a local verification or persistence
 // failure after the backend returned a commit response. LockedUTXOs must be
 // released explicitly before abandoning the attempt.
-type CustomAnchorCommitResponseError struct {
+type CommitResponseError struct {
 	Err         error
-	LockedUTXOs []CustomAnchorLockedUTXO
+	LockedUTXOs []LockedUTXO
 }
 
-// CustomAnchorCommitAttemptError reports a commit call that returned no
+// CommitAttemptError reports a commit call that returned no
 // usable response. If OutcomeUnknown is true, the backend may have committed
 // the transfer and retained wallet leases before the transport failed. The
 // caller must reconcile those leases before retrying.
-type CustomAnchorCommitAttemptError struct {
+type CommitAttemptError struct {
 	Err            error
-	FundingLock    CustomAnchorFundingLockMetadata
+	FundingLock    FundingLockMetadata
 	OutcomeUnknown bool
 }
 
-// CustomAnchorPublishAttemptError reports a publish/log call that returned no
+// PublishAttemptError reports a publish/log call that returned no
 // usable response. If OutcomeUnknown is true, the backend may already have
 // logged or broadcast the transfer and the caller must reconcile state before
 // retrying.
-type CustomAnchorPublishAttemptError struct {
+type PublishAttemptError struct {
 	Err            error
 	OutcomeUnknown bool
 }
 
 // Error returns the publish-attempt failure and highlights ambiguous results.
-func (e *CustomAnchorPublishAttemptError) Error() string {
+func (e *PublishAttemptError) Error() string {
 	if e == nil || e.Err == nil {
 		return "custom anchor publish attempt failed"
 	}
@@ -72,7 +73,7 @@ func (e *CustomAnchorPublishAttemptError) Error() string {
 }
 
 // Unwrap returns the underlying transport or backend error.
-func (e *CustomAnchorPublishAttemptError) Unwrap() error {
+func (e *PublishAttemptError) Unwrap() error {
 	if e == nil {
 		return nil
 	}
@@ -81,7 +82,7 @@ func (e *CustomAnchorPublishAttemptError) Unwrap() error {
 }
 
 // Error returns the commit-attempt failure and highlights ambiguous results.
-func (e *CustomAnchorCommitAttemptError) Error() string {
+func (e *CommitAttemptError) Error() string {
 	if e == nil || e.Err == nil {
 		return "custom anchor commit attempt failed"
 	}
@@ -93,7 +94,7 @@ func (e *CustomAnchorCommitAttemptError) Error() string {
 }
 
 // Unwrap returns the underlying transport or backend error.
-func (e *CustomAnchorCommitAttemptError) Unwrap() error {
+func (e *CommitAttemptError) Unwrap() error {
 	if e == nil {
 		return nil
 	}
@@ -102,7 +103,7 @@ func (e *CustomAnchorCommitAttemptError) Unwrap() error {
 }
 
 // Error returns the post-response commit failure.
-func (e *CustomAnchorCommitResponseError) Error() string {
+func (e *CommitResponseError) Error() string {
 	if e == nil || e.Err == nil {
 		return "custom anchor commit response failed verification"
 	}
@@ -112,7 +113,7 @@ func (e *CustomAnchorCommitResponseError) Error() string {
 }
 
 // Unwrap returns the underlying local failure.
-func (e *CustomAnchorCommitResponseError) Unwrap() error {
+func (e *CommitResponseError) Unwrap() error {
 	if e == nil {
 		return nil
 	}
@@ -121,12 +122,12 @@ func (e *CustomAnchorCommitResponseError) Unwrap() error {
 }
 
 // ID returns the deterministic identifier for the exact inspected plan.
-func (p *CustomAnchorPlan) ID() (Hash, error) {
+func (p *Plan) ID() (tapsdk.Hash, error) {
 	if p == nil || p.request == nil {
-		return Hash{}, fmt.Errorf("nil custom anchor plan")
+		return tapsdk.Hash{}, fmt.Errorf("nil custom anchor plan")
 	}
 	if err := p.request.Validate(); err != nil {
-		return Hash{}, fmt.Errorf("invalid custom anchor plan request: %w",
+		return tapsdk.Hash{}, fmt.Errorf("invalid custom anchor plan request: %w",
 			err)
 	}
 
@@ -136,7 +137,7 @@ func (p *CustomAnchorPlan) ID() (Hash, error) {
 	//nolint:musttag
 	requestBytes, err := json.Marshal(p.request)
 	if err != nil {
-		return Hash{}, fmt.Errorf("encode custom anchor plan request: %w",
+		return tapsdk.Hash{}, fmt.Errorf("encode custom anchor plan request: %w",
 			err)
 	}
 	writePlanDigestBytes(&payload, requestBytes)
@@ -157,8 +158,8 @@ func (p *CustomAnchorPlan) ID() (Hash, error) {
 // supplied at most once.
 //
 //nolint:nonamedreturns // The named error annotates all post-response failures.
-func (p *CustomAnchorPlan) Commit(ctx context.Context,
-	options ...CustomAnchorCommitOptions) (result *CustomAnchorTransferPackage,
+func (p *Plan) Commit(ctx context.Context,
+	options ...CommitOptions) (result *TransferPackage,
 	err error) {
 
 	if p == nil || p.client == nil || p.request == nil {
@@ -168,12 +169,12 @@ func (p *CustomAnchorPlan) Commit(ctx context.Context,
 		return nil, fmt.Errorf("at most one custom anchor commit option is " +
 			"allowed")
 	}
-	var opts CustomAnchorCommitOptions
+	var opts CommitOptions
 	if len(options) == 1 {
 		opts = options[0]
 	}
 	if p.request.Funding.Mode ==
-		CustomAnchorFundingExternalP2AFeeBump {
+		FundingExternalP2AFeeBump {
 
 		// A zero-fee P2A parent cannot be broadcast on its own. Bind the
 		// external package-relay policy into the durable package even when
@@ -185,7 +186,7 @@ func (p *CustomAnchorPlan) Commit(ctx context.Context,
 		return nil, fmt.Errorf("custom anchor plan verification is not valid")
 	}
 	advancedClient, err := requireCustomAnchorWalletKitClient(
-		p.client, CustomAnchorCapabilityCommit,
+		p.client, CapabilityCommit,
 	)
 	if err != nil {
 		return nil, err
@@ -223,7 +224,7 @@ func (p *CustomAnchorPlan) Commit(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	commitRequest := &CommitVirtualPsbtsRequest{
+	commitRequest := &tapsdk.CommitVirtualPsbtsRequest{
 		AnchorPsbt:   cloneBytes(p.anchorPSBT),
 		VirtualPsbts: active,
 		PassiveAssetPsbts: cloneByteSlices(
@@ -235,7 +236,7 @@ func (p *CustomAnchorPlan) Commit(ctx context.Context,
 		ctx, commitRequest,
 	)
 	if err != nil {
-		return nil, &CustomAnchorCommitAttemptError{
+		return nil, &CommitAttemptError{
 			Err: fmt.Errorf("commit custom anchor virtual packets: %w",
 				err),
 			FundingLock: customAnchorFundingLockMetadata(
@@ -245,7 +246,7 @@ func (p *CustomAnchorPlan) Commit(ctx context.Context,
 		}
 	}
 	if response == nil {
-		return nil, &CustomAnchorCommitAttemptError{
+		return nil, &CommitAttemptError{
 			Err: fmt.Errorf("commit custom anchor returned no response"),
 			FundingLock: customAnchorFundingLockMetadata(
 				p.request.Funding,
@@ -253,9 +254,9 @@ func (p *CustomAnchorPlan) Commit(ctx context.Context,
 			OutcomeUnknown: true,
 		}
 	}
-	locked := make([]CustomAnchorLockedUTXO, len(response.LockedUTXOs))
+	locked := make([]LockedUTXO, len(response.LockedUTXOs))
 	for idx := range response.LockedUTXOs {
-		locked[idx] = CustomAnchorLockedUTXO{
+		locked[idx] = LockedUTXO{
 			Outpoint: response.LockedUTXOs[idx],
 		}
 	}
@@ -263,9 +264,9 @@ func (p *CustomAnchorPlan) Commit(ctx context.Context,
 		if err == nil {
 			return
 		}
-		err = &CustomAnchorCommitResponseError{
+		err = &CommitResponseError{
 			Err:         err,
-			LockedUTXOs: append([]CustomAnchorLockedUTXO(nil), locked...),
+			LockedUTXOs: append([]LockedUTXO(nil), locked...),
 		}
 	}()
 	if len(response.VirtualPsbts) != len(active) ||
@@ -301,7 +302,7 @@ func (p *CustomAnchorPlan) Commit(ctx context.Context,
 	if err != nil {
 		return nil, fmt.Errorf("calculate committed anchor fee: %w", err)
 	}
-	if p.request.Funding.Mode == CustomAnchorFundingWalletFunded &&
+	if p.request.Funding.Mode == FundingWalletFunded &&
 		actualFee > p.request.Funding.WalletFunded.MaxFeeSat {
 
 		return nil, fmt.Errorf("committed anchor fee %d exceeds maximum %d",
@@ -397,7 +398,7 @@ func (p *CustomAnchorPlan) Commit(ctx context.Context,
 		return nil, err
 	}
 
-	packageSnapshot := &CustomAnchorTransferPackage{
+	packageSnapshot := &TransferPackage{
 		PlanID:              planID,
 		AnchorPsbt:          cloneBytes(response.AnchorPsbt),
 		ActiveVirtualPsbts:  cloneByteSlices(response.VirtualPsbts),
@@ -427,10 +428,10 @@ func (p *CustomAnchorPlan) Commit(ctx context.Context,
 	return sealed, nil
 }
 
-func customAnchorFundingSummary(funding CustomAnchorFundingPlan,
-	actualFee uint64) CustomAnchorFundingSummary {
+func customAnchorFundingSummary(funding FundingPlan,
+	actualFee uint64) FundingSummary {
 
-	summary := CustomAnchorFundingSummary{
+	summary := FundingSummary{
 		Mode:         funding.Mode,
 		ActualFeeSat: actualFee,
 	}
@@ -474,26 +475,26 @@ func customAnchorCommitOutcomeUnknown(err error) bool {
 }
 
 func customAnchorFundingLockMetadata(
-	funding CustomAnchorFundingPlan) CustomAnchorFundingLockMetadata {
+	funding FundingPlan) FundingLockMetadata {
 
-	if funding.Mode != CustomAnchorFundingWalletFunded ||
+	if funding.Mode != FundingWalletFunded ||
 		funding.WalletFunded == nil {
 
-		return CustomAnchorFundingLockMetadata{}
+		return FundingLockMetadata{}
 	}
 
-	return CustomAnchorFundingLockMetadata{
+	return FundingLockMetadata{
 		CustomLockID: cloneBytes(funding.WalletFunded.CustomLockID),
 		LockExpirationSeconds: funding.WalletFunded.
 			LockExpirationSeconds,
 	}
 }
 
-func validateCustomAnchorLockInventory(funding CustomAnchorFundingPlan,
+func validateCustomAnchorLockInventory(funding FundingPlan,
 	anchor *psbt.Packet, backendManaged []uint32,
-	locked []CustomAnchorLockedUTXO) error {
+	locked []LockedUTXO) error {
 
-	if funding.Mode != CustomAnchorFundingWalletFunded {
+	if funding.Mode != FundingWalletFunded {
 		if len(locked) != 0 {
 			return fmt.Errorf("skip-funding commit returned locked UTXOs")
 		}
@@ -501,7 +502,7 @@ func validateCustomAnchorLockInventory(funding CustomAnchorFundingPlan,
 		return nil
 	}
 
-	expected := make(map[Outpoint]struct{}, len(backendManaged))
+	expected := make(map[tapsdk.Outpoint]struct{}, len(backendManaged))
 	for _, inputIndex := range backendManaged {
 		if inputIndex >= uint32(len(anchor.UnsignedTx.TxIn)) {
 			return fmt.Errorf("backend-managed input %d is out of range",
@@ -512,7 +513,7 @@ func validateCustomAnchorLockInventory(funding CustomAnchorFundingPlan,
 		)
 		expected[outpoint] = struct{}{}
 	}
-	actual := make(map[Outpoint]struct{}, len(locked))
+	actual := make(map[tapsdk.Outpoint]struct{}, len(locked))
 	for idx := range locked {
 		outpoint := locked[idx].Outpoint
 		if _, ok := actual[outpoint]; ok {
@@ -532,14 +533,14 @@ func validateCustomAnchorLockInventory(funding CustomAnchorFundingPlan,
 	return nil
 }
 
-// PublishCustomAnchorTransfer verifies that the final PSBT has the exact
-// committed unsigned transaction and commitments, then publishes/logs it using
-// the metadata sealed into the package.
-func (s *Wallet) PublishCustomAnchorTransfer(ctx context.Context,
-	packageSnapshot *CustomAnchorTransferPackage,
-	finalAnchorPSBT []byte) (*AssetPacket, error) {
+// PublishTransfer verifies that the final PSBT has the exact committed
+// unsigned transaction and commitments, then publishes/logs it through the
+// wallet using the metadata sealed into the package.
+func PublishTransfer(ctx context.Context, wallet *tapsdk.Wallet,
+	packageSnapshot *TransferPackage,
+	finalAnchorPSBT []byte) (*tapsdk.AssetPacket, error) {
 
-	if s == nil || s.Client() == nil {
+	if wallet == nil || wallet.Client() == nil {
 		return nil, fmt.Errorf("wallet has no client")
 	}
 	if err := packageSnapshot.Validate(); err != nil {
@@ -596,20 +597,20 @@ func (s *Wallet) PublishCustomAnchorTransfer(ctx context.Context,
 
 	if packageSnapshot.Publish.SkipAnchorTxBroadcast {
 		if err := requireCustomAnchorCapability(
-			ctx, s.Client(), CustomAnchorCapabilitySkipBroadcast,
+			ctx, wallet.Client(), CapabilitySkipBroadcast,
 		); err != nil {
 			return nil, err
 		}
 	}
 	advancedClient, err := requireCustomAnchorWalletKitClient(
-		s.Client(), CustomAnchorCapabilityCommit,
+		wallet.Client(), CapabilityCommit,
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	result, err := advancedClient.PublishAndLogTransferWithRequest(
-		ctx, &PublishAndLogTransferRequest{
+		ctx, &tapsdk.PublishAndLogTransferRequest{
 			AnchorPsbt: cloneBytes(finalAnchorPSBT),
 			VirtualPsbts: cloneByteSlices(
 				packageSnapshot.ActiveVirtualPsbts,
@@ -627,13 +628,13 @@ func (s *Wallet) PublishCustomAnchorTransfer(ctx context.Context,
 		},
 	)
 	if err != nil {
-		return nil, &CustomAnchorPublishAttemptError{
+		return nil, &PublishAttemptError{
 			Err:            fmt.Errorf("publish custom anchor transfer: %w", err),
 			OutcomeUnknown: customAnchorPublishOutcomeUnknown(err),
 		}
 	}
 	if result == nil || len(result.AnchorTransaction) == 0 {
-		return nil, &CustomAnchorPublishAttemptError{
+		return nil, &PublishAttemptError{
 			Err: fmt.Errorf("publish custom anchor returned no usable " +
 				"response"),
 			OutcomeUnknown: true,
@@ -657,7 +658,7 @@ func (s *Wallet) PublishCustomAnchorTransfer(ctx context.Context,
 		packageSnapshot.PassiveVirtualPsbts,
 	) {
 
-		return nil, &CustomAnchorPublishAttemptError{
+		return nil, &PublishAttemptError{
 			Err: fmt.Errorf("publish custom anchor response does not match " +
 				"the finalized transfer"),
 			OutcomeUnknown: true,
@@ -705,43 +706,43 @@ func customAnchorPublishOutcomeUnknown(err error) bool {
 	}
 }
 
-func requireCustomAnchorWalletKitClient(client Client,
-	capability CustomAnchorCapability) (CustomAnchorWalletKitClient, error) {
+func requireCustomAnchorWalletKitClient(client tapsdk.Client,
+	capability Capability) (tapsdk.CustomAnchorWalletKitClient, error) {
 
-	advanced, ok := client.(CustomAnchorWalletKitClient)
+	advanced, ok := client.(tapsdk.CustomAnchorWalletKitClient)
 	if ok {
 		return advanced, nil
 	}
 
-	return nil, &UnsupportedCustomAnchorCapabilityError{
-		BackendMode: CustomAnchorBackendUnknown,
+	return nil, &UnsupportedCapabilityError{
+		BackendMode: BackendUnknown,
 		Capability:  capability,
-		Status:      CustomAnchorCapabilityUnknown,
+		Status:      CapabilityUnknown,
 	}
 }
 
-func requireCustomAnchorCommitCapabilities(ctx context.Context, client Client,
-	funding CustomAnchorFundingPlan,
-	publish CustomAnchorPublishMetadata) error {
+func requireCustomAnchorCommitCapabilities(ctx context.Context,
+	client tapsdk.Client, funding FundingPlan,
+	publish PublishMetadata) error {
 
-	required := []CustomAnchorCapability{
-		CustomAnchorCapabilityCommit,
-		CustomAnchorCapabilityCallerAnchorPSBT,
+	required := []Capability{
+		CapabilityCommit,
+		CapabilityCallerAnchorPSBT,
 	}
-	if funding.Mode == CustomAnchorFundingWalletFunded {
-		required = append(required, CustomAnchorCapabilityWalletFunding)
+	if funding.Mode == FundingWalletFunded {
+		required = append(required, CapabilityWalletFunding)
 		if funding.WalletFunded.ChangeOutput.Mode ==
-			AnchorChangeOutputNoNew {
+			tapsdk.AnchorChangeOutputNoNew {
 
 			required = append(
-				required, CustomAnchorCapabilityNoChangeOutput,
+				required, CapabilityNoChangeOutput,
 			)
 		}
 	} else {
-		required = append(required, CustomAnchorCapabilitySkipFunding)
+		required = append(required, CapabilitySkipFunding)
 	}
 	if publish.SkipAnchorTxBroadcast {
-		required = append(required, CustomAnchorCapabilitySkipBroadcast)
+		required = append(required, CapabilitySkipBroadcast)
 	}
 
 	for _, capability := range required {
@@ -755,49 +756,49 @@ func requireCustomAnchorCommitCapabilities(ctx context.Context, client Client,
 	return nil
 }
 
-func requireCustomAnchorCapability(ctx context.Context, client Client,
-	capability CustomAnchorCapability) error {
+func requireCustomAnchorCapability(ctx context.Context, client tapsdk.Client,
+	capability Capability) error {
 
-	provider, ok := client.(CustomAnchorCapabilityProvider)
+	provider, ok := client.(CapabilityProvider)
 	if !ok {
-		return (&CustomAnchorCapabilities{}).Require(capability)
+		return (&Capabilities{}).Require(capability)
 	}
 	caps, err := provider.CustomAnchorCapabilities(ctx)
 	if err != nil {
 		return fmt.Errorf("load custom anchor capabilities: %w", err)
 	}
 	if caps == nil {
-		caps = &CustomAnchorCapabilities{}
+		caps = &Capabilities{}
 	}
 
 	return caps.Require(capability)
 }
 
-func lowLevelCustomAnchorFunding(plan CustomAnchorFundingPlan) (
-	AnchorFundingPlan, error) {
+func lowLevelCustomAnchorFunding(plan FundingPlan) (
+	tapsdk.AnchorFundingPlan, error) {
 
 	switch plan.Mode {
-	case CustomAnchorFundingWalletFunded:
+	case FundingWalletFunded:
 		wallet := plan.WalletFunded
-		return AnchorFundingPlan{
+		return tapsdk.AnchorFundingPlan{
 			ChangeOutput:          wallet.ChangeOutput,
 			Fee:                   wallet.Fee,
 			CustomLockID:          cloneBytes(wallet.CustomLockID),
 			LockExpirationSeconds: wallet.LockExpirationSeconds,
 		}, nil
 
-	case CustomAnchorFundingCallerFundedExact,
-		CustomAnchorFundingExternalP2AFeeBump:
+	case FundingCallerFundedExact,
+		FundingExternalP2AFeeBump:
 
-		return AnchorFundingPlan{SkipFunding: true}, nil
+		return tapsdk.AnchorFundingPlan{SkipFunding: true}, nil
 
 	default:
-		return AnchorFundingPlan{}, fmt.Errorf("unknown custom anchor "+
+		return tapsdk.AnchorFundingPlan{}, fmt.Errorf("unknown custom anchor "+
 			"funding mode %d", plan.Mode)
 	}
 }
 
-func verifyCommittedAnchorShape(req *CustomAnchorRequest, before,
+func verifyCommittedAnchorShape(req *Request, before,
 	after *psbt.Packet, changeIndex int32) error {
 
 	if !reflect.DeepEqual(before.XPubs, after.XPubs) ||
@@ -831,7 +832,7 @@ func verifyCommittedAnchorShape(req *CustomAnchorRequest, before,
 		}
 	}
 
-	skipFunding := req.Funding.Mode != CustomAnchorFundingWalletFunded
+	skipFunding := req.Funding.Mode != FundingWalletFunded
 	var existingChangeIndex int32 = -1
 	if skipFunding {
 		if len(after.UnsignedTx.TxIn) != len(before.UnsignedTx.TxIn) {
@@ -850,7 +851,7 @@ func verifyCommittedAnchorShape(req *CustomAnchorRequest, before,
 		}
 		changePlan := req.Funding.WalletFunded.ChangeOutput
 		switch changePlan.Mode {
-		case AnchorChangeOutputAdd:
+		case tapsdk.AnchorChangeOutputAdd:
 			added := len(after.UnsignedTx.TxOut) -
 				len(before.UnsignedTx.TxOut)
 			if added > 1 {
@@ -867,7 +868,7 @@ func verifyCommittedAnchorShape(req *CustomAnchorRequest, before,
 					changeIndex, len(before.UnsignedTx.TxOut))
 			}
 
-		case AnchorChangeOutputExisting:
+		case tapsdk.AnchorChangeOutputExisting:
 			existingChangeIndex = changePlan.ExistingOutputIndex
 			if existingChangeIndex < 0 || existingChangeIndex >=
 				int32(len(before.UnsignedTx.TxOut)) {
@@ -883,7 +884,7 @@ func verifyCommittedAnchorShape(req *CustomAnchorRequest, before,
 					changeIndex, existingChangeIndex)
 			}
 
-		case AnchorChangeOutputNoNew:
+		case tapsdk.AnchorChangeOutputNoNew:
 			if len(after.UnsignedTx.TxOut) != len(before.UnsignedTx.TxOut) {
 				return fmt.Errorf("no-new-change funding added an output")
 			}
@@ -939,7 +940,7 @@ func verifyCommittedAnchorShape(req *CustomAnchorRequest, before,
 		}
 	}
 	if !skipFunding && req.Funding.WalletFunded.ChangeOutput.Mode ==
-		AnchorChangeOutputAdd {
+		tapsdk.AnchorChangeOutputAdd {
 
 		for idx := len(before.UnsignedTx.TxOut); idx <
 			len(after.UnsignedTx.TxOut); idx++ {
@@ -1022,17 +1023,17 @@ func filterCustomAnchorCommitmentFields(
 	return filtered
 }
 
-func (p *CustomAnchorPlan) committedInputSummaries(anchor *psbt.Packet,
+func (p *Plan) committedInputSummaries(anchor *psbt.Packet,
 	active, passive []*tappsbt.VPacket) (
-	[]CustomAnchorAssetInputSummary, error) {
+	[]AssetInputSummary, error) {
 
-	result := make([]CustomAnchorAssetInputSummary, 0)
+	result := make([]AssetInputSummary, 0)
 	collections := []struct {
-		role    CustomAnchorPacketRole
+		role    PacketRole
 		packets []*tappsbt.VPacket
 	}{
-		{CustomAnchorPacketRoleActive, active},
-		{CustomAnchorPacketRolePassive, passive},
+		{PacketRoleActive, active},
+		{PacketRolePassive, passive},
 	}
 	for _, collection := range collections {
 		for packetIdx := range collection.packets {
@@ -1049,7 +1050,7 @@ func (p *CustomAnchorPlan) committedInputSummaries(anchor *psbt.Packet,
 					return nil, fmt.Errorf("committed virtual input %d:%d "+
 						"script key: %w", packetIdx, inputIdx, err)
 				}
-				inputScriptKeyBytes, err := ParsePubKey(
+				inputScriptKeyBytes, err := tapsdk.ParsePubKey(
 					inputScriptKey.SerializeCompressed(),
 				)
 				if err != nil {
@@ -1061,13 +1062,13 @@ func (p *CustomAnchorPlan) committedInputSummaries(anchor *psbt.Packet,
 						"no anchor input", packetIdx, inputIdx)
 				}
 
-				var planned *CustomAnchorAssetInputSummary
+				var planned *AssetInputSummary
 				for idx := range p.inputs {
 					candidate := &p.inputs[idx]
 					if candidate.PacketRole == collection.role &&
 						candidate.AnchorOutpoint == outpointFromWire(
 							vIn.PrevID.OutPoint,
-						) && candidate.IssuanceID == AssetID(vIn.PrevID.ID) &&
+						) && candidate.IssuanceID == tapsdk.AssetID(vIn.PrevID.ID) &&
 						candidate.ScriptKey == inputScriptKeyBytes &&
 						candidate.Amount == inputAsset.Amount {
 
@@ -1096,9 +1097,9 @@ func (p *CustomAnchorPlan) committedInputSummaries(anchor *psbt.Packet,
 	return result, nil
 }
 
-func (p *CustomAnchorPlan) committedOutputSummaries(anchor *psbt.Packet,
-	active, passive []*tappsbt.VPacket) ([]CustomAnchorAssetOutputSummary,
-	[]CustomAnchorProofUpdate, error) {
+func (p *Plan) committedOutputSummaries(anchor *psbt.Packet,
+	active, passive []*tappsbt.VPacket) ([]AssetOutputSummary,
+	[]ProofUpdate, error) {
 
 	txID := anchor.UnsignedTx.TxHash()
 	allPackets := append(
@@ -1113,14 +1114,14 @@ func (p *CustomAnchorPlan) committedOutputSummaries(anchor *psbt.Packet,
 	if err != nil {
 		return nil, nil, fmt.Errorf("derive committed output roots: %w", err)
 	}
-	outputs := make([]CustomAnchorAssetOutputSummary, 0, len(p.outputs))
-	updates := make([]CustomAnchorProofUpdate, 0, len(p.outputs))
+	outputs := make([]AssetOutputSummary, 0, len(p.outputs))
+	updates := make([]ProofUpdate, 0, len(p.outputs))
 	for idx := range p.outputs {
 		planned := p.outputs[idx]
 		packets := active
-		if planned.PacketRole == CustomAnchorPacketRolePassive {
+		if planned.PacketRole == PacketRolePassive {
 			packets = passive
-		} else if planned.PacketRole != CustomAnchorPacketRoleActive {
+		} else if planned.PacketRole != PacketRoleActive {
 			return nil, nil, fmt.Errorf("planned output %q has unknown packet "+
 				"role %d", planned.LogicalOutputID, planned.PacketRole)
 		}
@@ -1146,7 +1147,7 @@ func (p *CustomAnchorPlan) committedOutputSummaries(anchor *psbt.Packet,
 				"is out of range", planned.LogicalOutputID)
 		}
 
-		anchorOutpoint := Outpoint{
+		anchorOutpoint := tapsdk.Outpoint{
 			Txid:  [32]byte(txID),
 			Index: planned.AnchorOutput,
 		}
@@ -1167,7 +1168,7 @@ func (p *CustomAnchorPlan) committedOutputSummaries(anchor *psbt.Packet,
 				planned.LogicalOutputID, err)
 		}
 
-		outputs = append(outputs, CustomAnchorAssetOutputSummary{
+		outputs = append(outputs, AssetOutputSummary{
 			LogicalOutputID:    planned.LogicalOutputID,
 			LogicalOutputIndex: planned.RequestIndex,
 			PacketRole:         planned.PacketRole,
@@ -1184,7 +1185,7 @@ func (p *CustomAnchorPlan) committedOutputSummaries(anchor *psbt.Packet,
 			ScriptKey:          planned.ScriptKey,
 			Amount:             planned.Amount,
 			ScriptMode:         planned.ScriptMode,
-			ProofDelivery: CustomAssetProofDelivery{
+			ProofDelivery: AssetProofDelivery{
 				RecipientID:    planned.ProofDelivery.RecipientID,
 				CourierAddress: planned.ProofDelivery.CourierAddress,
 				OpaqueMetadata: cloneBytes(
@@ -1193,7 +1194,7 @@ func (p *CustomAnchorPlan) committedOutputSummaries(anchor *psbt.Packet,
 			},
 			OPTrueSpend: planned.OPTrueSpend.Clone(),
 		})
-		updates = append(updates, CustomAnchorProofUpdate{
+		updates = append(updates, ProofUpdate{
 			LogicalOutputID:    planned.LogicalOutputID,
 			LogicalOutputIndex: planned.RequestIndex,
 			PacketRole:         planned.PacketRole,
@@ -1205,7 +1206,7 @@ func (p *CustomAnchorPlan) committedOutputSummaries(anchor *psbt.Packet,
 			ScriptKey:          planned.ScriptKey,
 			AnchorOutpoint:     anchorOutpoint,
 			ProofBlob:          proofBlob,
-			ProofDelivery: CustomAssetProofDelivery{
+			ProofDelivery: AssetProofDelivery{
 				RecipientID:    planned.ProofDelivery.RecipientID,
 				CourierAddress: planned.ProofDelivery.CourierAddress,
 				OpaqueMetadata: cloneBytes(
@@ -1598,9 +1599,9 @@ func addedAnchorInputIndices(before, after *psbt.Packet) []uint32 {
 }
 
 func packageLockedOutpoints(
-	locked []CustomAnchorLockedUTXO) []Outpoint {
+	locked []LockedUTXO) []tapsdk.Outpoint {
 
-	result := make([]Outpoint, len(locked))
+	result := make([]tapsdk.Outpoint, len(locked))
 	for idx := range locked {
 		result[idx] = locked[idx].Outpoint
 	}

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
+	"github.com/lightninglabs/tap-sdk/customanchor"
 	"github.com/lightninglabs/tap-sdk/internal/anchor"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 	"github.com/lightninglabs/taproot-assets/taprpc"
@@ -42,13 +43,13 @@ func (m *walletKitClient) rawClientWithMacAuth(
 // CustomAnchorCapabilities returns the SDK-version-pinned tapd capability
 // assumptions. tapd does not expose runtime capability discovery over RPC.
 func (m *walletKitClient) CustomAnchorCapabilities(
-	ctx context.Context) (*tapsdk.CustomAnchorCapabilities, error) {
+	ctx context.Context) (*customanchor.Capabilities, error) {
 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	caps := tapsdk.DefaultTapdCustomAnchorCapabilities()
+	caps := customanchor.DefaultTapdCapabilities()
 	return &caps, nil
 }
 

@@ -1,10 +1,11 @@
-package tapsdk
+package customanchor
 
 import (
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/stretchr/testify/require"
 )
 
@@ -13,9 +14,9 @@ import (
 func TestCallerSignedPlanClassification(t *testing.T) {
 	t.Parallel()
 
-	plans := []CustomAnchorInputSigningPlan{{
+	plans := []InputSigningPlan{{
 		InputIndex:   0,
-		CallerSigned: &CustomAnchorCallerSignedPlan{},
+		CallerSigned: &CallerSignedPlan{},
 	}}
 
 	// One input, fully classified.
@@ -28,14 +29,14 @@ func TestCallerSignedPlanClassification(t *testing.T) {
 	// Combining variants on one plan is ambiguous.
 	signerKey, err := btcec.NewPrivateKey()
 	require.NoError(t, err)
-	signer, err := ParseXOnlyPubKey(
+	signer, err := tapsdk.ParseXOnlyPubKey(
 		schnorr.SerializePubKey(signerKey.PubKey()),
 	)
 	require.NoError(t, err)
-	ambiguous := []CustomAnchorInputSigningPlan{{
+	ambiguous := []InputSigningPlan{{
 		InputIndex:   0,
-		CallerSigned: &CustomAnchorCallerSignedPlan{},
-		KeyPath: &CustomAnchorKeyPathSigningPlan{
+		CallerSigned: &CallerSignedPlan{},
+		KeyPath: &KeyPathSigningPlan{
 			Signer: signer,
 		},
 	}}
