@@ -211,6 +211,68 @@ func TestCustomAnchorBuilderRequiresWalletFundingLock(t *testing.T) {
 	)
 }
 
+// TestCustomAnchorBuilderBackendSignedPlan proves the builder accepts a
+// backend-signed plan only for the asset anchor input of a caller-funded
+// exact template.
+func TestCustomAnchorBuilderBackendSignedPlan(t *testing.T) {
+	t.Parallel()
+
+	callerFunded := FundingPlan{
+		Mode:              FundingCallerFundedExact,
+		CallerFundedExact: &CallerFundedExact{},
+	}
+	tests := []struct {
+		name       string
+		callerFund bool
+		inputIndex uint32
+		wantErr    string
+	}{
+		{
+			name:       "asset anchor input",
+			callerFund: true,
+			inputIndex: 1,
+		},
+		{
+			name:       "caller BTC input",
+			callerFund: true,
+			inputIndex: 0,
+			wantErr:    "requires an asset anchor input",
+		},
+		{
+			name:       "external P2A funding",
+			inputIndex: 1,
+			wantErr:    "requires caller-funded exact funding",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			fixture := newCustomAnchorBuilderFixture(t)
+			if test.callerFund {
+				fixture.request.Funding = callerFunded
+			}
+			fixture.request.SigningPlans[test.inputIndex] =
+				InputSigningPlan{
+					InputIndex:    test.inputIndex,
+					BackendSigned: &BackendSignedPlan{},
+				}
+
+			plan, err := newTestTxBuilder(fixture.client).Build(
+				context.Background(), fixture.request,
+			)
+			if test.wantErr != "" {
+				require.ErrorContains(t, err, test.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			verification := plan.Verification()
+			require.True(t, verification.Valid())
+		})
+	}
+}
+
 func TestCustomAnchorBuilderRejectsInvalidP2AParentPolicy(t *testing.T) {
 	t.Parallel()
 

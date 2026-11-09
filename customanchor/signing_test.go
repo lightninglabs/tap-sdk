@@ -610,7 +610,7 @@ func TestCustomAnchorFinalSigningPlanEnforcement(t *testing.T) {
 			// rejects it.
 			finalTx, err := btcpsbt.Extract(packet)
 			require.NoError(t, err)
-			require.NoError(t, verifyFinalAnchorWitnesses(packet, finalTx))
+			require.NoError(t, verifyFinalAnchorWitnesses(packet, finalTx, nil))
 
 			finalPSBT := mustSerializeAnchorPSBT(t, packet)
 			err = pkg.VerifyFinalAnchorPSBT(finalPSBT)
@@ -640,7 +640,7 @@ func TestCustomAnchorFinalSigningPlanRejectsAlternateLeaf(t *testing.T) {
 
 	finalTx, err := btcpsbt.Extract(packet)
 	require.NoError(t, err)
-	require.NoError(t, verifyFinalAnchorWitnesses(packet, finalTx))
+	require.NoError(t, verifyFinalAnchorWitnesses(packet, finalTx, nil))
 
 	finalPSBT = mustSerializeAnchorPSBT(t, packet)
 	err = pkg.VerifyFinalAnchorPSBT(finalPSBT)
@@ -673,7 +673,7 @@ func TestCustomAnchorFinalSigningPlanRejectsScriptForKeyPlan(t *testing.T) {
 	packet := mustDecodeAnchorPSBT(t, finalPSBT)
 	finalTx, err := btcpsbt.Extract(packet)
 	require.NoError(t, err)
-	require.NoError(t, verifyFinalAnchorWitnesses(packet, finalTx))
+	require.NoError(t, verifyFinalAnchorWitnesses(packet, finalTx, nil))
 
 	err = keyPathPackage.VerifyFinalAnchorPSBT(finalPSBT)
 	require.ErrorContains(t, err, "must use its sealed key path")
@@ -722,7 +722,7 @@ func TestCustomAnchorFinalScriptPathSighashEnforcement(t *testing.T) {
 	packet := mustDecodeAnchorPSBT(t, differentSighash)
 	finalTx, err := btcpsbt.Extract(packet)
 	require.NoError(t, err)
-	require.NoError(t, verifyFinalAnchorWitnesses(packet, finalTx))
+	require.NoError(t, verifyFinalAnchorWitnesses(packet, finalTx, nil))
 	err = pkg.VerifyFinalAnchorPSBT(differentSighash)
 	require.ErrorContains(t, err, "exact sealed sighash")
 	result, err = pkg.WithFinalAnchorPSBT(differentSighash)
@@ -788,7 +788,7 @@ func TestCustomAnchorCodeSeparatorRejected(t *testing.T) {
 	finalPacket := mustDecodeAnchorPSBT(t, finalPSBT)
 	finalTx, err := btcpsbt.Extract(finalPacket)
 	require.NoError(t, err)
-	require.NoError(t, verifyFinalAnchorWitnesses(finalPacket, finalTx))
+	require.NoError(t, verifyFinalAnchorWitnesses(finalPacket, finalTx, nil))
 	err = pkg.VerifyFinalAnchorPSBT(finalPSBT)
 	require.ErrorContains(t, err, "OP_CODESEPARATOR is unsupported")
 	result, err = pkg.WithFinalAnchorPSBT(finalPSBT)
@@ -1017,4 +1017,230 @@ func customAnchorScriptRequest(t *testing.T,
 	require.Len(t, requests.ScriptPath, 1)
 
 	return requests.ScriptPath[0]
+}
+
+// TestCustomAnchorBackendSignedPlanContext proves a backend-signed plan is
+// sealed only for an asset anchor input of a caller-funded exact package.
+func TestCustomAnchorBackendSignedPlanContext(t *testing.T) {
+	backendSigned := func(inputIndex uint32) InputSigningPlan {
+		return InputSigningPlan{
+			InputIndex:    inputIndex,
+			BackendSigned: &BackendSignedPlan{},
+		}
+	}
+
+	tests := []struct {
+		name    string
+		mutate  func(*testing.T, *TransferPackage)
+		wantErr string
+	}{
+		{
+			name: "asset anchor input",
+			mutate: func(t *testing.T, pkg *TransferPackage) {
+				markCustomAnchorCallerFundedTestPackage(t, pkg)
+				pkg.SigningPlans[0] = backendSigned(0)
+			},
+		},
+		{
+			name: "combined with another variant",
+			mutate: func(t *testing.T, pkg *TransferPackage) {
+				markCustomAnchorCallerFundedTestPackage(t, pkg)
+				pkg.SigningPlans[0].BackendSigned =
+					&BackendSignedPlan{}
+			},
+			wantErr: "must set exactly one spending path",
+		},
+		{
+			name: "external P2A funding",
+			mutate: func(_ *testing.T, pkg *TransferPackage) {
+				pkg.SigningPlans[0] = backendSigned(0)
+			},
+			wantErr: "requires caller-funded exact funding",
+		},
+		{
+			name: "wallet funding",
+			mutate: func(t *testing.T, pkg *TransferPackage) {
+				markCustomAnchorWalletFundedTestPackage(t, pkg)
+				pkg.SigningPlans[0] = backendSigned(0)
+			},
+			wantErr: "requires caller-funded exact funding",
+		},
+		{
+			name: "caller BTC input",
+			mutate: func(t *testing.T, pkg *TransferPackage) {
+				markCustomAnchorCallerFundedTestPackage(t, pkg)
+				pkg.SigningPlans[1] = backendSigned(1)
+			},
+			wantErr: "requires an asset anchor input",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			pkg := newCustomAnchorTestFixture(t).unsealed
+			test.mutate(t, pkg)
+
+			sealed, err := pkg.Seal()
+			if test.wantErr != "" {
+				require.ErrorContains(t, err, test.wantErr)
+				return
+			}
+			require.NoError(t, err)
+
+			requests, err := sealed.SigningRequests()
+			require.NoError(t, err)
+			require.Empty(t, requests.KeyPath)
+			require.Len(t, requests.MuSig2, 1)
+			require.Len(t, requests.ScriptPath, 1)
+
+			clone := cloneCustomAnchorSigningPlans(sealed.SigningPlans)
+			require.NotNil(t, clone[0].BackendSigned)
+		})
+	}
+}
+
+// TestCustomAnchorBackendSignedRequiresTaproot proves a backend-signed plan
+// rejects an input the backend could not own.
+func TestCustomAnchorBackendSignedRequiresTaproot(t *testing.T) {
+	tx := wire.NewMsgTx(2)
+	tx.AddTxIn(&wire.TxIn{PreviousOutPoint: wire.OutPoint{Index: 1}})
+	tx.AddTxOut(&wire.TxOut{Value: 900, PkScript: []byte{txscript.OP_TRUE}})
+	packet, err := btcpsbt.NewFromUnsignedTx(tx)
+	require.NoError(t, err)
+	packet.Inputs[0].WitnessUtxo = &wire.TxOut{
+		Value: 1_000,
+		PkScript: append(
+			[]byte{txscript.OP_0, txscript.OP_DATA_20},
+			bytes.Repeat([]byte{1}, 20)...,
+		),
+	}
+
+	_, err = customAnchorSigningRequests(
+		packet, []InputSigningPlan{{
+			InputIndex:    0,
+			BackendSigned: &BackendSignedPlan{},
+		}}, nil, tapsdk.Hash{},
+	)
+	require.ErrorContains(t, err, "backend-signed input is not "+
+		"pay-to-taproot")
+}
+
+// TestCustomAnchorBackendSignedFinalPSBT proves a backend-signed input must
+// reach publish unsigned, while every other input is still extracted and
+// verified against its sealed plan.
+func TestCustomAnchorBackendSignedFinalPSBT(t *testing.T) {
+	pkg, fixture, secondKey := customAnchorSimpleSigningPackage(t)
+	unsealed := pkg.Clone()
+	unsealed.SchemaVersion = 0
+	unsealed.CommittedPackageDigest = tapsdk.Hash{}
+	unsealed.UnsignedTxDigest = tapsdk.Hash{}
+	unsealed.PackageDigest = tapsdk.Hash{}
+	markCustomAnchorCallerFundedTestPackage(t, unsealed)
+	unsealed.SigningPlans[0] = InputSigningPlan{
+		InputIndex:    0,
+		BackendSigned: &BackendSignedPlan{},
+	}
+	backendPackage, err := unsealed.Seal()
+	require.NoError(t, err)
+
+	tests := []struct {
+		name string
+
+		// signers maps each input to finalize to its key. A nil key
+		// finalizes the OP_TRUE script path.
+		signers map[int]*btcec.PrivateKey
+
+		verifyErr string
+		withErr   string
+	}{
+		{
+			name: "backend input unsigned",
+			signers: map[int]*btcec.PrivateKey{
+				1: secondKey, 2: nil,
+			},
+		},
+		{
+			name: "backend input finalized",
+			signers: map[int]*btcec.PrivateKey{
+				0: fixture.keyPathPrivateKey, 1: secondKey, 2: nil,
+			},
+			verifyErr: "must not be finalized",
+			withErr:   "must not be finalized",
+		},
+		{
+			name: "caller input unsigned",
+			signers: map[int]*btcec.PrivateKey{
+				2: nil,
+			},
+			withErr: "final anchor PSBT is not finalized",
+		},
+		{
+			name: "caller input signed by the wrong key",
+			signers: map[int]*btcec.PrivateKey{
+				1: fixture.keyPathPrivateKey, 2: nil,
+			},
+			verifyErr: "sealed key-path signature",
+			withErr:   "sealed key-path signature",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			packet := mustDecodeAnchorPSBT(
+				t, backendPackage.CommittedAnchorPsbt,
+			)
+			for inputIndex, key := range test.signers {
+				if key != nil {
+					setCustomAnchorTestKeyPathWitness(
+						t, packet, inputIndex, key,
+						packet.Inputs[inputIndex].SighashType,
+					)
+					continue
+				}
+
+				leaf := packet.Inputs[inputIndex].TaprootLeafScript[0]
+				setCustomAnchorTestWitness(
+					t, &packet.Inputs[inputIndex], wire.TxWitness{
+						leaf.Script, leaf.ControlBlock,
+					},
+				)
+			}
+			finalPSBT := mustSerializeAnchorPSBT(t, packet)
+
+			err := backendPackage.VerifyFinalAnchorPSBT(finalPSBT)
+			if test.verifyErr != "" {
+				require.ErrorContains(t, err, test.verifyErr)
+			} else {
+				require.NoError(t, err)
+			}
+
+			finalized, err := backendPackage.WithFinalAnchorPSBT(
+				finalPSBT,
+			)
+			if test.withErr != "" {
+				require.ErrorContains(t, err, test.withErr)
+				require.Nil(t, finalized)
+				return
+			}
+			require.NoError(t, err)
+
+			stored := mustDecodeAnchorPSBT(t, finalized.AnchorPsbt)
+			require.Empty(t, stored.Inputs[0].FinalScriptWitness)
+			require.NotEmpty(t, stored.Inputs[1].FinalScriptWitness)
+			require.NotEmpty(t, stored.Inputs[2].FinalScriptWitness)
+		})
+	}
+}
+
+func markCustomAnchorCallerFundedTestPackage(t *testing.T,
+	pkg *TransferPackage) {
+
+	t.Helper()
+	anchor := mustDecodeAnchorPSBT(t, pkg.CommittedAnchorPsbt)
+	actualFee, err := customAnchorTransactionFee(anchor)
+	require.NoError(t, err)
+	pkg.Funding = FundingSummary{
+		Mode:         FundingCallerFundedExact,
+		ActualFeeSat: actualFee,
+	}
 }

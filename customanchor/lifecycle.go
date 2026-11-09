@@ -1515,8 +1515,10 @@ func verifyCommittedProofSuffixes(anchor *psbt.Packet, expected,
 	return nil
 }
 
-func verifyFinalAnchorWitnesses(packet *psbt.Packet,
-	finalTx *wire.MsgTx) error {
+// verifyFinalAnchorWitnesses executes every input witness outside skip
+// against its committed prevout.
+func verifyFinalAnchorWitnesses(packet *psbt.Packet, finalTx *wire.MsgTx,
+	skip map[uint32]struct{}) error {
 
 	prevOutFetcher, prevOuts, err := anchorPrevOuts(packet)
 	if err != nil {
@@ -1524,6 +1526,10 @@ func verifyFinalAnchorWitnesses(packet *psbt.Packet,
 	}
 	sigHashes := txscript.NewTxSigHashes(finalTx, prevOutFetcher)
 	for idx := range finalTx.TxIn {
+		if _, ok := skip[uint32(idx)]; ok {
+			continue
+		}
+
 		engine, err := txscript.NewEngine(
 			prevOuts[idx].PkScript, finalTx, idx,
 			txscript.StandardVerifyFlags, nil, sigHashes,
