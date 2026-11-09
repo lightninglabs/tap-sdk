@@ -1,10 +1,12 @@
-package tapsdk
+package customanchor
 
 import (
 	"bytes"
 	"math"
 	"testing"
 
+	tapsdk "github.com/lightninglabs/tap-sdk"
+	"github.com/lightninglabs/tap-sdk/internal/anchor"
 	"github.com/stretchr/testify/require"
 )
 
@@ -12,47 +14,47 @@ func TestCustomAnchorRequestValidate(t *testing.T) {
 	request := validCustomAnchorRequest(t)
 	require.NoError(t, request.Validate())
 
-	var nilRequest *CustomAnchorRequest
+	var nilRequest *Request
 	require.ErrorContains(t, nilRequest.Validate(), "nil custom anchor request")
 }
 
 func TestCustomAnchorRequestValidateRequiredFields(t *testing.T) {
 	tests := []struct {
 		name    string
-		mutate  func(*CustomAnchorRequest)
+		mutate  func(*Request)
 		wantErr string
 	}{
 		{
 			name: "missing anchor psbt",
-			mutate: func(request *CustomAnchorRequest) {
+			mutate: func(request *Request) {
 				request.AnchorPSBT = nil
 			},
 			wantErr: "anchor PSBT is required",
 		},
 		{
 			name: "missing inputs",
-			mutate: func(request *CustomAnchorRequest) {
+			mutate: func(request *Request) {
 				request.Inputs = nil
 			},
 			wantErr: "at least one asset input is required",
 		},
 		{
 			name: "missing outputs",
-			mutate: func(request *CustomAnchorRequest) {
+			mutate: func(request *Request) {
 				request.Outputs = nil
 			},
 			wantErr: "at least one asset output is required",
 		},
 		{
 			name: "missing input id",
-			mutate: func(request *CustomAnchorRequest) {
+			mutate: func(request *Request) {
 				request.Inputs[0].ID = ""
 			},
 			wantErr: "input ID is required",
 		},
 		{
 			name: "duplicate input id",
-			mutate: func(request *CustomAnchorRequest) {
+			mutate: func(request *Request) {
 				request.Inputs = append(
 					request.Inputs, request.Inputs[0],
 				)
@@ -63,28 +65,28 @@ func TestCustomAnchorRequestValidateRequiredFields(t *testing.T) {
 		},
 		{
 			name: "invalid input asset ref",
-			mutate: func(request *CustomAnchorRequest) {
-				request.Inputs[0].AssetRef = AssetRef("invalid")
+			mutate: func(request *Request) {
+				request.Inputs[0].AssetRef = tapsdk.AssetRef("invalid")
 			},
 			wantErr: "input 0: asset ref",
 		},
 		{
 			name: "missing input proof",
-			mutate: func(request *CustomAnchorRequest) {
+			mutate: func(request *Request) {
 				request.Inputs[0].ProofFile = nil
 			},
 			wantErr: "exactly one proof file or proof path is required",
 		},
 		{
 			name: "missing output id",
-			mutate: func(request *CustomAnchorRequest) {
+			mutate: func(request *Request) {
 				request.Outputs[0].ID = ""
 			},
 			wantErr: "output ID is required",
 		},
 		{
 			name: "duplicate output id",
-			mutate: func(request *CustomAnchorRequest) {
+			mutate: func(request *Request) {
 				request.Inputs[0].Amount = 200
 				request.Outputs = append(
 					request.Outputs, request.Outputs[0],
@@ -94,8 +96,8 @@ func TestCustomAnchorRequestValidateRequiredFields(t *testing.T) {
 		},
 		{
 			name: "invalid output asset ref",
-			mutate: func(request *CustomAnchorRequest) {
-				request.Outputs[0].AssetRef = AssetRef("invalid")
+			mutate: func(request *Request) {
+				request.Outputs[0].AssetRef = tapsdk.AssetRef("invalid")
 			},
 			wantErr: "output 0: asset ref",
 		},
@@ -115,39 +117,39 @@ func TestCustomAnchorRequestValidateRequiredFields(t *testing.T) {
 func TestCustomAssetWitnessPlanValidate(t *testing.T) {
 	tests := []struct {
 		name    string
-		plan    CustomAssetWitnessPlan
+		plan    AssetWitnessPlan
 		wantErr string
 	}{
 		{
 			name:    "unspecified",
-			plan:    CustomAssetWitnessPlan{},
+			plan:    AssetWitnessPlan{},
 			wantErr: "asset witness mode is required",
 		},
 		{
 			name: "backend with stack",
-			plan: CustomAssetWitnessPlan{
-				Mode:  CustomAssetWitnessBackendSigner,
+			plan: AssetWitnessPlan{
+				Mode:  AssetWitnessBackendSigner,
 				Stack: [][]byte{{1}},
 			},
 			wantErr: "cannot include a caller witness stack",
 		},
 		{
 			name: "caller without stack",
-			plan: CustomAssetWitnessPlan{
-				Mode: CustomAssetWitnessCallerProvided,
+			plan: AssetWitnessPlan{
+				Mode: AssetWitnessCallerProvided,
 			},
 			wantErr: "caller-provided witness stack is required",
 		},
 		{
 			name: "backend",
-			plan: CustomAssetWitnessPlan{
-				Mode: CustomAssetWitnessBackendSigner,
+			plan: AssetWitnessPlan{
+				Mode: AssetWitnessBackendSigner,
 			},
 		},
 		{
 			name: "caller",
-			plan: CustomAssetWitnessPlan{
-				Mode:  CustomAssetWitnessCallerProvided,
+			plan: AssetWitnessPlan{
+				Mode:  AssetWitnessCallerProvided,
 				Stack: [][]byte{{}, {1}},
 			},
 		},
@@ -168,79 +170,79 @@ func TestCustomAssetWitnessPlanValidate(t *testing.T) {
 
 func TestCustomAssetScriptPlanValidateExactVariant(t *testing.T) {
 	key := customAnchorTypesTestPubKey(t)
-	validExternal := &CustomAssetExternalScriptPlan{
-		ScriptKey: ScriptKey{
+	validExternal := &AssetExternalScriptPlan{
+		ScriptKey: tapsdk.ScriptKey{
 			PubKey: key,
 		},
 	}
 
 	tests := []struct {
 		name    string
-		plan    CustomAssetScriptPlan
+		plan    AssetScriptPlan
 		wantErr string
 	}{
 		{
 			name:    "missing variant",
-			plan:    CustomAssetScriptPlan{},
+			plan:    AssetScriptPlan{},
 			wantErr: "exactly one variant",
 		},
 		{
 			name: "multiple variants",
-			plan: CustomAssetScriptPlan{
-				Mode:     CustomAssetScriptExternal,
+			plan: AssetScriptPlan{
+				Mode:     AssetScriptExternal,
 				External: validExternal,
-				Burn:     &CustomAssetBurnScriptPlan{},
+				Burn:     &AssetBurnScriptPlan{},
 			},
 			wantErr: "exactly one variant",
 		},
 		{
 			name: "mode mismatch",
-			plan: CustomAssetScriptPlan{
-				Mode:     CustomAssetScriptWallet,
+			plan: AssetScriptPlan{
+				Mode:     AssetScriptWallet,
 				External: validExternal,
 			},
 			wantErr: "wallet variant",
 		},
 		{
 			name: "invalid external key",
-			plan: CustomAssetScriptPlan{
-				Mode: CustomAssetScriptExternal,
-				External: &CustomAssetExternalScriptPlan{
-					ScriptKey: ScriptKey{},
+			plan: AssetScriptPlan{
+				Mode: AssetScriptExternal,
+				External: &AssetExternalScriptPlan{
+					ScriptKey: tapsdk.ScriptKey{},
 				},
 			},
 			wantErr: "external script key",
 		},
 		{
 			name: "invalid op true key",
-			plan: CustomAssetScriptPlan{
-				Mode: CustomAssetScriptOPTrue,
-				OPTrue: &CustomAssetOPTrueScriptPlan{
-					InternalKey: KeyDescriptor{},
+			plan: AssetScriptPlan{
+				Mode: AssetScriptOPTrue,
+				OPTrue: &AssetOPTrueScriptPlan{
+					InternalKey: tapsdk.KeyDescriptor{},
 				},
 			},
 			wantErr: "OP_TRUE internal key",
 		},
 		{
 			name: "wallet",
-			plan: CustomAssetScriptPlan{
-				Mode:   CustomAssetScriptWallet,
-				Wallet: &CustomAssetWalletScriptPlan{},
+			plan: AssetScriptPlan{
+				Mode:   AssetScriptWallet,
+				Wallet: &AssetWalletScriptPlan{},
 			},
 		},
 		{
 			name: "external",
-			plan: CustomAssetScriptPlan{
-				Mode:     CustomAssetScriptExternal,
+			plan: AssetScriptPlan{
+				Mode:     AssetScriptExternal,
 				External: validExternal,
 			},
 		},
 		{
 			name: "op true",
-			plan: CustomAssetScriptPlan{
-				Mode: CustomAssetScriptOPTrue,
-				OPTrue: &CustomAssetOPTrueScriptPlan{
-					InternalKey: KeyDescriptor{
+			plan: AssetScriptPlan{
+				Mode: AssetScriptOPTrue,
+				OPTrue: &AssetOPTrueScriptPlan{
+					InternalKey: tapsdk.KeyDescriptor{
 						RawKeyBytes: key,
 					},
 				},
@@ -248,9 +250,9 @@ func TestCustomAssetScriptPlanValidateExactVariant(t *testing.T) {
 		},
 		{
 			name: "burn",
-			plan: CustomAssetScriptPlan{
-				Mode: CustomAssetScriptBurn,
-				Burn: &CustomAssetBurnScriptPlan{},
+			plan: AssetScriptPlan{
+				Mode: AssetScriptBurn,
+				Burn: &AssetBurnScriptPlan{},
 			},
 		},
 	}
@@ -271,7 +273,7 @@ func TestCustomAssetScriptPlanValidateExactVariant(t *testing.T) {
 func TestCustomAnchorTapscriptPlanValidate(t *testing.T) {
 	tests := []struct {
 		name    string
-		plan    CustomAnchorTapscriptPlan
+		plan    TapscriptPlan
 		wantErr string
 	}{
 		{
@@ -279,28 +281,28 @@ func TestCustomAnchorTapscriptPlanValidate(t *testing.T) {
 		},
 		{
 			name: "tap leaves",
-			plan: CustomAnchorTapscriptPlan{
-				TapLeaves: []TapLeaf{{Script: []byte{1}}},
+			plan: TapscriptPlan{
+				TapLeaves: []tapsdk.TapLeaf{{Script: []byte{1}}},
 			},
 		},
 		{
 			name: "serialized sibling",
-			plan: CustomAnchorTapscriptPlan{
+			plan: TapscriptPlan{
 				SerializedSibling: []byte{1},
 			},
 		},
 		{
 			name: "both forms",
-			plan: CustomAnchorTapscriptPlan{
-				TapLeaves:         []TapLeaf{{Script: []byte{1}}},
+			plan: TapscriptPlan{
+				TapLeaves:         []tapsdk.TapLeaf{{Script: []byte{1}}},
 				SerializedSibling: []byte{2},
 			},
 			wantErr: "cannot contain both",
 		},
 		{
 			name: "empty leaf",
-			plan: CustomAnchorTapscriptPlan{
-				TapLeaves: []TapLeaf{{}},
+			plan: TapscriptPlan{
+				TapLeaves: []tapsdk.TapLeaf{{}},
 			},
 			wantErr: "tap leaf 0 script is empty",
 		},
@@ -320,15 +322,15 @@ func TestCustomAnchorTapscriptPlanValidate(t *testing.T) {
 }
 
 func TestCustomAnchorFundingPlanValidateExactVariant(t *testing.T) {
-	feeRate, err := NewFeeRateSatPerVByte(2)
+	feeRate, err := tapsdk.NewFeeRateSatPerVByte(2)
 	require.NoError(t, err)
 
-	validWallet := &CustomAnchorWalletFunding{
-		ChangeOutput: AnchorChangeOutput{
-			Mode: AnchorChangeOutputNoNew,
+	validWallet := &WalletFunding{
+		ChangeOutput: tapsdk.AnchorChangeOutput{
+			Mode: tapsdk.AnchorChangeOutputNoNew,
 		},
-		Fee: AnchorFee{
-			Mode:    AnchorFeeSatPerVByte,
+		Fee: tapsdk.AnchorFee{
+			Mode:    tapsdk.AnchorFeeSatPerVByte,
 			FeeRate: feeRate,
 		},
 		MaxFeeSat:    10_000,
@@ -337,36 +339,36 @@ func TestCustomAnchorFundingPlanValidateExactVariant(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		plan    CustomAnchorFundingPlan
+		plan    FundingPlan
 		wantErr string
 	}{
 		{
 			name:    "missing variant",
-			plan:    CustomAnchorFundingPlan{},
+			plan:    FundingPlan{},
 			wantErr: "exactly one variant",
 		},
 		{
 			name: "multiple variants",
-			plan: CustomAnchorFundingPlan{
-				Mode:              CustomAnchorFundingWalletFunded,
+			plan: FundingPlan{
+				Mode:              FundingWalletFunded,
 				WalletFunded:      validWallet,
-				CallerFundedExact: &CustomAnchorCallerFundedExact{},
+				CallerFundedExact: &CallerFundedExact{},
 			},
 			wantErr: "exactly one variant",
 		},
 		{
 			name: "mode mismatch",
-			plan: CustomAnchorFundingPlan{
-				Mode:              CustomAnchorFundingWalletFunded,
-				CallerFundedExact: &CustomAnchorCallerFundedExact{},
+			plan: FundingPlan{
+				Mode:              FundingWalletFunded,
+				CallerFundedExact: &CallerFundedExact{},
 			},
 			wantErr: "wallet variant",
 		},
 		{
 			name: "wallet missing change",
-			plan: CustomAnchorFundingPlan{
-				Mode: CustomAnchorFundingWalletFunded,
-				WalletFunded: &CustomAnchorWalletFunding{
+			plan: FundingPlan{
+				Mode: FundingWalletFunded,
+				WalletFunded: &WalletFunding{
 					Fee: validWallet.Fee,
 				},
 			},
@@ -374,9 +376,9 @@ func TestCustomAnchorFundingPlanValidateExactVariant(t *testing.T) {
 		},
 		{
 			name: "wallet missing fee",
-			plan: CustomAnchorFundingPlan{
-				Mode: CustomAnchorFundingWalletFunded,
-				WalletFunded: &CustomAnchorWalletFunding{
+			plan: FundingPlan{
+				Mode: FundingWalletFunded,
+				WalletFunded: &WalletFunding{
 					ChangeOutput: validWallet.ChangeOutput,
 				},
 			},
@@ -384,9 +386,9 @@ func TestCustomAnchorFundingPlanValidateExactVariant(t *testing.T) {
 		},
 		{
 			name: "wallet missing maximum fee",
-			plan: CustomAnchorFundingPlan{
-				Mode: CustomAnchorFundingWalletFunded,
-				WalletFunded: &CustomAnchorWalletFunding{
+			plan: FundingPlan{
+				Mode: FundingWalletFunded,
+				WalletFunded: &WalletFunding{
 					ChangeOutput: validWallet.ChangeOutput,
 					Fee:          validWallet.Fee,
 					CustomLockID: validWallet.CustomLockID,
@@ -396,23 +398,23 @@ func TestCustomAnchorFundingPlanValidateExactVariant(t *testing.T) {
 		},
 		{
 			name: "wallet funded",
-			plan: CustomAnchorFundingPlan{
-				Mode:         CustomAnchorFundingWalletFunded,
+			plan: FundingPlan{
+				Mode:         FundingWalletFunded,
 				WalletFunded: validWallet,
 			},
 		},
 		{
 			name: "caller exact",
-			plan: CustomAnchorFundingPlan{
-				Mode:              CustomAnchorFundingCallerFundedExact,
-				CallerFundedExact: &CustomAnchorCallerFundedExact{},
+			plan: FundingPlan{
+				Mode:              FundingCallerFundedExact,
+				CallerFundedExact: &CallerFundedExact{},
 			},
 		},
 		{
 			name: "external p2a",
-			plan: CustomAnchorFundingPlan{
-				Mode: CustomAnchorFundingExternalP2AFeeBump,
-				ExternalP2AFeeBump: &CustomAnchorExternalP2AFeeBump{
+			plan: FundingPlan{
+				Mode: FundingExternalP2AFeeBump,
+				ExternalP2AFeeBump: &ExternalP2AFeeBump{
 					P2AOutputIndex: 0,
 				},
 			},
@@ -433,7 +435,7 @@ func TestCustomAnchorFundingPlanValidateExactVariant(t *testing.T) {
 }
 
 func TestCustomAnchorFundingPlanValidateLockID(t *testing.T) {
-	feeRate, err := NewFeeRateSatPerVByte(2)
+	feeRate, err := tapsdk.NewFeeRateSatPerVByte(2)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -463,14 +465,14 @@ func TestCustomAnchorFundingPlanValidateLockID(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			funding := CustomAnchorFundingPlan{
-				Mode: CustomAnchorFundingWalletFunded,
-				WalletFunded: &CustomAnchorWalletFunding{
-					ChangeOutput: AnchorChangeOutput{
-						Mode: AnchorChangeOutputAdd,
+			funding := FundingPlan{
+				Mode: FundingWalletFunded,
+				WalletFunded: &WalletFunding{
+					ChangeOutput: tapsdk.AnchorChangeOutput{
+						Mode: tapsdk.AnchorChangeOutputAdd,
 					},
-					Fee: AnchorFee{
-						Mode:    AnchorFeeSatPerVByte,
+					Fee: tapsdk.AnchorFee{
+						Mode:    tapsdk.AnchorFeeSatPerVByte,
 						FeeRate: feeRate,
 					},
 					MaxFeeSat:    10_000,
@@ -490,7 +492,7 @@ func TestCustomAnchorFundingPlanValidateLockID(t *testing.T) {
 }
 
 func TestCommitVirtualPsbtsRequestValidateLockID(t *testing.T) {
-	feeRate, err := NewFeeRateSatPerVByte(2)
+	feeRate, err := tapsdk.NewFeeRateSatPerVByte(2)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -519,15 +521,15 @@ func TestCommitVirtualPsbtsRequestValidateLockID(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			request := &CommitVirtualPsbtsRequest{
+			request := &tapsdk.CommitVirtualPsbtsRequest{
 				AnchorPsbt:   []byte{1},
 				VirtualPsbts: [][]byte{{2}},
-				Funding: AnchorFundingPlan{
-					ChangeOutput: AnchorChangeOutput{
-						Mode: AnchorChangeOutputAdd,
+				Funding: tapsdk.AnchorFundingPlan{
+					ChangeOutput: tapsdk.AnchorChangeOutput{
+						Mode: tapsdk.AnchorChangeOutputAdd,
 					},
-					Fee: AnchorFee{
-						Mode:    AnchorFeeSatPerVByte,
+					Fee: tapsdk.AnchorFee{
+						Mode:    tapsdk.AnchorFeeSatPerVByte,
 						FeeRate: feeRate,
 					},
 					CustomLockID: test.lockID,
@@ -548,7 +550,7 @@ func TestCommitVirtualPsbtsRequestValidateLockID(t *testing.T) {
 }
 
 func TestCustomAnchorFundingLockExpiration(t *testing.T) {
-	feeRate, err := NewFeeRateSatPerVByte(2)
+	feeRate, err := tapsdk.NewFeeRateSatPerVByte(2)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -558,25 +560,25 @@ func TestCustomAnchorFundingLockExpiration(t *testing.T) {
 	}{
 		{
 			name:    "maximum",
-			seconds: maxCustomAnchorLockExpirationSeconds,
+			seconds: anchor.MaxLockExpirationSeconds,
 		},
 		{
 			name:    "overflow",
-			seconds: maxCustomAnchorLockExpirationSeconds + 1,
+			seconds: anchor.MaxLockExpirationSeconds + 1,
 			wantErr: true,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			highLevel := CustomAnchorFundingPlan{
-				Mode: CustomAnchorFundingWalletFunded,
-				WalletFunded: &CustomAnchorWalletFunding{
-					ChangeOutput: AnchorChangeOutput{
-						Mode: AnchorChangeOutputAdd,
+			highLevel := FundingPlan{
+				Mode: FundingWalletFunded,
+				WalletFunded: &WalletFunding{
+					ChangeOutput: tapsdk.AnchorChangeOutput{
+						Mode: tapsdk.AnchorChangeOutputAdd,
 					},
-					Fee: AnchorFee{
-						Mode:    AnchorFeeSatPerVByte,
+					Fee: tapsdk.AnchorFee{
+						Mode:    tapsdk.AnchorFeeSatPerVByte,
 						FeeRate: feeRate,
 					},
 					MaxFeeSat:             10_000,
@@ -584,15 +586,15 @@ func TestCustomAnchorFundingLockExpiration(t *testing.T) {
 					LockExpirationSeconds: test.seconds,
 				},
 			}
-			lowLevel := CommitVirtualPsbtsRequest{
+			lowLevel := tapsdk.CommitVirtualPsbtsRequest{
 				AnchorPsbt:   []byte{1},
 				VirtualPsbts: [][]byte{{2}},
-				Funding: AnchorFundingPlan{
-					ChangeOutput: AnchorChangeOutput{
-						Mode: AnchorChangeOutputAdd,
+				Funding: tapsdk.AnchorFundingPlan{
+					ChangeOutput: tapsdk.AnchorChangeOutput{
+						Mode: tapsdk.AnchorChangeOutputAdd,
 					},
-					Fee: AnchorFee{
-						Mode:    AnchorFeeSatPerVByte,
+					Fee: tapsdk.AnchorFee{
+						Mode:    tapsdk.AnchorFeeSatPerVByte,
 						FeeRate: feeRate,
 					},
 					LockExpirationSeconds: test.seconds,
@@ -620,26 +622,26 @@ func TestCustomAnchorFundingLockExpiration(t *testing.T) {
 func TestCustomAssetOutputValidateMVPConstraints(t *testing.T) {
 	tests := []struct {
 		name    string
-		mutate  func(*CustomAnchorRequest)
+		mutate  func(*Request)
 		wantErr string
 	}{
 		{
 			name: "zero amount",
-			mutate: func(request *CustomAnchorRequest) {
+			mutate: func(request *Request) {
 				request.Outputs[0].Amount = 0
 			},
 			wantErr: "amount is required",
 		},
 		{
 			name: "zero anchor value",
-			mutate: func(request *CustomAnchorRequest) {
+			mutate: func(request *Request) {
 				request.Outputs[0].AnchorValueSat = 0
 			},
 			wantErr: "anchor value is required",
 		},
 		{
 			name: "zero burn anchor value",
-			mutate: func(request *CustomAnchorRequest) {
+			mutate: func(request *Request) {
 				request.Outputs[0].AnchorValueSat = 0
 				request.Outputs[0].Script = customAnchorBurnScript()
 				request.LossPolicy = customAnchorLossPolicy(
@@ -650,14 +652,14 @@ func TestCustomAssetOutputValidateMVPConstraints(t *testing.T) {
 		},
 		{
 			name: "absolute timelock",
-			mutate: func(request *CustomAnchorRequest) {
+			mutate: func(request *Request) {
 				request.Outputs[0].Timelocks.Absolute = 1
 			},
 			wantErr: "asset timelocks are not supported",
 		},
 		{
 			name: "relative timelock",
-			mutate: func(request *CustomAnchorRequest) {
+			mutate: func(request *Request) {
 				request.Outputs[0].Timelocks.Relative = 1
 			},
 			wantErr: "asset timelocks are not supported",
@@ -684,24 +686,24 @@ func TestCustomAnchorRequestValidateCoAnchoredOutputs(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		mutate func(*CustomAnchorRequest)
+		mutate func(*Request)
 	}{
 		{
 			name: "different value",
-			mutate: func(request *CustomAnchorRequest) {
+			mutate: func(request *Request) {
 				request.Outputs[1].AnchorValueSat++
 			},
 		},
 		{
 			name: "different internal key",
-			mutate: func(request *CustomAnchorRequest) {
+			mutate: func(request *Request) {
 				request.Outputs[1].Anchor.InternalKey.PubKey =
 					customAnchorTypesTestOddPubKey(t)
 			},
 		},
 		{
 			name: "different serialized sibling",
-			mutate: func(request *CustomAnchorRequest) {
+			mutate: func(request *Request) {
 				request.Outputs[1].Anchor.Tapscript.SerializedSibling =
 					[]byte{9}
 			},
@@ -720,23 +722,23 @@ func TestCustomAnchorRequestValidateCoAnchoredOutputs(t *testing.T) {
 }
 
 func TestCustomAnchorRequestValidateCheckedAmounts(t *testing.T) {
-	secondRef := AssetRefFromAssetID(AssetID{9})
+	secondRef := tapsdk.AssetRefFromAssetID(tapsdk.AssetID{9})
 
 	tests := []struct {
 		name    string
-		mutate  func(*CustomAnchorRequest)
+		mutate  func(*Request)
 		wantErr string
 	}{
 		{
 			name: "zero input",
-			mutate: func(request *CustomAnchorRequest) {
+			mutate: func(request *Request) {
 				request.Inputs[0].Amount = 0
 			},
 			wantErr: "input 0: amount is required",
 		},
 		{
 			name: "input sum overflow",
-			mutate: func(request *CustomAnchorRequest) {
+			mutate: func(request *Request) {
 				request.Inputs[0].Amount = math.MaxUint64
 				second := request.Inputs[0]
 				second.ID = "input-2"
@@ -748,7 +750,7 @@ func TestCustomAnchorRequestValidateCheckedAmounts(t *testing.T) {
 		},
 		{
 			name: "output sum overflow",
-			mutate: func(request *CustomAnchorRequest) {
+			mutate: func(request *Request) {
 				request.Inputs[0].Amount = math.MaxUint64
 				request.Outputs[0].Amount = math.MaxUint64
 				second := request.Outputs[0]
@@ -761,28 +763,28 @@ func TestCustomAnchorRequestValidateCheckedAmounts(t *testing.T) {
 		},
 		{
 			name: "output exceeds input",
-			mutate: func(request *CustomAnchorRequest) {
+			mutate: func(request *Request) {
 				request.Outputs[0].Amount = 101
 			},
 			wantErr: "exceeds input amount",
 		},
 		{
 			name: "unknown output asset",
-			mutate: func(request *CustomAnchorRequest) {
+			mutate: func(request *Request) {
 				request.Outputs[0].AssetRef = secondRef
 			},
 			wantErr: "exceeds input amount",
 		},
 		{
 			name: "unapproved deficit",
-			mutate: func(request *CustomAnchorRequest) {
+			mutate: func(request *Request) {
 				request.Outputs[0].Amount = 90
 			},
 			wantErr: "implicit asset loss is unsupported",
 		},
 		{
 			name: "approved deficit",
-			mutate: func(request *CustomAnchorRequest) {
+			mutate: func(request *Request) {
 				request.Outputs[0].Amount = 90
 				request.LossPolicy = customAnchorLossPolicy(
 					request.Inputs[0].AssetRef, 10,
@@ -792,7 +794,7 @@ func TestCustomAnchorRequestValidateCheckedAmounts(t *testing.T) {
 		},
 		{
 			name: "deficit exceeds bound",
-			mutate: func(request *CustomAnchorRequest) {
+			mutate: func(request *Request) {
 				request.Outputs[0].Amount = 89
 				request.LossPolicy = customAnchorLossPolicy(
 					request.Inputs[0].AssetRef, 10,
@@ -802,7 +804,7 @@ func TestCustomAnchorRequestValidateCheckedAmounts(t *testing.T) {
 		},
 		{
 			name: "unconfirmed loss",
-			mutate: func(request *CustomAnchorRequest) {
+			mutate: func(request *Request) {
 				request.Outputs[0].Amount = 90
 				request.LossPolicy = customAnchorLossPolicy(
 					request.Inputs[0].AssetRef, 10,
@@ -813,7 +815,7 @@ func TestCustomAnchorRequestValidateCheckedAmounts(t *testing.T) {
 		},
 		{
 			name: "approved burn output",
-			mutate: func(request *CustomAnchorRequest) {
+			mutate: func(request *Request) {
 				request.Outputs[0].Amount = 60
 				burn := request.Outputs[0]
 				burn.ID = "burn-output"
@@ -828,17 +830,17 @@ func TestCustomAnchorRequestValidateCheckedAmounts(t *testing.T) {
 		},
 		{
 			name: "burn output rejected by default",
-			mutate: func(request *CustomAnchorRequest) {
+			mutate: func(request *Request) {
 				request.Outputs[0].Script = customAnchorBurnScript()
 			},
 			wantErr: "irreversible loss 100 exceeds allowance 0",
 		},
 		{
 			name: "loss allowance sum overflow",
-			mutate: func(request *CustomAnchorRequest) {
-				request.LossPolicy = CustomAnchorLossPolicy{
-					Mode: CustomAnchorLossBurn,
-					Allowances: []CustomAnchorLossAllowance{
+			mutate: func(request *Request) {
+				request.LossPolicy = LossPolicy{
+					Mode: LossBurn,
+					Allowances: []LossAllowance{
 						{
 							AssetRef:  request.Inputs[0].AssetRef,
 							MaxAmount: math.MaxUint64,
@@ -874,8 +876,8 @@ func TestCustomAnchorRequestValidateCheckedAmounts(t *testing.T) {
 func TestCustomAnchorRequestValidateSemanticGroupAmounts(t *testing.T) {
 	evenKey := customAnchorTypesTestPubKey(t)
 	oddKey := customAnchorTypesTestOddPubKey(t)
-	evenRef := AssetRefFromGroupKey(evenKey)
-	oddRef := AssetRefFromGroupKey(oddKey)
+	evenRef := tapsdk.AssetRefFromGroupKey(evenKey)
+	oddRef := tapsdk.AssetRefFromGroupKey(oddKey)
 	require.True(t, evenRef.Equivalent(oddRef))
 
 	request := validCustomAnchorRequest(t)
@@ -886,11 +888,11 @@ func TestCustomAnchorRequestValidateSemanticGroupAmounts(t *testing.T) {
 }
 
 func TestCustomAnchorLossPolicyValidate(t *testing.T) {
-	assetRef := AssetRefFromAssetID(AssetID{1})
+	assetRef := tapsdk.AssetRefFromAssetID(tapsdk.AssetID{1})
 
 	tests := []struct {
 		name    string
-		policy  CustomAnchorLossPolicy
+		policy  LossPolicy
 		wantErr string
 	}{
 		{
@@ -898,16 +900,16 @@ func TestCustomAnchorLossPolicyValidate(t *testing.T) {
 		},
 		{
 			name: "reject with confirmation",
-			policy: CustomAnchorLossPolicy{
+			policy: LossPolicy{
 				ConfirmIrreversibleLoss: true,
 			},
 			wantErr: "reject loss mode cannot include",
 		},
 		{
 			name: "burn without confirmation",
-			policy: CustomAnchorLossPolicy{
-				Mode: CustomAnchorLossBurn,
-				Allowances: []CustomAnchorLossAllowance{{
+			policy: LossPolicy{
+				Mode: LossBurn,
+				Allowances: []LossAllowance{{
 					AssetRef:  assetRef,
 					MaxAmount: 1,
 				}},
@@ -916,17 +918,17 @@ func TestCustomAnchorLossPolicyValidate(t *testing.T) {
 		},
 		{
 			name: "burn without allowance",
-			policy: CustomAnchorLossPolicy{
-				Mode:                    CustomAnchorLossBurn,
+			policy: LossPolicy{
+				Mode:                    LossBurn,
 				ConfirmIrreversibleLoss: true,
 			},
 			wantErr: "at least one loss allowance is required",
 		},
 		{
 			name: "zero allowance",
-			policy: CustomAnchorLossPolicy{
-				Mode: CustomAnchorLossBurn,
-				Allowances: []CustomAnchorLossAllowance{{
+			policy: LossPolicy{
+				Mode: LossBurn,
+				Allowances: []LossAllowance{{
 					AssetRef: assetRef,
 				}},
 				ConfirmIrreversibleLoss: true,
@@ -935,9 +937,9 @@ func TestCustomAnchorLossPolicyValidate(t *testing.T) {
 		},
 		{
 			name: "duplicate allowance",
-			policy: CustomAnchorLossPolicy{
-				Mode: CustomAnchorLossBurn,
-				Allowances: []CustomAnchorLossAllowance{
+			policy: LossPolicy{
+				Mode: LossBurn,
+				Allowances: []LossAllowance{
 					{
 						AssetRef:  assetRef,
 						MaxAmount: 1,
@@ -971,8 +973,8 @@ func TestCustomAnchorLossPolicyValidate(t *testing.T) {
 }
 
 func TestCustomAnchorPassiveAssetsValidate(t *testing.T) {
-	assetRef := AssetRefFromAssetID(AssetID{1})
-	packet := CustomAnchorPassivePacket{
+	assetRef := tapsdk.AssetRefFromAssetID(tapsdk.AssetID{1})
+	packet := PassivePacket{
 		ID:          "passive-1",
 		AssetRef:    assetRef,
 		Amount:      10,
@@ -982,7 +984,7 @@ func TestCustomAnchorPassiveAssetsValidate(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		plan    CustomAnchorPassiveAssets
+		plan    PassiveAssets
 		wantErr string
 	}{
 		{
@@ -990,37 +992,37 @@ func TestCustomAnchorPassiveAssetsValidate(t *testing.T) {
 		},
 		{
 			name: "preserve",
-			plan: CustomAnchorPassiveAssets{
-				Policy: CustomAnchorPassivePreserve,
+			plan: PassiveAssets{
+				Policy: PassivePreserve,
 			},
 		},
 		{
 			name: "reject with packet",
-			plan: CustomAnchorPassiveAssets{
-				Packets: []CustomAnchorPassivePacket{packet},
+			plan: PassiveAssets{
+				Packets: []PassivePacket{packet},
 			},
 			wantErr: "packets require caller re-anchor",
 		},
 		{
 			name: "preserve with packet",
-			plan: CustomAnchorPassiveAssets{
-				Policy:  CustomAnchorPassivePreserve,
-				Packets: []CustomAnchorPassivePacket{packet},
+			plan: PassiveAssets{
+				Policy:  PassivePreserve,
+				Packets: []PassivePacket{packet},
 			},
 			wantErr: "packets require caller re-anchor",
 		},
 		{
 			name: "caller without packet",
-			plan: CustomAnchorPassiveAssets{
-				Policy: CustomAnchorPassiveCallerReanchor,
+			plan: PassiveAssets{
+				Policy: PassiveCallerReanchor,
 			},
 			wantErr: "caller re-anchor requires passive packets",
 		},
 		{
 			name: "caller missing packet id",
-			plan: CustomAnchorPassiveAssets{
-				Policy: CustomAnchorPassiveCallerReanchor,
-				Packets: []CustomAnchorPassivePacket{
+			plan: PassiveAssets{
+				Policy: PassiveCallerReanchor,
+				Packets: []PassivePacket{
 					{
 						AssetRef:    assetRef,
 						Amount:      1,
@@ -1032,17 +1034,17 @@ func TestCustomAnchorPassiveAssetsValidate(t *testing.T) {
 		},
 		{
 			name: "caller duplicate packet id",
-			plan: CustomAnchorPassiveAssets{
-				Policy:  CustomAnchorPassiveCallerReanchor,
-				Packets: []CustomAnchorPassivePacket{packet, packet},
+			plan: PassiveAssets{
+				Policy:  PassiveCallerReanchor,
+				Packets: []PassivePacket{packet, packet},
 			},
 			wantErr: "duplicate ID",
 		},
 		{
 			name: "caller missing amount",
-			plan: CustomAnchorPassiveAssets{
-				Policy: CustomAnchorPassiveCallerReanchor,
-				Packets: []CustomAnchorPassivePacket{
+			plan: PassiveAssets{
+				Policy: PassiveCallerReanchor,
+				Packets: []PassivePacket{
 					{
 						ID:          "passive-1",
 						AssetRef:    assetRef,
@@ -1054,9 +1056,9 @@ func TestCustomAnchorPassiveAssetsValidate(t *testing.T) {
 		},
 		{
 			name: "caller missing virtual psbt",
-			plan: CustomAnchorPassiveAssets{
-				Policy: CustomAnchorPassiveCallerReanchor,
-				Packets: []CustomAnchorPassivePacket{
+			plan: PassiveAssets{
+				Policy: PassiveCallerReanchor,
+				Packets: []PassivePacket{
 					{
 						ID:       "passive-1",
 						AssetRef: assetRef,
@@ -1068,9 +1070,9 @@ func TestCustomAnchorPassiveAssetsValidate(t *testing.T) {
 		},
 		{
 			name: "caller missing proof file",
-			plan: CustomAnchorPassiveAssets{
-				Policy: CustomAnchorPassiveCallerReanchor,
-				Packets: []CustomAnchorPassivePacket{
+			plan: PassiveAssets{
+				Policy: PassiveCallerReanchor,
+				Packets: []PassivePacket{
 					{
 						ID:          "passive-1",
 						AssetRef:    assetRef,
@@ -1083,9 +1085,9 @@ func TestCustomAnchorPassiveAssetsValidate(t *testing.T) {
 		},
 		{
 			name: "caller amount overflow",
-			plan: CustomAnchorPassiveAssets{
-				Policy: CustomAnchorPassiveCallerReanchor,
-				Packets: []CustomAnchorPassivePacket{
+			plan: PassiveAssets{
+				Policy: PassiveCallerReanchor,
+				Packets: []PassivePacket{
 					packet,
 					{
 						ID:          "passive-2",
@@ -1100,9 +1102,9 @@ func TestCustomAnchorPassiveAssetsValidate(t *testing.T) {
 		},
 		{
 			name: "caller reanchor",
-			plan: CustomAnchorPassiveAssets{
-				Policy:  CustomAnchorPassiveCallerReanchor,
-				Packets: []CustomAnchorPassivePacket{packet},
+			plan: PassiveAssets{
+				Policy:  PassiveCallerReanchor,
+				Packets: []PassivePacket{packet},
 			},
 		},
 	}
@@ -1127,50 +1129,50 @@ func TestCustomAnchorVerificationResult(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		mutate  func(*CustomAnchorVerificationResult)
+		mutate  func(*VerificationResult)
 		wantErr string
 	}{
 		{
 			name: "missing checks",
-			mutate: func(result *CustomAnchorVerificationResult) {
+			mutate: func(result *VerificationResult) {
 				result.Checks = nil
 			},
 			wantErr: "at least one verification check is required",
 		},
 		{
 			name: "missing check code",
-			mutate: func(result *CustomAnchorVerificationResult) {
+			mutate: func(result *VerificationResult) {
 				result.Checks[0].Code = ""
 			},
 			wantErr: "check 0 code is required",
 		},
 		{
 			name: "unknown check scope",
-			mutate: func(result *CustomAnchorVerificationResult) {
+			mutate: func(result *VerificationResult) {
 				result.Checks[0].Scope = "unknown"
 			},
 			wantErr: "unknown scope",
 		},
 		{
 			name: "unknown check origin",
-			mutate: func(result *CustomAnchorVerificationResult) {
+			mutate: func(result *VerificationResult) {
 				result.Checks[0].Origin =
-					CustomAnchorVerificationOriginUnknown
+					VerificationOriginUnknown
 			},
 			wantErr: "unknown origin",
 		},
 		{
 			name: "missing issue code",
-			mutate: func(result *CustomAnchorVerificationResult) {
+			mutate: func(result *VerificationResult) {
 				result.Issues[0].Code = ""
 			},
 			wantErr: "issue 0 code is required",
 		},
 		{
 			name: "unknown issue severity",
-			mutate: func(result *CustomAnchorVerificationResult) {
+			mutate: func(result *VerificationResult) {
 				result.Issues[0].Severity =
-					CustomAnchorVerificationSeverityUnknown
+					VerificationSeverityUnknown
 			},
 			wantErr: "unknown severity",
 		},
@@ -1193,10 +1195,10 @@ func TestCustomAnchorVerificationResult(t *testing.T) {
 
 	errorIssue := valid.Clone()
 	errorIssue.Issues[0].Severity =
-		CustomAnchorVerificationSeverityError
+		VerificationSeverityError
 	require.False(t, errorIssue.Valid())
 
-	var nilResult *CustomAnchorVerificationResult
+	var nilResult *VerificationResult
 	require.ErrorContains(
 		t, nilResult.Validate(), "nil custom anchor verification result",
 	)
@@ -1276,7 +1278,7 @@ func TestCustomAnchorRequestCloneNoAlias(t *testing.T) {
 }
 
 func TestCustomAnchorRequestCloneNil(t *testing.T) {
-	var request *CustomAnchorRequest
+	var request *Request
 	require.Nil(t, request.Clone())
 }
 
@@ -1294,108 +1296,108 @@ func TestCustomAnchorVerificationResultCloneNoAlias(t *testing.T) {
 	require.Equal(t, "locally verified", clone.Checks[0].Message)
 	require.Equal(t, "backend warning", clone.Issues[0].Message)
 
-	var nilResult *CustomAnchorVerificationResult
+	var nilResult *VerificationResult
 	require.Nil(t, nilResult.Clone())
 }
 
-func validCustomAnchorRequest(t *testing.T) *CustomAnchorRequest {
+func validCustomAnchorRequest(t *testing.T) *Request {
 	t.Helper()
 
-	assetRef := AssetRefFromAssetID(AssetID{1})
+	assetRef := tapsdk.AssetRefFromAssetID(tapsdk.AssetID{1})
 	key := customAnchorTypesTestPubKey(t)
 
-	return &CustomAnchorRequest{
-		Inputs: []CustomAssetInput{
+	return &Request{
+		Inputs: []AssetInput{
 			{
 				ID:        "input-1",
 				AssetRef:  assetRef,
 				Amount:    100,
 				ProofFile: []byte{1},
-				Witness: CustomAssetWitnessPlan{
-					Mode: CustomAssetWitnessBackendSigner,
+				Witness: AssetWitnessPlan{
+					Mode: AssetWitnessBackendSigner,
 				},
 			},
 		},
-		Outputs: []CustomAssetOutput{
+		Outputs: []AssetOutput{
 			{
 				ID:                "output-1",
 				AssetRef:          assetRef,
 				Amount:            100,
 				AnchorOutputIndex: 1,
 				AnchorValueSat:    330,
-				Script: CustomAssetScriptPlan{
-					Mode: CustomAssetScriptExternal,
-					External: &CustomAssetExternalScriptPlan{
-						ScriptKey: ScriptKey{
+				Script: AssetScriptPlan{
+					Mode: AssetScriptExternal,
+					External: &AssetExternalScriptPlan{
+						ScriptKey: tapsdk.ScriptKey{
 							PubKey: key,
 						},
 					},
 				},
-				Anchor: CustomAnchorOutputPlan{
-					InternalKey: InternalKey{
+				Anchor: OutputPlan{
+					InternalKey: tapsdk.InternalKey{
 						PubKey: key,
 					},
-					Tapscript: CustomAnchorTapscriptPlan{
+					Tapscript: TapscriptPlan{
 						SerializedSibling: []byte{2},
 					},
 				},
 			},
 		},
 		AnchorPSBT: []byte{3},
-		Funding: CustomAnchorFundingPlan{
-			Mode:              CustomAnchorFundingCallerFundedExact,
-			CallerFundedExact: &CustomAnchorCallerFundedExact{},
+		Funding: FundingPlan{
+			Mode:              FundingCallerFundedExact,
+			CallerFundedExact: &CallerFundedExact{},
 		},
-		PassiveAssets: CustomAnchorPassiveAssets{
-			Policy: CustomAnchorPassiveReject,
+		PassiveAssets: PassiveAssets{
+			Policy: PassiveReject,
 		},
-		LossPolicy: CustomAnchorLossPolicy{
-			Mode: CustomAnchorLossReject,
+		LossPolicy: LossPolicy{
+			Mode: LossReject,
 		},
 	}
 }
 
-func richCustomAnchorRequest(t *testing.T) *CustomAnchorRequest {
+func richCustomAnchorRequest(t *testing.T) *Request {
 	t.Helper()
 
 	request := validCustomAnchorRequest(t)
 	assetRef := request.Inputs[0].AssetRef
 	key := customAnchorTypesTestPubKey(t)
-	feeRate, err := NewFeeRateSatPerVByte(2)
+	feeRate, err := tapsdk.NewFeeRateSatPerVByte(2)
 	require.NoError(t, err)
 
 	request.AnchorPSBT = []byte{1, 2}
 	request.Inputs[0].Amount = 400
 	request.Inputs[0].ProofFile = []byte{3, 4}
-	request.Inputs[0].Witness = CustomAssetWitnessPlan{
-		Mode:  CustomAssetWitnessCallerProvided,
+	request.Inputs[0].Witness = AssetWitnessPlan{
+		Mode:  AssetWitnessCallerProvided,
 		Stack: [][]byte{{5, 6}, {1}},
 	}
-	request.Outputs = []CustomAssetOutput{
+	request.Outputs = []AssetOutput{
 		{
 			ID:                "wallet-output",
 			AssetRef:          assetRef,
 			Amount:            100,
 			AnchorOutputIndex: 1,
 			AnchorValueSat:    330,
-			Script: CustomAssetScriptPlan{
-				Mode: CustomAssetScriptWallet,
-				Wallet: &CustomAssetWalletScriptPlan{
-					KeyLocator: &KeyLocator{
+			Script: AssetScriptPlan{
+				Mode: AssetScriptWallet,
+				Wallet: &AssetWalletScriptPlan{
+					KeyLocator: &tapsdk.KeyLocator{
 						Family: 1,
 						Index:  2,
 					},
 				},
 			},
-			Anchor: CustomAnchorOutputPlan{
-				InternalKey: InternalKey{
+			Anchor: OutputPlan{
+				InternalKey: tapsdk.InternalKey{
 					PubKey: key,
 				},
-				Tapscript: CustomAnchorTapscriptPlan{
-					TapLeaves: []TapLeaf{{Script: []byte{7, 8}}},
+				Tapscript: TapscriptPlan{
+					TapLeaves: []tapsdk.TapLeaf{{Script: []byte{7, 8}}},
 				},
 			},
-			ProofDelivery: CustomAssetProofDelivery{
+			ProofDelivery: AssetProofDelivery{
 				RecipientID:    "recipient-1",
 				CourierAddress: "hashmail://courier",
 				OpaqueMetadata: []byte{9, 10},
@@ -1407,20 +1409,20 @@ func richCustomAnchorRequest(t *testing.T) *CustomAnchorRequest {
 			Amount:            100,
 			AnchorOutputIndex: 2,
 			AnchorValueSat:    330,
-			Script: CustomAssetScriptPlan{
-				Mode: CustomAssetScriptExternal,
-				External: &CustomAssetExternalScriptPlan{
-					ScriptKey: ScriptKey{
+			Script: AssetScriptPlan{
+				Mode: AssetScriptExternal,
+				External: &AssetExternalScriptPlan{
+					ScriptKey: tapsdk.ScriptKey{
 						PubKey:   key,
 						TapTweak: []byte{11, 12},
 					},
 				},
 			},
-			Anchor: CustomAnchorOutputPlan{
-				InternalKey: InternalKey{
+			Anchor: OutputPlan{
+				InternalKey: tapsdk.InternalKey{
 					PubKey: key,
 				},
-				Tapscript: CustomAnchorTapscriptPlan{
+				Tapscript: TapscriptPlan{
 					SerializedSibling: []byte{13, 14},
 				},
 			},
@@ -1431,20 +1433,20 @@ func richCustomAnchorRequest(t *testing.T) *CustomAnchorRequest {
 			Amount:            100,
 			AnchorOutputIndex: 3,
 			AnchorValueSat:    330,
-			Script: CustomAssetScriptPlan{
-				Mode: CustomAssetScriptOPTrue,
-				OPTrue: &CustomAssetOPTrueScriptPlan{
-					InternalKey: KeyDescriptor{
+			Script: AssetScriptPlan{
+				Mode: AssetScriptOPTrue,
+				OPTrue: &AssetOPTrueScriptPlan{
+					InternalKey: tapsdk.KeyDescriptor{
 						RawKeyBytes: key,
-						KeyLocator: KeyLocator{
+						KeyLocator: tapsdk.KeyLocator{
 							Family: 2,
 							Index:  3,
 						},
 					},
 				},
 			},
-			Anchor: CustomAnchorOutputPlan{
-				InternalKey: InternalKey{
+			Anchor: OutputPlan{
+				InternalKey: tapsdk.InternalKey{
 					PubKey: key,
 				},
 			},
@@ -1456,21 +1458,21 @@ func richCustomAnchorRequest(t *testing.T) *CustomAnchorRequest {
 			AnchorOutputIndex: 4,
 			AnchorValueSat:    330,
 			Script:            customAnchorBurnScript(),
-			Anchor: CustomAnchorOutputPlan{
-				InternalKey: InternalKey{
+			Anchor: OutputPlan{
+				InternalKey: tapsdk.InternalKey{
 					PubKey: key,
 				},
 			},
 		},
 	}
-	request.Funding = CustomAnchorFundingPlan{
-		Mode: CustomAnchorFundingWalletFunded,
-		WalletFunded: &CustomAnchorWalletFunding{
-			ChangeOutput: AnchorChangeOutput{
-				Mode: AnchorChangeOutputNoNew,
+	request.Funding = FundingPlan{
+		Mode: FundingWalletFunded,
+		WalletFunded: &WalletFunding{
+			ChangeOutput: tapsdk.AnchorChangeOutput{
+				Mode: tapsdk.AnchorChangeOutputNoNew,
 			},
-			Fee: AnchorFee{
-				Mode:    AnchorFeeSatPerVByte,
+			Fee: tapsdk.AnchorFee{
+				Mode:    tapsdk.AnchorFeeSatPerVByte,
 				FeeRate: feeRate,
 			},
 			MaxFeeSat:             10_000,
@@ -1478,12 +1480,12 @@ func richCustomAnchorRequest(t *testing.T) *CustomAnchorRequest {
 			LockExpirationSeconds: 600,
 		},
 	}
-	request.PassiveAssets = CustomAnchorPassiveAssets{
-		Policy: CustomAnchorPassiveCallerReanchor,
-		Packets: []CustomAnchorPassivePacket{
+	request.PassiveAssets = PassiveAssets{
+		Policy: PassiveCallerReanchor,
+		Packets: []PassivePacket{
 			{
 				ID:          "passive-1",
-				AssetRef:    AssetRefFromAssetID(AssetID{2}),
+				AssetRef:    tapsdk.AssetRefFromAssetID(tapsdk.AssetID{2}),
 				Amount:      1,
 				VirtualPSBT: []byte{17, 18},
 				ProofFile:   []byte{19, 20},
@@ -1491,11 +1493,11 @@ func richCustomAnchorRequest(t *testing.T) *CustomAnchorRequest {
 		},
 	}
 	request.LossPolicy = customAnchorLossPolicy(assetRef, 100)
-	request.SigningPlans = []CustomAnchorInputSigningPlan{
+	request.SigningPlans = []InputSigningPlan{
 		{
 			InputIndex: 0,
-			MuSig2: &CustomAnchorMuSig2SigningPlan{
-				Participants: []PubKey{
+			MuSig2: &MuSig2SigningPlan{
+				Participants: []tapsdk.PubKey{
 					key, customAnchorTypesTestSecondPubKey(t),
 				},
 				SessionContext: []byte{21, 22},
@@ -1506,19 +1508,19 @@ func richCustomAnchorRequest(t *testing.T) *CustomAnchorRequest {
 	return request
 }
 
-func customAnchorBurnScript() CustomAssetScriptPlan {
-	return CustomAssetScriptPlan{
-		Mode: CustomAssetScriptBurn,
-		Burn: &CustomAssetBurnScriptPlan{},
+func customAnchorBurnScript() AssetScriptPlan {
+	return AssetScriptPlan{
+		Mode: AssetScriptBurn,
+		Burn: &AssetBurnScriptPlan{},
 	}
 }
 
-func customAnchorLossPolicy(ref AssetRef,
-	maxAmount uint64) CustomAnchorLossPolicy {
+func customAnchorLossPolicy(ref tapsdk.AssetRef,
+	maxAmount uint64) LossPolicy {
 
-	return CustomAnchorLossPolicy{
-		Mode: CustomAnchorLossBurn,
-		Allowances: []CustomAnchorLossAllowance{
+	return LossPolicy{
+		Mode: LossBurn,
+		Allowances: []LossAllowance{
 			{
 				AssetRef:  ref,
 				MaxAmount: maxAmount,
@@ -1528,27 +1530,27 @@ func customAnchorLossPolicy(ref AssetRef,
 	}
 }
 
-func validCustomAnchorVerificationResult() *CustomAnchorVerificationResult {
+func validCustomAnchorVerificationResult() *VerificationResult {
 	inputIndex := uint32(1)
 	outputIndex := uint32(2)
 
-	return &CustomAnchorVerificationResult{
-		Checks: []CustomAnchorVerificationCheck{
+	return &VerificationResult{
+		Checks: []VerificationCheck{
 			{
 				Code:       "proof_valid",
-				Scope:      CustomAnchorVerificationScopeInputProof,
-				Origin:     CustomAnchorVerificationOriginLocal,
+				Scope:      VerificationScopeInputProof,
+				Origin:     VerificationOriginLocal,
 				Passed:     true,
 				InputIndex: &inputIndex,
 				Message:    "locally verified",
 			},
 		},
-		Issues: []CustomAnchorVerificationIssue{
+		Issues: []VerificationIssue{
 			{
 				Code:        "backend_trusted",
-				Scope:       CustomAnchorVerificationScopeBackendTrust,
-				Origin:      CustomAnchorVerificationOriginBackend,
-				Severity:    CustomAnchorVerificationSeverityWarning,
+				Scope:       VerificationScopeBackendTrust,
+				Origin:      VerificationOriginBackend,
+				Severity:    VerificationSeverityWarning,
 				OutputIndex: &outputIndex,
 				Message:     "backend warning",
 			},
@@ -1556,10 +1558,10 @@ func validCustomAnchorVerificationResult() *CustomAnchorVerificationResult {
 	}
 }
 
-func customAnchorTypesTestPubKey(t *testing.T) PubKey {
+func customAnchorTypesTestPubKey(t *testing.T) tapsdk.PubKey {
 	t.Helper()
 
-	key, err := ParsePubKeyHex(
+	key, err := tapsdk.ParsePubKeyHex(
 		"0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959" +
 			"f2815b16f81798",
 	)
@@ -1568,10 +1570,10 @@ func customAnchorTypesTestPubKey(t *testing.T) PubKey {
 	return key
 }
 
-func customAnchorTypesTestOddPubKey(t *testing.T) PubKey {
+func customAnchorTypesTestOddPubKey(t *testing.T) tapsdk.PubKey {
 	t.Helper()
 
-	key, err := ParsePubKeyHex(
+	key, err := tapsdk.ParsePubKeyHex(
 		"0379be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959" +
 			"f2815b16f81798",
 	)
@@ -1580,10 +1582,10 @@ func customAnchorTypesTestOddPubKey(t *testing.T) PubKey {
 	return key
 }
 
-func customAnchorTypesTestSecondPubKey(t *testing.T) PubKey {
+func customAnchorTypesTestSecondPubKey(t *testing.T) tapsdk.PubKey {
 	t.Helper()
 
-	key, err := ParsePubKeyHex(
+	key, err := tapsdk.ParsePubKeyHex(
 		"02c6047f9441ed7d6d3045406e95c07cd8" +
 			"5c778e4b8cef3ca7abac09b95c709ee5",
 	)

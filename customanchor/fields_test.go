@@ -1,4 +1,4 @@
-package tapsdk
+package customanchor
 
 import (
 	"bytes"
@@ -6,6 +6,7 @@ import (
 
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/wire/v2"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/tappsbt"
 	"github.com/stretchr/testify/require"
 )
@@ -38,7 +39,7 @@ func TestAnchorOutputTaprootAssetRootRoundTrip(t *testing.T) {
 
 	encoded := testAnchorFieldsPSBT(t, 2)
 
-	var root Hash
+	var root tapsdk.Hash
 	for i := range root {
 		root[i] = byte(i + 1)
 	}
@@ -55,7 +56,7 @@ func TestAnchorOutputTaprootAssetRootRoundTrip(t *testing.T) {
 	got, found, err = AnchorOutputTaprootAssetRoot(updated, 0)
 	require.NoError(t, err)
 	require.False(t, found)
-	require.Equal(t, Hash{}, got)
+	require.Equal(t, tapsdk.Hash{}, got)
 }
 
 // TestAnchorOutputTaprootAssetRootAbsent ensures an output without the
@@ -68,7 +69,7 @@ func TestAnchorOutputTaprootAssetRootAbsent(t *testing.T) {
 	got, found, err := AnchorOutputTaprootAssetRoot(encoded, 0)
 	require.NoError(t, err)
 	require.False(t, found)
-	require.Equal(t, Hash{}, got)
+	require.Equal(t, tapsdk.Hash{}, got)
 }
 
 // TestAnchorOutputTaprootAssetRootRejectsInvalid covers decode failures,
@@ -90,11 +91,11 @@ func TestAnchorOutputTaprootAssetRootRejectsInvalid(t *testing.T) {
 	require.ErrorContains(t, err, "out of range")
 
 	_, err = SetAnchorOutputTaprootAssetRoot(
-		[]byte{0x01, 0x02, 0x03}, 0, Hash{},
+		[]byte{0x01, 0x02, 0x03}, 0, tapsdk.Hash{},
 	)
 	require.ErrorContains(t, err, "decoding anchor PSBT")
 
-	_, err = SetAnchorOutputTaprootAssetRoot(encoded, 1, Hash{})
+	_, err = SetAnchorOutputTaprootAssetRoot(encoded, 1, tapsdk.Hash{})
 	require.ErrorContains(t, err, "out of range")
 
 	// A recorded value with the wrong length is rejected on read.

@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
 	tapsdk "github.com/lightninglabs/tap-sdk"
+	"github.com/lightninglabs/tap-sdk/customanchor"
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/proof"
 	"github.com/stretchr/testify/require"
@@ -83,31 +84,31 @@ func TestCustomAnchorBuilderScriptPathTimeoutSweep(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	lockRequest := &tapsdk.CustomAnchorRequest{
-		Inputs: []tapsdk.CustomAssetInput{{
+	lockRequest := &customanchor.Request{
+		Inputs: []customanchor.AssetInput{{
 			ID:        "mint-output",
 			AssetRef:  minted.Ref,
 			Amount:    minted.Asset.Amount,
 			ProofFile: mintProof.RawProofFile,
-			Witness: tapsdk.CustomAssetWitnessPlan{
-				Mode: tapsdk.CustomAssetWitnessBackendSigner,
+			Witness: customanchor.AssetWitnessPlan{
+				Mode: customanchor.AssetWitnessBackendSigner,
 			},
 		}},
-		Outputs: []tapsdk.CustomAssetOutput{{
+		Outputs: []customanchor.AssetOutput{{
 			ID:                "timeout-output",
 			AssetRef:          minted.Ref,
 			Amount:            minted.Asset.Amount,
 			AnchorOutputIndex: 0,
 			AnchorValueSat:    uint64(lockValue),
-			Script: tapsdk.CustomAssetScriptPlan{
-				Mode: tapsdk.CustomAssetScriptOPTrue,
-				OPTrue: &tapsdk.CustomAssetOPTrueScriptPlan{
+			Script: customanchor.AssetScriptPlan{
+				Mode: customanchor.AssetScriptOPTrue,
+				OPTrue: &customanchor.AssetOPTrueScriptPlan{
 					InternalKey: opTrueInternalKey,
 				},
 			},
-			Anchor: tapsdk.CustomAnchorOutputPlan{
+			Anchor: customanchor.OutputPlan{
 				InternalKey: numsInternalKey,
-				Tapscript: tapsdk.CustomAnchorTapscriptPlan{
+				Tapscript: customanchor.TapscriptPlan{
 					TapLeaves: []tapsdk.TapLeaf{{
 						Script: csvScript,
 					}},
@@ -115,25 +116,25 @@ func TestCustomAnchorBuilderScriptPathTimeoutSweep(t *testing.T) {
 			},
 		}},
 		AnchorPSBT: lockAnchorPsbt,
-		Funding: tapsdk.CustomAnchorFundingPlan{
-			Mode:              tapsdk.CustomAnchorFundingCallerFundedExact,
-			CallerFundedExact: &tapsdk.CustomAnchorCallerFundedExact{},
+		Funding: customanchor.FundingPlan{
+			Mode:              customanchor.FundingCallerFundedExact,
+			CallerFundedExact: &customanchor.CallerFundedExact{},
 		},
-		PassiveAssets: tapsdk.CustomAnchorPassiveAssets{
-			Policy: tapsdk.CustomAnchorPassiveReject,
+		PassiveAssets: customanchor.PassiveAssets{
+			Policy: customanchor.PassiveReject,
 		},
-		LossPolicy: tapsdk.CustomAnchorLossPolicy{
-			Mode: tapsdk.CustomAnchorLossReject,
+		LossPolicy: customanchor.LossPolicy{
+			Mode: customanchor.LossReject,
 		},
-		SigningPlans: []tapsdk.CustomAnchorInputSigningPlan{{
+		SigningPlans: []customanchor.InputSigningPlan{{
 			InputIndex: 0,
-			KeyPath: &tapsdk.CustomAnchorKeyPathSigningPlan{
+			KeyPath: &customanchor.KeyPathSigningPlan{
 				Signer: mintAnchorSigner.XOnly(),
 			},
 		}},
 	}
 
-	lockPlan, err := h.AliceWallet.NewCustomAnchorTxBuilder().Build(
+	lockPlan, err := customanchor.NewTxBuilder(h.AliceWallet).Build(
 		ctx, lockRequest,
 	)
 	require.NoError(t, err)
@@ -143,8 +144,8 @@ func TestCustomAnchorBuilderScriptPathTimeoutSweep(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, lockPreview, 1)
 
-	lockSealed, err := lockPlan.Commit(ctx, tapsdk.CustomAnchorCommitOptions{
-		Publish: tapsdk.CustomAnchorPublishMetadata{Label: name},
+	lockSealed, err := lockPlan.Commit(ctx, customanchor.CommitOptions{
+		Publish: customanchor.PublishMetadata{Label: name},
 	})
 	require.NoError(t, err)
 	require.NoError(t, lockSealed.Validate())
@@ -163,8 +164,8 @@ func TestCustomAnchorBuilderScriptPathTimeoutSweep(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, lockSealed.VerifyFinalAnchorPSBT(lockFinal))
 
-	_, err = h.AliceWallet.PublishCustomAnchorTransfer(
-		ctx, lockSealed, lockFinal,
+	_, err = customanchor.PublishTransfer(
+		ctx, h.AliceWallet, lockSealed, lockFinal,
 	)
 	require.NoError(t, err)
 
@@ -199,47 +200,47 @@ func TestCustomAnchorBuilderScriptPathTimeoutSweep(t *testing.T) {
 		timeoutOutput.TaprootAssetRoot, timeoutOutput.TaprootMerkleRoot,
 	)
 
-	sweepRequest := &tapsdk.CustomAnchorRequest{
-		Inputs: []tapsdk.CustomAssetInput{{
+	sweepRequest := &customanchor.Request{
+		Inputs: []customanchor.AssetInput{{
 			ID:        "timeout-input",
 			AssetRef:  minted.Ref,
 			Amount:    minted.Asset.Amount,
 			ProofFile: timeoutProof.RawProofFile,
-			Witness: tapsdk.CustomAssetWitnessPlan{
-				Mode:  tapsdk.CustomAssetWitnessCallerProvided,
+			Witness: customanchor.AssetWitnessPlan{
+				Mode:  customanchor.AssetWitnessCallerProvided,
 				Stack: timeoutOutput.OPTrueSpend.WitnessStack(),
 			},
 		}},
-		Outputs: []tapsdk.CustomAssetOutput{{
+		Outputs: []customanchor.AssetOutput{{
 			ID:                "bob-output",
 			AssetRef:          minted.Ref,
 			Amount:            minted.Asset.Amount,
 			AnchorOutputIndex: 0,
 			AnchorValueSat:    uint64(sweepValue),
-			Script: tapsdk.CustomAssetScriptPlan{
-				Mode: tapsdk.CustomAssetScriptExternal,
-				External: &tapsdk.CustomAssetExternalScriptPlan{
+			Script: customanchor.AssetScriptPlan{
+				Mode: customanchor.AssetScriptExternal,
+				External: &customanchor.AssetExternalScriptPlan{
 					ScriptKey: receiverKeys.ScriptKey,
 				},
 			},
-			Anchor: tapsdk.CustomAnchorOutputPlan{
+			Anchor: customanchor.OutputPlan{
 				InternalKey: receiverKeys.InternalKey,
 			},
 		}},
 		AnchorPSBT: sweepAnchorPsbt,
-		Funding: tapsdk.CustomAnchorFundingPlan{
-			Mode:              tapsdk.CustomAnchorFundingCallerFundedExact,
-			CallerFundedExact: &tapsdk.CustomAnchorCallerFundedExact{},
+		Funding: customanchor.FundingPlan{
+			Mode:              customanchor.FundingCallerFundedExact,
+			CallerFundedExact: &customanchor.CallerFundedExact{},
 		},
-		PassiveAssets: tapsdk.CustomAnchorPassiveAssets{
-			Policy: tapsdk.CustomAnchorPassiveReject,
+		PassiveAssets: customanchor.PassiveAssets{
+			Policy: customanchor.PassiveReject,
 		},
-		LossPolicy: tapsdk.CustomAnchorLossPolicy{
-			Mode: tapsdk.CustomAnchorLossReject,
+		LossPolicy: customanchor.LossPolicy{
+			Mode: customanchor.LossReject,
 		},
-		SigningPlans: []tapsdk.CustomAnchorInputSigningPlan{{
+		SigningPlans: []customanchor.InputSigningPlan{{
 			InputIndex: 0,
-			ScriptPath: &tapsdk.CustomAnchorScriptPathSigningPlan{
+			ScriptPath: &customanchor.ScriptPathSigningPlan{
 				LeafHash: csvLeafHash,
 				RequiredSigners: []tapsdk.XOnlyPubKey{
 					mustXOnlyPubKey(t, csvKey.PubKey()),
@@ -248,7 +249,7 @@ func TestCustomAnchorBuilderScriptPathTimeoutSweep(t *testing.T) {
 		}},
 	}
 
-	sweepPlan, err := h.AliceWallet.NewCustomAnchorTxBuilder().Build(
+	sweepPlan, err := customanchor.NewTxBuilder(h.AliceWallet).Build(
 		ctx, sweepRequest,
 	)
 	require.NoError(t, err)
@@ -258,8 +259,8 @@ func TestCustomAnchorBuilderScriptPathTimeoutSweep(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, sweepPreview, 1)
 
-	sweepSealed, err := sweepPlan.Commit(ctx, tapsdk.CustomAnchorCommitOptions{
-		Publish: tapsdk.CustomAnchorPublishMetadata{
+	sweepSealed, err := sweepPlan.Commit(ctx, customanchor.CommitOptions{
+		Publish: customanchor.PublishMetadata{
 			Label: name + "-sweep",
 		},
 	})
@@ -306,8 +307,8 @@ func TestCustomAnchorBuilderScriptPathTimeoutSweep(t *testing.T) {
 
 	// The sweep pays its own fee, so tapd broadcasts it directly with no
 	// external fee-bump child.
-	_, err = h.AliceWallet.PublishCustomAnchorTransfer(
-		ctx, witnessed, witnessed.AnchorPsbt,
+	_, err = customanchor.PublishTransfer(
+		ctx, h.AliceWallet, witnessed, witnessed.AnchorPsbt,
 	)
 	require.NoError(t, err)
 

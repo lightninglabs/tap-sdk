@@ -1,4 +1,4 @@
-package tapsdk
+package customanchor
 
 import (
 	"bytes"
@@ -14,35 +14,36 @@ import (
 	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/commitment"
 	"github.com/lightninglabs/taproot-assets/proof"
 )
 
 const (
-	// AssetProofPathMaxDepth bounds the number of unconfirmed transitions
+	// ProofPathMaxDepth bounds the number of unconfirmed transitions
 	// retained in a path. Ark transaction trees are shallow, so a larger
 	// value is more likely to be hostile input than a useful path.
-	AssetProofPathMaxDepth = 64
+	ProofPathMaxDepth = 64
 
-	// AssetProofPathMaxConfirmedProofSize bounds the confirmed proof file.
-	AssetProofPathMaxConfirmedProofSize = 32 * 1024 * 1024
+	// ProofPathMaxConfirmedProofSize bounds the confirmed proof file.
+	ProofPathMaxConfirmedProofSize = 32 * 1024 * 1024
 
-	// AssetProofPathMaxStepSize bounds one serialized transition proof.
-	AssetProofPathMaxStepSize = 4 * 1024 * 1024
+	// ProofPathMaxStepSize bounds one serialized transition proof.
+	ProofPathMaxStepSize = 4 * 1024 * 1024
 
-	// AssetProofPathMaxSize bounds the complete encoded path, including
+	// ProofPathMaxSize bounds the complete encoded path, including
 	// every recursively embedded co-input path.
-	AssetProofPathMaxSize = 64 * 1024 * 1024
+	ProofPathMaxSize = 64 * 1024 * 1024
 
-	// AssetProofPathMaxStepCoPaths bounds the co-input paths of one step,
+	// ProofPathMaxStepCoPaths bounds the co-input paths of one step,
 	// so a merging transition carries at most 16 asset witnesses.
-	AssetProofPathMaxStepCoPaths = 15
+	ProofPathMaxStepCoPaths = 15
 
-	// AssetProofPathMaxCoPathDepth bounds co-input path nesting below the
+	// ProofPathMaxCoPathDepth bounds co-input path nesting below the
 	// selected path. The bound is checked before nested content is
 	// parsed, so hostile deep encodings fail without recursing into them.
-	AssetProofPathMaxCoPathDepth = 3
+	ProofPathMaxCoPathDepth = 3
 
 	assetProofPathChecksumSize = sha256.Size
 	assetProofPathHeaderSize   = len(assetProofPathMagic) + 2 + 4 + 2
@@ -52,61 +53,61 @@ const (
 var (
 	assetProofPathMagic = [8]byte{'T', 'A', 'P', 'P', 'A', 'T', 'H', 0}
 
-	// ErrAssetProofPathInvalid reports malformed or unsafe path content.
-	ErrAssetProofPathInvalid = errors.New("invalid asset proof path")
+	// ErrProofPathInvalid reports malformed or unsafe path content.
+	ErrProofPathInvalid = errors.New("invalid asset proof path")
 
-	// ErrAssetProofPathUnknownFormat reports an unsupported path encoding.
-	ErrAssetProofPathUnknownFormat = errors.New(
+	// ErrProofPathUnknownFormat reports an unsupported path encoding.
+	ErrProofPathUnknownFormat = errors.New(
 		"unknown asset proof path format",
 	)
 
-	// ErrAssetProofPathUnknownPassiveAssets reports that the confirmed
+	// ErrProofPathUnknownPassiveAssets reports that the confirmed
 	// anchor inventory was not proven complete.
-	ErrAssetProofPathUnknownPassiveAssets = errors.New(
+	ErrProofPathUnknownPassiveAssets = errors.New(
 		"asset proof path passive asset inventory is unknown",
 	)
 
-	// ErrAssetProofPathPassiveAssets reports that the confirmed anchor
+	// ErrProofPathPassiveAssets reports that the confirmed anchor
 	// contains assets outside the tracked proof path.
-	ErrAssetProofPathPassiveAssets = errors.New(
+	ErrProofPathPassiveAssets = errors.New(
 		"asset proof path contains passive assets",
 	)
 
-	// ErrAssetProofPathUnconfirmedAnchor reports that the host did not
+	// ErrProofPathUnconfirmedAnchor reports that the host did not
 	// attest the Bitcoin-level authorization and policy of an unconfirmed
 	// anchor transition.
-	ErrAssetProofPathUnconfirmedAnchor = errors.New(
+	ErrProofPathUnconfirmedAnchor = errors.New(
 		"asset proof path unconfirmed anchor is not verified",
 	)
 )
 
-// AssetProofPath keeps a fully verified confirmed proof file followed by a
+// ProofPath keeps a fully verified confirmed proof file followed by a
 // compact sequence of unconfirmed transition proofs.
 //
 // Derived IDs and summaries are deliberately absent from the persisted DTO.
 // They are recomputed from ConfirmedBaseProof and Steps whenever the path is
 // decoded or verified.
-type AssetProofPath struct {
+type ProofPath struct {
 	// ConfirmedBaseProof is the complete proof file ending at the last
 	// confirmed asset state of the selected lineage.
 	ConfirmedBaseProof []byte
 
 	// Steps are ordered from the first unconfirmed child transition to the
 	// selected leaf in the transaction tree.
-	Steps []AssetProofPathStep
+	Steps []ProofPathStep
 }
 
-// AssetProofPathStep is one witness-complete unconfirmed transition.
+// ProofPathStep is one witness-complete unconfirmed transition.
 // TransitionProof uses the native single-proof encoding. It must contain all
 // asset witnesses and commitment proofs needed for local verification.
-type AssetProofPathStep struct {
+type ProofPathStep struct {
 	TransitionProof []byte
 
 	// CoInputPaths are complete proof paths for the co-inputs merged by
 	// this step. The transition must spend exactly the spine tip plus every
 	// co-path tip, and every co-path must carry the same asset identity as
 	// the selected lineage.
-	CoInputPaths []*AssetProofPath
+	CoInputPaths []*ProofPath
 }
 
 // ConfirmedProofVerification is the non-derivable part of confirmed proof
@@ -142,11 +143,11 @@ type ConfirmedProofVerifier interface {
 func DeriveConfirmedProofInventory(
 	proofFile []byte) (*ConfirmedProofVerification, error) {
 
-	if len(proofFile) > AssetProofPathMaxConfirmedProofSize {
+	if len(proofFile) > ProofPathMaxConfirmedProofSize {
 		return nil, fmt.Errorf(
 			"%w: confirmed proof exceeds %d bytes",
-			ErrAssetProofPathInvalid,
-			AssetProofPathMaxConfirmedProofSize,
+			ErrProofPathInvalid,
+			ProofPathMaxConfirmedProofSize,
 		)
 	}
 
@@ -174,11 +175,11 @@ type UnconfirmedAnchorVerification struct {
 
 	// PreviousAnchorOutpoint is the asset-bearing output consumed by the
 	// transition.
-	PreviousAnchorOutpoint Outpoint
+	PreviousAnchorOutpoint tapsdk.Outpoint
 
 	// AnchorOutpoint is the new asset-bearing output created by the
 	// transition.
-	AnchorOutpoint Outpoint
+	AnchorOutpoint tapsdk.Outpoint
 
 	// AnchorTransaction is the complete serialized Bitcoin transaction,
 	// including witness data when present.
@@ -188,11 +189,11 @@ type UnconfirmedAnchorVerification struct {
 	// transition consumes: the spine tip first, then each co-input path
 	// tip in declared order. It equals [PreviousAnchorOutpoint] for
 	// single-input steps.
-	PreviousAnchorOutpoints []Outpoint
+	PreviousAnchorOutpoints []tapsdk.Outpoint
 }
 
 // UnconfirmedAnchorVerifier is an optional extension that becomes mandatory
-// whenever an AssetProofPath contains unconfirmed steps. Swap or Ark hosts
+// whenever an ProofPath contains unconfirmed steps. Swap or Ark hosts
 // should use their authoritative graph, prevouts, and signing policy to verify
 // every transition before attesting it here.
 type UnconfirmedAnchorVerifier interface {
@@ -200,67 +201,67 @@ type UnconfirmedAnchorVerifier interface {
 		transition UnconfirmedAnchorVerification) error
 }
 
-// AssetProofPathSummary is the verified state at the selected path tip.
-type AssetProofPathSummary struct {
+// ProofPathSummary is the verified state at the selected path tip.
+type ProofPathSummary struct {
 	// ContentID commits to the complete canonical path.
-	ContentID Hash
+	ContentID tapsdk.Hash
 
 	// ConfirmedBaseProofID identifies the confirmed proof-file bytes.
-	ConfirmedBaseProofID Hash
+	ConfirmedBaseProofID tapsdk.Hash
 
 	// Depth is the number of unconfirmed transitions in the path.
 	Depth uint16
 
 	// AssetRef is the SDK-level identity of the selected asset.
-	AssetRef AssetRef
+	AssetRef tapsdk.AssetRef
 
 	// IssuanceID is the concrete asset issuance or tranche ID.
-	IssuanceID AssetID
+	IssuanceID tapsdk.AssetID
 
 	// AssetType identifies a fungible or collectible asset.
-	AssetType AssetType
+	AssetType tapsdk.AssetType
 
 	// Amount is the asset amount at the selected path tip.
 	Amount uint64
 
 	// ScriptKey locks the selected asset state.
-	ScriptKey PubKey
+	ScriptKey tapsdk.PubKey
 
 	// AnchorOutpoint locates the selected state in its anchor transaction.
-	AnchorOutpoint Outpoint
+	AnchorOutpoint tapsdk.Outpoint
 
 	// AnchorValueSat is the BTC value of the selected anchor output.
 	AnchorValueSat int64
 }
 
-// AssetProofPathStepSummary is derived from one transition proof.
-type AssetProofPathStepSummary struct {
+// ProofPathStepSummary is derived from one transition proof.
+type ProofPathStepSummary struct {
 	// ContentID commits to the serialized transition proof.
-	ContentID Hash
+	ContentID tapsdk.Hash
 
 	// PreviousAnchorOutpoint is the anchor output consumed by the step.
-	PreviousAnchorOutpoint Outpoint
+	PreviousAnchorOutpoint tapsdk.Outpoint
 
 	// AnchorOutpoint is the output containing the resulting asset state.
-	AnchorOutpoint Outpoint
+	AnchorOutpoint tapsdk.Outpoint
 
 	// AnchorValueSat is the BTC value of the resulting anchor output.
 	AnchorValueSat int64
 
 	// AssetRef is the SDK-level identity of the resulting asset.
-	AssetRef AssetRef
+	AssetRef tapsdk.AssetRef
 
 	// IssuanceID is the concrete asset issuance or tranche ID.
-	IssuanceID AssetID
+	IssuanceID tapsdk.AssetID
 
 	// AssetType identifies a fungible or collectible asset.
-	AssetType AssetType
+	AssetType tapsdk.AssetType
 
 	// Amount is the resulting asset amount.
 	Amount uint64
 
 	// ScriptKey locks the resulting asset state.
-	ScriptKey PubKey
+	ScriptKey tapsdk.PubKey
 
 	// SplitAsset is true when this proof selects a non-root split output.
 	SplitAsset bool
@@ -270,7 +271,7 @@ type AssetProofPathStepSummary struct {
 // backend or treating the unconfirmed steps as verified. Count, size, and
 // depth bounds are enforced over the complete path tree before any proof
 // content is decoded, so hostile shapes are rejected cheaply.
-func (p *AssetProofPath) Validate() error {
+func (p *ProofPath) Validate() error {
 	var totalSize uint64
 	if err := p.validateShape(0, &totalSize); err != nil {
 		return err
@@ -283,70 +284,70 @@ func (p *AssetProofPath) Validate() error {
 // and recurses into its co-input paths. totalSize accumulates the encoded size
 // of the whole tree against the shared budget. No proof bytes are decoded
 // here.
-func (p *AssetProofPath) validateShape(depth int, totalSize *uint64) error {
+func (p *ProofPath) validateShape(depth int, totalSize *uint64) error {
 	if p == nil {
-		return fmt.Errorf("%w: nil path", ErrAssetProofPathInvalid)
+		return fmt.Errorf("%w: nil path", ErrProofPathInvalid)
 	}
-	if depth > AssetProofPathMaxCoPathDepth {
+	if depth > ProofPathMaxCoPathDepth {
 		return fmt.Errorf(
 			"%w: co-input path depth exceeds %d",
-			ErrAssetProofPathInvalid, AssetProofPathMaxCoPathDepth,
+			ErrProofPathInvalid, ProofPathMaxCoPathDepth,
 		)
 	}
 	if len(p.ConfirmedBaseProof) == 0 {
 		return fmt.Errorf(
 			"%w: confirmed base proof is required",
-			ErrAssetProofPathInvalid,
+			ErrProofPathInvalid,
 		)
 	}
-	if len(p.ConfirmedBaseProof) > AssetProofPathMaxConfirmedProofSize {
+	if len(p.ConfirmedBaseProof) > ProofPathMaxConfirmedProofSize {
 		return fmt.Errorf(
 			"%w: confirmed base proof exceeds %d bytes",
-			ErrAssetProofPathInvalid,
-			AssetProofPathMaxConfirmedProofSize,
+			ErrProofPathInvalid,
+			ProofPathMaxConfirmedProofSize,
 		)
 	}
-	if len(p.Steps) > AssetProofPathMaxDepth {
+	if len(p.Steps) > ProofPathMaxDepth {
 		return fmt.Errorf(
 			"%w: path depth %d exceeds %d",
-			ErrAssetProofPathInvalid, len(p.Steps),
-			AssetProofPathMaxDepth,
+			ErrProofPathInvalid, len(p.Steps),
+			ProofPathMaxDepth,
 		)
 	}
 
 	*totalSize += uint64(assetProofPathHeaderSize +
 		assetProofPathChecksumSize + len(p.ConfirmedBaseProof))
-	if *totalSize > AssetProofPathMaxSize {
+	if *totalSize > ProofPathMaxSize {
 		return fmt.Errorf(
 			"%w: encoded path exceeds %d bytes",
-			ErrAssetProofPathInvalid, AssetProofPathMaxSize,
+			ErrProofPathInvalid, ProofPathMaxSize,
 		)
 	}
 
 	for i := range p.Steps {
 		step := &p.Steps[i]
-		if len(step.TransitionProof) > AssetProofPathMaxStepSize {
+		if len(step.TransitionProof) > ProofPathMaxStepSize {
 			return fmt.Errorf(
 				"%w: transition proof exceeds %d bytes",
-				ErrAssetProofPathInvalid,
-				AssetProofPathMaxStepSize,
+				ErrProofPathInvalid,
+				ProofPathMaxStepSize,
 			)
 		}
 		*totalSize += uint64(4 + len(step.TransitionProof))
-		if *totalSize > AssetProofPathMaxSize {
+		if *totalSize > ProofPathMaxSize {
 			return fmt.Errorf(
 				"%w: encoded path exceeds %d bytes",
-				ErrAssetProofPathInvalid,
-				AssetProofPathMaxSize,
+				ErrProofPathInvalid,
+				ProofPathMaxSize,
 			)
 		}
 
-		if len(step.CoInputPaths) > AssetProofPathMaxStepCoPaths {
+		if len(step.CoInputPaths) > ProofPathMaxStepCoPaths {
 			return fmt.Errorf(
 				"%w: step %d has %d co-input paths, limit "+
-					"is %d", ErrAssetProofPathInvalid, i,
+					"is %d", ErrProofPathInvalid, i,
 				len(step.CoInputPaths),
-				AssetProofPathMaxStepCoPaths,
+				ProofPathMaxStepCoPaths,
 			)
 		}
 		for j, coPath := range step.CoInputPaths {
@@ -366,7 +367,7 @@ func (p *AssetProofPath) validateShape(depth int, totalSize *uint64) error {
 
 // validateContent decodes and checks the proof content of one path level and
 // recurses into its co-input paths. The shape bounds are assumed to hold.
-func (p *AssetProofPath) validateContent() error {
+func (p *ProofPath) validateContent() error {
 	baseProof, err := decodeAssetProofPathBase(p.ConfirmedBaseProof)
 	if err != nil {
 		return err
@@ -376,13 +377,13 @@ func (p *AssetProofPath) validateContent() error {
 
 		return fmt.Errorf(
 			"%w: confirmed asset timelocks are unsupported",
-			ErrAssetProofPathInvalid,
+			ErrProofPathInvalid,
 		)
 	}
 	if len(p.Steps) > 0 && baseProof.Asset.Version != asset.V1 {
 		return fmt.Errorf(
 			"%w: unconfirmed paths require a v1 base asset",
-			ErrAssetProofPathInvalid,
+			ErrProofPathInvalid,
 		)
 	}
 
@@ -407,16 +408,16 @@ func (p *AssetProofPath) validateContent() error {
 }
 
 // Clone returns a deep copy suitable for persistence or concurrent ownership.
-func (p *AssetProofPath) Clone() *AssetProofPath {
+func (p *ProofPath) Clone() *ProofPath {
 	if p == nil {
 		return nil
 	}
 
-	clone := &AssetProofPath{
+	clone := &ProofPath{
 		ConfirmedBaseProof: cloneBytes(p.ConfirmedBaseProof),
 	}
 	if len(p.Steps) > 0 {
-		clone.Steps = make([]AssetProofPathStep, len(p.Steps))
+		clone.Steps = make([]ProofPathStep, len(p.Steps))
 	}
 	for i := range p.Steps {
 		clone.Steps[i].TransitionProof = cloneBytes(
@@ -433,14 +434,14 @@ func (p *AssetProofPath) Clone() *AssetProofPath {
 }
 
 // ContentID returns a domain-separated commitment to the canonical path.
-func (p *AssetProofPath) ContentID() (Hash, error) {
+func (p *ProofPath) ContentID() (tapsdk.Hash, error) {
 	if err := p.Validate(); err != nil {
-		return Hash{}, err
+		return tapsdk.Hash{}, err
 	}
 
 	body, err := p.marshalBody()
 	if err != nil {
-		return Hash{}, err
+		return tapsdk.Hash{}, err
 	}
 
 	return taggedAssetProofPathHash(
@@ -449,9 +450,9 @@ func (p *AssetProofPath) ContentID() (Hash, error) {
 }
 
 // ContentID returns a domain-separated commitment to the transition proof.
-func (s *AssetProofPathStep) ContentID() (Hash, error) {
+func (s *ProofPathStep) ContentID() (tapsdk.Hash, error) {
 	if _, err := decodeAssetProofPathStep(s, 0); err != nil {
-		return Hash{}, err
+		return tapsdk.Hash{}, err
 	}
 
 	return taggedAssetProofPathHash(
@@ -461,7 +462,7 @@ func (s *AssetProofPathStep) ContentID() (Hash, error) {
 
 // Summary decodes and derives the step's identity and resulting asset state.
 // It does not cryptographically verify the transition against its predecessor.
-func (s *AssetProofPathStep) Summary() (*AssetProofPathStepSummary, error) {
+func (s *ProofPathStep) Summary() (*ProofPathStepSummary, error) {
 	transition, err := decodeAssetProofPathStep(s, 0)
 	if err != nil {
 		return nil, err
@@ -471,7 +472,7 @@ func (s *AssetProofPathStep) Summary() (*AssetProofPathStepSummary, error) {
 }
 
 // MarshalBinary returns the canonical, checksummed path encoding.
-func (p *AssetProofPath) MarshalBinary() ([]byte, error) {
+func (p *ProofPath) MarshalBinary() ([]byte, error) {
 	if err := p.Validate(); err != nil {
 		return nil, err
 	}
@@ -481,7 +482,7 @@ func (p *AssetProofPath) MarshalBinary() ([]byte, error) {
 
 // encode serializes an already validated path with its trailing checksum.
 // Co-input paths embed the same self-describing encoding recursively.
-func (p *AssetProofPath) encode() ([]byte, error) {
+func (p *ProofPath) encode() ([]byte, error) {
 	body, err := p.marshalBody()
 	if err != nil {
 		return nil, err
@@ -497,12 +498,12 @@ func (p *AssetProofPath) encode() ([]byte, error) {
 
 // UnmarshalBinary decodes a canonical path only after all bounds, checksum,
 // and structural policy checks pass.
-func (p *AssetProofPath) UnmarshalBinary(encoded []byte) error {
+func (p *ProofPath) UnmarshalBinary(encoded []byte) error {
 	if p == nil {
-		return fmt.Errorf("%w: nil receiver", ErrAssetProofPathInvalid)
+		return fmt.Errorf("%w: nil receiver", ErrProofPathInvalid)
 	}
 
-	var decoded AssetProofPath
+	var decoded ProofPath
 	if err := decoded.unmarshalBinaryAt(encoded, 0); err != nil {
 		return err
 	}
@@ -518,24 +519,24 @@ func (p *AssetProofPath) UnmarshalBinary(encoded []byte) error {
 // given co-input nesting depth. The depth bound is checked before anything is
 // parsed, so a hostile deeply nested blob fails fast without recursion, and
 // full validation runs once over the decoded root.
-func (p *AssetProofPath) unmarshalBinaryAt(encoded []byte, depth int) error {
-	if depth > AssetProofPathMaxCoPathDepth {
+func (p *ProofPath) unmarshalBinaryAt(encoded []byte, depth int) error {
+	if depth > ProofPathMaxCoPathDepth {
 		return fmt.Errorf(
 			"%w: co-input path depth exceeds %d",
-			ErrAssetProofPathInvalid, AssetProofPathMaxCoPathDepth,
+			ErrProofPathInvalid, ProofPathMaxCoPathDepth,
 		)
 	}
-	if len(encoded) > AssetProofPathMaxSize {
+	if len(encoded) > ProofPathMaxSize {
 		return fmt.Errorf(
 			"%w: encoded path exceeds %d bytes",
-			ErrAssetProofPathInvalid, AssetProofPathMaxSize,
+			ErrProofPathInvalid, ProofPathMaxSize,
 		)
 	}
 	if len(encoded) < assetProofPathHeaderSize+
 		assetProofPathChecksumSize {
 
 		return fmt.Errorf(
-			"%w: truncated encoding", ErrAssetProofPathInvalid,
+			"%w: truncated encoding", ErrProofPathInvalid,
 		)
 	}
 
@@ -547,34 +548,34 @@ func (p *AssetProofPath) unmarshalBinaryAt(encoded []byte, depth int) error {
 	) != 1 {
 
 		return fmt.Errorf(
-			"%w: checksum mismatch", ErrAssetProofPathInvalid,
+			"%w: checksum mismatch", ErrProofPathInvalid,
 		)
 	}
 
 	reader := bytes.NewReader(body)
 	var magic [len(assetProofPathMagic)]byte
 	if _, err := reader.Read(magic[:]); err != nil {
-		return fmt.Errorf("%w: read magic: %v", ErrAssetProofPathInvalid,
+		return fmt.Errorf("%w: read magic: %v", ErrProofPathInvalid,
 			err)
 	}
 	if magic != assetProofPathMagic {
-		return fmt.Errorf("%w: invalid magic", ErrAssetProofPathInvalid)
+		return fmt.Errorf("%w: invalid magic", ErrProofPathInvalid)
 	}
 
 	var format uint16
 	if err := binary.Read(reader, binary.BigEndian, &format); err != nil {
 		return fmt.Errorf(
-			"%w: read format: %v", ErrAssetProofPathInvalid, err,
+			"%w: read format: %v", ErrProofPathInvalid, err,
 		)
 	}
 	if format != assetProofPathFormat {
 		return fmt.Errorf(
-			"%w: %d", ErrAssetProofPathUnknownFormat, format,
+			"%w: %d", ErrProofPathUnknownFormat, format,
 		)
 	}
 
 	baseProof, err := readAssetProofPathBytes(
-		reader, AssetProofPathMaxConfirmedProofSize, "confirmed base proof",
+		reader, ProofPathMaxConfirmedProofSize, "confirmed base proof",
 	)
 	if err != nil {
 		return err
@@ -583,26 +584,26 @@ func (p *AssetProofPath) unmarshalBinaryAt(encoded []byte, depth int) error {
 	var stepCount uint16
 	if err := binary.Read(reader, binary.BigEndian, &stepCount); err != nil {
 		return fmt.Errorf(
-			"%w: read step count: %v", ErrAssetProofPathInvalid, err,
+			"%w: read step count: %v", ErrProofPathInvalid, err,
 		)
 	}
-	if stepCount > AssetProofPathMaxDepth {
+	if stepCount > ProofPathMaxDepth {
 		return fmt.Errorf(
 			"%w: path depth %d exceeds %d",
-			ErrAssetProofPathInvalid, stepCount,
-			AssetProofPathMaxDepth,
+			ErrProofPathInvalid, stepCount,
+			ProofPathMaxDepth,
 		)
 	}
 
-	decoded := AssetProofPath{
+	decoded := ProofPath{
 		ConfirmedBaseProof: baseProof,
 	}
 	if stepCount > 0 {
-		decoded.Steps = make([]AssetProofPathStep, int(stepCount))
+		decoded.Steps = make([]ProofPathStep, int(stepCount))
 	}
 	for i := range decoded.Steps {
 		stepProof, err := readAssetProofPathBytes(
-			reader, AssetProofPathMaxStepSize, "transition proof",
+			reader, ProofPathMaxStepSize, "transition proof",
 		)
 		if err != nil {
 			return fmt.Errorf("step %d: %w", i, err)
@@ -614,19 +615,19 @@ func (p *AssetProofPath) unmarshalBinaryAt(encoded []byte, depth int) error {
 		if err != nil {
 			return fmt.Errorf(
 				"%w: read step %d co-input path count: %v",
-				ErrAssetProofPathInvalid, i, err,
+				ErrProofPathInvalid, i, err,
 			)
 		}
-		if coPathCount > AssetProofPathMaxStepCoPaths {
+		if coPathCount > ProofPathMaxStepCoPaths {
 			return fmt.Errorf(
 				"%w: step %d has %d co-input paths, limit "+
-					"is %d", ErrAssetProofPathInvalid, i,
-				coPathCount, AssetProofPathMaxStepCoPaths,
+					"is %d", ErrProofPathInvalid, i,
+				coPathCount, ProofPathMaxStepCoPaths,
 			)
 		}
 		for j := range int(coPathCount) {
 			coPathBlob, err := readAssetProofPathBytes(
-				reader, AssetProofPathMaxSize, "co-input path",
+				reader, ProofPathMaxSize, "co-input path",
 			)
 			if err != nil {
 				return fmt.Errorf(
@@ -634,7 +635,7 @@ func (p *AssetProofPath) unmarshalBinaryAt(encoded []byte, depth int) error {
 					err,
 				)
 			}
-			coPath := &AssetProofPath{}
+			coPath := &ProofPath{}
 			err = coPath.unmarshalBinaryAt(coPathBlob, depth+1)
 			if err != nil {
 				return fmt.Errorf(
@@ -649,7 +650,7 @@ func (p *AssetProofPath) unmarshalBinaryAt(encoded []byte, depth int) error {
 	}
 	if reader.Len() != 0 {
 		return fmt.Errorf(
-			"%w: trailing bytes", ErrAssetProofPathInvalid,
+			"%w: trailing bytes", ErrProofPathInvalid,
 		)
 	}
 
@@ -661,8 +662,8 @@ func (p *AssetProofPath) unmarshalBinaryAt(encoded []byte, depth int) error {
 // chains every unconfirmed proof while skipping only block inclusion checks.
 // Co-input paths are resolved recursively with the same engine before the
 // step that merges them.
-func (p *AssetProofPath) Verify(ctx context.Context,
-	verifier ConfirmedProofVerifier) (*AssetProofPathSummary, error) {
+func (p *ProofPath) Verify(ctx context.Context,
+	verifier ConfirmedProofVerifier) (*ProofPathSummary, error) {
 
 	if err := p.Validate(); err != nil {
 		return nil, err
@@ -670,7 +671,7 @@ func (p *AssetProofPath) Verify(ctx context.Context,
 	if verifier == nil {
 		return nil, fmt.Errorf(
 			"%w: confirmed proof verifier is required",
-			ErrAssetProofPathInvalid,
+			ErrProofPathInvalid,
 		)
 	}
 	var unconfirmedVerifier UnconfirmedAnchorVerifier
@@ -680,7 +681,7 @@ func (p *AssetProofPath) Verify(ctx context.Context,
 		if !ok {
 			return nil, fmt.Errorf(
 				"%w: verifier extension is required",
-				ErrAssetProofPathUnconfirmedAnchor,
+				ErrProofPathUnconfirmedAnchor,
 			)
 		}
 	}
@@ -700,9 +701,9 @@ func (p *AssetProofPath) Verify(ctx context.Context,
 	}
 	baseProofID := sha256.Sum256(p.ConfirmedBaseProof)
 
-	return &AssetProofPathSummary{
+	return &ProofPathSummary{
 		ContentID:            contentID,
-		ConfirmedBaseProofID: Hash(baseProofID),
+		ConfirmedBaseProofID: tapsdk.Hash(baseProofID),
 		Depth:                uint16(len(p.Steps)),
 		AssetRef:             derived.assetRef,
 		IssuanceID:           derived.issuanceID,
@@ -721,7 +722,7 @@ func (p *AssetProofPath) Verify(ctx context.Context,
 // bound to exactly those tips plus the spine tip, and only then does the
 // native verifier run with the co-input lineages spliced in. The verified
 // tip proof is returned.
-func (p *AssetProofPath) verifyChain(ctx context.Context,
+func (p *ProofPath) verifyChain(ctx context.Context,
 	verifier ConfirmedProofVerifier,
 	unconfirmedVerifier UnconfirmedAnchorVerifier) (*proof.Proof, error) {
 
@@ -734,11 +735,11 @@ func (p *AssetProofPath) verifyChain(ctx context.Context,
 	if verification == nil ||
 		!verification.AnchorAssetInventoryComplete {
 
-		return nil, ErrAssetProofPathUnknownPassiveAssets
+		return nil, ErrProofPathUnknownPassiveAssets
 	}
 	if verification.PassiveAssetCount != 0 {
 		return nil, fmt.Errorf(
-			"%w: %d", ErrAssetProofPathPassiveAssets,
+			"%w: %d", ErrProofPathPassiveAssets,
 			verification.PassiveAssetCount,
 		)
 	}
@@ -763,7 +764,7 @@ func (p *AssetProofPath) verifyChain(ctx context.Context,
 		if unconfirmedVerifier == nil {
 			return nil, fmt.Errorf(
 				"%w: verifier extension is required",
-				ErrAssetProofPathUnconfirmedAnchor,
+				ErrProofPathUnconfirmedAnchor,
 			)
 		}
 
@@ -792,7 +793,7 @@ func (p *AssetProofPath) verifyChain(ctx context.Context,
 				return nil, fmt.Errorf(
 					"%w: step %d duplicate co-input "+
 						"outpoint %v",
-					ErrAssetProofPathInvalid, i,
+					ErrProofPathInvalid, i,
 					coOutpoint,
 				)
 			}
@@ -876,7 +877,7 @@ func (p *AssetProofPath) verifyChain(ctx context.Context,
 		); err != nil {
 			return nil, fmt.Errorf(
 				"%w: step %d: %v",
-				ErrAssetProofPathUnconfirmedAnchor, i, err,
+				ErrProofPathUnconfirmedAnchor, i, err,
 			)
 		}
 
@@ -930,12 +931,12 @@ func (p *AssetProofPath) verifyChain(ctx context.Context,
 // data. Chain facts for those proofs are established by verifyChain; the
 // synthetic file only feeds the state machine the co-input lineage under
 // the no-op chain context.
-func (p *AssetProofPath) syntheticProofFile() (*proof.File, error) {
+func (p *ProofPath) syntheticProofFile() (*proof.File, error) {
 	file, err := proof.DecodeFile(p.ConfirmedBaseProof)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"%w: decode co-input base file: %v",
-			ErrAssetProofPathInvalid, err,
+			ErrProofPathInvalid, err,
 		)
 	}
 
@@ -982,7 +983,7 @@ func verifyAssetProofPathIdentity(previous *asset.Asset,
 
 	if previous == nil || transition == nil {
 		return fmt.Errorf(
-			"%w: missing asset identity state", ErrAssetProofPathInvalid,
+			"%w: missing asset identity state", ErrProofPathInvalid,
 		)
 	}
 	if err := verifyAssetProofPathAssetIdentity(
@@ -999,7 +1000,7 @@ func verifyAssetProofPathIdentity(previous *asset.Asset,
 
 		return fmt.Errorf(
 			"%w: split asset is missing its root asset",
-			ErrAssetProofPathInvalid,
+			ErrProofPathInvalid,
 		)
 	}
 	rootAsset := &transition.Asset.PrevWitnesses[0].SplitCommitment.RootAsset
@@ -1021,7 +1022,7 @@ func verifyAssetProofPathStepInputBinding(transition *proof.Proof,
 		if len(witnesses) != 1 || witnesses[0].SplitCommitment == nil {
 			return fmt.Errorf(
 				"%w: split asset is missing its root asset",
-				ErrAssetProofPathInvalid,
+				ErrProofPathInvalid,
 			)
 		}
 		witnesses = witnesses[0].SplitCommitment.RootAsset.PrevWitnesses
@@ -1033,14 +1034,14 @@ func verifyAssetProofPathStepInputBinding(transition *proof.Proof,
 		if prevID == nil {
 			return fmt.Errorf(
 				"%w: transition witness %d misses its "+
-					"previous ID", ErrAssetProofPathInvalid,
+					"previous ID", ErrProofPathInvalid,
 				i,
 			)
 		}
 		if _, ok := expected[prevID.OutPoint]; !ok {
 			return fmt.Errorf(
 				"%w: transition spends undeclared outpoint "+
-					"%v", ErrAssetProofPathInvalid,
+					"%v", ErrProofPathInvalid,
 				prevID.OutPoint,
 			)
 		}
@@ -1049,7 +1050,7 @@ func verifyAssetProofPathStepInputBinding(transition *proof.Proof,
 	if len(spent) != len(expected) {
 		return fmt.Errorf(
 			"%w: transition does not spend every declared "+
-				"co-input", ErrAssetProofPathInvalid,
+				"co-input", ErrProofPathInvalid,
 		)
 	}
 
@@ -1074,7 +1075,7 @@ func verifyAssetProofPathAnchorSpend(transition *proof.Proof,
 			return fmt.Errorf(
 				"%w: anchor transaction must spend asset "+
 					"outpoint %v exactly once, found %d",
-				ErrAssetProofPathInvalid, outpoint,
+				ErrProofPathInvalid, outpoint,
 				spends[outpoint],
 			)
 		}
@@ -1088,22 +1089,22 @@ func verifyAssetProofPathAssetIdentity(previous, next *asset.Asset,
 
 	if next == nil {
 		return fmt.Errorf(
-			"%w: %s is missing", ErrAssetProofPathInvalid, label,
+			"%w: %s is missing", ErrProofPathInvalid, label,
 		)
 	}
 	if next.Type != previous.Type {
 		return fmt.Errorf(
-			"%w: %s type changed", ErrAssetProofPathInvalid, label,
+			"%w: %s type changed", ErrProofPathInvalid, label,
 		)
 	}
 	if next.Genesis != previous.Genesis {
 		return fmt.Errorf(
-			"%w: %s genesis changed", ErrAssetProofPathInvalid, label,
+			"%w: %s genesis changed", ErrProofPathInvalid, label,
 		)
 	}
 	if !previous.GroupKey.IsEqual(next.GroupKey) {
 		return fmt.Errorf(
-			"%w: %s group key changed", ErrAssetProofPathInvalid, label,
+			"%w: %s group key changed", ErrProofPathInvalid, label,
 		)
 	}
 
@@ -1123,7 +1124,7 @@ func assetProofPathGroupVerifier(expected *asset.GroupKey) proof.GroupVerifier {
 	}
 }
 
-func (p *AssetProofPath) marshalBody() ([]byte, error) {
+func (p *ProofPath) marshalBody() ([]byte, error) {
 	var body bytes.Buffer
 	body.Grow(assetProofPathHeaderSize + len(p.ConfirmedBaseProof) +
 		4*len(p.Steps))
@@ -1186,31 +1187,31 @@ func readAssetProofPathBytes(reader *bytes.Reader, maximum int,
 	var length uint32
 	if err := binary.Read(reader, binary.BigEndian, &length); err != nil {
 		return nil, fmt.Errorf(
-			"%w: read %s length: %v", ErrAssetProofPathInvalid,
+			"%w: read %s length: %v", ErrProofPathInvalid,
 			label, err,
 		)
 	}
 	if length == 0 {
 		return nil, fmt.Errorf(
-			"%w: %s is empty", ErrAssetProofPathInvalid, label,
+			"%w: %s is empty", ErrProofPathInvalid, label,
 		)
 	}
 	if uint64(length) > uint64(maximum) {
 		return nil, fmt.Errorf(
-			"%w: %s exceeds %d bytes", ErrAssetProofPathInvalid,
+			"%w: %s exceeds %d bytes", ErrProofPathInvalid,
 			label, maximum,
 		)
 	}
 	if uint64(length) > uint64(reader.Len()) {
 		return nil, fmt.Errorf(
-			"%w: truncated %s", ErrAssetProofPathInvalid, label,
+			"%w: truncated %s", ErrProofPathInvalid, label,
 		)
 	}
 
 	value := make([]byte, int(length))
 	if _, err := reader.Read(value); err != nil {
 		return nil, fmt.Errorf(
-			"%w: read %s: %v", ErrAssetProofPathInvalid, label, err,
+			"%w: read %s: %v", ErrProofPathInvalid, label, err,
 		)
 	}
 
@@ -1222,20 +1223,20 @@ func decodeAssetProofPathBase(rawProofFile []byte) (*proof.Proof, error) {
 	if err := proofFile.Decode(bytes.NewReader(rawProofFile)); err != nil {
 		return nil, fmt.Errorf(
 			"%w: decode confirmed base proof: %v",
-			ErrAssetProofPathInvalid, err,
+			ErrProofPathInvalid, err,
 		)
 	}
 	baseProof, err := proofFile.LastProof()
 	if err != nil {
 		return nil, fmt.Errorf(
 			"%w: read confirmed base proof tip: %v",
-			ErrAssetProofPathInvalid, err,
+			ErrProofPathInvalid, err,
 		)
 	}
 	if err := baseProof.Asset.Validate(); err != nil {
 		return nil, fmt.Errorf(
 			"%w: validate confirmed base asset: %v",
-			ErrAssetProofPathInvalid, err,
+			ErrProofPathInvalid, err,
 		)
 	}
 
@@ -1247,22 +1248,22 @@ func decodeAssetProofPathBase(rawProofFile []byte) (*proof.Proof, error) {
 // zero accepts any complete set, which the per-step helpers use because
 // they have no path context to pin the count with. Validate and Verify
 // always pin it.
-func decodeAssetProofPathStep(step *AssetProofPathStep,
+func decodeAssetProofPathStep(step *ProofPathStep,
 	wantWitnesses int) (*proof.Proof, error) {
 
 	if step == nil {
-		return nil, fmt.Errorf("%w: nil step", ErrAssetProofPathInvalid)
+		return nil, fmt.Errorf("%w: nil step", ErrProofPathInvalid)
 	}
 	if len(step.TransitionProof) == 0 {
 		return nil, fmt.Errorf(
 			"%w: transition proof is required",
-			ErrAssetProofPathInvalid,
+			ErrProofPathInvalid,
 		)
 	}
-	if len(step.TransitionProof) > AssetProofPathMaxStepSize {
+	if len(step.TransitionProof) > ProofPathMaxStepSize {
 		return nil, fmt.Errorf(
 			"%w: transition proof exceeds %d bytes",
-			ErrAssetProofPathInvalid, AssetProofPathMaxStepSize,
+			ErrProofPathInvalid, ProofPathMaxStepSize,
 		)
 	}
 
@@ -1270,48 +1271,48 @@ func decodeAssetProofPathStep(step *AssetProofPathStep,
 	if err != nil {
 		return nil, fmt.Errorf(
 			"%w: decode transition proof: %v",
-			ErrAssetProofPathInvalid, err,
+			ErrProofPathInvalid, err,
 		)
 	}
 	if transition.Version != proof.TransitionV1 {
 		return nil, fmt.Errorf(
 			"%w: transition proof must be v1",
-			ErrAssetProofPathInvalid,
+			ErrProofPathInvalid,
 		)
 	}
 	if transition.Asset.Version != asset.V1 {
 		return nil, fmt.Errorf(
 			"%w: transition asset must be v1",
-			ErrAssetProofPathInvalid,
+			ErrProofPathInvalid,
 		)
 	}
 	if err := transition.Asset.Validate(); err != nil {
 		return nil, fmt.Errorf(
 			"%w: validate transition asset: %v",
-			ErrAssetProofPathInvalid, err,
+			ErrProofPathInvalid, err,
 		)
 	}
 	if transition.Asset.IsGenesisAsset() {
 		return nil, fmt.Errorf(
 			"%w: unconfirmed genesis proofs are unsupported",
-			ErrAssetProofPathInvalid,
+			ErrProofPathInvalid,
 		)
 	}
 	if err := transition.CheckActivationEvidence(); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrAssetProofPathInvalid, err)
+		return nil, fmt.Errorf("%w: %w", ErrProofPathInvalid, err)
 	}
 	if transition.Asset.LockTime != 0 ||
 		transition.Asset.RelativeLockTime != 0 {
 
 		return nil, fmt.Errorf(
 			"%w: asset timelocks are unsupported",
-			ErrAssetProofPathInvalid,
+			ErrProofPathInvalid,
 		)
 	}
 	if len(transition.AdditionalInputs) != 0 {
 		return nil, fmt.Errorf(
 			"%w: asset merges and additional input paths are unsupported",
-			ErrAssetProofPathInvalid,
+			ErrProofPathInvalid,
 		)
 	}
 	assetPredecessors := 0
@@ -1319,7 +1320,7 @@ func decodeAssetProofPathStep(step *AssetProofPathStep,
 		if input == nil {
 			return nil, fmt.Errorf(
 				"%w: anchor input %d is nil",
-				ErrAssetProofPathInvalid, i,
+				ErrProofPathInvalid, i,
 			)
 		}
 		if input.PreviousOutPoint == transition.PrevOut {
@@ -1329,14 +1330,14 @@ func decodeAssetProofPathStep(step *AssetProofPathStep,
 	if assetPredecessors != 1 {
 		return nil, fmt.Errorf(
 			"%w: transition must spend its asset predecessor exactly "+
-				"once, found %d", ErrAssetProofPathInvalid,
+				"once, found %d", ErrProofPathInvalid,
 			assetPredecessors,
 		)
 	}
 	if transition.ChallengeWitness != nil {
 		return nil, fmt.Errorf(
 			"%w: ownership proofs are unsupported",
-			ErrAssetProofPathInvalid,
+			ErrProofPathInvalid,
 		)
 	}
 
@@ -1346,7 +1347,7 @@ func decodeAssetProofPathStep(step *AssetProofPathStep,
 		if transition.SplitRootProof == nil {
 			return nil, fmt.Errorf(
 				"%w: split output proof is missing its root proof",
-				ErrAssetProofPathInvalid,
+				ErrProofPathInvalid,
 			)
 		}
 
@@ -1357,19 +1358,19 @@ func decodeAssetProofPathStep(step *AssetProofPathStep,
 		if rootAsset.Version != asset.V1 {
 			return nil, fmt.Errorf(
 				"%w: split root asset must be v1",
-				ErrAssetProofPathInvalid,
+				ErrProofPathInvalid,
 			)
 		}
 		if rootAsset.LockTime != 0 || rootAsset.RelativeLockTime != 0 {
 			return nil, fmt.Errorf(
 				"%w: split root asset timelocks are unsupported",
-				ErrAssetProofPathInvalid,
+				ErrProofPathInvalid,
 			)
 		}
 		if err := rootAsset.Validate(); err != nil {
 			return nil, fmt.Errorf(
 				"%w: validate split root asset: %v",
-				ErrAssetProofPathInvalid, err,
+				ErrProofPathInvalid, err,
 			)
 		}
 		witnesses = rootAsset.PrevWitnesses
@@ -1377,7 +1378,7 @@ func decodeAssetProofPathStep(step *AssetProofPathStep,
 		if transition.SplitRootProof != nil {
 			return nil, fmt.Errorf(
 				"%w: non-split transition has a split root proof",
-				ErrAssetProofPathInvalid,
+				ErrProofPathInvalid,
 			)
 		}
 		witnesses = transition.Asset.PrevWitnesses
@@ -1386,13 +1387,13 @@ func decodeAssetProofPathStep(step *AssetProofPathStep,
 	if len(witnesses) == 0 {
 		return nil, fmt.Errorf(
 			"%w: transition must contain at least one complete "+
-				"asset witness", ErrAssetProofPathInvalid,
+				"asset witness", ErrProofPathInvalid,
 		)
 	}
 	if wantWitnesses > 0 && len(witnesses) != wantWitnesses {
 		return nil, fmt.Errorf(
 			"%w: transition must contain %d complete asset "+
-				"witnesses, found %d", ErrAssetProofPathInvalid,
+				"witnesses, found %d", ErrProofPathInvalid,
 			wantWitnesses, len(witnesses),
 		)
 	}
@@ -1410,7 +1411,7 @@ func decodeAssetProofPathStep(step *AssetProofPathStep,
 
 			return nil, fmt.Errorf(
 				"%w: asset witness %d is incomplete",
-				ErrAssetProofPathInvalid, i,
+				ErrProofPathInvalid, i,
 			)
 		}
 		if witness.PrevID.OutPoint == transition.PrevOut {
@@ -1421,7 +1422,7 @@ func decodeAssetProofPathStep(step *AssetProofPathStep,
 		return nil, fmt.Errorf(
 			"%w: transition must spend its declared predecessor "+
 				"exactly once, found %d",
-			ErrAssetProofPathInvalid, predecessors,
+			ErrProofPathInvalid, predecessors,
 		)
 	}
 
@@ -1430,7 +1431,7 @@ func decodeAssetProofPathStep(step *AssetProofPathStep,
 
 // stepCoInputPaths returns the co-input paths merged by the step at the given
 // index.
-func (p *AssetProofPath) stepCoInputPaths(index int) []*AssetProofPath {
+func (p *ProofPath) stepCoInputPaths(index int) []*ProofPath {
 	if index < 0 || index >= len(p.Steps) {
 		return nil
 	}
@@ -1441,13 +1442,13 @@ func (p *AssetProofPath) stepCoInputPaths(index int) []*AssetProofPath {
 // stepWitnessCount returns the number of asset witnesses the step at the
 // given index must carry: one for the spine predecessor plus one per
 // declared co-input path.
-func (p *AssetProofPath) stepWitnessCount(index int) int {
+func (p *ProofPath) stepWitnessCount(index int) int {
 	return 1 + len(p.stepCoInputPaths(index))
 }
 
 // coInputStats returns the total number of co-input paths in the tree and
 // the deepest co-input nesting level.
-func (p *AssetProofPath) coInputStats() (int, int) {
+func (p *ProofPath) coInputStats() (int, int) {
 	total, maxDepth := 0, 0
 	for i := range p.Steps {
 		for _, coPath := range p.stepCoInputPaths(i) {
@@ -1478,7 +1479,7 @@ func (assetProofPathChainLookup) TxBlockHeight(context.Context,
 
 	return 0, fmt.Errorf(
 		"%w: relative timelock lookup is unsupported",
-		ErrAssetProofPathInvalid,
+		ErrProofPathInvalid,
 	)
 }
 
@@ -1487,7 +1488,7 @@ func (assetProofPathChainLookup) MeanBlockTimestamp(context.Context,
 
 	return time.Time{}, fmt.Errorf(
 		"%w: absolute timelock lookup is unsupported",
-		ErrAssetProofPathInvalid,
+		ErrProofPathInvalid,
 	)
 }
 
@@ -1538,13 +1539,13 @@ func verifyAssetProofPathIsolatedOutput(transition *proof.Proof) error {
 
 		return fmt.Errorf(
 			"%w: missing inclusion commitment proof",
-			ErrAssetProofPathInvalid,
+			ErrProofPathInvalid,
 		)
 	}
 	if transition.InclusionProof.InternalKey == nil {
 		return fmt.Errorf(
 			"%w: missing anchor internal key",
-			ErrAssetProofPathInvalid,
+			ErrProofPathInvalid,
 		)
 	}
 
@@ -1603,13 +1604,13 @@ func verifyAssetProofPathIsolatedOutput(transition *proof.Proof) error {
 	if outputIndex >= uint32(len(transition.AnchorTx.TxOut)) {
 		return fmt.Errorf(
 			"%w: anchor output index %d is out of range",
-			ErrAssetProofPathInvalid, outputIndex,
+			ErrProofPathInvalid, outputIndex,
 		)
 	}
 	anchorOutput := transition.AnchorTx.TxOut[outputIndex]
 	if anchorOutput == nil {
 		return fmt.Errorf(
-			"%w: anchor output %d is nil", ErrAssetProofPathInvalid,
+			"%w: anchor output %d is nil", ErrProofPathInvalid,
 			outputIndex,
 		)
 	}
@@ -1617,7 +1618,7 @@ func verifyAssetProofPathIsolatedOutput(transition *proof.Proof) error {
 	if !bytes.Equal(expectedScript, actualScript) {
 		return fmt.Errorf(
 			"%w: selected output is not an isolated asset commitment",
-			ErrAssetProofPathPassiveAssets,
+			ErrProofPathPassiveAssets,
 		)
 	}
 
@@ -1625,17 +1626,17 @@ func verifyAssetProofPathIsolatedOutput(transition *proof.Proof) error {
 }
 
 type assetProofPathDerivedSummary struct {
-	assetRef       AssetRef
-	issuanceID     AssetID
-	assetType      AssetType
+	assetRef       tapsdk.AssetRef
+	issuanceID     tapsdk.AssetID
+	assetType      tapsdk.AssetType
 	amount         uint64
-	scriptKey      PubKey
-	anchorOutpoint Outpoint
+	scriptKey      tapsdk.PubKey
+	anchorOutpoint tapsdk.Outpoint
 	anchorValueSat int64
 }
 
-func summarizeAssetProofPathStep(step *AssetProofPathStep,
-	transition *proof.Proof) (*AssetProofPathStepSummary, error) {
+func summarizeAssetProofPathStep(step *ProofPathStep,
+	transition *proof.Proof) (*ProofPathStepSummary, error) {
 
 	derived, err := summarizeAssetProof(transition)
 	if err != nil {
@@ -1646,7 +1647,7 @@ func summarizeAssetProofPathStep(step *AssetProofPathStep,
 		return nil, err
 	}
 
-	return &AssetProofPathStepSummary{
+	return &ProofPathStepSummary{
 		ContentID:              contentID,
 		PreviousAnchorOutpoint: sdkOutpoint(transition.PrevOut),
 		AnchorOutpoint:         derived.anchorOutpoint,
@@ -1665,51 +1666,51 @@ func summarizeAssetProof(
 
 	if assetProof == nil {
 		return nil, fmt.Errorf(
-			"%w: nil asset proof", ErrAssetProofPathInvalid,
+			"%w: nil asset proof", ErrProofPathInvalid,
 		)
 	}
 	if assetProof.Asset.Type != asset.Normal &&
 		assetProof.Asset.Type != asset.Collectible {
 
 		return nil, fmt.Errorf(
-			"%w: unknown asset type %d", ErrAssetProofPathInvalid,
+			"%w: unknown asset type %d", ErrProofPathInvalid,
 			assetProof.Asset.Type,
 		)
 	}
 	if assetProof.Asset.ScriptKey.PubKey == nil {
 		return nil, fmt.Errorf(
-			"%w: missing asset script key", ErrAssetProofPathInvalid,
+			"%w: missing asset script key", ErrProofPathInvalid,
 		)
 	}
 
-	var issuanceID AssetID
+	var issuanceID tapsdk.AssetID
 	nativeID := assetProof.Asset.ID()
 	copy(issuanceID[:], nativeID[:])
 
-	var groupKey *PubKey
+	var groupKey *tapsdk.PubKey
 	if assetProof.Asset.GroupKey != nil {
-		parsedGroupKey, err := ParsePubKey(
+		parsedGroupKey, err := tapsdk.ParsePubKey(
 			assetProof.Asset.GroupKey.GroupPubKey.SerializeCompressed(),
 		)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"%w: invalid group key: %v",
-				ErrAssetProofPathInvalid, err,
+				ErrProofPathInvalid, err,
 			)
 		}
 		groupKey = &parsedGroupKey
 	}
 
-	assetType := AssetType(assetProof.Asset.Type)
-	assetRef := AssetRefFromTypedAsset(
+	assetType := tapsdk.AssetType(assetProof.Asset.Type)
+	assetRef := tapsdk.AssetRefFromTypedAsset(
 		issuanceID, groupKey, assetType,
 	)
-	scriptKey, err := ParseTaprootPubKey(
+	scriptKey, err := tapsdk.ParseTaprootPubKey(
 		assetProof.Asset.ScriptKey.PubKey.SerializeCompressed(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf(
-			"%w: invalid script key: %v", ErrAssetProofPathInvalid,
+			"%w: invalid script key: %v", ErrProofPathInvalid,
 			err,
 		)
 	}
@@ -1717,20 +1718,20 @@ func summarizeAssetProof(
 	if outputIndex >= uint32(len(assetProof.AnchorTx.TxOut)) {
 		return nil, fmt.Errorf(
 			"%w: anchor output index %d is out of range",
-			ErrAssetProofPathInvalid, outputIndex,
+			ErrProofPathInvalid, outputIndex,
 		)
 	}
 	anchorOutput := assetProof.AnchorTx.TxOut[outputIndex]
 	if anchorOutput == nil {
 		return nil, fmt.Errorf(
-			"%w: anchor output %d is nil", ErrAssetProofPathInvalid,
+			"%w: anchor output %d is nil", ErrProofPathInvalid,
 			outputIndex,
 		)
 	}
 	if anchorOutput.Value < 0 {
 		return nil, fmt.Errorf(
 			"%w: anchor output %d value is negative",
-			ErrAssetProofPathInvalid, outputIndex,
+			ErrProofPathInvalid, outputIndex,
 		)
 	}
 
@@ -1745,18 +1746,18 @@ func summarizeAssetProof(
 	}, nil
 }
 
-func sdkOutpoint(outpoint wire.OutPoint) Outpoint {
+func sdkOutpoint(outpoint wire.OutPoint) tapsdk.Outpoint {
 	var txid [32]byte
 	copy(txid[:], outpoint.Hash[:])
 
-	return Outpoint{
+	return tapsdk.Outpoint{
 		Txid:  txid,
 		Index: outpoint.Index,
 	}
 }
 
-func sdkOutpoints(outpoints []wire.OutPoint) []Outpoint {
-	converted := make([]Outpoint, len(outpoints))
+func sdkOutpoints(outpoints []wire.OutPoint) []tapsdk.Outpoint {
+	converted := make([]tapsdk.Outpoint, len(outpoints))
 	for i := range outpoints {
 		converted[i] = sdkOutpoint(outpoints[i])
 	}
@@ -1764,14 +1765,14 @@ func sdkOutpoints(outpoints []wire.OutPoint) []Outpoint {
 	return converted
 }
 
-func taggedAssetProofPathHash(tag string, content []byte) Hash {
+func taggedAssetProofPathHash(tag string, content []byte) tapsdk.Hash {
 	tagHash := sha256.Sum256([]byte(tag))
 	hasher := sha256.New()
 	_, _ = hasher.Write(tagHash[:])
 	_, _ = hasher.Write(tagHash[:])
 	_, _ = hasher.Write(content)
 
-	var result Hash
+	var result tapsdk.Hash
 	copy(result[:], hasher.Sum(nil))
 	return result
 }

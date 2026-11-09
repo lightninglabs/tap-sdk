@@ -1,4 +1,4 @@
-package tapsdk
+package customanchor
 
 import (
 	"bytes"
@@ -17,6 +17,8 @@ import (
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
+	tapsdk "github.com/lightninglabs/tap-sdk"
+	"github.com/lightninglabs/tap-sdk/internal/vpsbt"
 	"github.com/lightninglabs/taproot-assets/address"
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/commitment"
@@ -39,13 +41,14 @@ const (
 
 var canonicalP2AScript = []byte{0x51, 0x02, 0x4e, 0x73}
 
-// CustomAnchorTxBuilder builds inspectable Taproot Asset state transitions
+// TxBuilder builds inspectable Taproot Asset state transitions
 // around a caller-controlled Bitcoin anchor PSBT. It is intentionally separate
 // from TxBuilder: callers that don't need exact anchor control should continue
 // to use the simpler send APIs.
-type CustomAnchorTxBuilder struct {
-	wallet                 *Wallet
+type TxBuilder struct {
+	client                 tapsdk.Client
 	params                 *address.ChainParams
+	coinType               uint32
 	confirmedProofVerifier ConfirmedProofVerifier
 }
 
@@ -53,8 +56,8 @@ type CustomAnchorTxBuilder struct {
 // compact proof-path inputs. For a non-empty path, the verifier must also
 // implement UnconfirmedAnchorVerifier. Confirmed proof-file inputs continue to
 // use the configured wallet proof client.
-func (b *CustomAnchorTxBuilder) SetConfirmedProofVerifier(
-	verifier ConfirmedProofVerifier) *CustomAnchorTxBuilder {
+func (b *TxBuilder) SetConfirmedProofVerifier(
+	verifier ConfirmedProofVerifier) *TxBuilder {
 
 	if b != nil {
 		b.confirmedProofVerifier = verifier
@@ -63,33 +66,33 @@ func (b *CustomAnchorTxBuilder) SetConfirmedProofVerifier(
 	return b
 }
 
-// CustomAnchorPlan is an immutable, pre-commit custom-anchor snapshot. Its
+// Plan is an immutable, pre-commit custom-anchor snapshot. Its
 // byte slices and request are only exposed through cloning accessors.
-type CustomAnchorPlan struct {
-	client Client
+type Plan struct {
+	client tapsdk.Client
 
-	request             *CustomAnchorRequest
+	request             *Request
 	anchorPSBT          []byte
 	activeVirtualPSBTs  [][]byte
 	passiveVirtualPSBTs [][]byte
 	backendSigning      []bool
-	inputs              []CustomAnchorAssetInputSummary
+	inputs              []AssetInputSummary
 	outputs             []customAnchorPlannedOutput
-	verification        CustomAnchorVerificationResult
+	verification        VerificationResult
 }
 
 type customAnchorInputMaterial struct {
 	requestIndex uint32
-	request      CustomAssetInput
+	request      AssetInput
 	proof        *proof.Proof
-	assetRef     AssetRef
-	issuanceID   AssetID
-	assetType    AssetType
+	assetRef     tapsdk.AssetRef
+	issuanceID   tapsdk.AssetID
+	assetType    tapsdk.AssetType
 }
 
 type customAnchorOutputMaterial struct {
 	requestIndex uint32
-	request      CustomAssetOutput
+	request      AssetOutput
 	internalKey  *btcec.PublicKey
 	sibling      *commitment.TapscriptPreimage
 	scriptKey    tapsend.ScriptKeyGen
@@ -98,35 +101,35 @@ type customAnchorOutputMaterial struct {
 
 type customAnchorPassiveMaterial struct {
 	requestIndex uint32
-	request      CustomAnchorPassivePacket
+	request      PassivePacket
 	packet       *tappsbt.VPacket
 	proof        *proof.Proof
-	assetRef     AssetRef
-	issuanceID   AssetID
-	assetType    AssetType
+	assetRef     tapsdk.AssetRef
+	issuanceID   tapsdk.AssetID
+	assetType    tapsdk.AssetType
 }
 
 type customAnchorPlannedOutput struct {
 	LogicalOutputID string
 	RequestIndex    uint32
-	PacketRole      CustomAnchorPacketRole
+	PacketRole      PacketRole
 	PacketIndex     uint32
 	VirtualOutput   uint32
 	AnchorOutput    uint32
-	AssetRef        AssetRef
-	IssuanceID      AssetID
-	AssetType       AssetType
+	AssetRef        tapsdk.AssetRef
+	IssuanceID      tapsdk.AssetID
+	AssetType       tapsdk.AssetType
 	Amount          uint64
 	AnchorValueSat  uint64
-	ScriptKey       PubKey
-	ScriptMode      CustomAssetScriptMode
-	ProofDelivery   CustomAssetProofDelivery
-	OPTrueSpend     *CustomAssetOPTrueSpendInfo
+	ScriptKey       tapsdk.PubKey
+	ScriptMode      AssetScriptMode
+	ProofDelivery   AssetProofDelivery
+	OPTrueSpend     *AssetOPTrueSpendInfo
 }
 
-// CustomAnchorPlannedOutputSummary describes one inspected asset output
+// PlannedOutputSummary describes one inspected asset output
 // before the backend commits its proof suffix and final anchor outpoint.
-type CustomAnchorPlannedOutputSummary struct {
+type PlannedOutputSummary struct {
 	// LogicalOutputID is the stable caller-defined output identifier.
 	LogicalOutputID string
 
@@ -137,7 +140,7 @@ type CustomAnchorPlannedOutputSummary struct {
 	PacketIndex uint32
 
 	// PacketRole identifies the active packet collection.
-	PacketRole CustomAnchorPacketRole
+	PacketRole PacketRole
 
 	// VirtualOutputIndex identifies the output within PacketIndex.
 	VirtualOutputIndex uint32
@@ -146,13 +149,13 @@ type CustomAnchorPlannedOutputSummary struct {
 	AnchorOutputIndex uint32
 
 	// AssetRef is the caller-facing semantic asset identity.
-	AssetRef AssetRef
+	AssetRef tapsdk.AssetRef
 
 	// IssuanceID is the concrete issuance created by this packet output.
-	IssuanceID AssetID
+	IssuanceID tapsdk.AssetID
 
 	// AssetType is the concrete asset type for the output.
-	AssetType AssetType
+	AssetType tapsdk.AssetType
 
 	// Amount is the number of asset units assigned to the output.
 	Amount uint64
@@ -161,24 +164,24 @@ type CustomAnchorPlannedOutputSummary struct {
 	AnchorValueSat uint64
 
 	// ScriptKey is the concrete asset script key for the output.
-	ScriptKey PubKey
+	ScriptKey tapsdk.PubKey
 
 	// ScriptMode records how the concrete script key was constructed.
-	ScriptMode CustomAssetScriptMode
+	ScriptMode AssetScriptMode
 
 	// ProofDelivery preserves the complete host-owned delivery metadata.
-	ProofDelivery CustomAssetProofDelivery
+	ProofDelivery AssetProofDelivery
 
 	// OPTrueSpend contains the exact script-path witness data when the output
-	// uses CustomAssetScriptOPTrue. Other script modes leave it nil.
-	OPTrueSpend *CustomAssetOPTrueSpendInfo
+	// uses AssetScriptOPTrue. Other script modes leave it nil.
+	OPTrueSpend *AssetOPTrueSpendInfo
 }
 
-// CustomAnchorOutputCommitmentPreview describes the Taproot commitment roots
+// OutputCommitmentPreview describes the Taproot commitment roots
 // a custom-anchor plan will insert into one Bitcoin output. The preview is
 // computed locally and does not sign or commit a virtual transaction or mutate
 // the plan.
-type CustomAnchorOutputCommitmentPreview struct {
+type OutputCommitmentPreview struct {
 	// LogicalOutputID is the stable caller-defined output allocation ID.
 	LogicalOutputID string
 
@@ -189,7 +192,7 @@ type CustomAnchorOutputCommitmentPreview struct {
 	PacketIndex uint32
 
 	// PacketRole identifies the active or passive packet collection.
-	PacketRole CustomAnchorPacketRole
+	PacketRole PacketRole
 
 	// VirtualOutputIndex identifies the output within PacketIndex.
 	VirtualOutputIndex uint32
@@ -199,29 +202,34 @@ type CustomAnchorOutputCommitmentPreview struct {
 
 	// TaprootAssetRoot is the root of the Taproot Asset commitment before
 	// combining it with the host-supplied tapscript sibling.
-	TaprootAssetRoot Hash
+	TaprootAssetRoot tapsdk.Hash
 
 	// TaprootMerkleRoot is the final BIP341 root that combines the Taproot
 	// Asset commitment with the optional host-supplied tapscript sibling.
-	TaprootMerkleRoot Hash
+	TaprootMerkleRoot tapsdk.Hash
 }
 
-// NewCustomAnchorTxBuilder creates the advanced proof-selected builder.
-func (s *Wallet) NewCustomAnchorTxBuilder() *CustomAnchorTxBuilder {
-	params, err := address.Net(s.networkHRP)
+// NewTxBuilder creates the advanced proof-selected builder for a wallet.
+func NewTxBuilder(wallet *tapsdk.Wallet) *TxBuilder {
+	hrp, coinType, err := vpsbt.NetworkParams(string(wallet.Network()))
 	if err != nil {
-		panic(fmt.Sprintf("invalid wallet network HRP %q: %v",
-			s.networkHRP, err))
+		panic(fmt.Sprintf("invalid wallet network: %v", err))
+	}
+	params, err := address.Net(hrp)
+	if err != nil {
+		panic(fmt.Sprintf("invalid wallet network HRP %q: %v", hrp,
+			err))
 	}
 
-	return &CustomAnchorTxBuilder{
-		wallet: s,
-		params: params,
+	return &TxBuilder{
+		client:   wallet.Client(),
+		params:   params,
+		coinType: coinType,
 	}
 }
 
 // Request returns a deep copy of the request bound to this plan.
-func (p *CustomAnchorPlan) Request() *CustomAnchorRequest {
+func (p *Plan) Request() *Request {
 	if p == nil || p.request == nil {
 		return nil
 	}
@@ -230,7 +238,7 @@ func (p *CustomAnchorPlan) Request() *CustomAnchorRequest {
 }
 
 // AnchorPSBT returns the locally verified, unsigned anchor PSBT template.
-func (p *CustomAnchorPlan) AnchorPSBT() []byte {
+func (p *Plan) AnchorPSBT() []byte {
 	if p == nil {
 		return nil
 	}
@@ -239,7 +247,7 @@ func (p *CustomAnchorPlan) AnchorPSBT() []byte {
 }
 
 // ActiveVirtualPSBTs returns the prepared active virtual packets.
-func (p *CustomAnchorPlan) ActiveVirtualPSBTs() [][]byte {
+func (p *Plan) ActiveVirtualPSBTs() [][]byte {
 	if p == nil {
 		return nil
 	}
@@ -248,7 +256,7 @@ func (p *CustomAnchorPlan) ActiveVirtualPSBTs() [][]byte {
 }
 
 // PassiveVirtualPSBTs returns the caller-supplied passive packets.
-func (p *CustomAnchorPlan) PassiveVirtualPSBTs() [][]byte {
+func (p *Plan) PassiveVirtualPSBTs() [][]byte {
 	if p == nil {
 		return nil
 	}
@@ -258,7 +266,7 @@ func (p *CustomAnchorPlan) PassiveVirtualPSBTs() [][]byte {
 
 // Inputs returns a deep copy of the exact proof-selected active inputs and
 // their logical-to-virtual mappings.
-func (p *CustomAnchorPlan) Inputs() []CustomAnchorAssetInputSummary {
+func (p *Plan) Inputs() []AssetInputSummary {
 	if p == nil {
 		return nil
 	}
@@ -268,17 +276,17 @@ func (p *CustomAnchorPlan) Inputs() []CustomAnchorAssetInputSummary {
 
 // Outputs returns a deep copy of the concrete active output mappings inspected
 // by the builder.
-func (p *CustomAnchorPlan) Outputs() []CustomAnchorPlannedOutputSummary {
+func (p *Plan) Outputs() []PlannedOutputSummary {
 	if p == nil {
 		return nil
 	}
 
 	result := make(
-		[]CustomAnchorPlannedOutputSummary, len(p.outputs),
+		[]PlannedOutputSummary, len(p.outputs),
 	)
 	for idx := range p.outputs {
 		output := p.outputs[idx]
-		result[idx] = CustomAnchorPlannedOutputSummary{
+		result[idx] = PlannedOutputSummary{
 			LogicalOutputID:    output.LogicalOutputID,
 			LogicalOutputIndex: output.RequestIndex,
 			PacketIndex:        output.PacketIndex,
@@ -292,7 +300,7 @@ func (p *CustomAnchorPlan) Outputs() []CustomAnchorPlannedOutputSummary {
 			AnchorValueSat:     output.AnchorValueSat,
 			ScriptKey:          output.ScriptKey,
 			ScriptMode:         output.ScriptMode,
-			ProofDelivery: CustomAssetProofDelivery{
+			ProofDelivery: AssetProofDelivery{
 				RecipientID:    output.ProofDelivery.RecipientID,
 				CourierAddress: output.ProofDelivery.CourierAddress,
 				OpaqueMetadata: cloneBytes(
@@ -316,8 +324,8 @@ func (p *CustomAnchorPlan) Outputs() []CustomAnchorPlannedOutputSummary {
 // signature. Split commitments bind the anchor output index, however, so
 // callers that reindex outputs after a preview must rebuild and preview again
 // before committing.
-func (p *CustomAnchorPlan) PreviewOutputCommitments() (
-	[]CustomAnchorOutputCommitmentPreview, error) {
+func (p *Plan) PreviewOutputCommitments() (
+	[]OutputCommitmentPreview, error) {
 
 	if p == nil || p.client == nil || p.request == nil {
 		return nil, fmt.Errorf("nil custom anchor plan")
@@ -353,14 +361,14 @@ func (p *CustomAnchorPlan) PreviewOutputCommitments() (
 	}
 
 	previews := make(
-		[]CustomAnchorOutputCommitmentPreview, 0, len(p.outputs),
+		[]OutputCommitmentPreview, 0, len(p.outputs),
 	)
 	for idx := range p.outputs {
 		planned := p.outputs[idx]
 		packets := active
-		if planned.PacketRole == CustomAnchorPacketRolePassive {
+		if planned.PacketRole == PacketRolePassive {
 			packets = passive
-		} else if planned.PacketRole != CustomAnchorPacketRoleActive {
+		} else if planned.PacketRole != PacketRoleActive {
 			return nil, fmt.Errorf("planned output %q has unknown packet "+
 				"role %d", planned.LogicalOutputID,
 				planned.PacketRole)
@@ -384,7 +392,7 @@ func (p *CustomAnchorPlan) PreviewOutputCommitments() (
 		}
 
 		previews = append(previews,
-			CustomAnchorOutputCommitmentPreview{
+			OutputCommitmentPreview{
 				LogicalOutputID:    planned.LogicalOutputID,
 				LogicalOutputIndex: planned.RequestIndex,
 				PacketIndex:        planned.PacketIndex,
@@ -402,9 +410,9 @@ func (p *CustomAnchorPlan) PreviewOutputCommitments() (
 
 // Verification returns a copy of the structured pre-commit verification
 // report.
-func (p *CustomAnchorPlan) Verification() CustomAnchorVerificationResult {
+func (p *Plan) Verification() VerificationResult {
 	if p == nil {
-		return CustomAnchorVerificationResult{}
+		return VerificationResult{}
 	}
 
 	return cloneCustomAnchorVerification(p.verification)
@@ -414,10 +422,10 @@ func (p *CustomAnchorPlan) Verification() CustomAnchorVerificationResult {
 // concrete issuance, and merges the required Taproot Asset PSBT metadata into
 // the caller's exact anchor transaction. No backend or anchor signature is
 // requested by this method.
-func (b *CustomAnchorTxBuilder) Build(ctx context.Context,
-	req *CustomAnchorRequest) (*CustomAnchorPlan, error) {
+func (b *TxBuilder) Build(ctx context.Context,
+	req *Request) (*Plan, error) {
 
-	if b == nil || b.wallet == nil || b.wallet.client == nil {
+	if b == nil || b.client == nil {
 		return nil, fmt.Errorf("custom anchor builder has no wallet client")
 	}
 	if err := req.Validate(); err != nil {
@@ -425,11 +433,11 @@ func (b *CustomAnchorTxBuilder) Build(ctx context.Context,
 	}
 
 	request := req.Clone()
-	verification := CustomAnchorVerificationResult{}
+	verification := VerificationResult{}
 	addCustomAnchorCheck(
 		&verification, customAnchorCheckRequest,
-		CustomAnchorVerificationScopeRequest,
-		CustomAnchorVerificationOriginLocal, nil, "",
+		VerificationScopeRequest,
+		VerificationOriginLocal, nil, "",
 		"request structure and amount conservation are valid",
 	)
 
@@ -474,13 +482,13 @@ func (b *CustomAnchorTxBuilder) Build(ctx context.Context,
 		return nil, err
 	}
 	if _, err := customAnchorSigningRequests(
-		anchorPacket, request.SigningPlans, nil, Hash{},
+		anchorPacket, request.SigningPlans, nil, tapsdk.Hash{},
 	); err != nil {
 		return nil, fmt.Errorf("validate anchor signing plans: %w", err)
 	}
 	if err := validateCustomAnchorBitcoinTransaction(
 		anchorPacket,
-		request.Funding.Mode != CustomAnchorFundingWalletFunded,
+		request.Funding.Mode != FundingWalletFunded,
 	); err != nil {
 		return nil, fmt.Errorf("validate anchor transaction: %w", err)
 	}
@@ -492,8 +500,8 @@ func (b *CustomAnchorTxBuilder) Build(ctx context.Context,
 	}
 	addCustomAnchorCheck(
 		&verification, customAnchorCheckAnchorInput,
-		CustomAnchorVerificationScopeInputProof,
-		CustomAnchorVerificationOriginLocal, nil, "",
+		VerificationScopeInputProof,
+		VerificationOriginLocal, nil, "",
 		"active and passive packets exactly reconstruct every asset input",
 	)
 
@@ -507,8 +515,8 @@ func (b *CustomAnchorTxBuilder) Build(ctx context.Context,
 	}
 	addCustomAnchorCheck(
 		&verification, customAnchorCheckVPackets,
-		CustomAnchorVerificationScopeOutputCommitment,
-		CustomAnchorVerificationOriginLocal, nil, "",
+		VerificationScopeOutputCommitment,
+		VerificationOriginLocal, nil, "",
 		"V1 virtual packets are prepared with unique commitment keys",
 	)
 
@@ -527,8 +535,8 @@ func (b *CustomAnchorTxBuilder) Build(ctx context.Context,
 	inputSummaries = append(inputSummaries, passiveInputs...)
 	plannedOutputs = append(plannedOutputs, passiveOutputs...)
 
-	return &CustomAnchorPlan{
-		client:              b.wallet.client,
+	return &Plan{
+		client:              b.client,
 		request:             request,
 		anchorPSBT:          anchorBytes,
 		activeVirtualPSBTs:  activeBytes,
@@ -540,9 +548,9 @@ func (b *CustomAnchorTxBuilder) Build(ctx context.Context,
 	}, nil
 }
 
-func (b *CustomAnchorTxBuilder) resolveInputs(ctx context.Context,
-	req *CustomAnchorRequest,
-	verification *CustomAnchorVerificationResult) (
+func (b *TxBuilder) resolveInputs(ctx context.Context,
+	req *Request,
+	verification *VerificationResult) (
 	[]customAnchorInputMaterial, error) {
 
 	inputs := make([]customAnchorInputMaterial, len(req.Inputs))
@@ -551,8 +559,8 @@ func (b *CustomAnchorTxBuilder) resolveInputs(ctx context.Context,
 		requested := req.Inputs[idx]
 		var (
 			lastProof        *proof.Proof
-			pathSummary      *AssetProofPathSummary
-			verificationFrom = CustomAnchorVerificationOriginBackend
+			pathSummary      *ProofPathSummary
+			verificationFrom = VerificationOriginBackend
 			verificationText = "backend verified the confirmed proof chain"
 		)
 		if requested.ProofPath != nil {
@@ -583,7 +591,7 @@ func (b *CustomAnchorTxBuilder) resolveInputs(ctx context.Context,
 				return nil, fmt.Errorf("decode input %d proof path tip: %w",
 					idx, err)
 			}
-			verificationFrom = CustomAnchorVerificationOriginHost
+			verificationFrom = VerificationOriginHost
 			verificationText = "host verified the confirmed proof base"
 		} else {
 			file, err := proof.DecodeFile(requested.ProofFile)
@@ -634,7 +642,7 @@ func (b *CustomAnchorTxBuilder) resolveInputs(ctx context.Context,
 		}
 
 		if pathSummary != nil {
-			proofScriptKey, err := ParsePubKey(
+			proofScriptKey, err := tapsdk.ParsePubKey(
 				lastProof.Asset.ScriptKey.PubKey.SerializeCompressed(),
 			)
 			if err != nil {
@@ -652,7 +660,7 @@ func (b *CustomAnchorTxBuilder) resolveInputs(ctx context.Context,
 					"match its verified tip", idx)
 			}
 		} else {
-			verified, err := b.wallet.client.VerifyProof(
+			verified, err := b.client.VerifyProof(
 				ctx, requested.ProofFile,
 			)
 			if err != nil {
@@ -666,7 +674,7 @@ func (b *CustomAnchorTxBuilder) resolveInputs(ctx context.Context,
 			}
 			backendIdentityMatches := requested.AssetRef.IsAssetIDRef() ||
 				verified.DecodedProof.AssetRef.Equivalent(requested.AssetRef)
-			proofScriptKey, err := ParsePubKey(
+			proofScriptKey, err := tapsdk.ParsePubKey(
 				lastProof.Asset.ScriptKey.PubKey.SerializeCompressed(),
 			)
 			if err != nil {
@@ -687,15 +695,15 @@ func (b *CustomAnchorTxBuilder) resolveInputs(ctx context.Context,
 		inputIndex := uint32(idx)
 		addCustomAnchorCheck(
 			verification, customAnchorCheckProofChain,
-			CustomAnchorVerificationScopeInputProof,
+			VerificationScopeInputProof,
 			verificationFrom, &inputIndex, "", verificationText,
 		)
 		if pathSummary != nil {
 			if len(requested.ProofPath.Steps) != 0 {
 				addCustomAnchorCheck(
 					verification, customAnchorCheckBTCPath,
-					CustomAnchorVerificationScopeInputProof,
-					CustomAnchorVerificationOriginHost,
+					VerificationScopeInputProof,
+					VerificationOriginHost,
 					&inputIndex, "", "host attested every "+
 						"unconfirmed Bitcoin anchor",
 				)
@@ -712,15 +720,15 @@ func (b *CustomAnchorTxBuilder) resolveInputs(ctx context.Context,
 			}
 			addCustomAnchorCheck(
 				verification, customAnchorCheckAssetPath,
-				CustomAnchorVerificationScopeInputProof,
-				CustomAnchorVerificationOriginLocal, &inputIndex, "",
+				VerificationScopeInputProof,
+				VerificationOriginLocal, &inputIndex, "",
 				pathMessage,
 			)
 		}
 		addCustomAnchorCheck(
 			verification, customAnchorCheckProofIdentity,
-			CustomAnchorVerificationScopeAssetIdentity,
-			CustomAnchorVerificationOriginLocal, &inputIndex, "",
+			VerificationScopeAssetIdentity,
+			VerificationOriginLocal, &inputIndex, "",
 			"proof identity and exact amount match the request",
 		)
 
@@ -744,17 +752,17 @@ func (b *CustomAnchorTxBuilder) resolveInputs(ctx context.Context,
 	return inputs, nil
 }
 
-func (b *CustomAnchorTxBuilder) resolveOutputs(ctx context.Context,
-	req *CustomAnchorRequest, inputs []customAnchorInputMaterial) (
+func (b *TxBuilder) resolveOutputs(ctx context.Context,
+	req *Request, inputs []customAnchorInputMaterial) (
 	[]customAnchorOutputMaterial, error) {
 
 	outputs := make([]customAnchorOutputMaterial, len(req.Outputs))
 	seen := make(map[string]struct{}, len(req.Outputs))
-	issuances := make(map[string]map[AssetID]struct{})
+	issuances := make(map[string]map[tapsdk.AssetID]struct{})
 	for idx := range inputs {
 		key := customAnchorAssetKey(inputs[idx].request.AssetRef)
 		if issuances[key] == nil {
-			issuances[key] = make(map[AssetID]struct{})
+			issuances[key] = make(map[tapsdk.AssetID]struct{})
 		}
 		issuances[key][inputs[idx].issuanceID] = struct{}{}
 	}
@@ -817,7 +825,7 @@ func (b *CustomAnchorTxBuilder) resolveOutputs(ctx context.Context,
 	return outputs, nil
 }
 
-func (b *CustomAnchorTxBuilder) buildActivePackets(ctx context.Context,
+func (b *TxBuilder) buildActivePackets(ctx context.Context,
 	inputs []customAnchorInputMaterial, outputs []customAnchorOutputMaterial) (
 	[]*tappsbt.VPacket,
 	[]customAnchorPlannedOutput, []bool, error) {
@@ -853,7 +861,7 @@ func (b *CustomAnchorTxBuilder) buildActivePackets(ctx context.Context,
 			}
 
 			bip32, taprootBip32 := customAnchorKeyDerivations(
-				output.request.Anchor.InternalKey, b.wallet.coinType,
+				output.request.Anchor.InternalKey, b.coinType,
 			)
 			allocations = append(allocations, &tapsend.Allocation{
 				Type:                   tapsend.CommitAllocationToRemote,
@@ -887,7 +895,7 @@ func (b *CustomAnchorTxBuilder) buildActivePackets(ctx context.Context,
 		for idx := range outputs {
 			output := outputs[idx]
 			if customAnchorAssetKey(output.request.AssetRef) == key &&
-				output.request.Script.Mode == CustomAssetScriptBurn {
+				output.request.Script.Mode == AssetScriptBurn {
 
 				burnOutputs[output.request.AnchorOutputIndex] = struct{}{}
 			}
@@ -920,7 +928,7 @@ func (b *CustomAnchorTxBuilder) buildActivePackets(ctx context.Context,
 			if err != nil {
 				return nil, nil, nil, err
 			}
-			if mode == CustomAssetWitnessBackendSigner {
+			if mode == AssetWitnessBackendSigner {
 				if err := b.resolveInputSigningKeys(
 					ctx, packet,
 				); err != nil {
@@ -929,7 +937,7 @@ func (b *CustomAnchorTxBuilder) buildActivePackets(ctx context.Context,
 			}
 			backendSigning = append(
 				backendSigning,
-				mode == CustomAssetWitnessBackendSigner,
+				mode == AssetWitnessBackendSigner,
 			)
 		}
 
@@ -944,17 +952,17 @@ func (b *CustomAnchorTxBuilder) buildActivePackets(ctx context.Context,
 	return packets, planned, backendSigning, nil
 }
 
-func (b *CustomAnchorTxBuilder) customAssetScriptKey(ctx context.Context,
-	plan CustomAssetScriptPlan, multiIssuance bool) (
+func (b *TxBuilder) customAssetScriptKey(ctx context.Context,
+	plan AssetScriptPlan, multiIssuance bool) (
 	tapsend.ScriptKeyGen, error) {
 
 	switch plan.Mode {
-	case CustomAssetScriptWallet:
+	case AssetScriptWallet:
 		if plan.Wallet.KeyLocator != nil {
 			return nil, fmt.Errorf("selecting a wallet script key locator " +
 				"is not supported by the current tapd API")
 		}
-		derived, err := b.wallet.client.DeriveScriptKey(ctx)
+		derived, err := b.client.DeriveScriptKey(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("derive wallet script key: %w", err)
 		}
@@ -967,7 +975,7 @@ func (b *CustomAnchorTxBuilder) customAssetScriptKey(ctx context.Context,
 		}
 		return tapsend.StaticScriptKeyGen(key), nil
 
-	case CustomAssetScriptExternal:
+	case AssetScriptExternal:
 		key, err := tapAssetScriptKey(plan.External.ScriptKey)
 		if err != nil {
 			return nil, err
@@ -981,7 +989,7 @@ func (b *CustomAnchorTxBuilder) customAssetScriptKey(ctx context.Context,
 		}
 		return tapsend.StaticScriptKeyGen(key), nil
 
-	case CustomAssetScriptOPTrue:
+	case AssetScriptOPTrue:
 		internalKey, err := btcec.ParsePubKey(
 			plan.OPTrue.InternalKey.RawKeyBytes[:],
 		)
@@ -992,7 +1000,7 @@ func (b *CustomAnchorTxBuilder) customAssetScriptKey(ctx context.Context,
 			internalKey, plan.OPTrue.InternalKey.KeyLocator,
 		), nil
 
-	case CustomAssetScriptBurn:
+	case AssetScriptBurn:
 		// The final proof-of-burn key is derived from the first PrevID of
 		// each concrete virtual packet after coin distribution. NUMS is only
 		// a placeholder required by the allocation API.
@@ -1008,13 +1016,13 @@ func (b *CustomAnchorTxBuilder) customAssetScriptKey(ctx context.Context,
 // derivation into each backend-signed input. Proofs contain the output key but
 // omit wallet metadata. In particular, a received unique script key requires
 // its Taproot tweak; a raw key locator alone would produce a BIP-86 signature.
-func (b *CustomAnchorTxBuilder) resolveInputSigningKeys(ctx context.Context,
+func (b *TxBuilder) resolveInputSigningKeys(ctx context.Context,
 	packet *tappsbt.VPacket) error {
 
 	for idx, input := range packet.Inputs {
 		proofPubKey := input.Asset().ScriptKey.PubKey
 		proofKey := schnorr.SerializePubKey(proofPubKey)
-		resolved, err := b.wallet.client.QueryScriptKey(ctx, proofKey)
+		resolved, err := b.client.QueryScriptKey(ctx, proofKey)
 		if err != nil {
 			return fmt.Errorf(
 				"resolve input %d signing key: %w", idx, err,
@@ -1080,7 +1088,7 @@ func uniqueScriptKeyGen(base asset.ScriptKey) (tapsend.ScriptKeyGen, error) {
 }
 
 func opTrueScriptKeyGen(internalKey *btcec.PublicKey,
-	locator KeyLocator) tapsend.ScriptKeyGen {
+	locator tapsdk.KeyLocator) tapsend.ScriptKeyGen {
 
 	return func(assetID asset.ID) (asset.ScriptKey, error) {
 		scriptKey, _, err := customAssetOPTrueScriptKey(
@@ -1092,8 +1100,8 @@ func opTrueScriptKeyGen(internalKey *btcec.PublicKey,
 }
 
 func customAssetOPTrueScriptKey(internalKey *btcec.PublicKey,
-	locator KeyLocator, assetID asset.ID) (asset.ScriptKey,
-	*CustomAssetOPTrueSpendInfo, error) {
+	locator tapsdk.KeyLocator, assetID asset.ID) (asset.ScriptKey,
+	*AssetOPTrueSpendInfo, error) {
 
 	opTrue := txscript.NewBaseTapLeaf([]byte{txscript.OP_TRUE})
 	uniqueLeaf, err := asset.NewNonSpendableScriptLeaf(
@@ -1122,12 +1130,12 @@ func customAssetOPTrueScriptKey(internalKey *btcec.PublicKey,
 		return asset.ScriptKey{}, nil, fmt.Errorf("encode OP_TRUE control "+
 			"block: %w", err)
 	}
-	internalKeyBytes, err := ParsePubKey(internalKey.SerializeCompressed())
+	internalKeyBytes, err := tapsdk.ParsePubKey(internalKey.SerializeCompressed())
 	if err != nil {
 		return asset.ScriptKey{}, nil, err
 	}
 
-	spendInfo := &CustomAssetOPTrueSpendInfo{
+	spendInfo := &AssetOPTrueSpendInfo{
 		LeafScript:   cloneBytes(opTrue.Script),
 		LeafVersion:  uint8(opTrue.LeafVersion),
 		ControlBlock: controlBlockBytes,
@@ -1147,7 +1155,7 @@ func customAssetOPTrueScriptKey(internalKey *btcec.PublicKey,
 			Type:  asset.ScriptKeyScriptPathExternal,
 		},
 	}
-	parsedScriptKey, err := ParsePubKey(outputKey.SerializeCompressed())
+	parsedScriptKey, err := tapsdk.ParsePubKey(outputKey.SerializeCompressed())
 	if err != nil {
 		return asset.ScriptKey{}, nil, err
 	}
@@ -1159,7 +1167,7 @@ func customAssetOPTrueScriptKey(internalKey *btcec.PublicKey,
 	return scriptKey, spendInfo, nil
 }
 
-func tapAssetScriptKey(scriptKey ScriptKey) (asset.ScriptKey, error) {
+func tapAssetScriptKey(scriptKey tapsdk.ScriptKey) (asset.ScriptKey, error) {
 	pubKey, err := btcec.ParsePubKey(scriptKey.PubKey[:])
 	if err != nil {
 		return asset.ScriptKey{}, fmt.Errorf("parse asset script key: %w",
@@ -1168,7 +1176,7 @@ func tapAssetScriptKey(scriptKey ScriptKey) (asset.ScriptKey, error) {
 	result := asset.NewScriptKey(pubKey)
 
 	rawBytes := scriptKey.KeyDesc.RawKeyBytes
-	if rawBytes == (PubKey{}) {
+	if rawBytes == (tapsdk.PubKey{}) {
 		return result, nil
 	}
 	rawKey, err := btcec.ParsePubKey(rawBytes[:])
@@ -1197,7 +1205,7 @@ func tapAssetScriptKey(scriptKey ScriptKey) (asset.ScriptKey, error) {
 	return result, nil
 }
 
-func customAnchorSibling(plan CustomAnchorTapscriptPlan) (
+func customAnchorSibling(plan TapscriptPlan) (
 	*commitment.TapscriptPreimage, error) {
 
 	if len(plan.SerializedSibling) != 0 {
@@ -1224,10 +1232,10 @@ func customAnchorSibling(plan CustomAnchorTapscriptPlan) (
 	return commitment.NewPreimageFromTapscriptTreeNodes(*nodes)
 }
 
-func customAnchorKeyDerivations(key InternalKey, coinType uint32) (
+func customAnchorKeyDerivations(key tapsdk.InternalKey, coinType uint32) (
 	[]*psbt.Bip32Derivation, []*psbt.TaprootBip32Derivation) {
 
-	if key.KeyLocator == (KeyLocator{}) {
+	if key.KeyLocator == (tapsdk.KeyLocator{}) {
 		return nil, nil
 	}
 	pubKey, err := btcec.ParsePubKey(key.PubKey[:])
@@ -1249,25 +1257,27 @@ func customAnchorKeyDerivations(key InternalKey, coinType uint32) (
 		[]*psbt.TaprootBip32Derivation{taprootBip32}
 }
 
-func assetIdentity(a *asset.Asset) (AssetRef, AssetID, AssetType, error) {
+func assetIdentity(a *asset.Asset) (tapsdk.AssetRef, tapsdk.AssetID,
+	tapsdk.AssetType, error) {
+
 	if a == nil {
-		return "", AssetID{}, 0, fmt.Errorf("nil asset")
+		return "", tapsdk.AssetID{}, 0, fmt.Errorf("nil asset")
 	}
 
-	issuanceID := AssetID(a.ID())
-	assetType := AssetType(a.Type)
-	var groupKey *PubKey
+	issuanceID := tapsdk.AssetID(a.ID())
+	assetType := tapsdk.AssetType(a.Type)
+	var groupKey *tapsdk.PubKey
 	if a.GroupKey != nil {
-		parsed, err := ParsePubKey(
+		parsed, err := tapsdk.ParsePubKey(
 			a.GroupKey.GroupPubKey.SerializeCompressed(),
 		)
 		if err != nil {
-			return "", AssetID{}, 0, err
+			return "", tapsdk.AssetID{}, 0, err
 		}
 		groupKey = &parsed
 	}
 
-	return AssetRefFromTypedAsset(issuanceID, groupKey, assetType),
+	return tapsdk.AssetRefFromTypedAsset(issuanceID, groupKey, assetType),
 		issuanceID, assetType, nil
 }
 
@@ -1291,7 +1301,7 @@ func applyCustomAssetWitnesses(packet *tappsbt.VPacket,
 		)
 	}
 
-	if mode == CustomAssetWitnessBackendSigner {
+	if mode == AssetWitnessBackendSigner {
 		return nil
 	}
 
@@ -1299,21 +1309,21 @@ func applyCustomAssetWitnesses(packet *tappsbt.VPacket,
 }
 
 func customAssetPacketWitnessMode(packet *tappsbt.VPacket,
-	inputs []customAnchorInputMaterial) (CustomAssetWitnessMode, error) {
+	inputs []customAnchorInputMaterial) (AssetWitnessMode, error) {
 
-	mode := CustomAssetWitnessUnspecified
+	mode := AssetWitnessUnspecified
 	for idx := range packet.Inputs {
 		vIn := packet.Inputs[idx]
 		matched := customAnchorInputForPrevID(inputs, vIn.PrevID)
-		var inputMode CustomAssetWitnessMode
+		var inputMode AssetWitnessMode
 		if matched != nil {
 			inputMode = matched.request.Witness.Mode
 		}
-		if inputMode == CustomAssetWitnessUnspecified {
+		if inputMode == AssetWitnessUnspecified {
 			return inputMode, fmt.Errorf("virtual packet input %d has no "+
 				"witness mode mapping", idx)
 		}
-		if mode == CustomAssetWitnessUnspecified {
+		if mode == AssetWitnessUnspecified {
 			mode = inputMode
 		} else if mode != inputMode {
 			return mode, fmt.Errorf("virtual packet mixes backend and caller " +
@@ -1469,21 +1479,21 @@ func validateCustomAssetPacketWitnesses(packet *tappsbt.VPacket) error {
 	return nil
 }
 
-func (b *CustomAnchorTxBuilder) resolvePassivePackets(ctx context.Context,
-	plan CustomAnchorPassiveAssets, active []*tappsbt.VPacket,
-	verification *CustomAnchorVerificationResult) (
+func (b *TxBuilder) resolvePassivePackets(ctx context.Context,
+	plan PassiveAssets, active []*tappsbt.VPacket,
+	verification *VerificationResult) (
 	[]customAnchorPassiveMaterial, []*tappsbt.VPacket, [][]byte, error) {
 
 	switch plan.Policy {
-	case CustomAnchorPassiveReject:
+	case PassiveReject:
 		return nil, nil, nil, nil
 
-	case CustomAnchorPassivePreserve:
+	case PassivePreserve:
 		return nil, nil, nil, fmt.Errorf("backend-discovered passive " +
 			"preservation is not supported for proof-selected inputs; " +
 			"provide every passive packet with caller re-anchor policy")
 
-	case CustomAnchorPassiveCallerReanchor:
+	case PassiveCallerReanchor:
 		// Continue below after validating the complete caller inventory.
 
 	default:
@@ -1612,12 +1622,12 @@ func (b *CustomAnchorTxBuilder) resolvePassivePackets(ctx context.Context,
 				err)
 		}
 
-		verified, err := b.wallet.client.VerifyProof(ctx, planned.ProofFile)
+		verified, err := b.client.VerifyProof(ctx, planned.ProofFile)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("verify passive packet %d proof "+
 				"chain: %w", idx, err)
 		}
-		proofScriptKey, err := ParsePubKey(
+		proofScriptKey, err := tapsdk.ParsePubKey(
 			lastProof.Asset.ScriptKey.PubKey.SerializeCompressed(),
 		)
 		if err != nil {
@@ -1647,8 +1657,8 @@ func (b *CustomAnchorTxBuilder) resolvePassivePackets(ctx context.Context,
 		inputIndex := uint32(idx)
 		addCustomAnchorCheck(
 			verification, customAnchorCheckProofChain,
-			CustomAnchorVerificationScopePassiveAssets,
-			CustomAnchorVerificationOriginBackend, &inputIndex, planned.ID,
+			VerificationScopePassiveAssets,
+			VerificationOriginBackend, &inputIndex, planned.ID,
 			"backend verified the passive proof chain",
 		)
 	}
@@ -1719,7 +1729,7 @@ func samePassiveAnchorOutput(left, right *tappsbt.VOutput) bool {
 	)
 }
 
-func prepareCustomAnchorPSBT(req *CustomAnchorRequest,
+func prepareCustomAnchorPSBT(req *Request,
 	active, passive []*tappsbt.VPacket) (*psbt.Packet, error) {
 
 	anchor, err := psbt.NewFromRawBytes(
@@ -1798,7 +1808,7 @@ func validateTxIDStableAnchorInputs(anchor *psbt.Packet) error {
 	return nil
 }
 
-func validateCustomAnchorTemplate(req *CustomAnchorRequest,
+func validateCustomAnchorTemplate(req *Request,
 	anchor *psbt.Packet) error {
 
 	if anchor == nil || anchor.UnsignedTx == nil {
@@ -1834,7 +1844,7 @@ func validateCustomAnchorTemplate(req *CustomAnchorRequest,
 		}
 	}
 
-	if req.Funding.Mode == CustomAnchorFundingExternalP2AFeeBump {
+	if req.Funding.Mode == FundingExternalP2AFeeBump {
 		index := req.Funding.ExternalP2AFeeBump.P2AOutputIndex
 		if err := validateExternalP2AAnchor(anchor, index); err != nil {
 			return err
@@ -1989,13 +1999,13 @@ func mapCustomAnchorOutputs(requestedOutputs []customAnchorOutputMaterial,
 					vOut.AnchorOutputIndex ||
 					!customAnchorAssetRefMatchesIssuance(
 						candidate.request.AssetRef, actualRef,
-						AssetID(issuance),
+						tapsdk.AssetID(issuance),
 					) {
 
 					continue
 				}
 				var expectedKey asset.ScriptKey
-				if candidate.request.Script.Mode == CustomAssetScriptBurn {
+				if candidate.request.Script.Mode == AssetScriptBurn {
 					expectedKey = asset.NewScriptKey(asset.DeriveBurnKey(
 						packet.Inputs[0].PrevID,
 					))
@@ -2016,14 +2026,14 @@ func mapCustomAnchorOutputs(requestedOutputs []customAnchorOutputMaterial,
 					"logical output mapping", packetIdx, outputIdx)
 			}
 
-			scriptKey, err := ParsePubKey(
+			scriptKey, err := tapsdk.ParsePubKey(
 				vOut.ScriptKey.PubKey.SerializeCompressed(),
 			)
 			if err != nil {
 				return nil, err
 			}
-			var opTrueSpend *CustomAssetOPTrueSpendInfo
-			if requested.request.Script.Mode == CustomAssetScriptOPTrue {
+			var opTrueSpend *AssetOPTrueSpendInfo
+			if requested.request.Script.Mode == AssetScriptOPTrue {
 				internalKey, err := btcec.ParsePubKey(
 					requested.request.Script.OPTrue.InternalKey.RawKeyBytes[:],
 				)
@@ -2060,18 +2070,18 @@ func mapCustomAnchorOutputs(requestedOutputs []customAnchorOutputMaterial,
 			result = append(result, customAnchorPlannedOutput{
 				LogicalOutputID: requested.request.ID,
 				RequestIndex:    requestIndex,
-				PacketRole:      CustomAnchorPacketRoleActive,
+				PacketRole:      PacketRoleActive,
 				PacketIndex:     uint32(packetIdx),
 				VirtualOutput:   uint32(outputIdx),
 				AnchorOutput:    vOut.AnchorOutputIndex,
 				AssetRef:        requested.request.AssetRef,
-				IssuanceID:      AssetID(issuance),
+				IssuanceID:      tapsdk.AssetID(issuance),
 				AssetType:       assetType,
 				Amount:          vOut.Amount,
 				AnchorValueSat:  requested.request.AnchorValueSat,
 				ScriptKey:       scriptKey,
 				ScriptMode:      requested.request.Script.Mode,
-				ProofDelivery: CustomAssetProofDelivery{
+				ProofDelivery: AssetProofDelivery{
 					RecipientID: requested.request.ProofDelivery.RecipientID,
 					CourierAddress: customAnchorProofCourierString(
 						vOut.ProofDeliveryAddress,
@@ -2097,8 +2107,8 @@ func mapCustomAnchorOutputs(requestedOutputs []customAnchorOutputMaterial,
 	return result, nil
 }
 
-func customAnchorAssetRefMatchesIssuance(requested, semantic AssetRef,
-	issuanceID AssetID) bool {
+func customAnchorAssetRefMatchesIssuance(requested, semantic tapsdk.AssetRef,
+	issuanceID tapsdk.AssetID) bool {
 
 	if requested.Equivalent(semantic) {
 		return true
@@ -2108,19 +2118,19 @@ func customAnchorAssetRefMatchesIssuance(requested, semantic AssetRef,
 }
 
 func customAnchorInputSummary(input customAnchorInputMaterial) (
-	CustomAnchorAssetInputSummary, error) {
+	AssetInputSummary, error) {
 
 	proofSource, err := customAnchorProofSource(input.request)
 	if err != nil {
-		return CustomAnchorAssetInputSummary{}, err
+		return AssetInputSummary{}, err
 	}
-	scriptKey, _ := ParsePubKey(
+	scriptKey, _ := tapsdk.ParsePubKey(
 		input.proof.Asset.ScriptKey.PubKey.SerializeCompressed(),
 	)
-	return CustomAnchorAssetInputSummary{
+	return AssetInputSummary{
 		LogicalInputID:    input.request.ID,
 		LogicalInputIndex: input.requestIndex,
-		PacketRole:        CustomAnchorPacketRoleActive,
+		PacketRole:        PacketRoleActive,
 		AssetRef:          input.request.AssetRef,
 		IssuanceID:        input.issuanceID,
 		AssetType:         input.assetType,
@@ -2131,32 +2141,32 @@ func customAnchorInputSummary(input customAnchorInputMaterial) (
 	}, nil
 }
 
-func customAnchorProofSource(input CustomAssetInput) (
-	CustomAnchorProofSourceSummary, error) {
+func customAnchorProofSource(input AssetInput) (
+	ProofSourceSummary, error) {
 
 	if input.ProofPath != nil {
 		contentID, err := input.ProofPath.ContentID()
 		if err != nil {
-			return CustomAnchorProofSourceSummary{}, fmt.Errorf(
+			return ProofSourceSummary{}, fmt.Errorf(
 				"proof path content ID: %w", err,
 			)
 		}
 		blob, err := input.ProofPath.MarshalBinary()
 		if err != nil {
-			return CustomAnchorProofSourceSummary{}, fmt.Errorf(
+			return ProofSourceSummary{}, fmt.Errorf(
 				"encode proof path: %w", err,
 			)
 		}
 
-		return CustomAnchorProofSourceSummary{
-			Kind:      CustomAnchorProofSourceCompactPath,
+		return ProofSourceSummary{
+			Kind:      ProofSourceCompactPath,
 			ContentID: contentID,
 			Blob:      blob,
 		}, nil
 	}
 
-	return CustomAnchorProofSourceSummary{
-		Kind: CustomAnchorProofSourceConfirmedFile,
+	return ProofSourceSummary{
+		Kind: ProofSourceConfirmedFile,
 		ContentID: customAnchorDigest(
 			customAnchorProofFileDigestDomain, input.ProofFile,
 		),
@@ -2166,9 +2176,9 @@ func customAnchorProofSource(input CustomAssetInput) (
 
 func mapCustomAnchorInputs(anchor *psbt.Packet,
 	inputs []customAnchorInputMaterial,
-	packets []*tappsbt.VPacket) ([]CustomAnchorAssetInputSummary, error) {
+	packets []*tappsbt.VPacket) ([]AssetInputSummary, error) {
 
-	result := make([]CustomAnchorAssetInputSummary, len(inputs))
+	result := make([]AssetInputSummary, len(inputs))
 	seen := make([]bool, len(inputs))
 	for packetIdx, packet := range packets {
 		for inputIdx, virtualInput := range packet.Inputs {
@@ -2217,9 +2227,9 @@ func mapCustomAnchorInputs(anchor *psbt.Packet,
 
 func mapCustomAnchorPassivePackets(anchor *psbt.Packet,
 	materials []customAnchorPassiveMaterial) (
-	[]CustomAnchorAssetInputSummary, []customAnchorPlannedOutput, error) {
+	[]AssetInputSummary, []customAnchorPlannedOutput, error) {
 
-	inputs := make([]CustomAnchorAssetInputSummary, len(materials))
+	inputs := make([]AssetInputSummary, len(materials))
 	outputs := make([]customAnchorPlannedOutput, len(materials))
 	for idx := range materials {
 		material := materials[idx]
@@ -2239,24 +2249,24 @@ func mapCustomAnchorPassivePackets(anchor *psbt.Packet,
 			return nil, nil, fmt.Errorf("passive packet %d anchor output is "+
 				"negative", idx)
 		}
-		scriptKey, err := ParsePubKey(
+		scriptKey, err := tapsdk.ParsePubKey(
 			material.proof.Asset.ScriptKey.PubKey.SerializeCompressed(),
 		)
 		if err != nil {
 			return nil, nil, err
 		}
-		proofSource := CustomAnchorProofSourceSummary{
-			Kind: CustomAnchorProofSourceConfirmedFile,
+		proofSource := ProofSourceSummary{
+			Kind: ProofSourceConfirmedFile,
 			ContentID: customAnchorDigest(
 				customAnchorProofFileDigestDomain,
 				material.request.ProofFile,
 			),
 			Blob: cloneBytes(material.request.ProofFile),
 		}
-		inputs[idx] = CustomAnchorAssetInputSummary{
+		inputs[idx] = AssetInputSummary{
 			LogicalInputID:    material.request.ID,
 			LogicalInputIndex: material.requestIndex,
-			PacketRole:        CustomAnchorPacketRolePassive,
+			PacketRole:        PacketRolePassive,
 			PacketIndex:       uint32(idx),
 			VirtualInputIndex: 0,
 			AnchorInputIndex:  uint32(anchorInput),
@@ -2271,7 +2281,7 @@ func mapCustomAnchorPassivePackets(anchor *psbt.Packet,
 		outputs[idx] = customAnchorPlannedOutput{
 			LogicalOutputID: material.request.ID,
 			RequestIndex:    material.requestIndex,
-			PacketRole:      CustomAnchorPacketRolePassive,
+			PacketRole:      PacketRolePassive,
 			PacketIndex:     uint32(idx),
 			VirtualOutput:   0,
 			AnchorOutput:    output.AnchorOutputIndex,
@@ -2281,8 +2291,8 @@ func mapCustomAnchorPassivePackets(anchor *psbt.Packet,
 			Amount:          output.Amount,
 			AnchorValueSat:  uint64(anchorValue),
 			ScriptKey:       scriptKey,
-			ScriptMode:      CustomAssetScriptUnspecified,
-			ProofDelivery: CustomAssetProofDelivery{
+			ScriptMode:      AssetScriptUnspecified,
+			ProofDelivery: AssetProofDelivery{
 				RecipientID: material.request.ProofDelivery.RecipientID,
 				CourierAddress: customAnchorProofCourierString(
 					output.ProofDeliveryAddress,
@@ -2343,8 +2353,8 @@ func findAnchorInput(packet *psbt.Packet, outpoint wire.OutPoint) int {
 	return -1
 }
 
-func outpointFromWire(outpoint wire.OutPoint) Outpoint {
-	return Outpoint{
+func outpointFromWire(outpoint wire.OutPoint) tapsdk.Outpoint {
+	return tapsdk.Outpoint{
 		Txid:  [32]byte(outpoint.Hash),
 		Index: outpoint.Index,
 	}
@@ -2453,12 +2463,12 @@ func cloneWitness(witness [][]byte) wire.TxWitness {
 	return result
 }
 
-func addCustomAnchorCheck(result *CustomAnchorVerificationResult,
-	code CustomAnchorVerificationCode, scope CustomAnchorVerificationScope,
-	origin CustomAnchorVerificationOrigin, inputIndex *uint32, outputID,
+func addCustomAnchorCheck(result *VerificationResult,
+	code VerificationCode, scope VerificationScope,
+	origin VerificationOrigin, inputIndex *uint32, outputID,
 	message string) {
 
-	result.Checks = append(result.Checks, CustomAnchorVerificationCheck{
+	result.Checks = append(result.Checks, VerificationCheck{
 		Code:       code,
 		Scope:      scope,
 		Origin:     origin,
@@ -2470,14 +2480,14 @@ func addCustomAnchorCheck(result *CustomAnchorVerificationResult,
 }
 
 func cloneCustomAnchorVerification(
-	result CustomAnchorVerificationResult) CustomAnchorVerificationResult {
+	result VerificationResult) VerificationResult {
 
-	clone := CustomAnchorVerificationResult{
+	clone := VerificationResult{
 		Checks: append(
-			[]CustomAnchorVerificationCheck(nil), result.Checks...,
+			[]VerificationCheck(nil), result.Checks...,
 		),
 		Issues: append(
-			[]CustomAnchorVerificationIssue(nil), result.Issues...,
+			[]VerificationIssue(nil), result.Issues...,
 		),
 	}
 	for idx := range clone.Checks {

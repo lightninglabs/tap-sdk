@@ -1,4 +1,4 @@
-package tapsdk
+package customanchor
 
 import (
 	"bytes"
@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/commitment"
 	"github.com/lightninglabs/taproot-assets/proof"
@@ -23,22 +24,22 @@ import (
 
 // customAnchorBuilderTestClient embeds Client so each test only needs to
 // implement the calls that are expected along the custom-anchor path. It does
-// not implement CustomAnchorCapabilityProvider; that distinction is used by
+// not implement CapabilityProvider; that distinction is used by
 // the fail-closed lifecycle test.
 type customAnchorBuilderTestClient struct {
-	Client
+	tapsdk.Client
 
-	verifyProof func(context.Context, []byte) (*VerifyProofResponse, error)
+	verifyProof func(context.Context, []byte) (*tapsdk.VerifyProofResponse, error)
 	signVirtual func(context.Context, []byte) ([]byte, error)
-	commit      func(context.Context, *CommitVirtualPsbtsRequest) (
-		*CommitVirtualPsbtsResponse, error)
-	publish func(context.Context, *PublishAndLogTransferRequest) (
-		*AssetPacket, error)
-	queryScriptKey func(context.Context, []byte) (*ScriptKey, error)
+	commit      func(context.Context, *tapsdk.CommitVirtualPsbtsRequest) (
+		*tapsdk.CommitVirtualPsbtsResponse, error)
+	publish func(context.Context, *tapsdk.PublishAndLogTransferRequest) (
+		*tapsdk.AssetPacket, error)
+	queryScriptKey func(context.Context, []byte) (*tapsdk.ScriptKey, error)
 }
 
 func (c *customAnchorBuilderTestClient) QueryScriptKey(ctx context.Context,
-	key []byte) (*ScriptKey, error) {
+	key []byte) (*tapsdk.ScriptKey, error) {
 
 	if c.queryScriptKey == nil {
 		panic("unexpected QueryScriptKey call")
@@ -48,7 +49,7 @@ func (c *customAnchorBuilderTestClient) QueryScriptKey(ctx context.Context,
 }
 
 func (c *customAnchorBuilderTestClient) VerifyProof(ctx context.Context,
-	raw []byte) (*VerifyProofResponse, error) {
+	raw []byte) (*tapsdk.VerifyProofResponse, error) {
 
 	if c.verifyProof == nil {
 		panic("unexpected VerifyProof call")
@@ -68,8 +69,8 @@ func (c *customAnchorBuilderTestClient) SignVirtualPsbt(ctx context.Context,
 }
 
 func (c *customAnchorBuilderTestClient) CommitVirtualPsbtsWithRequest(
-	ctx context.Context, req *CommitVirtualPsbtsRequest) (
-	*CommitVirtualPsbtsResponse, error) {
+	ctx context.Context, req *tapsdk.CommitVirtualPsbtsRequest) (
+	*tapsdk.CommitVirtualPsbtsResponse, error) {
 
 	if c.commit == nil {
 		panic("unexpected CommitVirtualPsbts call")
@@ -79,8 +80,8 @@ func (c *customAnchorBuilderTestClient) CommitVirtualPsbtsWithRequest(
 }
 
 func (c *customAnchorBuilderTestClient) PublishAndLogTransferWithRequest(
-	ctx context.Context, req *PublishAndLogTransferRequest) (
-	*AssetPacket, error) {
+	ctx context.Context, req *tapsdk.PublishAndLogTransferRequest) (
+	*tapsdk.AssetPacket, error) {
 
 	if c.publish == nil {
 		panic("unexpected PublishAndLogTransfer call")
@@ -89,15 +90,20 @@ func (c *customAnchorBuilderTestClient) PublishAndLogTransferWithRequest(
 	return c.publish(ctx, req)
 }
 
+// newTestTxBuilder returns a builder over a regtest wallet backed by client.
+func newTestTxBuilder(client tapsdk.Client) *TxBuilder {
+	return NewTxBuilder(tapsdk.NewWallet(client, tapsdk.NetworkRegtest))
+}
+
 type capableCustomAnchorBuilderTestClient struct {
 	*customAnchorBuilderTestClient
 
-	capabilities  *CustomAnchorCapabilities
+	capabilities  *Capabilities
 	capabilityErr error
 }
 
 func (c *capableCustomAnchorBuilderTestClient) CustomAnchorCapabilities(
-	context.Context) (*CustomAnchorCapabilities, error) {
+	context.Context) (*Capabilities, error) {
 
 	if c.capabilityErr != nil {
 		return nil, c.capabilityErr
@@ -111,7 +117,7 @@ func (c *capableCustomAnchorBuilderTestClient) CustomAnchorCapabilities(
 }
 
 type customAnchorBuilderFixture struct {
-	request        *CustomAnchorRequest
+	request        *Request
 	proofFile      []byte
 	inputProof     *proof.Proof
 	assetSpendKey  *btcec.PrivateKey
@@ -138,18 +144,17 @@ func TestCustomAnchorOutputCommitmentPreviewSupportsBackendSigning(
 		), nil
 	}
 	fixture.client.commit = func(_ context.Context,
-		req *CommitVirtualPsbtsRequest) (*CommitVirtualPsbtsResponse,
+		req *tapsdk.CommitVirtualPsbtsRequest) (*tapsdk.CommitVirtualPsbtsResponse,
 		error) {
 
 		return customAnchorTestCommitResponse(t, req), nil
 	}
-	capabilities := DefaultTapdCustomAnchorCapabilities()
+	capabilities := DefaultTapdCapabilities()
 	client := &capableCustomAnchorBuilderTestClient{
 		customAnchorBuilderTestClient: fixture.client,
 		capabilities:                  &capabilities,
 	}
-	plan, err := NewWallet(client, NetworkRegtest).
-		NewCustomAnchorTxBuilder().Build(
+	plan, err := newTestTxBuilder(client).Build(
 		context.Background(), fixture.request,
 	)
 	require.NoError(t, err)
@@ -174,7 +179,7 @@ func TestCustomAnchorOutputCommitmentPreviewSupportsBackendSigning(
 func TestCustomAnchorOutputCommitmentPreviewRejectsEmptyPlan(t *testing.T) {
 	t.Parallel()
 
-	_, err := (&CustomAnchorPlan{}).PreviewOutputCommitments()
+	_, err := (&Plan{}).PreviewOutputCommitments()
 	require.ErrorContains(t, err, "nil custom anchor plan")
 }
 
@@ -182,24 +187,23 @@ func TestCustomAnchorBuilderRequiresWalletFundingLock(t *testing.T) {
 	t.Parallel()
 
 	fixture := newCustomAnchorBuilderFixture(t)
-	feeRate, err := NewFeeRateSatPerVByte(2)
+	feeRate, err := tapsdk.NewFeeRateSatPerVByte(2)
 	require.NoError(t, err)
-	fixture.request.Funding = CustomAnchorFundingPlan{
-		Mode: CustomAnchorFundingWalletFunded,
-		WalletFunded: &CustomAnchorWalletFunding{
-			ChangeOutput: AnchorChangeOutput{
-				Mode: AnchorChangeOutputAdd,
+	fixture.request.Funding = FundingPlan{
+		Mode: FundingWalletFunded,
+		WalletFunded: &WalletFunding{
+			ChangeOutput: tapsdk.AnchorChangeOutput{
+				Mode: tapsdk.AnchorChangeOutputAdd,
 			},
-			Fee: AnchorFee{
-				Mode:    AnchorFeeSatPerVByte,
+			Fee: tapsdk.AnchorFee{
+				Mode:    tapsdk.AnchorFeeSatPerVByte,
 				FeeRate: feeRate,
 			},
 			MaxFeeSat: 10_000,
 		},
 	}
 
-	_, err = NewWallet(fixture.client, NetworkRegtest).
-		NewCustomAnchorTxBuilder().Build(
+	_, err = newTestTxBuilder(fixture.client).Build(
 		context.Background(), fixture.request,
 	)
 	require.ErrorContains(
@@ -242,8 +246,7 @@ func TestCustomAnchorBuilderRejectsInvalidP2AParentPolicy(t *testing.T) {
 			test.mutate(anchor)
 			fixture.request.AnchorPSBT = mustSerializeAnchorPSBT(t, anchor)
 
-			_, err := NewWallet(fixture.client, NetworkRegtest).
-				NewCustomAnchorTxBuilder().Build(
+			_, err := newTestTxBuilder(fixture.client).Build(
 				context.Background(), fixture.request,
 			)
 			require.ErrorContains(t, err, test.wantErr)
@@ -255,8 +258,8 @@ func TestCustomAnchorBuilderPreservesExactTemplate(t *testing.T) {
 	t.Parallel()
 
 	fixture := newCustomAnchorBuilderFixture(t)
-	wallet := NewWallet(fixture.client, NetworkRegtest)
-	builder := wallet.NewCustomAnchorTxBuilder()
+	wallet := tapsdk.NewWallet(fixture.client, tapsdk.NetworkRegtest)
+	builder := NewTxBuilder(wallet)
 
 	originalAnchor, err := decodeAnchorPSBT(fixture.request.AnchorPSBT)
 	require.NoError(t, err)
@@ -328,20 +331,19 @@ func TestCustomAnchorBuilderOPTrueSpendInfo(t *testing.T) {
 
 	fixture := newCustomAnchorBuilderFixture(t)
 	internalKey := testPrivateKey(t, 10)
-	fixture.request.Outputs[0].Script = CustomAssetScriptPlan{
-		Mode: CustomAssetScriptOPTrue,
-		OPTrue: &CustomAssetOPTrueScriptPlan{
-			InternalKey: KeyDescriptor{
+	fixture.request.Outputs[0].Script = AssetScriptPlan{
+		Mode: AssetScriptOPTrue,
+		OPTrue: &AssetOPTrueScriptPlan{
+			InternalKey: tapsdk.KeyDescriptor{
 				RawKeyBytes: mustCustomAnchorPubKey(
 					t, internalKey.PubKey(),
 				),
-				KeyLocator: KeyLocator{Family: 212, Index: 7},
+				KeyLocator: tapsdk.KeyLocator{Family: 212, Index: 7},
 			},
 		},
 	}
 
-	plan, err := NewWallet(fixture.client, NetworkRegtest).
-		NewCustomAnchorTxBuilder().Build(
+	plan, err := newTestTxBuilder(fixture.client).Build(
 		context.Background(), fixture.request,
 	)
 	require.NoError(t, err)
@@ -388,13 +390,13 @@ func TestCustomAnchorBuilderRejectsProofMismatches(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		mutateReq  func(*CustomAnchorRequest)
+		mutateReq  func(*Request)
 		mutateMock func(*customAnchorBuilderTestClient)
 		wantErr    string
 	}{
 		{
 			name: "local amount mismatch",
-			mutateReq: func(req *CustomAnchorRequest) {
+			mutateReq: func(req *Request) {
 				req.Inputs[0].Amount = 99
 				req.Outputs[0].Amount = 99
 			},
@@ -402,10 +404,10 @@ func TestCustomAnchorBuilderRejectsProofMismatches(t *testing.T) {
 		},
 		{
 			name: "local asset identity mismatch",
-			mutateReq: func(req *CustomAnchorRequest) {
-				var otherID AssetID
+			mutateReq: func(req *Request) {
+				var otherID tapsdk.AssetID
 				otherID[0] = 99
-				otherRef := AssetRefFromAssetID(otherID)
+				otherRef := tapsdk.AssetRefFromAssetID(otherID)
 				req.Inputs[0].AssetRef = otherRef
 				req.Outputs[0].AssetRef = otherRef
 			},
@@ -415,7 +417,7 @@ func TestCustomAnchorBuilderRejectsProofMismatches(t *testing.T) {
 			name: "backend verification error",
 			mutateMock: func(client *customAnchorBuilderTestClient) {
 				client.verifyProof = func(context.Context, []byte) (
-					*VerifyProofResponse, error) {
+					*tapsdk.VerifyProofResponse, error) {
 
 					return nil, fmt.Errorf("backend unavailable")
 				}
@@ -426,9 +428,9 @@ func TestCustomAnchorBuilderRejectsProofMismatches(t *testing.T) {
 			name: "backend invalid proof",
 			mutateMock: func(client *customAnchorBuilderTestClient) {
 				client.verifyProof = func(context.Context, []byte) (
-					*VerifyProofResponse, error) {
+					*tapsdk.VerifyProofResponse, error) {
 
-					return &VerifyProofResponse{}, nil
+					return &tapsdk.VerifyProofResponse{}, nil
 				}
 			},
 			wantErr: "proof chain is not valid",
@@ -437,13 +439,13 @@ func TestCustomAnchorBuilderRejectsProofMismatches(t *testing.T) {
 			name: "backend summary drift",
 			mutateMock: func(client *customAnchorBuilderTestClient) {
 				client.verifyProof = func(context.Context, []byte) (
-					*VerifyProofResponse, error) {
+					*tapsdk.VerifyProofResponse, error) {
 
-					var wrongID AssetID
+					var wrongID tapsdk.AssetID
 					wrongID[0] = 1
-					return &VerifyProofResponse{
+					return &tapsdk.VerifyProofResponse{
 						Valid: true,
-						DecodedProof: &DecodedProof{
+						DecodedProof: &tapsdk.DecodedProof{
 							IssuanceID: wrongID,
 							Amount:     100,
 						},
@@ -467,8 +469,8 @@ func TestCustomAnchorBuilderRejectsProofMismatches(t *testing.T) {
 				test.mutateMock(fixture.client)
 			}
 
-			wallet := NewWallet(fixture.client, NetworkRegtest)
-			_, err := wallet.NewCustomAnchorTxBuilder().Build(
+			wallet := tapsdk.NewWallet(fixture.client, tapsdk.NetworkRegtest)
+			_, err := NewTxBuilder(wallet).Build(
 				context.Background(), request,
 			)
 			require.ErrorContains(t, err, test.wantErr)
@@ -487,8 +489,7 @@ func TestCustomAnchorBuilderRejectsDuplicateConcreteInput(t *testing.T) {
 	request.Inputs = append(request.Inputs, duplicate)
 	request.Outputs[0].Amount *= 2
 
-	_, err := NewWallet(fixture.client, NetworkRegtest).
-		NewCustomAnchorTxBuilder().Build(context.Background(), request)
+	_, err := newTestTxBuilder(fixture.client).Build(context.Background(), request)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "duplicat")
 }
@@ -507,7 +508,7 @@ func TestCustomAnchorBuilderGroupedMultiIssuance(t *testing.T) {
 	)
 
 	groupPubKey := mustCustomAnchorPubKey(t, &groupKey.GroupPubKey)
-	groupRef := AssetRefFromGroupKey(groupPubKey)
+	groupRef := tapsdk.AssetRefFromGroupKey(groupPubKey)
 	anchorKey := testPrivateKey(t, 40)
 	assetOutputKey := customAnchorExternalScriptKey(
 		t, testPrivateKey(t, 41),
@@ -519,15 +520,15 @@ func TestCustomAnchorBuilderGroupedMultiIssuance(t *testing.T) {
 			{Value: 500, PkScript: []byte{txscript.OP_TRUE}},
 			{Value: 999, PkScript: []byte{txscript.OP_FALSE}},
 		})
-	request := &CustomAnchorRequest{
-		Inputs: []CustomAssetInput{
+	request := &Request{
+		Inputs: []AssetInput{
 			{
 				ID:        "issuance-one",
 				AssetRef:  groupRef,
 				Amount:    40,
 				ProofFile: proofOne,
-				Witness: CustomAssetWitnessPlan{
-					Mode: CustomAssetWitnessBackendSigner,
+				Witness: AssetWitnessPlan{
+					Mode: AssetWitnessBackendSigner,
 				},
 			},
 			{
@@ -535,25 +536,25 @@ func TestCustomAnchorBuilderGroupedMultiIssuance(t *testing.T) {
 				AssetRef:  groupRef,
 				Amount:    60,
 				ProofFile: proofTwo,
-				Witness: CustomAssetWitnessPlan{
-					Mode: CustomAssetWitnessBackendSigner,
+				Witness: AssetWitnessPlan{
+					Mode: AssetWitnessBackendSigner,
 				},
 			},
 		},
-		Outputs: []CustomAssetOutput{{
+		Outputs: []AssetOutput{{
 			ID:                "group-receiver",
 			AssetRef:          groupRef,
 			Amount:            100,
 			AnchorOutputIndex: 1,
 			AnchorValueSat:    999,
-			Script: CustomAssetScriptPlan{
-				Mode: CustomAssetScriptExternal,
-				External: &CustomAssetExternalScriptPlan{
+			Script: AssetScriptPlan{
+				Mode: AssetScriptExternal,
+				External: &AssetExternalScriptPlan{
 					ScriptKey: assetOutputKey,
 				},
 			},
-			Anchor: CustomAnchorOutputPlan{
-				InternalKey: InternalKey{
+			Anchor: OutputPlan{
+				InternalKey: tapsdk.InternalKey{
 					PubKey: mustCustomAnchorPubKey(
 						t, anchorKey.PubKey(),
 					),
@@ -561,17 +562,17 @@ func TestCustomAnchorBuilderGroupedMultiIssuance(t *testing.T) {
 			},
 		}},
 		AnchorPSBT: anchor,
-		Funding: CustomAnchorFundingPlan{
-			Mode:              CustomAnchorFundingCallerFundedExact,
-			CallerFundedExact: &CustomAnchorCallerFundedExact{},
+		Funding: FundingPlan{
+			Mode:              FundingCallerFundedExact,
+			CallerFundedExact: &CallerFundedExact{},
 		},
-		PassiveAssets: CustomAnchorPassiveAssets{
-			Policy: CustomAnchorPassiveReject,
+		PassiveAssets: PassiveAssets{
+			Policy: PassiveReject,
 		},
-		SigningPlans: []CustomAnchorInputSigningPlan{
+		SigningPlans: []InputSigningPlan{
 			{
 				InputIndex: 0,
-				KeyPath: &CustomAnchorKeyPathSigningPlan{
+				KeyPath: &KeyPathSigningPlan{
 					Signer: mustCustomAnchorXOnly(
 						t, testPrivateKey(t, 7).PubKey(),
 					),
@@ -579,7 +580,7 @@ func TestCustomAnchorBuilderGroupedMultiIssuance(t *testing.T) {
 			},
 			{
 				InputIndex: 1,
-				KeyPath: &CustomAnchorKeyPathSigningPlan{
+				KeyPath: &KeyPathSigningPlan{
 					Signer: mustCustomAnchorXOnly(
 						t, testPrivateKey(t, 81).PubKey(),
 					),
@@ -587,7 +588,7 @@ func TestCustomAnchorBuilderGroupedMultiIssuance(t *testing.T) {
 			},
 			{
 				InputIndex: 2,
-				KeyPath: &CustomAnchorKeyPathSigningPlan{
+				KeyPath: &KeyPathSigningPlan{
 					Signer: mustCustomAnchorXOnly(
 						t, testPrivateKey(t, 82).PubKey(),
 					),
@@ -599,7 +600,7 @@ func TestCustomAnchorBuilderGroupedMultiIssuance(t *testing.T) {
 	client := &customAnchorBuilderTestClient{
 		verifyProof: customAnchorSuccessfulProofVerification,
 		queryScriptKey: func(_ context.Context,
-			key []byte) (*ScriptKey, error) {
+			key []byte) (*tapsdk.ScriptKey, error) {
 
 			for _, privateKey := range []*btcec.PrivateKey{
 				spendOne, spendTwo,
@@ -622,8 +623,7 @@ func TestCustomAnchorBuilderGroupedMultiIssuance(t *testing.T) {
 			return nil, fmt.Errorf("unknown grouped script key")
 		},
 	}
-	plan, err := NewWallet(client, NetworkRegtest).
-		NewCustomAnchorTxBuilder().Build(context.Background(), request)
+	plan, err := newTestTxBuilder(client).Build(context.Background(), request)
 	require.NoError(t, err)
 	require.Len(t, plan.ActiveVirtualPSBTs(), 2)
 
@@ -678,17 +678,19 @@ func TestCustomAnchorBuilderGroupedMultiIssuance(t *testing.T) {
 		}
 	}
 	client.commit = func(_ context.Context,
-		req *CommitVirtualPsbtsRequest) (*CommitVirtualPsbtsResponse, error) {
+		req *tapsdk.CommitVirtualPsbtsRequest) (
+		*tapsdk.CommitVirtualPsbtsResponse, error) {
 
 		return customAnchorTestCommitResponse(t, req), nil
 	}
-	capabilities := DefaultTapdCustomAnchorCapabilities()
+	capabilities := DefaultTapdCapabilities()
 	capableClient := &capableCustomAnchorBuilderTestClient{
 		customAnchorBuilderTestClient: client,
 		capabilities:                  &capabilities,
 	}
-	committedPlan, err := NewWallet(capableClient, NetworkRegtest).
-		NewCustomAnchorTxBuilder().Build(context.Background(), request)
+	committedPlan, err := newTestTxBuilder(capableClient).Build(
+		context.Background(), request,
+	)
 	require.NoError(t, err)
 	packageSnapshot, err := committedPlan.Commit(context.Background())
 	require.NoError(t, err)
@@ -696,7 +698,7 @@ func TestCustomAnchorBuilderGroupedMultiIssuance(t *testing.T) {
 	require.Len(t, packageSnapshot.ActiveVirtualPsbts, 2)
 	require.Len(t, packageSnapshot.Outputs, 2)
 	require.Len(t, packageSnapshot.ProofUpdates, 2)
-	packageIssuances := make(map[AssetID]struct{})
+	packageIssuances := make(map[tapsdk.AssetID]struct{})
 	for idx, output := range packageSnapshot.Outputs {
 		packageIssuances[output.IssuanceID] = struct{}{}
 		require.Equal(t, "group-receiver", output.LogicalOutputID)
@@ -717,7 +719,7 @@ func TestCustomAnchorBuilderGroupedMultiIssuance(t *testing.T) {
 	// A concrete asset-ID ref can select one issuance from a fungible group
 	// without silently expanding to the entire group.
 	concreteRequest := request.Clone()
-	concreteRef := AssetRefFromAssetID(AssetID(first.Asset.ID()))
+	concreteRef := tapsdk.AssetRefFromAssetID(tapsdk.AssetID(first.Asset.ID()))
 	concreteRequest.Inputs = concreteRequest.Inputs[:1]
 	concreteRequest.Inputs[0].AssetRef = concreteRef
 	concreteRequest.Outputs[0].AssetRef = concreteRef
@@ -730,8 +732,7 @@ func TestCustomAnchorBuilderGroupedMultiIssuance(t *testing.T) {
 		},
 	)
 	concreteRequest.SigningPlans = concreteRequest.SigningPlans[:2]
-	concretePlan, err := NewWallet(capableClient, NetworkRegtest).
-		NewCustomAnchorTxBuilder().Build(
+	concretePlan, err := newTestTxBuilder(capableClient).Build(
 		context.Background(), concreteRequest,
 	)
 	require.NoError(t, err)
@@ -767,8 +768,7 @@ func TestCustomAnchorBuilderGroupedMultiIssuance(t *testing.T) {
 			{Value: 888, PkScript: []byte{txscript.OP_FALSE}},
 		},
 	)
-	crossPlan, err := NewWallet(client, NetworkRegtest).
-		NewCustomAnchorTxBuilder().Build(
+	crossPlan, err := newTestTxBuilder(client).Build(
 		context.Background(), crossRequest,
 	)
 	require.NoError(t, err)
@@ -783,18 +783,17 @@ func TestCustomAnchorBuilderGroupedMultiIssuance(t *testing.T) {
 	// issuance because the hidden sibling leaf contains that issuance ID.
 	opTrueRequest := request.Clone()
 	opTrueInternalKey := testPrivateKey(t, 42)
-	opTrueRequest.Outputs[0].Script = CustomAssetScriptPlan{
-		Mode: CustomAssetScriptOPTrue,
-		OPTrue: &CustomAssetOPTrueScriptPlan{
-			InternalKey: KeyDescriptor{
+	opTrueRequest.Outputs[0].Script = AssetScriptPlan{
+		Mode: AssetScriptOPTrue,
+		OPTrue: &AssetOPTrueScriptPlan{
+			InternalKey: tapsdk.KeyDescriptor{
 				RawKeyBytes: mustCustomAnchorPubKey(
 					t, opTrueInternalKey.PubKey(),
 				),
 			},
 		},
 	}
-	opTruePlan, err := NewWallet(client, NetworkRegtest).
-		NewCustomAnchorTxBuilder().Build(
+	opTruePlan, err := newTestTxBuilder(client).Build(
 		context.Background(), opTrueRequest,
 	)
 	require.NoError(t, err)
@@ -814,8 +813,7 @@ func TestCustomAnchorBuilderGroupedMultiIssuance(t *testing.T) {
 	burnRequest := request.Clone()
 	burnRequest.Outputs[0].Script = customAnchorBurnScript()
 	burnRequest.LossPolicy = customAnchorLossPolicy(groupRef, 100)
-	burnPlan, err := NewWallet(client, NetworkRegtest).
-		NewCustomAnchorTxBuilder().Build(
+	burnPlan, err := newTestTxBuilder(client).Build(
 		context.Background(), burnRequest,
 	)
 	require.NoError(t, err)
@@ -849,18 +847,18 @@ func TestCustomAnchorBuilderCreatesProtocolBurn(t *testing.T) {
 		), nil
 	}
 	fixture.client.commit = func(_ context.Context,
-		req *CommitVirtualPsbtsRequest) (*CommitVirtualPsbtsResponse, error) {
+		req *tapsdk.CommitVirtualPsbtsRequest) (
+		*tapsdk.CommitVirtualPsbtsResponse, error) {
 
 		return customAnchorTestCommitResponse(t, req), nil
 	}
-	capabilities := DefaultTapdCustomAnchorCapabilities()
+	capabilities := DefaultTapdCapabilities()
 	client := &capableCustomAnchorBuilderTestClient{
 		customAnchorBuilderTestClient: fixture.client,
 		capabilities:                  &capabilities,
 	}
 
-	plan, err := NewWallet(client, NetworkRegtest).
-		NewCustomAnchorTxBuilder().Build(
+	plan, err := newTestTxBuilder(client).Build(
 		context.Background(), fixture.request,
 	)
 	require.NoError(t, err)
@@ -873,7 +871,7 @@ func TestCustomAnchorBuilderCreatesProtocolBurn(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, packageSnapshot.Validate())
 	require.Len(t, packageSnapshot.Outputs, 1)
-	require.Equal(t, CustomAssetScriptBurn,
+	require.Equal(t, AssetScriptBurn,
 		packageSnapshot.Outputs[0].ScriptMode)
 	committedPacket, err := tappsbt.Decode(
 		packageSnapshot.ActiveVirtualPsbts[0],
@@ -900,32 +898,32 @@ func newCustomAnchorBuilderFixture(t *testing.T) *customAnchorBuilderFixture {
 	)
 
 	outputInternalKey := testPrivateKey(t, 8)
-	request := &CustomAnchorRequest{
-		Inputs: []CustomAssetInput{{
+	request := &Request{
+		Inputs: []AssetInput{{
 			ID:        "asset-input",
 			AssetRef:  assetRef,
 			Amount:    inputProof.Asset.Amount,
 			ProofFile: proofFile,
-			Witness: CustomAssetWitnessPlan{
-				Mode: CustomAssetWitnessBackendSigner,
+			Witness: AssetWitnessPlan{
+				Mode: AssetWitnessBackendSigner,
 			},
 		}},
-		Outputs: []CustomAssetOutput{{
+		Outputs: []AssetOutput{{
 			ID:                "asset-output",
 			AssetRef:          assetRef,
 			Amount:            inputProof.Asset.Amount,
 			AnchorOutputIndex: 1,
 			AnchorValueSat:    777,
-			Script: CustomAssetScriptPlan{
-				Mode: CustomAssetScriptExternal,
-				External: &CustomAssetExternalScriptPlan{
+			Script: AssetScriptPlan{
+				Mode: AssetScriptExternal,
+				External: &AssetExternalScriptPlan{
 					ScriptKey: customAnchorExternalScriptKey(
 						t, testPrivateKey(t, 9),
 					),
 				},
 			},
-			Anchor: CustomAnchorOutputPlan{
-				InternalKey: InternalKey{
+			Anchor: OutputPlan{
+				InternalKey: tapsdk.InternalKey{
 					PubKey: mustCustomAnchorPubKey(
 						t, outputInternalKey.PubKey(),
 					),
@@ -933,19 +931,19 @@ func newCustomAnchorBuilderFixture(t *testing.T) *customAnchorBuilderFixture {
 			},
 		}},
 		AnchorPSBT: anchor,
-		Funding: CustomAnchorFundingPlan{
-			Mode: CustomAnchorFundingExternalP2AFeeBump,
-			ExternalP2AFeeBump: &CustomAnchorExternalP2AFeeBump{
+		Funding: FundingPlan{
+			Mode: FundingExternalP2AFeeBump,
+			ExternalP2AFeeBump: &ExternalP2AFeeBump{
 				P2AOutputIndex: 2,
 			},
 		},
-		PassiveAssets: CustomAnchorPassiveAssets{
-			Policy: CustomAnchorPassiveReject,
+		PassiveAssets: PassiveAssets{
+			Policy: PassiveReject,
 		},
-		SigningPlans: []CustomAnchorInputSigningPlan{
+		SigningPlans: []InputSigningPlan{
 			{
 				InputIndex: 0,
-				KeyPath: &CustomAnchorKeyPathSigningPlan{
+				KeyPath: &KeyPathSigningPlan{
 					Signer: mustCustomAnchorXOnly(
 						t, btcInputKey.PubKey(),
 					),
@@ -953,7 +951,7 @@ func newCustomAnchorBuilderFixture(t *testing.T) *customAnchorBuilderFixture {
 			},
 			{
 				InputIndex: 1,
-				KeyPath: &CustomAnchorKeyPathSigningPlan{
+				KeyPath: &KeyPathSigningPlan{
 					Signer: mustCustomAnchorXOnly(
 						t, inputProof.InclusionProof.InternalKey,
 					),
@@ -965,7 +963,7 @@ func newCustomAnchorBuilderFixture(t *testing.T) *customAnchorBuilderFixture {
 	client := &customAnchorBuilderTestClient{
 		verifyProof: customAnchorSuccessfulProofVerification,
 		queryScriptKey: func(_ context.Context,
-			key []byte) (*ScriptKey, error) {
+			key []byte) (*tapsdk.ScriptKey, error) {
 
 			resolved := customAnchorExternalScriptKey(t, assetSpendKey)
 			require.Equal(t, schnorr.SerializePubKey(
@@ -987,7 +985,7 @@ func newCustomAnchorBuilderFixture(t *testing.T) *customAnchorBuilderFixture {
 }
 
 func customAnchorSuccessfulProofVerification(_ context.Context, raw []byte) (
-	*VerifyProofResponse, error) {
+	*tapsdk.VerifyProofResponse, error) {
 
 	file, err := proof.DecodeFile(raw)
 	if err != nil {
@@ -1001,16 +999,16 @@ func customAnchorSuccessfulProofVerification(_ context.Context, raw []byte) (
 	if err != nil {
 		return nil, err
 	}
-	scriptKey, err := ParsePubKey(
+	scriptKey, err := tapsdk.ParsePubKey(
 		lastProof.Asset.ScriptKey.PubKey.SerializeCompressed(),
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	return &VerifyProofResponse{
+	return &tapsdk.VerifyProofResponse{
 		Valid: true,
-		DecodedProof: &DecodedProof{
+		DecodedProof: &tapsdk.DecodedProof{
 			AssetRef:   ref,
 			IssuanceID: issuanceID,
 			ScriptKey:  scriptKey,
@@ -1092,29 +1090,31 @@ func customAnchorCallerTemplate(t *testing.T, assetProofs []*proof.Proof,
 }
 
 func customAnchorExternalScriptKey(t *testing.T,
-	privateKey *btcec.PrivateKey) ScriptKey {
+	privateKey *btcec.PrivateKey) tapsdk.ScriptKey {
 
 	t.Helper()
 	rawKey := privateKey.PubKey()
 	outputKey := txscript.ComputeTaprootKeyNoScript(rawKey)
 
-	return ScriptKey{
+	return tapsdk.ScriptKey{
 		PubKey: mustCustomAnchorPubKey(t, outputKey),
-		KeyDesc: KeyDescriptor{
+		KeyDesc: tapsdk.KeyDescriptor{
 			RawKeyBytes: mustCustomAnchorPubKey(t, rawKey),
 		},
 	}
 }
 
-func mustCustomAnchorPubKey(t *testing.T, key *btcec.PublicKey) PubKey {
+func mustCustomAnchorPubKey(t *testing.T, key *btcec.PublicKey) tapsdk.PubKey {
 	t.Helper()
 
-	parsed, err := ParsePubKey(key.SerializeCompressed())
+	parsed, err := tapsdk.ParsePubKey(key.SerializeCompressed())
 	require.NoError(t, err)
 	return parsed
 }
 
-func mustParseCustomAnchorPubKey(t *testing.T, key PubKey) *btcec.PublicKey {
+func mustParseCustomAnchorPubKey(t *testing.T,
+	key tapsdk.PubKey) *btcec.PublicKey {
+
 	t.Helper()
 
 	parsed, err := btcec.ParsePubKey(key[:])
@@ -1122,10 +1122,12 @@ func mustParseCustomAnchorPubKey(t *testing.T, key PubKey) *btcec.PublicKey {
 	return parsed
 }
 
-func mustCustomAnchorXOnly(t *testing.T, key *btcec.PublicKey) XOnlyPubKey {
+func mustCustomAnchorXOnly(t *testing.T,
+	key *btcec.PublicKey) tapsdk.XOnlyPubKey {
+
 	t.Helper()
 
-	var result XOnlyPubKey
+	var result tapsdk.XOnlyPubKey
 	copy(result[:], schnorr.SerializePubKey(key))
 	return result
 }

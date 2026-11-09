@@ -1,4 +1,4 @@
-package tapsdk
+package customanchor
 
 import (
 	"bytes"
@@ -7,6 +7,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/wire/v2"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/proof"
 	"github.com/stretchr/testify/require"
 )
@@ -42,9 +43,9 @@ func TestConfirmProofFile(t *testing.T) {
 	t.Parallel()
 
 	fixture := newAssetProofPathFixture(t)
-	path := &AssetProofPath{
+	path := &ProofPath{
 		ConfirmedBaseProof: fixture.baseProofFile,
-		Steps: []AssetProofPathStep{{
+		Steps: []ProofPathStep{{
 			TransitionProof: fixture.transitionProof,
 		}},
 	}
@@ -55,8 +56,8 @@ func TestConfirmProofFile(t *testing.T) {
 
 	anchorTx := &fixture.transition.AnchorTx
 	anchorTxid := anchorTx.TxHash()
-	confirmations := map[Hash]AnchorConfirmation{
-		Hash(anchorTxid): {
+	confirmations := map[tapsdk.Hash]AnchorConfirmation{
+		tapsdk.Hash(anchorTxid): {
 			BlockHeight: 321,
 			Block:       confirmationBlockFor(t, anchorTx),
 		},
@@ -84,11 +85,11 @@ func TestConfirmProofFileMergeEmbedsCoInputs(t *testing.T) {
 	t.Parallel()
 
 	fixture := newAssetProofPathMergeFixture(t)
-	path := &AssetProofPath{
+	path := &ProofPath{
 		ConfirmedBaseProof: fixture.firstBaseFile,
-		Steps: []AssetProofPathStep{{
+		Steps: []ProofPathStep{{
 			TransitionProof: fixture.transitionProof,
-			CoInputPaths: []*AssetProofPath{{
+			CoInputPaths: []*ProofPath{{
 				ConfirmedBaseProof: fixture.secondBaseFile,
 			}},
 		}},
@@ -99,8 +100,8 @@ func TestConfirmProofFileMergeEmbedsCoInputs(t *testing.T) {
 	require.NoError(t, err)
 	anchorTxid := transition.AnchorTx.TxHash()
 
-	encoded, err := path.ConfirmProofFile(map[Hash]AnchorConfirmation{
-		Hash(anchorTxid): {
+	encoded, err := path.ConfirmProofFile(map[tapsdk.Hash]AnchorConfirmation{
+		tapsdk.Hash(anchorTxid): {
 			BlockHeight: 99,
 			Block: confirmationBlockFor(
 				t, &transition.AnchorTx,
@@ -148,15 +149,15 @@ func TestConfirmProofFileConfirmsCoInputPaths(t *testing.T) {
 	mergeBytes, err := mergeTransition.Bytes()
 	require.NoError(t, err)
 
-	path := &AssetProofPath{
+	path := &ProofPath{
 		ConfirmedBaseProof: firstFile,
-		Steps: []AssetProofPathStep{
+		Steps: []ProofPathStep{
 			{TransitionProof: spineBytes},
 			{
 				TransitionProof: mergeBytes,
-				CoInputPaths: []*AssetProofPath{{
+				CoInputPaths: []*ProofPath{{
 					ConfirmedBaseProof: secondFile,
-					Steps: []AssetProofPathStep{{
+					Steps: []ProofPathStep{{
 						TransitionProof: coBytes,
 					}},
 				}},
@@ -165,20 +166,20 @@ func TestConfirmProofFileConfirmsCoInputPaths(t *testing.T) {
 	}
 	require.NoError(t, path.Validate())
 
-	confirmations := map[Hash]AnchorConfirmation{
-		Hash(spineTransition.AnchorTx.TxHash()): {
+	confirmations := map[tapsdk.Hash]AnchorConfirmation{
+		tapsdk.Hash(spineTransition.AnchorTx.TxHash()): {
 			BlockHeight: 210,
 			Block: confirmationBlockFor(
 				t, &spineTransition.AnchorTx,
 			),
 		},
-		Hash(coTransition.AnchorTx.TxHash()): {
+		tapsdk.Hash(coTransition.AnchorTx.TxHash()): {
 			BlockHeight: 211,
 			Block: confirmationBlockFor(
 				t, &coTransition.AnchorTx,
 			),
 		},
-		Hash(mergeTransition.AnchorTx.TxHash()): {
+		tapsdk.Hash(mergeTransition.AnchorTx.TxHash()): {
 			BlockHeight: 212,
 			Block: confirmationBlockFor(
 				t, &mergeTransition.AnchorTx,
@@ -225,9 +226,9 @@ func TestConfirmProofFileFailsClosed(t *testing.T) {
 	t.Parallel()
 
 	fixture := newAssetProofPathFixture(t)
-	path := &AssetProofPath{
+	path := &ProofPath{
 		ConfirmedBaseProof: fixture.baseProofFile,
-		Steps: []AssetProofPathStep{{
+		Steps: []ProofPathStep{{
 			TransitionProof: fixture.transitionProof,
 		}},
 	}
@@ -241,8 +242,8 @@ func TestConfirmProofFileFailsClosed(t *testing.T) {
 	stranger := wire.NewMsgTx(2)
 	stranger.AddTxIn(&wire.TxIn{})
 	stranger.AddTxOut(&wire.TxOut{Value: 1, PkScript: []byte{0x51}})
-	_, err = path.ConfirmProofFile(map[Hash]AnchorConfirmation{
-		Hash(anchorTxid): {
+	_, err = path.ConfirmProofFile(map[tapsdk.Hash]AnchorConfirmation{
+		tapsdk.Hash(anchorTxid): {
 			BlockHeight: 1,
 			Block:       confirmationBlockFor(t, stranger),
 		},
@@ -250,7 +251,7 @@ func TestConfirmProofFileFailsClosed(t *testing.T) {
 	require.ErrorContains(t, err, "not in the supplied block")
 
 	// A path without steps is already a confirmed file.
-	stepless := &AssetProofPath{
+	stepless := &ProofPath{
 		ConfirmedBaseProof: fixture.baseProofFile,
 	}
 	encoded, err := stepless.ConfirmProofFile(nil)

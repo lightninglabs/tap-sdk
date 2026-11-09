@@ -2,6 +2,8 @@ package tapsdk
 
 import "context"
 
+const unknownString = "unknown"
+
 // The mint entities in this file include the high-level issuer specs and the
 // low-level batch minting types exposed by MintClient.
 

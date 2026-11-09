@@ -16,6 +16,7 @@ import (
 type Wallet struct {
 	client Client
 
+	network                 Network
 	networkHRP              string
 	coinType                uint32
 	defaultProofCourierAddr string
@@ -56,13 +57,14 @@ func WithAuthMailboxCourier(host string) WalletOption {
 func NewWallet(client Client, network Network,
 	opts ...WalletOption) *Wallet {
 
-	networkHRP, coinType, err := getNetworkParams(network)
+	networkHRP, coinType, err := vpsbt.NetworkParams(string(network))
 	if err != nil {
 		panic(err)
 	}
 
 	wallet := &Wallet{
 		client:     client,
+		network:    network,
 		networkHRP: networkHRP,
 		coinType:   coinType,
 	}
@@ -94,27 +96,9 @@ func (s *Wallet) Client() Client {
 	return s.client
 }
 
-// CustomAnchorCapabilities reports the optional capability profile exposed by
-// the configured client. tapd does not currently expose a capability RPC, so a
-// client that doesn't implement CustomAnchorCapabilityProvider returns an
-// all-unknown profile. Unknown capabilities fail closed when Require is used.
-func (s *Wallet) CustomAnchorCapabilities(
-	ctx context.Context) (*CustomAnchorCapabilities, error) {
-
-	provider, ok := s.client.(CustomAnchorCapabilityProvider)
-	if !ok {
-		return &CustomAnchorCapabilities{}, nil
-	}
-
-	caps, err := provider.CustomAnchorCapabilities(ctx)
-	if err != nil {
-		return nil, wrapErr("CustomAnchorCapabilities", err)
-	}
-	if caps == nil {
-		return &CustomAnchorCapabilities{}, nil
-	}
-
-	return caps, nil
+// Network returns the network the wallet was created for.
+func (s *Wallet) Network() Network {
+	return s.network
 }
 
 // Close releases resources held by the underlying client.
@@ -1102,24 +1086,4 @@ func validateSingleAssetSendBatch(addrs []*Address) error {
 	}
 
 	return nil
-}
-
-// getNetworkParams returns the HRP and coin type for a given network.
-func getNetworkParams(network Network) (string, uint32, error) {
-	switch network {
-	case NetworkMainnet:
-		return vpsbt.MainnetHRP, 0, nil
-	case NetworkTestnet:
-		return vpsbt.TestnetHRP, 1, nil
-	case NetworkTestnet4:
-		return vpsbt.Testnet4HRP, 1, nil
-	case NetworkSignet:
-		return vpsbt.SigNetHRP, 1, nil
-	case NetworkSimnet:
-		return vpsbt.SimNetHRP, 1, nil
-	case NetworkRegtest:
-		return vpsbt.RegTestHRP, 1, nil
-	default:
-		return "", 0, fmt.Errorf("unsupported network: %s", network)
-	}
 }

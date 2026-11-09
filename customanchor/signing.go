@@ -1,4 +1,4 @@
-package tapsdk
+package customanchor
 
 import (
 	"bytes"
@@ -12,163 +12,164 @@ import (
 	btcpsbt "github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 )
 
 var customAnchorSigningRequestDomain = []byte(
 	"tap-sdk/custom-anchor/signing-request/v1",
 )
 
-// CustomAnchorSigningMode identifies the selected external anchor input spend
+// SigningMode identifies the selected external anchor input spend
 // path.
-type CustomAnchorSigningMode uint8
+type SigningMode uint8
 
 const (
-	// CustomAnchorSigningModeUnknown is not a valid signing plan.
-	CustomAnchorSigningModeUnknown CustomAnchorSigningMode = iota
+	// SigningModeUnknown is not a valid signing plan.
+	SigningModeUnknown SigningMode = iota
 
-	// CustomAnchorSigningModeKeyPath selects a single-signer Taproot key
+	// SigningModeKeyPath selects a single-signer Taproot key
 	// spend.
-	CustomAnchorSigningModeKeyPath
+	SigningModeKeyPath
 
-	// CustomAnchorSigningModeMuSig2 selects a final aggregate MuSig2
+	// SigningModeMuSig2 selects a final aggregate MuSig2
 	// Taproot key spend.
-	CustomAnchorSigningModeMuSig2
+	SigningModeMuSig2
 
-	// CustomAnchorSigningModeScriptPath selects one exact Taproot leaf.
-	CustomAnchorSigningModeScriptPath
+	// SigningModeScriptPath selects one exact Taproot leaf.
+	SigningModeScriptPath
 )
 
-// CustomAnchorInputSigningPlan selects exactly one external spending path for
+// InputSigningPlan selects exactly one external spending path for
 // one committed anchor input. Pointer variants model a tagged union; callers
 // must set exactly one variant.
-type CustomAnchorInputSigningPlan struct {
+type InputSigningPlan struct {
 	// InputIndex is the input in the committed anchor transaction.
 	InputIndex uint32 `json:"input_index"`
 
 	// KeyPath selects a single-signer Taproot key spend.
-	KeyPath *CustomAnchorKeyPathSigningPlan `json:"key_path,omitempty"`
+	KeyPath *KeyPathSigningPlan `json:"key_path,omitempty"`
 
 	// MuSig2 selects a final aggregate MuSig2 Taproot key spend.
-	MuSig2 *CustomAnchorMuSig2SigningPlan `json:"musig2,omitempty"`
+	MuSig2 *MuSig2SigningPlan `json:"musig2,omitempty"`
 
 	// ScriptPath selects one exact Taproot leaf spend.
-	ScriptPath *CustomAnchorScriptPathSigningPlan `json:"script_path,omitempty"`
+	ScriptPath *ScriptPathSigningPlan `json:"script_path,omitempty"`
 
 	// CallerSigned declares an input whose witness the caller supplies
 	// out of band. The SDK derives no signing request and the backend
 	// must not sign it.
-	CallerSigned *CustomAnchorCallerSignedPlan `json:"caller_signed,omitempty"`
+	CallerSigned *CallerSignedPlan `json:"caller_signed,omitempty"`
 }
 
-// CustomAnchorKeyPathSigningPlan identifies the internal key that must
+// KeyPathSigningPlan identifies the internal key that must
 // authorize a single-signer Taproot key spend.
-type CustomAnchorKeyPathSigningPlan struct {
+type KeyPathSigningPlan struct {
 	// Signer is the x-only internal key controlled by the signer.
-	Signer XOnlyPubKey `json:"signer"`
+	Signer tapsdk.XOnlyPubKey `json:"signer"`
 }
 
-// CustomAnchorMuSig2SigningPlan identifies an ordered MuSig2 participant set.
+// MuSig2SigningPlan identifies an ordered MuSig2 participant set.
 // Participant order is significant and is preserved in the signing request.
-type CustomAnchorMuSig2SigningPlan struct {
+type MuSig2SigningPlan struct {
 	// Participants are the ordered 33-byte compressed keys used for key
 	// aggregation. Full keys preserve Y parity, so any cosigner key can
 	// participate; callers whose aggregation sorts keys declare them
 	// pre-sorted.
-	Participants []PubKey `json:"participants"`
+	Participants []tapsdk.PubKey `json:"participants"`
 
 	// SessionContext is caller-defined public context used to distinguish
 	// signing sessions. It must never contain a secret nonce.
 	SessionContext []byte `json:"session_context"`
 }
 
-// CustomAnchorCallerSignedPlan declares an anchor input signed entirely by
+// CallerSignedPlan declares an anchor input signed entirely by
 // the caller, outside the SDK's signing-request flow: typically a funding
 // input from the caller's own on-chain wallet on a caller-funded anchor.
-type CustomAnchorCallerSignedPlan struct{}
+type CallerSignedPlan struct{}
 
-// CustomAnchorScriptPathSigningPlan identifies one exact committed Taproot
+// ScriptPathSigningPlan identifies one exact committed Taproot
 // leaf and any external keys expected to contribute witness signatures. The
 // first implementation rejects leaves containing OP_CODESEPARATOR and final
 // witnesses containing an annex.
-type CustomAnchorScriptPathSigningPlan struct {
+type ScriptPathSigningPlan struct {
 	// LeafHash is the TapLeaf hash of the selected script path.
-	LeafHash Hash `json:"leaf_hash"`
+	LeafHash tapsdk.Hash `json:"leaf_hash"`
 
 	// RequiredSigners are the x-only keys expected to contribute witness
 	// signatures. An OP_TRUE-style leaf can leave this empty.
-	RequiredSigners []XOnlyPubKey `json:"required_signers,omitempty"`
+	RequiredSigners []tapsdk.XOnlyPubKey `json:"required_signers,omitempty"`
 }
 
-// CustomAnchorSigningRequests groups the typed requests derived from a sealed
+// SigningRequests groups the typed requests derived from a sealed
 // package and its explicit per-input signing plans.
-type CustomAnchorSigningRequests struct {
-	KeyPath    []CustomAnchorKeyPathSigningRequest
-	MuSig2     []CustomAnchorMuSig2SigningRequest
-	ScriptPath []CustomAnchorScriptPathSigningRequest
+type SigningRequests struct {
+	KeyPath    []KeyPathSigningRequest
+	MuSig2     []MuSig2SigningRequest
+	ScriptPath []ScriptPathSigningRequest
 }
 
-// CustomAnchorKeyPathSigningRequest contains all SDK-owned data required to
+// KeyPathSigningRequest contains all SDK-owned data required to
 // review and sign a single-signer Taproot key spend.
-type CustomAnchorKeyPathSigningRequest struct {
-	ID                Hash
-	PackageDigest     Hash
+type KeyPathSigningRequest struct {
+	ID                tapsdk.Hash
+	PackageDigest     tapsdk.Hash
 	InputIndex        uint32
-	PrevOut           Outpoint
+	PrevOut           tapsdk.Outpoint
 	PrevOutValueSat   int64
 	PrevOutScript     []byte
 	SighashType       uint32
-	Sighash           Hash
-	InternalKey       XOnlyPubKey
+	Sighash           tapsdk.Hash
+	InternalKey       tapsdk.XOnlyPubKey
 	TaprootMerkleRoot []byte
-	Signer            XOnlyPubKey
+	Signer            tapsdk.XOnlyPubKey
 }
 
-// CustomAnchorMuSig2SigningRequest contains the transaction digest and ordered
+// MuSig2SigningRequest contains the transaction digest and ordered
 // participant set for an external MuSig2 session. Nonce generation, exchange,
 // and session orchestration remain the signer's responsibility.
-type CustomAnchorMuSig2SigningRequest struct {
-	ID                Hash
-	PackageDigest     Hash
+type MuSig2SigningRequest struct {
+	ID                tapsdk.Hash
+	PackageDigest     tapsdk.Hash
 	InputIndex        uint32
-	PrevOut           Outpoint
+	PrevOut           tapsdk.Outpoint
 	PrevOutValueSat   int64
 	PrevOutScript     []byte
 	SighashType       uint32
-	Sighash           Hash
-	InternalKey       XOnlyPubKey
+	Sighash           tapsdk.Hash
+	InternalKey       tapsdk.XOnlyPubKey
 	TaprootMerkleRoot []byte
-	Participants      []PubKey
+	Participants      []tapsdk.PubKey
 	SessionContext    []byte
 }
 
-// CustomAnchorScriptPathSigningRequest contains one exact Taproot leaf and the
+// ScriptPathSigningRequest contains one exact Taproot leaf and the
 // data needed to construct and review its final witness stack.
-type CustomAnchorScriptPathSigningRequest struct {
-	ID                Hash
-	PackageDigest     Hash
+type ScriptPathSigningRequest struct {
+	ID                tapsdk.Hash
+	PackageDigest     tapsdk.Hash
 	InputIndex        uint32
-	PrevOut           Outpoint
+	PrevOut           tapsdk.Outpoint
 	PrevOutValueSat   int64
 	PrevOutScript     []byte
 	SighashType       uint32
-	Sighash           Hash
-	InternalKey       XOnlyPubKey
+	Sighash           tapsdk.Hash
+	InternalKey       tapsdk.XOnlyPubKey
 	TaprootMerkleRoot []byte
-	LeafHash          Hash
+	LeafHash          tapsdk.Hash
 	LeafVersion       uint8
 	LeafScript        []byte
 	ControlBlock      []byte
-	RequiredSigners   []XOnlyPubKey
+	RequiredSigners   []tapsdk.XOnlyPubKey
 }
 
 type customAnchorSigningContext struct {
 	inputIndex        uint32
-	prevOut           Outpoint
+	prevOut           tapsdk.Outpoint
 	prevOutValueSat   int64
 	prevOutScript     []byte
 	sighashType       uint32
-	sighash           Hash
-	internalKey       XOnlyPubKey
+	sighash           tapsdk.Hash
+	internalKey       tapsdk.XOnlyPubKey
 	taprootMerkleRoot []byte
 }
 
@@ -176,8 +177,8 @@ type customAnchorSigningContext struct {
 // committed anchor PSBT. It fails closed if any input is not classified as
 // either externally signed or backend-managed, or if a plan is ambiguous or
 // incompatible with the PSBT.
-func (p *CustomAnchorTransferPackage) SigningRequests() (
-	*CustomAnchorSigningRequests, error) {
+func (p *TransferPackage) SigningRequests() (
+	*SigningRequests, error) {
 
 	if err := p.Validate(); err != nil {
 		return nil, err
@@ -195,9 +196,9 @@ func (p *CustomAnchorTransferPackage) SigningRequests() (
 }
 
 func customAnchorSigningRequests(packet *btcpsbt.Packet,
-	signingPlans []CustomAnchorInputSigningPlan,
-	backendManaged []uint32, packageDigest Hash) (
-	*CustomAnchorSigningRequests, error) {
+	signingPlans []InputSigningPlan,
+	backendManaged []uint32, packageDigest tapsdk.Hash) (
+	*SigningRequests, error) {
 
 	if packet == nil || packet.UnsignedTx == nil {
 		return nil, fmt.Errorf("anchor PSBT is required")
@@ -221,11 +222,11 @@ func customAnchorSigningRequests(packet *btcpsbt.Packet,
 		return plans[i].InputIndex < plans[j].InputIndex
 	})
 
-	requests := &CustomAnchorSigningRequests{
-		KeyPath: make([]CustomAnchorKeyPathSigningRequest, 0),
-		MuSig2:  make([]CustomAnchorMuSig2SigningRequest, 0),
+	requests := &SigningRequests{
+		KeyPath: make([]KeyPathSigningRequest, 0),
+		MuSig2:  make([]MuSig2SigningRequest, 0),
 		ScriptPath: make(
-			[]CustomAnchorScriptPathSigningRequest, 0,
+			[]ScriptPathSigningRequest, 0,
 		),
 	}
 	for _, plan := range plans {
@@ -251,10 +252,10 @@ func customAnchorSigningRequests(packet *btcpsbt.Packet,
 
 			requests.KeyPath = append(
 				requests.KeyPath,
-				CustomAnchorKeyPathSigningRequest{
+				KeyPathSigningRequest{
 					ID: customAnchorSigningRequestID(
 						packageDigest,
-						CustomAnchorSigningModeKeyPath,
+						SigningModeKeyPath,
 						plan.InputIndex,
 					),
 					PackageDigest:   packageDigest,
@@ -293,10 +294,10 @@ func customAnchorSigningRequests(packet *btcpsbt.Packet,
 
 			requests.MuSig2 = append(
 				requests.MuSig2,
-				CustomAnchorMuSig2SigningRequest{
+				MuSig2SigningRequest{
 					ID: customAnchorSigningRequestID(
 						packageDigest,
-						CustomAnchorSigningModeMuSig2,
+						SigningModeMuSig2,
 						plan.InputIndex,
 					),
 					PackageDigest:   packageDigest,
@@ -313,7 +314,7 @@ func customAnchorSigningRequests(packet *btcpsbt.Packet,
 						context.taprootMerkleRoot,
 					),
 					Participants: append(
-						[]PubKey(nil),
+						[]tapsdk.PubKey(nil),
 						plan.MuSig2.Participants...,
 					),
 					SessionContext: cloneBytes(
@@ -347,15 +348,15 @@ func customAnchorSigningRequests(packet *btcpsbt.Packet,
 // ApplyKeyPathSignature verifies and immutably applies either a single-signer
 // or final aggregate MuSig2 Schnorr signature. The original package and all
 // caller-owned buffers remain unchanged.
-func (p *CustomAnchorTransferPackage) ApplyKeyPathSignature(requestID Hash,
-	signature []byte) (*CustomAnchorTransferPackage, error) {
+func (p *TransferPackage) ApplyKeyPathSignature(requestID tapsdk.Hash,
+	signature []byte) (*TransferPackage, error) {
 
 	requests, err := p.SigningRequests()
 	if err != nil {
 		return nil, err
 	}
 
-	var request *CustomAnchorKeyPathSigningRequest
+	var request *KeyPathSigningRequest
 	for i := range requests.KeyPath {
 		if requests.KeyPath[i].ID == requestID {
 			request = &requests.KeyPath[i]
@@ -363,7 +364,7 @@ func (p *CustomAnchorTransferPackage) ApplyKeyPathSignature(requestID Hash,
 		}
 	}
 
-	var musigRequest *CustomAnchorMuSig2SigningRequest
+	var musigRequest *MuSig2SigningRequest
 	if request == nil {
 		for i := range requests.MuSig2 {
 			if requests.MuSig2[i].ID == requestID {
@@ -379,7 +380,7 @@ func (p *CustomAnchorTransferPackage) ApplyKeyPathSignature(requestID Hash,
 	var (
 		inputIndex    uint32
 		sighashType   uint32
-		sighash       Hash
+		sighash       tapsdk.Hash
 		prevOutScript []byte
 	)
 	if request != nil {
@@ -440,16 +441,16 @@ func (p *CustomAnchorTransferPackage) ApplyKeyPathSignature(requestID Hash,
 // ApplyScriptPathWitness verifies and immutably applies the unlocking elements
 // for one selected script path. The committed leaf script and control block
 // are appended by the SDK and cannot be replaced by the caller.
-func (p *CustomAnchorTransferPackage) ApplyScriptPathWitness(
-	requestID Hash, witnessElements [][]byte) (
-	*CustomAnchorTransferPackage, error) {
+func (p *TransferPackage) ApplyScriptPathWitness(
+	requestID tapsdk.Hash, witnessElements [][]byte) (
+	*TransferPackage, error) {
 
 	requests, err := p.SigningRequests()
 	if err != nil {
 		return nil, err
 	}
 
-	var request *CustomAnchorScriptPathSigningRequest
+	var request *ScriptPathSigningRequest
 	for i := range requests.ScriptPath {
 		if requests.ScriptPath[i].ID == requestID {
 			request = &requests.ScriptPath[i]
@@ -526,7 +527,7 @@ func (p *CustomAnchorTransferPackage) ApplyScriptPathWitness(
 // VerifyFinalAnchorPSBT verifies that a signed or finalized PSBT contains the
 // exact committed unsigned transaction. A fully finalized PSBT must also use
 // every sealed external signing path and pass consensus witness validation.
-func (p *CustomAnchorTransferPackage) VerifyFinalAnchorPSBT(
+func (p *TransferPackage) VerifyFinalAnchorPSBT(
 	finalAnchorPsbt []byte) error {
 
 	if err := p.Validate(); err != nil {
@@ -562,8 +563,8 @@ func (p *CustomAnchorTransferPackage) VerifyFinalAnchorPSBT(
 // exact sighash, while backend-managed inputs remain consensus-validated. All
 // non-final PSBT metadata is restored from the committed snapshot before the
 // current package digest is refreshed.
-func (p *CustomAnchorTransferPackage) WithFinalAnchorPSBT(
-	finalAnchorPsbt []byte) (*CustomAnchorTransferPackage, error) {
+func (p *TransferPackage) WithFinalAnchorPSBT(
+	finalAnchorPsbt []byte) (*TransferPackage, error) {
 
 	if err := p.Validate(); err != nil {
 		return nil, err
@@ -597,7 +598,7 @@ func (p *CustomAnchorTransferPackage) WithFinalAnchorPSBT(
 	return clone, nil
 }
 
-func (p *CustomAnchorTransferPackage) verifyFinalAnchorSigningPlans(
+func (p *TransferPackage) verifyFinalAnchorSigningPlans(
 	finalTx *wire.MsgTx) error {
 
 	requests, err := p.SigningRequests()
@@ -606,7 +607,7 @@ func (p *CustomAnchorTransferPackage) verifyFinalAnchorSigningPlans(
 	}
 
 	keyPath := make(
-		map[uint32]*CustomAnchorKeyPathSigningRequest,
+		map[uint32]*KeyPathSigningRequest,
 		len(requests.KeyPath),
 	)
 	for idx := range requests.KeyPath {
@@ -614,7 +615,7 @@ func (p *CustomAnchorTransferPackage) verifyFinalAnchorSigningPlans(
 		keyPath[request.InputIndex] = request
 	}
 	muSig2 := make(
-		map[uint32]*CustomAnchorMuSig2SigningRequest,
+		map[uint32]*MuSig2SigningRequest,
 		len(requests.MuSig2),
 	)
 	for idx := range requests.MuSig2 {
@@ -622,7 +623,7 @@ func (p *CustomAnchorTransferPackage) verifyFinalAnchorSigningPlans(
 		muSig2[request.InputIndex] = request
 	}
 	scriptPath := make(
-		map[uint32]*CustomAnchorScriptPathSigningRequest,
+		map[uint32]*ScriptPathSigningRequest,
 		len(requests.ScriptPath),
 	)
 	for idx := range requests.ScriptPath {
@@ -710,7 +711,7 @@ func hasCallerSignedPlan(callerSigned map[uint32]struct{},
 }
 
 func verifyFinalKeyPathWitness(inputIndex int, witness wire.TxWitness,
-	sighashType uint32, sighash Hash, prevOutScript []byte) error {
+	sighashType uint32, sighash tapsdk.Hash, prevOutScript []byte) error {
 
 	if len(witness) != 1 {
 		return fmt.Errorf(
@@ -731,7 +732,7 @@ func verifyFinalKeyPathWitness(inputIndex int, witness wire.TxWitness,
 }
 
 func verifyFinalScriptPathWitness(inputIndex int, witness wire.TxWitness,
-	request *CustomAnchorScriptPathSigningRequest) error {
+	request *ScriptPathSigningRequest) error {
 
 	if len(witness) < 2 {
 		return fmt.Errorf(
@@ -765,7 +766,7 @@ func verifyFinalScriptPathWitness(inputIndex int, witness wire.TxWitness,
 }
 
 func verifyRequiredScriptPathSignatures(witnessElements wire.TxWitness,
-	request *CustomAnchorScriptPathSigningRequest) error {
+	request *ScriptPathSigningRequest) error {
 
 	matchedSigners := make(map[int]struct{}, len(request.RequiredSigners))
 	for witnessIndex, element := range witnessElements {
@@ -831,7 +832,7 @@ func customAnchorWitnessHasAnnex(witness wire.TxWitness) bool {
 }
 
 func validateCustomAnchorSigningPlans(
-	plans []CustomAnchorInputSigningPlan, backendManaged []uint32,
+	plans []InputSigningPlan, backendManaged []uint32,
 	inputCount uint32) error {
 
 	if uint32(len(plans)+len(backendManaged)) != inputCount {
@@ -887,7 +888,7 @@ func validateCustomAnchorSigningPlans(
 		}
 		if plan.ScriptPath != nil {
 			variants++
-			if plan.ScriptPath.LeafHash == (Hash{}) {
+			if plan.ScriptPath.LeafHash == (tapsdk.Hash{}) {
 				return fmt.Errorf(
 					"signing plan %d script-path leaf hash is "+
 						"required", i,
@@ -933,13 +934,13 @@ func validateCustomAnchorSigningPlans(
 }
 
 func cloneCustomAnchorSigningPlans(
-	plans []CustomAnchorInputSigningPlan) []CustomAnchorInputSigningPlan {
+	plans []InputSigningPlan) []InputSigningPlan {
 
 	if plans == nil {
 		return nil
 	}
 
-	clone := make([]CustomAnchorInputSigningPlan, len(plans))
+	clone := make([]InputSigningPlan, len(plans))
 	for i := range plans {
 		clone[i] = plans[i]
 		if plans[i].KeyPath != nil {
@@ -949,7 +950,7 @@ func cloneCustomAnchorSigningPlans(
 		if plans[i].MuSig2 != nil {
 			muSig2 := *plans[i].MuSig2
 			muSig2.Participants = append(
-				[]PubKey(nil), plans[i].MuSig2.Participants...,
+				[]tapsdk.PubKey(nil), plans[i].MuSig2.Participants...,
 			)
 			muSig2.SessionContext = cloneBytes(
 				plans[i].MuSig2.SessionContext,
@@ -963,7 +964,7 @@ func cloneCustomAnchorSigningPlans(
 		if plans[i].ScriptPath != nil {
 			scriptPath := *plans[i].ScriptPath
 			scriptPath.RequiredSigners = append(
-				[]XOnlyPubKey(nil),
+				[]tapsdk.XOnlyPubKey(nil),
 				plans[i].ScriptPath.RequiredSigners...,
 			)
 			clone[i].ScriptPath = &scriptPath
@@ -1041,11 +1042,11 @@ func keyPathSigningContext(packet *btcpsbt.Packet,
 	), nil
 }
 
-func scriptPathSigningRequest(packageDigest Hash, packet *btcpsbt.Packet,
+func scriptPathSigningRequest(packageDigest tapsdk.Hash, packet *btcpsbt.Packet,
 	pInput *btcpsbt.PInput, prevOutFetcher *txscript.MultiPrevOutFetcher,
 	sigHashes *txscript.TxSigHashes, prevOut *wire.TxOut,
-	plan CustomAnchorInputSigningPlan) (
-	*CustomAnchorScriptPathSigningRequest, error) {
+	plan InputSigningPlan) (
+	*ScriptPathSigningRequest, error) {
 
 	inputIndex := int(plan.InputIndex)
 	var matches []*btcpsbt.TaprootTapLeafScript
@@ -1128,9 +1129,9 @@ func scriptPathSigningRequest(packageDigest Hash, packet *btcpsbt.Packet,
 		sighashBytes, internalKeyBytes, merkleRoot,
 	)
 
-	return &CustomAnchorScriptPathSigningRequest{
+	return &ScriptPathSigningRequest{
 		ID: customAnchorSigningRequestID(
-			packageDigest, CustomAnchorSigningModeScriptPath,
+			packageDigest, SigningModeScriptPath,
 			plan.InputIndex,
 		),
 		PackageDigest:     packageDigest,
@@ -1147,7 +1148,7 @@ func scriptPathSigningRequest(packageDigest Hash, packet *btcpsbt.Packet,
 		LeafScript:        cloneBytes(leaf.Script),
 		ControlBlock:      cloneBytes(leaf.ControlBlock),
 		RequiredSigners: append(
-			[]XOnlyPubKey(nil), plan.ScriptPath.RequiredSigners...,
+			[]tapsdk.XOnlyPubKey(nil), plan.ScriptPath.RequiredSigners...,
 		),
 	}, nil
 }
@@ -1158,13 +1159,13 @@ func newCustomAnchorSigningContext(packet *btcpsbt.Packet,
 	internalKeyBytes, merkleRoot []byte) *customAnchorSigningContext {
 
 	wireOutpoint := packet.UnsignedTx.TxIn[inputIndex].PreviousOutPoint
-	var outpoint Outpoint
+	var outpoint tapsdk.Outpoint
 	copy(outpoint.Txid[:], wireOutpoint.Hash[:])
 	outpoint.Index = wireOutpoint.Index
 
-	var sighash Hash
+	var sighash tapsdk.Hash
 	copy(sighash[:], sighashBytes)
-	var internalKey XOnlyPubKey
+	var internalKey tapsdk.XOnlyPubKey
 	copy(internalKey[:], internalKeyBytes)
 
 	return &customAnchorSigningContext{
@@ -1179,8 +1180,8 @@ func newCustomAnchorSigningContext(packet *btcpsbt.Packet,
 	}
 }
 
-func customAnchorSigningRequestID(packageDigest Hash,
-	mode CustomAnchorSigningMode, inputIndex uint32) Hash {
+func customAnchorSigningRequestID(packageDigest tapsdk.Hash,
+	mode SigningMode, inputIndex uint32) tapsdk.Hash {
 
 	payload := make([]byte, 0, len(packageDigest)+1+4)
 	payload = append(payload, packageDigest[:]...)
@@ -1193,7 +1194,7 @@ func customAnchorSigningRequestID(packageDigest Hash,
 }
 
 func verifyTaprootKeyPathSignature(signature []byte, sighashType uint32,
-	sighash Hash, prevOutScript []byte) error {
+	sighash tapsdk.Hash, prevOutScript []byte) error {
 
 	sig, err := parseCustomAnchorTaprootSignature(signature, sighashType)
 	if err != nil {
@@ -1217,7 +1218,7 @@ func verifyTaprootKeyPathSignature(signature []byte, sighashType uint32,
 }
 
 func verifyTaprootScriptPathSignature(signature []byte, sighashType uint32,
-	sighash Hash, signer XOnlyPubKey) error {
+	sighash tapsdk.Hash, signer tapsdk.XOnlyPubKey) error {
 
 	sig, err := parseCustomAnchorTaprootSignature(signature, sighashType)
 	if err != nil {
@@ -1312,8 +1313,8 @@ func verifyScriptPathWitness(tx *wire.MsgTx, inputIndex int,
 	return nil
 }
 
-func validateMuSig2Aggregate(internalKey XOnlyPubKey,
-	participants []PubKey) error {
+func validateMuSig2Aggregate(internalKey tapsdk.XOnlyPubKey,
+	participants []tapsdk.PubKey) error {
 
 	keys := make([]*btcec.PublicKey, len(participants))
 	for i, participant := range participants {
@@ -1338,8 +1339,10 @@ func validateMuSig2Aggregate(internalKey XOnlyPubKey,
 	return nil
 }
 
-func validateCustomAnchorXOnlyKeys(label string, keys []XOnlyPubKey) error {
-	seen := make(map[XOnlyPubKey]struct{}, len(keys))
+func validateCustomAnchorXOnlyKeys(label string,
+	keys []tapsdk.XOnlyPubKey) error {
+
+	seen := make(map[tapsdk.XOnlyPubKey]struct{}, len(keys))
 	for i, key := range keys {
 		if err := validateCustomAnchorXOnlyKey(label, key); err != nil {
 			return fmt.Errorf("%s %d: %w", label, i, err)
@@ -1353,7 +1356,7 @@ func validateCustomAnchorXOnlyKeys(label string, keys []XOnlyPubKey) error {
 	return nil
 }
 
-func validateCustomAnchorXOnlyKey(label string, key XOnlyPubKey) error {
+func validateCustomAnchorXOnlyKey(label string, key tapsdk.XOnlyPubKey) error {
 	_, err := schnorr.ParsePubKey(key[:])
 	if err != nil {
 		return fmt.Errorf("invalid %s: %w", label, err)
@@ -1362,8 +1365,8 @@ func validateCustomAnchorXOnlyKey(label string, key XOnlyPubKey) error {
 	return nil
 }
 
-func validateCustomAnchorPubKeys(label string, keys []PubKey) error {
-	seen := make(map[PubKey]struct{}, len(keys))
+func validateCustomAnchorPubKeys(label string, keys []tapsdk.PubKey) error {
+	seen := make(map[tapsdk.PubKey]struct{}, len(keys))
 	for i, key := range keys {
 		if _, err := btcec.ParsePubKey(key[:]); err != nil {
 			return fmt.Errorf("%s %d: invalid %s: %w", label, i,
@@ -1498,15 +1501,16 @@ func canonicalAnchorPSBT(raw []byte, stripSignatures bool) ([]byte, error) {
 	return serializeAnchorPSBT(packet)
 }
 
-func customAnchorUnsignedTxDigest(raw []byte) (Hash, error) {
+func customAnchorUnsignedTxDigest(raw []byte) (tapsdk.Hash, error) {
 	packet, err := decodeAnchorPSBT(raw)
 	if err != nil {
-		return Hash{}, fmt.Errorf("anchor PSBT: %w", err)
+		return tapsdk.Hash{}, fmt.Errorf("anchor PSBT: %w", err)
 	}
 
 	var txBytes bytes.Buffer
 	if err := packet.UnsignedTx.SerializeNoWitness(&txBytes); err != nil {
-		return Hash{}, fmt.Errorf("serialize unsigned anchor transaction: %w", err)
+		return tapsdk.Hash{}, fmt.Errorf("serialize unsigned anchor "+
+			"transaction: %w", err)
 	}
 
 	return customAnchorDigest(

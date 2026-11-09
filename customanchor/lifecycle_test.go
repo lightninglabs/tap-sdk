@@ -1,4 +1,4 @@
-package tapsdk
+package customanchor
 
 import (
 	"bytes"
@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/commitment"
 	"github.com/lightninglabs/taproot-assets/proof"
@@ -29,18 +30,17 @@ func TestCustomAnchorCommitCapabilitiesFailClosed(t *testing.T) {
 	t.Parallel()
 
 	fixture := newCustomAnchorBuilderFixture(t)
-	plan, err := NewWallet(fixture.client, NetworkRegtest).
-		NewCustomAnchorTxBuilder().Build(
+	plan, err := newTestTxBuilder(fixture.client).Build(
 		context.Background(), fixture.request,
 	)
 	require.NoError(t, err)
 
 	_, err = plan.Commit(context.Background())
 	require.Error(t, err)
-	var capabilityErr *UnsupportedCustomAnchorCapabilityError
+	var capabilityErr *UnsupportedCapabilityError
 	require.ErrorAs(t, err, &capabilityErr)
-	require.Equal(t, CustomAnchorCapabilityCommit, capabilityErr.Capability)
-	require.Equal(t, CustomAnchorCapabilityUnknown, capabilityErr.Status)
+	require.Equal(t, CapabilityCommit, capabilityErr.Capability)
+	require.Equal(t, CapabilityUnknown, capabilityErr.Status)
 }
 
 func TestCustomAnchorP2ACommitRequiresSkipBroadcastCapability(t *testing.T) {
@@ -55,29 +55,29 @@ func TestCustomAnchorP2ACommitRequiresSkipBroadcastCapability(t *testing.T) {
 		return packet, nil
 	}
 	fixture.client.commit = func(context.Context,
-		*CommitVirtualPsbtsRequest) (*CommitVirtualPsbtsResponse, error) {
+		*tapsdk.CommitVirtualPsbtsRequest) (
+		*tapsdk.CommitVirtualPsbtsResponse, error) {
 
 		commitCalls++
 		return nil, errors.New("unexpected commit")
 	}
 
-	capabilities := DefaultTapdCustomAnchorCapabilities()
-	capabilities.SkipBroadcast = CustomAnchorCapabilityUnknown
+	capabilities := DefaultTapdCapabilities()
+	capabilities.SkipBroadcast = CapabilityUnknown
 	client := &capableCustomAnchorBuilderTestClient{
 		customAnchorBuilderTestClient: fixture.client,
 		capabilities:                  &capabilities,
 	}
-	plan, err := NewWallet(client, NetworkRegtest).
-		NewCustomAnchorTxBuilder().Build(
+	plan, err := newTestTxBuilder(client).Build(
 		context.Background(), fixture.request,
 	)
 	require.NoError(t, err)
 
 	_, err = plan.Commit(context.Background())
 	require.Error(t, err)
-	var capabilityErr *UnsupportedCustomAnchorCapabilityError
+	var capabilityErr *UnsupportedCapabilityError
 	require.ErrorAs(t, err, &capabilityErr)
-	require.Equal(t, CustomAnchorCapabilitySkipBroadcast,
+	require.Equal(t, CapabilitySkipBroadcast,
 		capabilityErr.Capability)
 	require.Zero(t, signCalls)
 	require.Zero(t, commitCalls)
@@ -88,13 +88,13 @@ func TestCustomAnchorLifecycleBackendSigningAndPublish(t *testing.T) {
 
 	fixture := newCustomAnchorBuilderFixture(t)
 	policyLeaf := txscript.NewBaseTapLeaf([]byte{txscript.OP_TRUE})
-	fixture.request.Outputs[0].Anchor.Tapscript = CustomAnchorTapscriptPlan{
-		TapLeaves: []TapLeaf{{Script: cloneBytes(policyLeaf.Script)}},
+	fixture.request.Outputs[0].Anchor.Tapscript = TapscriptPlan{
+		TapLeaves: []tapsdk.TapLeaf{{Script: cloneBytes(policyLeaf.Script)}},
 	}
 	var (
 		signCalls     int
-		commitRequest *CommitVirtualPsbtsRequest
-		publishReq    *PublishAndLogTransferRequest
+		commitRequest *tapsdk.CommitVirtualPsbtsRequest
+		publishReq    *tapsdk.PublishAndLogTransferRequest
 	)
 	fixture.client.signVirtual = func(_ context.Context, packet []byte) (
 		[]byte, error) {
@@ -105,14 +105,15 @@ func TestCustomAnchorLifecycleBackendSigningAndPublish(t *testing.T) {
 		), nil
 	}
 	fixture.client.commit = func(_ context.Context,
-		req *CommitVirtualPsbtsRequest) (*CommitVirtualPsbtsResponse, error) {
+		req *tapsdk.CommitVirtualPsbtsRequest) (
+		*tapsdk.CommitVirtualPsbtsResponse, error) {
 
 		commitRequest = cloneCustomAnchorCommitRequest(req)
 		return customAnchorTestCommitResponse(t, req), nil
 	}
-	var expectedResult *AssetPacket
+	var expectedResult *tapsdk.AssetPacket
 	fixture.client.publish = func(_ context.Context,
-		req *PublishAndLogTransferRequest) (*AssetPacket, error) {
+		req *tapsdk.PublishAndLogTransferRequest) (*tapsdk.AssetPacket, error) {
 
 		publishReq = cloneCustomAnchorPublishRequest(req)
 		packet, err := decodeAnchorPSBT(req.AnchorPsbt)
@@ -121,7 +122,7 @@ func TestCustomAnchorLifecycleBackendSigningAndPublish(t *testing.T) {
 		require.NoError(t, err)
 		var anchorTx bytes.Buffer
 		require.NoError(t, finalTx.Serialize(&anchorTx))
-		expectedResult = &AssetPacket{
+		expectedResult = &tapsdk.AssetPacket{
 			AnchorTransaction: anchorTx.Bytes(),
 			VirtualTransactions: cloneByteSlices(
 				req.VirtualPsbts,
@@ -133,27 +134,27 @@ func TestCustomAnchorLifecycleBackendSigningAndPublish(t *testing.T) {
 		return expectedResult, nil
 	}
 
-	capabilities := DefaultTapdCustomAnchorCapabilities()
+	capabilities := DefaultTapdCapabilities()
 	client := &capableCustomAnchorBuilderTestClient{
 		customAnchorBuilderTestClient: fixture.client,
 		capabilities:                  &capabilities,
 	}
-	wallet := NewWallet(client, NetworkRegtest)
-	plan, err := wallet.NewCustomAnchorTxBuilder().Build(
+	wallet := tapsdk.NewWallet(client, tapsdk.NetworkRegtest)
+	plan, err := NewTxBuilder(wallet).Build(
 		context.Background(), fixture.request,
 	)
 	require.NoError(t, err)
 	planID, err := plan.ID()
 	require.NoError(t, err)
 
-	publishMetadata := CustomAnchorPublishMetadata{
+	publishMetadata := PublishMetadata{
 		SkipAnchorTxBroadcast: true,
 		Label:                 "swapdk-round-42",
 		ExternalBroadcast:     true,
 	}
 	packageSnapshot, err := plan.Commit(
 		context.Background(),
-		CustomAnchorCommitOptions{Publish: publishMetadata},
+		CommitOptions{Publish: publishMetadata},
 	)
 	require.NoError(t, err)
 	require.NoError(t, packageSnapshot.Validate())
@@ -188,7 +189,7 @@ func TestCustomAnchorLifecycleBackendSigningAndPublish(t *testing.T) {
 	expectedRoot := asset.NewTapBranchHash(
 		chainhash.Hash(outputSummary.TaprootAssetRoot), policyRoot,
 	)
-	require.Equal(t, Hash(expectedRoot), outputSummary.TaprootMerkleRoot)
+	require.Equal(t, tapsdk.Hash(expectedRoot), outputSummary.TaprootMerkleRoot)
 
 	before, err := decodeAnchorPSBT(plan.AnchorPSBT())
 	require.NoError(t, err)
@@ -222,8 +223,8 @@ func TestCustomAnchorLifecycleBackendSigningAndPublish(t *testing.T) {
 	require.Equal(t, expectedPkScript,
 		committed.UnsignedTx.TxOut[outputSummary.AnchorOutputIndex].PkScript)
 
-	_, err = wallet.PublishCustomAnchorTransfer(
-		context.Background(), packageSnapshot,
+	_, err = PublishTransfer(
+		context.Background(), wallet, packageSnapshot,
 		packageSnapshot.AnchorPsbt,
 	)
 	require.ErrorContains(t, err, "final anchor PSBT is not finalized")
@@ -233,8 +234,8 @@ func TestCustomAnchorLifecycleBackendSigningAndPublish(t *testing.T) {
 		t, packageSnapshot.AnchorPsbt, fixture.btcInputKey,
 		fixture.anchorInputKey,
 	)
-	result, err := wallet.PublishCustomAnchorTransfer(
-		context.Background(), packageSnapshot, finalAnchorPSBT,
+	result, err := PublishTransfer(
+		context.Background(), wallet, packageSnapshot, finalAnchorPSBT,
 	)
 	require.NoError(t, err)
 	require.Same(t, expectedResult, result)
@@ -250,21 +251,21 @@ func TestCustomAnchorLifecycleBackendSigningAndPublish(t *testing.T) {
 	require.True(t, publishReq.SkipAnchorTxBroadcast)
 	require.Equal(t, "swapdk-round-42", publishReq.Label)
 
-	for _, unusable := range []*AssetPacket{nil, {}} {
+	for _, unusable := range []*tapsdk.AssetPacket{nil, {}} {
 		fixture.client.publish = func(context.Context,
-			*PublishAndLogTransferRequest) (*AssetPacket, error) {
+			*tapsdk.PublishAndLogTransferRequest) (*tapsdk.AssetPacket, error) {
 
 			return unusable, nil
 		}
-		_, err = wallet.PublishCustomAnchorTransfer(
-			context.Background(), packageSnapshot, finalAnchorPSBT,
+		_, err = PublishTransfer(
+			context.Background(), wallet, packageSnapshot, finalAnchorPSBT,
 		)
-		var attemptErr *CustomAnchorPublishAttemptError
+		var attemptErr *PublishAttemptError
 		require.ErrorAs(t, err, &attemptErr)
 		require.True(t, attemptErr.OutcomeUnknown)
 	}
 
-	for _, mismatch := range []*AssetPacket{
+	for _, mismatch := range []*tapsdk.AssetPacket{
 		{
 			AnchorTransaction:        []byte{1},
 			VirtualTransactions:      packageSnapshot.ActiveVirtualPsbts,
@@ -284,14 +285,14 @@ func TestCustomAnchorLifecycleBackendSigningAndPublish(t *testing.T) {
 		},
 	} {
 		fixture.client.publish = func(context.Context,
-			*PublishAndLogTransferRequest) (*AssetPacket, error) {
+			*tapsdk.PublishAndLogTransferRequest) (*tapsdk.AssetPacket, error) {
 
 			return mismatch, nil
 		}
-		_, err = wallet.PublishCustomAnchorTransfer(
-			context.Background(), packageSnapshot, finalAnchorPSBT,
+		_, err = PublishTransfer(
+			context.Background(), wallet, packageSnapshot, finalAnchorPSBT,
 		)
-		var attemptErr *CustomAnchorPublishAttemptError
+		var attemptErr *PublishAttemptError
 		require.ErrorAs(t, err, &attemptErr)
 		require.True(t, attemptErr.OutcomeUnknown)
 		require.ErrorContains(t, err, "does not match")
@@ -302,18 +303,18 @@ func TestCustomAnchorCommitPersistsFundingLock(t *testing.T) {
 	t.Parallel()
 
 	fixture := newCustomAnchorBuilderFixture(t)
-	feeRate, err := NewFeeRateSatPerVByte(2)
+	feeRate, err := tapsdk.NewFeeRateSatPerVByte(2)
 	require.NoError(t, err)
 
 	lockID := bytes.Repeat([]byte{4}, 32)
-	fixture.request.Funding = CustomAnchorFundingPlan{
-		Mode: CustomAnchorFundingWalletFunded,
-		WalletFunded: &CustomAnchorWalletFunding{
-			ChangeOutput: AnchorChangeOutput{
-				Mode: AnchorChangeOutputAdd,
+	fixture.request.Funding = FundingPlan{
+		Mode: FundingWalletFunded,
+		WalletFunded: &WalletFunding{
+			ChangeOutput: tapsdk.AnchorChangeOutput{
+				Mode: tapsdk.AnchorChangeOutputAdd,
 			},
-			Fee: AnchorFee{
-				Mode:    AnchorFeeSatPerVByte,
+			Fee: tapsdk.AnchorFee{
+				Mode:    tapsdk.AnchorFeeSatPerVByte,
 				FeeRate: feeRate,
 			},
 			MaxFeeSat:             10_000,
@@ -328,21 +329,21 @@ func TestCustomAnchorCommitPersistsFundingLock(t *testing.T) {
 			t, fixture.assetSpendKey, packet,
 		), nil
 	}
-	var commitRequest *CommitVirtualPsbtsRequest
+	var commitRequest *tapsdk.CommitVirtualPsbtsRequest
 	fixture.client.commit = func(_ context.Context,
-		req *CommitVirtualPsbtsRequest) (*CommitVirtualPsbtsResponse, error) {
+		req *tapsdk.CommitVirtualPsbtsRequest) (
+		*tapsdk.CommitVirtualPsbtsResponse, error) {
 
 		commitRequest = cloneCustomAnchorCommitRequest(req)
 		return customAnchorTestCommitResponse(t, req), nil
 	}
 
-	capabilities := DefaultTapdCustomAnchorCapabilities()
+	capabilities := DefaultTapdCapabilities()
 	client := &capableCustomAnchorBuilderTestClient{
 		customAnchorBuilderTestClient: fixture.client,
 		capabilities:                  &capabilities,
 	}
-	plan, err := NewWallet(client, NetworkRegtest).
-		NewCustomAnchorTxBuilder().Build(
+	plan, err := newTestTxBuilder(client).Build(
 		context.Background(), fixture.request,
 	)
 	require.NoError(t, err)
@@ -379,17 +380,17 @@ func TestCustomAnchorCommitEnforcesWalletFeeCeiling(t *testing.T) {
 	anchor.Outputs = anchor.Outputs[:2]
 	fixture.request.AnchorPSBT = mustSerializeAnchorPSBT(t, anchor)
 
-	feeRate, err := NewFeeRateSatPerVByte(2)
+	feeRate, err := tapsdk.NewFeeRateSatPerVByte(2)
 	require.NoError(t, err)
 	lockID := bytes.Repeat([]byte{7}, 32)
-	fixture.request.Funding = CustomAnchorFundingPlan{
-		Mode: CustomAnchorFundingWalletFunded,
-		WalletFunded: &CustomAnchorWalletFunding{
-			ChangeOutput: AnchorChangeOutput{
-				Mode: AnchorChangeOutputAdd,
+	fixture.request.Funding = FundingPlan{
+		Mode: FundingWalletFunded,
+		WalletFunded: &WalletFunding{
+			ChangeOutput: tapsdk.AnchorChangeOutput{
+				Mode: tapsdk.AnchorChangeOutputAdd,
 			},
-			Fee: AnchorFee{
-				Mode:    AnchorFeeSatPerVByte,
+			Fee: tapsdk.AnchorFee{
+				Mode:    tapsdk.AnchorFeeSatPerVByte,
 				FeeRate: feeRate,
 			},
 			MaxFeeSat:    100,
@@ -404,7 +405,8 @@ func TestCustomAnchorCommitEnforcesWalletFeeCeiling(t *testing.T) {
 		), nil
 	}
 	fixture.client.commit = func(_ context.Context,
-		req *CommitVirtualPsbtsRequest) (*CommitVirtualPsbtsResponse, error) {
+		req *tapsdk.CommitVirtualPsbtsRequest) (
+		*tapsdk.CommitVirtualPsbtsResponse, error) {
 
 		response := customAnchorTestCommitResponse(t, req)
 		committed := mustDecodeAnchorPSBT(t, response.AnchorPsbt)
@@ -433,20 +435,19 @@ func TestCustomAnchorCommitEnforcesWalletFeeCeiling(t *testing.T) {
 		committed.Outputs = append(committed.Outputs, psbt.POutput{})
 		response.AnchorPsbt = mustSerializeAnchorPSBT(t, committed)
 		response.ChangeOutputIndex = 2
-		response.LockedUTXOs = []Outpoint{
+		response.LockedUTXOs = []tapsdk.Outpoint{
 			outpointFromWire(backendOutpoint),
 		}
 
 		return response, nil
 	}
 
-	capabilities := DefaultTapdCustomAnchorCapabilities()
+	capabilities := DefaultTapdCapabilities()
 	client := &capableCustomAnchorBuilderTestClient{
 		customAnchorBuilderTestClient: fixture.client,
 		capabilities:                  &capabilities,
 	}
-	plan, err := NewWallet(client, NetworkRegtest).
-		NewCustomAnchorTxBuilder().Build(
+	plan, err := newTestTxBuilder(client).Build(
 		context.Background(), fixture.request,
 	)
 	require.NoError(t, err)
@@ -459,17 +460,17 @@ func TestCustomAnchorCommitAttemptOutcome(t *testing.T) {
 	t.Parallel()
 
 	fixture := newCustomAnchorBuilderFixture(t)
-	feeRate, err := NewFeeRateSatPerVByte(2)
+	feeRate, err := tapsdk.NewFeeRateSatPerVByte(2)
 	require.NoError(t, err)
 	lockID := bytes.Repeat([]byte{8}, 32)
-	fixture.request.Funding = CustomAnchorFundingPlan{
-		Mode: CustomAnchorFundingWalletFunded,
-		WalletFunded: &CustomAnchorWalletFunding{
-			ChangeOutput: AnchorChangeOutput{
-				Mode: AnchorChangeOutputAdd,
+	fixture.request.Funding = FundingPlan{
+		Mode: FundingWalletFunded,
+		WalletFunded: &WalletFunding{
+			ChangeOutput: tapsdk.AnchorChangeOutput{
+				Mode: tapsdk.AnchorChangeOutputAdd,
 			},
-			Fee: AnchorFee{
-				Mode:    AnchorFeeSatPerVByte,
+			Fee: tapsdk.AnchorFee{
+				Mode:    tapsdk.AnchorFeeSatPerVByte,
 				FeeRate: feeRate,
 			},
 			MaxFeeSat:             10_000,
@@ -485,19 +486,19 @@ func TestCustomAnchorCommitAttemptOutcome(t *testing.T) {
 		), nil
 	}
 
-	capabilities := DefaultTapdCustomAnchorCapabilities()
+	capabilities := DefaultTapdCapabilities()
 	client := &capableCustomAnchorBuilderTestClient{
 		customAnchorBuilderTestClient: fixture.client,
 		capabilities:                  &capabilities,
 	}
-	plan, err := NewWallet(client, NetworkRegtest).
-		NewCustomAnchorTxBuilder().Build(
+	plan, err := newTestTxBuilder(client).Build(
 		context.Background(), fixture.request,
 	)
 	require.NoError(t, err)
 
 	fixture.client.commit = func(_ context.Context,
-		req *CommitVirtualPsbtsRequest) (*CommitVirtualPsbtsResponse, error) {
+		req *tapsdk.CommitVirtualPsbtsRequest) (
+		*tapsdk.CommitVirtualPsbtsResponse, error) {
 
 		// Model the backend completing commit and retaining its leases,
 		// followed by loss of the response at the transport boundary.
@@ -509,7 +510,7 @@ func TestCustomAnchorCommitAttemptOutcome(t *testing.T) {
 
 	_, err = plan.Commit(context.Background())
 	require.Error(t, err)
-	var attemptErr *CustomAnchorCommitAttemptError
+	var attemptErr *CommitAttemptError
 	require.ErrorAs(t, err, &attemptErr)
 	require.True(t, attemptErr.OutcomeUnknown)
 	require.Equal(t, lockID, attemptErr.FundingLock.CustomLockID)
@@ -521,7 +522,8 @@ func TestCustomAnchorCommitAttemptOutcome(t *testing.T) {
 	require.Equal(t, byte(8), lockID[0])
 
 	fixture.client.commit = func(_ context.Context,
-		_ *CommitVirtualPsbtsRequest) (*CommitVirtualPsbtsResponse, error) {
+		_ *tapsdk.CommitVirtualPsbtsRequest) (
+		*tapsdk.CommitVirtualPsbtsResponse, error) {
 
 		return nil, status.Error(
 			codes.InvalidArgument, "request was rejected",
@@ -532,7 +534,8 @@ func TestCustomAnchorCommitAttemptOutcome(t *testing.T) {
 	require.False(t, attemptErr.OutcomeUnknown)
 
 	fixture.client.commit = func(_ context.Context,
-		_ *CommitVirtualPsbtsRequest) (*CommitVirtualPsbtsResponse, error) {
+		_ *tapsdk.CommitVirtualPsbtsRequest) (
+		*tapsdk.CommitVirtualPsbtsResponse, error) {
 
 		return nil, nil
 	}
@@ -627,26 +630,26 @@ func TestValidateCustomAnchorLockInventory(t *testing.T) {
 		PreviousOutPoint: backendOutpoint,
 	})
 	anchor.Inputs = append(anchor.Inputs, psbt.PInput{})
-	locked := CustomAnchorLockedUTXO{
+	locked := LockedUTXO{
 		Outpoint: outpointFromWire(backendOutpoint),
 	}
-	wrong := CustomAnchorLockedUTXO{
-		Outpoint: Outpoint{Txid: [32]byte{8}, Index: 4},
+	wrong := LockedUTXO{
+		Outpoint: tapsdk.Outpoint{Txid: [32]byte{8}, Index: 4},
 	}
-	callerFunding := CustomAnchorFundingPlan{
-		Mode:              CustomAnchorFundingCallerFundedExact,
-		CallerFundedExact: &CustomAnchorCallerFundedExact{},
+	callerFunding := FundingPlan{
+		Mode:              FundingCallerFundedExact,
+		CallerFundedExact: &CallerFundedExact{},
 	}
-	walletFunding := CustomAnchorFundingPlan{
-		Mode:         CustomAnchorFundingWalletFunded,
-		WalletFunded: &CustomAnchorWalletFunding{},
+	walletFunding := FundingPlan{
+		Mode:         FundingWalletFunded,
+		WalletFunded: &WalletFunding{},
 	}
 
 	tests := []struct {
 		name           string
-		funding        CustomAnchorFundingPlan
+		funding        FundingPlan
 		backendManaged []uint32
-		locked         []CustomAnchorLockedUTXO
+		locked         []LockedUTXO
 		wantErr        string
 	}{
 		{
@@ -656,14 +659,14 @@ func TestValidateCustomAnchorLockInventory(t *testing.T) {
 		{
 			name:    "skip funding with lock",
 			funding: callerFunding,
-			locked:  []CustomAnchorLockedUTXO{locked},
+			locked:  []LockedUTXO{locked},
 			wantErr: "skip-funding commit returned locked UTXOs",
 		},
 		{
 			name:           "wallet lock covers backend input",
 			funding:        walletFunding,
 			backendManaged: []uint32{2},
-			locked:         []CustomAnchorLockedUTXO{locked},
+			locked:         []LockedUTXO{locked},
 		},
 		{
 			name:           "missing wallet lock",
@@ -675,14 +678,14 @@ func TestValidateCustomAnchorLockInventory(t *testing.T) {
 			name:           "wrong wallet lock",
 			funding:        walletFunding,
 			backendManaged: []uint32{2},
-			locked:         []CustomAnchorLockedUTXO{wrong},
+			locked:         []LockedUTXO{wrong},
 			wantErr:        "do not cover backend-funded inputs",
 		},
 		{
 			name:           "duplicate wallet lock",
 			funding:        walletFunding,
 			backendManaged: []uint32{2},
-			locked:         []CustomAnchorLockedUTXO{locked, locked},
+			locked:         []LockedUTXO{locked, locked},
 			wantErr:        "locked UTXO 1 is duplicated",
 		},
 		{
@@ -714,13 +717,13 @@ func TestCustomAnchorCommitRejectsBackendResponseDrift(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		mutateResponse func(*CommitVirtualPsbtsResponse)
+		mutateResponse func(*tapsdk.CommitVirtualPsbtsResponse)
 		mutatePackets  func(*psbt.Packet, []*tappsbt.VPacket)
 		wantErr        string
 	}{
 		{
 			name: "version",
-			mutateResponse: func(response *CommitVirtualPsbtsResponse) {
+			mutateResponse: func(response *tapsdk.CommitVirtualPsbtsResponse) {
 				customAnchorMutateResponsePSBT(
 					t, response,
 					func(packet *psbt.Packet) {
@@ -732,7 +735,7 @@ func TestCustomAnchorCommitRejectsBackendResponseDrift(t *testing.T) {
 		},
 		{
 			name: "locktime",
-			mutateResponse: func(response *CommitVirtualPsbtsResponse) {
+			mutateResponse: func(response *tapsdk.CommitVirtualPsbtsResponse) {
 				customAnchorMutateResponsePSBT(
 					t, response,
 					func(packet *psbt.Packet) {
@@ -744,7 +747,7 @@ func TestCustomAnchorCommitRejectsBackendResponseDrift(t *testing.T) {
 		},
 		{
 			name: "input sequence",
-			mutateResponse: func(response *CommitVirtualPsbtsResponse) {
+			mutateResponse: func(response *tapsdk.CommitVirtualPsbtsResponse) {
 				customAnchorMutateResponsePSBT(
 					t, response,
 					func(packet *psbt.Packet) {
@@ -756,7 +759,7 @@ func TestCustomAnchorCommitRejectsBackendResponseDrift(t *testing.T) {
 		},
 		{
 			name: "BTC-only output script",
-			mutateResponse: func(response *CommitVirtualPsbtsResponse) {
+			mutateResponse: func(response *tapsdk.CommitVirtualPsbtsResponse) {
 				customAnchorMutateResponsePSBT(
 					t, response,
 					func(packet *psbt.Packet) {
@@ -769,7 +772,7 @@ func TestCustomAnchorCommitRejectsBackendResponseDrift(t *testing.T) {
 		},
 		{
 			name: "BTC-only output value",
-			mutateResponse: func(response *CommitVirtualPsbtsResponse) {
+			mutateResponse: func(response *tapsdk.CommitVirtualPsbtsResponse) {
 				customAnchorMutateResponsePSBT(
 					t, response,
 					func(packet *psbt.Packet) {
@@ -781,7 +784,7 @@ func TestCustomAnchorCommitRejectsBackendResponseDrift(t *testing.T) {
 		},
 		{
 			name: "P2A output",
-			mutateResponse: func(response *CommitVirtualPsbtsResponse) {
+			mutateResponse: func(response *tapsdk.CommitVirtualPsbtsResponse) {
 				customAnchorMutateResponsePSBT(
 					t, response,
 					func(packet *psbt.Packet) {
@@ -794,7 +797,7 @@ func TestCustomAnchorCommitRejectsBackendResponseDrift(t *testing.T) {
 		},
 		{
 			name: "skip-funding input addition",
-			mutateResponse: func(response *CommitVirtualPsbtsResponse) {
+			mutateResponse: func(response *tapsdk.CommitVirtualPsbtsResponse) {
 				customAnchorMutateResponsePSBT(
 					t, response,
 					func(packet *psbt.Packet) {
@@ -809,7 +812,7 @@ func TestCustomAnchorCommitRejectsBackendResponseDrift(t *testing.T) {
 		},
 		{
 			name: "virtual packet count",
-			mutateResponse: func(response *CommitVirtualPsbtsResponse) {
+			mutateResponse: func(response *tapsdk.CommitVirtualPsbtsResponse) {
 				response.VirtualPsbts = nil
 			},
 			wantErr: "changed virtual packet counts",
@@ -850,7 +853,7 @@ func TestCustomAnchorCommitRejectsBackendResponseDrift(t *testing.T) {
 		},
 		{
 			name: "transition proof version downgrade",
-			mutateResponse: func(response *CommitVirtualPsbtsResponse) {
+			mutateResponse: func(response *tapsdk.CommitVirtualPsbtsResponse) {
 				packet, err := tappsbt.Decode(response.VirtualPsbts[0])
 				require.NoError(t, err)
 				require.NotNil(t, packet.Outputs[0].ProofSuffix)
@@ -876,8 +879,8 @@ func TestCustomAnchorCommitRejectsBackendResponseDrift(t *testing.T) {
 				), nil
 			}
 			fixture.client.commit = func(_ context.Context,
-				req *CommitVirtualPsbtsRequest) (
-				*CommitVirtualPsbtsResponse, error) {
+				req *tapsdk.CommitVirtualPsbtsRequest) (
+				*tapsdk.CommitVirtualPsbtsResponse, error) {
 
 				response := customAnchorTestCommitResponseWithMutation(
 					t, req, test.mutatePackets,
@@ -887,13 +890,12 @@ func TestCustomAnchorCommitRejectsBackendResponseDrift(t *testing.T) {
 				}
 				return response, nil
 			}
-			capabilities := DefaultTapdCustomAnchorCapabilities()
+			capabilities := DefaultTapdCapabilities()
 			client := &capableCustomAnchorBuilderTestClient{
 				customAnchorBuilderTestClient: fixture.client,
 				capabilities:                  &capabilities,
 			}
-			plan, err := NewWallet(client, NetworkRegtest).
-				NewCustomAnchorTxBuilder().Build(
+			plan, err := newTestTxBuilder(client).Build(
 				context.Background(), fixture.request,
 			)
 			require.NoError(t, err)
@@ -1033,24 +1035,25 @@ func TestPublishCustomAnchorTransferRejectsUnsignedDrift(t *testing.T) {
 		), nil
 	}
 	fixture.client.commit = func(_ context.Context,
-		req *CommitVirtualPsbtsRequest) (*CommitVirtualPsbtsResponse, error) {
+		req *tapsdk.CommitVirtualPsbtsRequest) (
+		*tapsdk.CommitVirtualPsbtsResponse, error) {
 
 		return customAnchorTestCommitResponse(t, req), nil
 	}
 	publishCalls := 0
 	fixture.client.publish = func(context.Context,
-		*PublishAndLogTransferRequest) (*AssetPacket, error) {
+		*tapsdk.PublishAndLogTransferRequest) (*tapsdk.AssetPacket, error) {
 
 		publishCalls++
-		return &AssetPacket{}, nil
+		return &tapsdk.AssetPacket{}, nil
 	}
-	capabilities := DefaultTapdCustomAnchorCapabilities()
+	capabilities := DefaultTapdCapabilities()
 	client := &capableCustomAnchorBuilderTestClient{
 		customAnchorBuilderTestClient: fixture.client,
 		capabilities:                  &capabilities,
 	}
-	wallet := NewWallet(client, NetworkRegtest)
-	plan, err := wallet.NewCustomAnchorTxBuilder().Build(
+	wallet := tapsdk.NewWallet(client, tapsdk.NetworkRegtest)
+	plan, err := NewTxBuilder(wallet).Build(
 		context.Background(), fixture.request,
 	)
 	require.NoError(t, err)
@@ -1122,8 +1125,8 @@ func TestPublishCustomAnchorTransferRejectsUnsignedDrift(t *testing.T) {
 			finalBytes, err := serializePSBT(finalPacket)
 			require.NoError(t, err)
 
-			_, err = wallet.PublishCustomAnchorTransfer(
-				context.Background(), packageSnapshot, finalBytes,
+			_, err = PublishTransfer(
+				context.Background(), wallet, packageSnapshot, finalBytes,
 			)
 			require.ErrorContains(t, err, "verify final anchor PSBT")
 		})
@@ -1167,7 +1170,7 @@ func (customAnchorTestWitnessValidator) ValidateWitnesses(
 }
 
 func customAnchorTestCommitResponse(t *testing.T,
-	req *CommitVirtualPsbtsRequest) *CommitVirtualPsbtsResponse {
+	req *tapsdk.CommitVirtualPsbtsRequest) *tapsdk.CommitVirtualPsbtsResponse {
 
 	return customAnchorTestCommitResponseWithMutation(
 		t, req, nil,
@@ -1175,8 +1178,9 @@ func customAnchorTestCommitResponse(t *testing.T,
 }
 
 func customAnchorTestCommitResponseWithMutation(t *testing.T,
-	req *CommitVirtualPsbtsRequest,
-	mutate func(*psbt.Packet, []*tappsbt.VPacket)) *CommitVirtualPsbtsResponse {
+	req *tapsdk.CommitVirtualPsbtsRequest,
+	mutate func(*psbt.Packet,
+		[]*tappsbt.VPacket)) *tapsdk.CommitVirtualPsbtsResponse {
 
 	t.Helper()
 	anchor, err := decodeAnchorPSBT(req.AnchorPsbt)
@@ -1221,7 +1225,7 @@ func customAnchorTestCommitResponseWithMutation(t *testing.T,
 	passiveBytes, err := encodeVirtualPackets(passive)
 	require.NoError(t, err)
 
-	return &CommitVirtualPsbtsResponse{
+	return &tapsdk.CommitVirtualPsbtsResponse{
 		AnchorPsbt:        anchorBytes,
 		VirtualPsbts:      activeBytes,
 		PassiveAssetPsbts: passiveBytes,
@@ -1230,7 +1234,7 @@ func customAnchorTestCommitResponseWithMutation(t *testing.T,
 }
 
 func customAnchorMutateResponsePSBT(t *testing.T,
-	response *CommitVirtualPsbtsResponse, mutate func(*psbt.Packet)) {
+	response *tapsdk.CommitVirtualPsbtsResponse, mutate func(*psbt.Packet)) {
 
 	t.Helper()
 	packet, err := decodeAnchorPSBT(response.AnchorPsbt)
@@ -1278,7 +1282,7 @@ func customAnchorFinalizePSBT(t *testing.T, encoded []byte,
 }
 
 func cloneCustomAnchorCommitRequest(
-	req *CommitVirtualPsbtsRequest) *CommitVirtualPsbtsRequest {
+	req *tapsdk.CommitVirtualPsbtsRequest) *tapsdk.CommitVirtualPsbtsRequest {
 
 	if req == nil {
 		return nil
@@ -1292,15 +1296,15 @@ func cloneCustomAnchorCommitRequest(
 }
 
 func cloneCustomAnchorPublishRequest(
-	req *PublishAndLogTransferRequest) *PublishAndLogTransferRequest {
+	r *tapsdk.PublishAndLogTransferRequest) *tapsdk.PublishAndLogTransferRequest {
 
-	if req == nil {
+	if r == nil {
 		return nil
 	}
-	clone := *req
-	clone.AnchorPsbt = cloneBytes(req.AnchorPsbt)
-	clone.VirtualPsbts = cloneByteSlices(req.VirtualPsbts)
-	clone.PassiveAssetPsbts = cloneByteSlices(req.PassiveAssetPsbts)
-	clone.LockedUTXOs = append([]Outpoint(nil), req.LockedUTXOs...)
+	clone := *r
+	clone.AnchorPsbt = cloneBytes(r.AnchorPsbt)
+	clone.VirtualPsbts = cloneByteSlices(r.VirtualPsbts)
+	clone.PassiveAssetPsbts = cloneByteSlices(r.PassiveAssetPsbts)
+	clone.LockedUTXOs = append([]tapsdk.Outpoint(nil), r.LockedUTXOs...)
 	return &clone
 }

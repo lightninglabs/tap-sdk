@@ -1,4 +1,4 @@
-package tapsdk
+package customanchor
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/commitment"
 	"github.com/lightninglabs/taproot-assets/proof"
@@ -22,11 +23,11 @@ func TestAssetProofPathMergeRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	merge := newAssetProofPathMergeFixture(t)
-	path := &AssetProofPath{
+	path := &ProofPath{
 		ConfirmedBaseProof: merge.firstBaseFile,
-		Steps: []AssetProofPathStep{{
+		Steps: []ProofPathStep{{
 			TransitionProof: merge.transitionProof,
-			CoInputPaths: []*AssetProofPath{{
+			CoInputPaths: []*ProofPath{{
 				ConfirmedBaseProof: merge.secondBaseFile,
 			}},
 		}},
@@ -37,7 +38,7 @@ func TestAssetProofPathMergeRoundTrip(t *testing.T) {
 	encoded, err := path.MarshalBinary()
 	require.NoError(t, err)
 
-	var decoded AssetProofPath
+	var decoded ProofPath
 	require.NoError(t, decoded.UnmarshalBinary(encoded))
 	require.Equal(t, path, &decoded)
 
@@ -55,11 +56,11 @@ func TestAssetProofPathMergeVerifies(t *testing.T) {
 	t.Parallel()
 
 	merge := newAssetProofPathMergeFixture(t)
-	path := &AssetProofPath{
+	path := &ProofPath{
 		ConfirmedBaseProof: merge.firstBaseFile,
-		Steps: []AssetProofPathStep{{
+		Steps: []ProofPathStep{{
 			TransitionProof: merge.transitionProof,
-			CoInputPaths: []*AssetProofPath{{
+			CoInputPaths: []*ProofPath{{
 				ConfirmedBaseProof: merge.secondBaseFile,
 			}},
 		}},
@@ -90,7 +91,7 @@ func TestAssetProofPathMergeVerifies(t *testing.T) {
 		t, outpointFromWire(merge.firstOutPoint),
 		attestation.PreviousAnchorOutpoint,
 	)
-	require.Equal(t, []Outpoint{
+	require.Equal(t, []tapsdk.Outpoint{
 		outpointFromWire(merge.firstOutPoint),
 		outpointFromWire(merge.secondOutPoint),
 	}, attestation.PreviousAnchorOutpoints)
@@ -104,11 +105,11 @@ func TestAssetProofPathRejectsUnmergedCoInput(t *testing.T) {
 	fixture := newAssetProofPathFixture(t)
 	second, _, _ := newAssetProofPathSecondBase(t)
 
-	path := &AssetProofPath{
+	path := &ProofPath{
 		ConfirmedBaseProof: fixture.baseProofFile,
-		Steps: []AssetProofPathStep{{
+		Steps: []ProofPathStep{{
 			TransitionProof: fixture.transitionProof,
-			CoInputPaths: []*AssetProofPath{{
+			CoInputPaths: []*ProofPath{{
 				ConfirmedBaseProof: second,
 			}},
 		}},
@@ -129,11 +130,11 @@ func TestAssetProofPathMergeBindingRejectsDuplicates(t *testing.T) {
 	// Declaring the same base twice dedupes to a single outpoint, so
 	// the declared set can no longer account for both of the
 	// transition's witnesses.
-	duplicate := &AssetProofPath{
+	duplicate := &ProofPath{
 		ConfirmedBaseProof: merge.firstBaseFile,
-		Steps: []AssetProofPathStep{{
+		Steps: []ProofPathStep{{
 			TransitionProof: merge.transitionProof,
-			CoInputPaths: []*AssetProofPath{{
+			CoInputPaths: []*ProofPath{{
 				ConfirmedBaseProof: merge.firstBaseFile,
 			}},
 		}},

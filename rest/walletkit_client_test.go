@@ -15,6 +15,7 @@ import (
 	"time"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
+	"github.com/lightninglabs/tap-sdk/customanchor"
 	"github.com/lightninglabs/tap-sdk/macaroon"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -101,7 +102,7 @@ func TestCustomAnchorCapabilities(t *testing.T) {
 
 	caps, err := client.CustomAnchorCapabilities(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, tapsdk.DefaultTapdCustomAnchorCapabilities(), *caps)
+	require.Equal(t, customanchor.DefaultTapdCapabilities(), *caps)
 }
 
 func TestVerifyAssetOwnershipSendsChallenge(t *testing.T) {

@@ -1,4 +1,4 @@
-package tapsdk
+package customanchor
 
 import (
 	"bytes"
@@ -15,6 +15,7 @@ import (
 	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/commitment"
 	"github.com/lightninglabs/taproot-assets/proof"
@@ -83,14 +84,14 @@ func TestAssetProofPathRequiresActivationEvidence(t *testing.T) {
 			test.mutate(transition)
 			raw, err = transition.Bytes()
 			require.NoError(t, err)
-			path := &AssetProofPath{
+			path := &ProofPath{
 				ConfirmedBaseProof: fixture.baseProofFile,
-				Steps: []AssetProofPathStep{{
+				Steps: []ProofPathStep{{
 					TransitionProof: raw,
 				}},
 			}
 			err = path.Validate()
-			require.ErrorIs(t, err, ErrAssetProofPathInvalid)
+			require.ErrorIs(t, err, ErrProofPathInvalid)
 			require.ErrorIs(t, err, test.wantErr)
 		})
 	}
@@ -110,9 +111,9 @@ func TestAssetProofPathVerifiesSpenders(t *testing.T) {
 	}
 	transition, err := fixture.transition.Bytes()
 	require.NoError(t, err)
-	path := &AssetProofPath{
+	path := &ProofPath{
 		ConfirmedBaseProof: fixture.baseProofFile,
-		Steps: []AssetProofPathStep{{
+		Steps: []ProofPathStep{{
 			TransitionProof: transition,
 		}},
 	}
@@ -144,9 +145,9 @@ func TestAssetProofPathSpendsHistoricalV0Base(t *testing.T) {
 	)
 	raw, err := transition.Bytes()
 	require.NoError(t, err)
-	path := &AssetProofPath{
+	path := &ProofPath{
 		ConfirmedBaseProof: encodedBase.Bytes(),
-		Steps: []AssetProofPathStep{{
+		Steps: []ProofPathStep{{
 			TransitionProof: raw,
 		}},
 	}
@@ -164,9 +165,9 @@ func TestAssetProofPathRoundTripAndVerify(t *testing.T) {
 	t.Parallel()
 
 	fixture := newAssetProofPathFixture(t)
-	path := &AssetProofPath{
+	path := &ProofPath{
 		ConfirmedBaseProof: fixture.baseProofFile,
-		Steps: []AssetProofPathStep{{
+		Steps: []ProofPathStep{{
 			TransitionProof: fixture.transitionProof,
 		}},
 	}
@@ -174,7 +175,7 @@ func TestAssetProofPathRoundTripAndVerify(t *testing.T) {
 	require.NoError(t, path.Validate())
 	contentID, err := path.ContentID()
 	require.NoError(t, err)
-	require.NotEqual(t, Hash{}, contentID)
+	require.NotEqual(t, tapsdk.Hash{}, contentID)
 
 	encoded, err := path.MarshalBinary()
 	require.NoError(t, err)
@@ -182,7 +183,7 @@ func TestAssetProofPathRoundTripAndVerify(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, encoded, encodedAgain)
 
-	var decoded AssetProofPath
+	var decoded ProofPath
 	require.NoError(t, decoded.UnmarshalBinary(encoded))
 	require.Equal(t, path, &decoded)
 	decodedID, err := decoded.ContentID()
@@ -220,7 +221,7 @@ func TestAssetProofPathRoundTripAndVerify(t *testing.T) {
 	require.Equal(t, uint16(0), attestation.StepIndex)
 	require.Equal(t, stepSummary.PreviousAnchorOutpoint,
 		attestation.PreviousAnchorOutpoint)
-	require.Equal(t, []Outpoint{attestation.PreviousAnchorOutpoint},
+	require.Equal(t, []tapsdk.Outpoint{attestation.PreviousAnchorOutpoint},
 		attestation.PreviousAnchorOutpoints)
 	require.Equal(t, stepSummary.AnchorOutpoint, attestation.AnchorOutpoint)
 	var anchorBytes bytes.Buffer
@@ -234,7 +235,7 @@ func TestAssetProofPathRoundTripAndVerify(t *testing.T) {
 	require.NotEqual(t, clone.ConfirmedBaseProof, decoded.ConfirmedBaseProof)
 	require.NotEqual(t, clone.Steps[0].TransitionProof,
 		decoded.Steps[0].TransitionProof)
-	var nilPath *AssetProofPath
+	var nilPath *ProofPath
 	require.Nil(t, nilPath.Clone())
 }
 
@@ -250,9 +251,9 @@ func TestAssetProofPathAcceptsSplitSteps(t *testing.T) {
 	transitionProof, err := splitTransition.Bytes()
 	require.NoError(t, err)
 
-	path := &AssetProofPath{
+	path := &ProofPath{
 		ConfirmedBaseProof: baseProofFile,
-		Steps: []AssetProofPathStep{{
+		Steps: []ProofPathStep{{
 			TransitionProof: transitionProof,
 		}},
 	}
@@ -308,9 +309,9 @@ func TestAssetProofPathMultiHopFromSplitChild(t *testing.T) {
 	secondBytes, err := secondTransition.Bytes()
 	require.NoError(t, err)
 
-	path := &AssetProofPath{
+	path := &ProofPath{
 		ConfirmedBaseProof: baseProofFile,
-		Steps: []AssetProofPathStep{
+		Steps: []ProofPathStep{
 			{TransitionProof: splitBytes},
 			{TransitionProof: secondBytes},
 		},
@@ -351,9 +352,9 @@ func TestAssetProofPathAllowsBitcoinOnlyInputs(t *testing.T) {
 			})
 		},
 	)
-	path := &AssetProofPath{
+	path := &ProofPath{
 		ConfirmedBaseProof: fixture.baseProofFile,
-		Steps: []AssetProofPathStep{{
+		Steps: []ProofPathStep{{
 			TransitionProof: transitionProof,
 		}},
 	}
@@ -383,9 +384,9 @@ func TestAssetProofPathRejectsHiddenCoAnchoredAsset(t *testing.T) {
 	transitionProof, err := transition.Bytes()
 	require.NoError(t, err)
 
-	path := &AssetProofPath{
+	path := &ProofPath{
 		ConfirmedBaseProof: baseProofFile,
-		Steps: []AssetProofPathStep{{
+		Steps: []ProofPathStep{{
 			TransitionProof: transitionProof,
 		}},
 	}
@@ -398,7 +399,7 @@ func TestAssetProofPathRejectsHiddenCoAnchoredAsset(t *testing.T) {
 			},
 		},
 	)
-	require.ErrorIs(t, err, ErrAssetProofPathPassiveAssets)
+	require.ErrorIs(t, err, ErrProofPathPassiveAssets)
 	require.ErrorContains(t, err, "selected output is not an isolated")
 }
 
@@ -424,9 +425,9 @@ func TestAssetProofPathRejectsImmutableIdentityMutation(t *testing.T) {
 	)
 	validTransitionBytes, err := validTransition.Bytes()
 	require.NoError(t, err)
-	validPath := &AssetProofPath{
+	validPath := &ProofPath{
 		ConfirmedBaseProof: baseProofFile,
-		Steps: []AssetProofPathStep{{
+		Steps: []ProofPathStep{{
 			TransitionProof: validTransitionBytes,
 		}},
 	}
@@ -494,16 +495,16 @@ func TestAssetProofPathRejectsImmutableIdentityMutation(t *testing.T) {
 
 			transitionBytes, err := transition.Bytes()
 			require.NoError(t, err)
-			path := &AssetProofPath{
+			path := &ProofPath{
 				ConfirmedBaseProof: baseProofFile,
-				Steps: []AssetProofPathStep{{
+				Steps: []ProofPathStep{{
 					TransitionProof: transitionBytes,
 				}},
 			}
 			require.NoError(t, path.Validate())
 
 			_, err = path.Verify(context.Background(), verifier)
-			require.ErrorIs(t, err, ErrAssetProofPathInvalid)
+			require.ErrorIs(t, err, ErrProofPathInvalid)
 			require.ErrorContains(t, err, testCase.errMsg)
 		})
 	}
@@ -519,9 +520,9 @@ func TestAssetProofPathRejectsSplitRootIdentityMutation(t *testing.T) {
 	transition := newAssetProofPathSplitTransition(t, baseProof, senderKey)
 	transitionBytes, err := transition.Bytes()
 	require.NoError(t, err)
-	validPath := &AssetProofPath{
+	validPath := &ProofPath{
 		ConfirmedBaseProof: baseProofFile,
-		Steps: []AssetProofPathStep{{
+		Steps: []ProofPathStep{{
 			TransitionProof: transitionBytes,
 		}},
 	}
@@ -572,9 +573,9 @@ func TestAssetProofPathRejectsSplitRootIdentityMutation(t *testing.T) {
 					testCase.mutate(root)
 				},
 			)
-			path := &AssetProofPath{
+			path := &ProofPath{
 				ConfirmedBaseProof: baseProofFile,
-				Steps: []AssetProofPathStep{{
+				Steps: []ProofPathStep{{
 					TransitionProof: mutated,
 				}},
 			}
@@ -587,7 +588,7 @@ func TestAssetProofPathRejectsSplitRootIdentityMutation(t *testing.T) {
 					},
 				},
 			)
-			require.ErrorIs(t, err, ErrAssetProofPathInvalid)
+			require.ErrorIs(t, err, ErrProofPathInvalid)
 			require.ErrorContains(t, err, testCase.errMsg)
 		})
 	}
@@ -675,9 +676,9 @@ func TestAssetProofPathRejectsUnsafeTransitions(t *testing.T) {
 			step := mutateAssetProofPathTransition(
 				t, fixture.transitionProof, testCase.mutate,
 			)
-			path := &AssetProofPath{
+			path := &ProofPath{
 				ConfirmedBaseProof: fixture.baseProofFile,
-				Steps: []AssetProofPathStep{{
+				Steps: []ProofPathStep{{
 					TransitionProof: step,
 				}},
 			}
@@ -694,9 +695,9 @@ func TestAssetProofPathVerifierFailsClosed(t *testing.T) {
 	t.Parallel()
 
 	fixture := newAssetProofPathFixture(t)
-	path := &AssetProofPath{
+	path := &ProofPath{
 		ConfirmedBaseProof: fixture.baseProofFile,
-		Steps: []AssetProofPathStep{{
+		Steps: []ProofPathStep{{
 			TransitionProof: fixture.transitionProof,
 		}},
 	}
@@ -712,7 +713,7 @@ func TestAssetProofPathVerifierFailsClosed(t *testing.T) {
 		{
 			name:     "missing unconfirmed anchor verifier",
 			verifier: confirmedOnlyProofVerifier{},
-			target:   ErrAssetProofPathUnconfirmedAnchor,
+			target:   ErrProofPathUnconfirmedAnchor,
 		},
 		{
 			name: "unconfirmed anchor rejection",
@@ -722,21 +723,21 @@ func TestAssetProofPathVerifierFailsClosed(t *testing.T) {
 				},
 				unconfirmedErr: errors.New("unsigned Ark input"),
 			},
-			target: ErrAssetProofPathUnconfirmedAnchor,
+			target: ErrProofPathUnconfirmedAnchor,
 		},
 		{
 			name: "unknown inventory",
 			verifier: &testConfirmedProofVerifier{
 				result: &ConfirmedProofVerification{},
 			},
-			target: ErrAssetProofPathUnknownPassiveAssets,
+			target: ErrProofPathUnknownPassiveAssets,
 		},
 		{
 			name: "nil inventory result",
 			verifier: &testConfirmedProofVerifier{
 				result: nil,
 			},
-			target: ErrAssetProofPathUnknownPassiveAssets,
+			target: ErrProofPathUnknownPassiveAssets,
 		},
 		{
 			name: "known passive asset",
@@ -746,7 +747,7 @@ func TestAssetProofPathVerifierFailsClosed(t *testing.T) {
 					PassiveAssetCount:            1,
 				},
 			},
-			target: ErrAssetProofPathPassiveAssets,
+			target: ErrProofPathPassiveAssets,
 		},
 		{
 			name: "base verification failure",
@@ -806,9 +807,9 @@ func TestAssetProofPathEncodingRejectsCorruption(t *testing.T) {
 	t.Parallel()
 
 	fixture := newAssetProofPathFixture(t)
-	path := &AssetProofPath{
+	path := &ProofPath{
 		ConfirmedBaseProof: fixture.baseProofFile,
-		Steps: []AssetProofPathStep{{
+		Steps: []ProofPathStep{{
 			TransitionProof: fixture.transitionProof,
 		}},
 	}
@@ -836,27 +837,27 @@ func TestAssetProofPathEncodingRejectsCorruption(t *testing.T) {
 		{
 			name:    "truncated",
 			encoded: encoded[:assetProofPathHeaderSize],
-			target:  ErrAssetProofPathInvalid,
+			target:  ErrProofPathInvalid,
 		},
 		{
 			name:    "checksum",
 			encoded: badChecksum,
-			target:  ErrAssetProofPathInvalid,
+			target:  ErrProofPathInvalid,
 		},
 		{
 			name:    "format",
 			encoded: unknownFormat,
-			target:  ErrAssetProofPathUnknownFormat,
+			target:  ErrProofPathUnknownFormat,
 		},
 		{
 			name:    "magic",
 			encoded: badMagic,
-			target:  ErrAssetProofPathInvalid,
+			target:  ErrProofPathInvalid,
 		},
 		{
 			name:    "trailing byte",
 			encoded: trailingByte,
-			target:  ErrAssetProofPathInvalid,
+			target:  ErrProofPathInvalid,
 		},
 	}
 
@@ -864,7 +865,7 @@ func TestAssetProofPathEncodingRejectsCorruption(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			receiver := AssetProofPath{
+			receiver := ProofPath{
 				ConfirmedBaseProof: []byte("unchanged"),
 			}
 			err := receiver.UnmarshalBinary(testCase.encoded)
@@ -878,7 +879,7 @@ func TestAssetProofPathEncodingRejectsCorruption(t *testing.T) {
 
 	tooDeep := path.Clone()
 	tooDeep.Steps = make(
-		[]AssetProofPathStep, AssetProofPathMaxDepth+1,
+		[]ProofPathStep, ProofPathMaxDepth+1,
 	)
 	for i := range tooDeep.Steps {
 		tooDeep.Steps[i].TransitionProof = fixture.transitionProof
@@ -887,7 +888,7 @@ func TestAssetProofPathEncodingRejectsCorruption(t *testing.T) {
 
 	oversized := path.Clone()
 	oversized.Steps[0].TransitionProof = make(
-		[]byte, AssetProofPathMaxStepSize+1,
+		[]byte, ProofPathMaxStepSize+1,
 	)
 	require.ErrorContains(t, oversized.Validate(), "transition proof exceeds")
 }
@@ -1484,12 +1485,12 @@ func TestDeriveConfirmedProofInventory(t *testing.T) {
 		{
 			name:      "co-anchored asset",
 			proofFile: newCoAnchoredAssetProofFile(t),
-			target:    ErrAssetProofPathPassiveAssets,
+			target:    ErrProofPathPassiveAssets,
 		},
 		{
 			name:      "malformed proof file",
 			proofFile: []byte("not a proof file"),
-			target:    ErrAssetProofPathInvalid,
+			target:    ErrProofPathInvalid,
 		},
 	}
 
@@ -1518,9 +1519,9 @@ func TestAssetProofPathChainOnlyVerifier(t *testing.T) {
 	t.Parallel()
 
 	fixture := newAssetProofPathFixture(t)
-	path := &AssetProofPath{
+	path := &ProofPath{
 		ConfirmedBaseProof: fixture.baseProofFile,
-		Steps: []AssetProofPathStep{{
+		Steps: []ProofPathStep{{
 			TransitionProof: fixture.transitionProof,
 		}},
 	}

@@ -1,5 +1,7 @@
 package vpsbt
 
+import "fmt"
+
 // PSBT key prefixes for virtual transaction encoding.
 var (
 	// Global keys.
@@ -61,6 +63,27 @@ const (
 	// SimNetHRP is the HRP for simnet.
 	SimNetHRP = "tapsb"
 )
+
+// NetworkParams returns the address HRP and BIP-0044 coin type for a network
+// name. Names match the values of tapsdk.Network.
+func NetworkParams(network string) (string, uint32, error) {
+	switch network {
+	case "mainnet":
+		return MainnetHRP, 0, nil
+	case "testnet":
+		return TestnetHRP, 1, nil
+	case "testnet4":
+		return Testnet4HRP, 1, nil
+	case "signet":
+		return SigNetHRP, 1, nil
+	case "simnet":
+		return SimNetHRP, 1, nil
+	case "regtest":
+		return RegTestHRP, 1, nil
+	default:
+		return "", 0, fmt.Errorf("unsupported network: %s", network)
+	}
+}
 
 // BIP-0043 purpose for key derivation (same as LND).
 const (

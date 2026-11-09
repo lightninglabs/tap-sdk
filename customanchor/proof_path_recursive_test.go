@@ -1,4 +1,4 @@
-package tapsdk
+package customanchor
 
 import (
 	"bytes"
@@ -11,6 +11,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
+	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/commitment"
 	"github.com/lightninglabs/taproot-assets/proof"
@@ -24,11 +25,11 @@ func TestAssetProofPathCoInputRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	merge := newAssetProofPathMergeFixture(t)
-	path := &AssetProofPath{
+	path := &ProofPath{
 		ConfirmedBaseProof: merge.firstBaseFile,
-		Steps: []AssetProofPathStep{{
+		Steps: []ProofPathStep{{
 			TransitionProof: merge.transitionProof,
-			CoInputPaths: []*AssetProofPath{{
+			CoInputPaths: []*ProofPath{{
 				ConfirmedBaseProof: merge.secondBaseFile,
 			}},
 		}},
@@ -39,7 +40,7 @@ func TestAssetProofPathCoInputRoundTrip(t *testing.T) {
 	encoded, err := path.MarshalBinary()
 	require.NoError(t, err)
 
-	var decoded AssetProofPath
+	var decoded ProofPath
 	require.NoError(t, decoded.UnmarshalBinary(encoded))
 	require.Equal(t, path, &decoded)
 
@@ -89,15 +90,15 @@ func TestAssetProofPathMidPathMerge(t *testing.T) {
 	mergeBytes, err := mergeTransition.Bytes()
 	require.NoError(t, err)
 
-	path := &AssetProofPath{
+	path := &ProofPath{
 		ConfirmedBaseProof: firstFile,
-		Steps: []AssetProofPathStep{
+		Steps: []ProofPathStep{
 			{TransitionProof: spineBytes},
 			{
 				TransitionProof: mergeBytes,
-				CoInputPaths: []*AssetProofPath{{
+				CoInputPaths: []*ProofPath{{
 					ConfirmedBaseProof: secondFile,
-					Steps: []AssetProofPathStep{{
+					Steps: []ProofPathStep{{
 						TransitionProof: coBytes,
 					}},
 				}},
@@ -108,7 +109,7 @@ func TestAssetProofPathMidPathMerge(t *testing.T) {
 
 	encoded, err := path.MarshalBinary()
 	require.NoError(t, err)
-	var decoded AssetProofPath
+	var decoded ProofPath
 	require.NoError(t, decoded.UnmarshalBinary(encoded))
 	require.Equal(t, path, &decoded)
 
@@ -132,7 +133,7 @@ func TestAssetProofPathMidPathMerge(t *testing.T) {
 	require.Equal(t, 3, verifier.unconfirmedCalls)
 	mergeAttestation := verifier.unconfirmedTransitions[2]
 	require.Equal(t, uint16(1), mergeAttestation.StepIndex)
-	require.Equal(t, []Outpoint{
+	require.Equal(t, []tapsdk.Outpoint{
 		outpointFromWire(spineTransition.OutPoint()),
 		outpointFromWire(coTransition.OutPoint()),
 	}, mergeAttestation.PreviousAnchorOutpoints)
@@ -160,11 +161,11 @@ func TestAssetProofPathMergeAndSplit(t *testing.T) {
 	transitionBytes, err := transition.Bytes()
 	require.NoError(t, err)
 
-	path := &AssetProofPath{
+	path := &ProofPath{
 		ConfirmedBaseProof: firstFile,
-		Steps: []AssetProofPathStep{{
+		Steps: []ProofPathStep{{
 			TransitionProof: transitionBytes,
-			CoInputPaths: []*AssetProofPath{{
+			CoInputPaths: []*ProofPath{{
 				ConfirmedBaseProof: secondFile,
 			}},
 		}},
@@ -191,7 +192,7 @@ func TestAssetProofPathMergeAndSplit(t *testing.T) {
 	)
 	require.Equal(t, 2, verifier.calls)
 	require.Equal(t, 1, verifier.unconfirmedCalls)
-	require.Equal(t, []Outpoint{
+	require.Equal(t, []tapsdk.Outpoint{
 		outpointFromWire(firstProof.OutPoint()),
 		outpointFromWire(secondProof.OutPoint()),
 	}, verifier.unconfirmedTransitions[0].PreviousAnchorOutpoints)
@@ -224,15 +225,15 @@ func TestAssetProofPathNestedCoPath(t *testing.T) {
 	outerBytes, err := outerMerge.Bytes()
 	require.NoError(t, err)
 
-	path := &AssetProofPath{
+	path := &ProofPath{
 		ConfirmedBaseProof: firstFile,
-		Steps: []AssetProofPathStep{{
+		Steps: []ProofPathStep{{
 			TransitionProof: outerBytes,
-			CoInputPaths: []*AssetProofPath{{
+			CoInputPaths: []*ProofPath{{
 				ConfirmedBaseProof: secondFile,
-				Steps: []AssetProofPathStep{{
+				Steps: []ProofPathStep{{
 					TransitionProof: innerBytes,
-					CoInputPaths: []*AssetProofPath{{
+					CoInputPaths: []*ProofPath{{
 						ConfirmedBaseProof: thirdFile,
 					}},
 				}},
@@ -243,7 +244,7 @@ func TestAssetProofPathNestedCoPath(t *testing.T) {
 
 	encoded, err := path.MarshalBinary()
 	require.NoError(t, err)
-	var decoded AssetProofPath
+	var decoded ProofPath
 	require.NoError(t, decoded.UnmarshalBinary(encoded))
 	require.Equal(t, path, &decoded)
 
@@ -264,11 +265,11 @@ func TestAssetProofPathNestedCoPath(t *testing.T) {
 	// attested with their complete input sets.
 	require.Equal(t, 3, verifier.calls)
 	require.Equal(t, 2, verifier.unconfirmedCalls)
-	require.Equal(t, []Outpoint{
+	require.Equal(t, []tapsdk.Outpoint{
 		outpointFromWire(secondProof.OutPoint()),
 		outpointFromWire(thirdProof.OutPoint()),
 	}, verifier.unconfirmedTransitions[0].PreviousAnchorOutpoints)
-	require.Equal(t, []Outpoint{
+	require.Equal(t, []tapsdk.Outpoint{
 		outpointFromWire(firstProof.OutPoint()),
 		outpointFromWire(innerMerge.OutPoint()),
 	}, verifier.unconfirmedTransitions[1].PreviousAnchorOutpoints)
@@ -301,17 +302,17 @@ func TestAssetProofPathVerifyFailsClosed(t *testing.T) {
 
 		// The co-path resolves to the spine's own tip, so the two
 		// declared inputs collapse to one outpoint.
-		path := &AssetProofPath{
+		path := &ProofPath{
 			ConfirmedBaseProof: firstFile,
-			Steps: []AssetProofPathStep{{
+			Steps: []ProofPathStep{{
 				TransitionProof: mergeBytes,
-				CoInputPaths: []*AssetProofPath{{
+				CoInputPaths: []*ProofPath{{
 					ConfirmedBaseProof: firstFile,
 				}},
 			}},
 		}
 		_, err := path.Verify(context.Background(), verifier())
-		require.ErrorIs(t, err, ErrAssetProofPathInvalid)
+		require.ErrorIs(t, err, ErrProofPathInvalid)
 		require.ErrorContains(t, err, "duplicate co-input outpoint")
 	})
 
@@ -327,17 +328,17 @@ func TestAssetProofPathVerifyFailsClosed(t *testing.T) {
 				p.AnchorTx.TxIn = p.AnchorTx.TxIn[:1]
 			},
 		)
-		path := &AssetProofPath{
+		path := &ProofPath{
 			ConfirmedBaseProof: firstFile,
-			Steps: []AssetProofPathStep{{
+			Steps: []ProofPathStep{{
 				TransitionProof: mutated,
-				CoInputPaths: []*AssetProofPath{{
+				CoInputPaths: []*ProofPath{{
 					ConfirmedBaseProof: secondFile,
 				}},
 			}},
 		}
 		_, err := path.Verify(context.Background(), verifier())
-		require.ErrorIs(t, err, ErrAssetProofPathInvalid)
+		require.ErrorIs(t, err, ErrProofPathInvalid)
 		require.ErrorContains(t, err, "anchor inputs")
 		require.ErrorContains(t, err, "exactly once, found 0")
 	})
@@ -351,17 +352,17 @@ func TestAssetProofPathVerifyFailsClosed(t *testing.T) {
 		unrelatedFile, _, _ := newAssetProofPathBaseVariant(
 			t, false, 12,
 		)
-		path := &AssetProofPath{
+		path := &ProofPath{
 			ConfirmedBaseProof: firstFile,
-			Steps: []AssetProofPathStep{{
+			Steps: []ProofPathStep{{
 				TransitionProof: mergeBytes,
-				CoInputPaths: []*AssetProofPath{{
+				CoInputPaths: []*ProofPath{{
 					ConfirmedBaseProof: unrelatedFile,
 				}},
 			}},
 		}
 		_, err := path.Verify(context.Background(), verifier())
-		require.ErrorIs(t, err, ErrAssetProofPathInvalid)
+		require.ErrorIs(t, err, ErrProofPathInvalid)
 		require.ErrorContains(t, err, "undeclared outpoint")
 	})
 
@@ -378,17 +379,17 @@ func TestAssetProofPathVerifyFailsClosed(t *testing.T) {
 		groupedBytes, err := grouped.Bytes()
 		require.NoError(t, err)
 
-		path := &AssetProofPath{
+		path := &ProofPath{
 			ConfirmedBaseProof: firstFile,
-			Steps: []AssetProofPathStep{{
+			Steps: []ProofPathStep{{
 				TransitionProof: groupedBytes,
-				CoInputPaths: []*AssetProofPath{{
+				CoInputPaths: []*ProofPath{{
 					ConfirmedBaseProof: groupedFile,
 				}},
 			}},
 		}
 		_, err = path.Verify(context.Background(), verifier())
-		require.ErrorIs(t, err, ErrAssetProofPathInvalid)
+		require.ErrorIs(t, err, ErrProofPathInvalid)
 		require.ErrorContains(
 			t, err, "co-input asset group key changed",
 		)
@@ -576,17 +577,17 @@ func TestAssetProofPathValidateRejections(t *testing.T) {
 	t.Parallel()
 
 	merge := newAssetProofPathMergeFixture(t)
-	coPath := func() *AssetProofPath {
-		return &AssetProofPath{
+	coPath := func() *ProofPath {
+		return &ProofPath{
 			ConfirmedBaseProof: merge.secondBaseFile,
 		}
 	}
-	mergePath := func() *AssetProofPath {
-		return &AssetProofPath{
+	mergePath := func() *ProofPath {
+		return &ProofPath{
 			ConfirmedBaseProof: merge.firstBaseFile,
-			Steps: []AssetProofPathStep{{
+			Steps: []ProofPathStep{{
 				TransitionProof: merge.transitionProof,
-				CoInputPaths: []*AssetProofPath{
+				CoInputPaths: []*ProofPath{
 					coPath(),
 				},
 			}},
@@ -597,7 +598,7 @@ func TestAssetProofPathValidateRejections(t *testing.T) {
 		t.Parallel()
 
 		path := mergePath()
-		for range AssetProofPathMaxStepCoPaths {
+		for range ProofPathMaxStepCoPaths {
 			path.Steps[0].CoInputPaths = append(
 				path.Steps[0].CoInputPaths, coPath(),
 			)
@@ -613,12 +614,12 @@ func TestAssetProofPathValidateRejections(t *testing.T) {
 		// garbage transition bytes: the shape pass must reject the
 		// depth before decoding any content.
 		path := coPath()
-		for range AssetProofPathMaxCoPathDepth + 1 {
-			path = &AssetProofPath{
+		for range ProofPathMaxCoPathDepth + 1 {
+			path = &ProofPath{
 				ConfirmedBaseProof: merge.firstBaseFile,
-				Steps: []AssetProofPathStep{{
+				Steps: []ProofPathStep{{
 					TransitionProof: []byte{1},
-					CoInputPaths: []*AssetProofPath{
+					CoInputPaths: []*ProofPath{
 						path,
 					},
 				}},
@@ -633,11 +634,11 @@ func TestAssetProofPathValidateRejections(t *testing.T) {
 		t.Parallel()
 
 		single := newAssetProofPathFixture(t)
-		path := &AssetProofPath{
+		path := &ProofPath{
 			ConfirmedBaseProof: single.baseProofFile,
-			Steps: []AssetProofPathStep{{
+			Steps: []ProofPathStep{{
 				TransitionProof: single.transitionProof,
-				CoInputPaths: []*AssetProofPath{
+				CoInputPaths: []*ProofPath{
 					coPath(),
 				},
 			}},
@@ -659,7 +660,7 @@ func TestAssetProofPathValidateRejections(t *testing.T) {
 		path.Steps[0].CoInputPaths = nil
 		for range 3 {
 			path.Steps[0].CoInputPaths = append(
-				path.Steps[0].CoInputPaths, &AssetProofPath{
+				path.Steps[0].CoInputPaths, &ProofPath{
 					ConfirmedBaseProof: hugeBase,
 				},
 			)
@@ -692,9 +693,9 @@ func TestAssetProofPathRejectsHostileEncodings(t *testing.T) {
 			)
 		}
 
-		var decoded AssetProofPath
+		var decoded ProofPath
 		err := decoded.UnmarshalBinary(blob)
-		require.ErrorIs(t, err, ErrAssetProofPathInvalid)
+		require.ErrorIs(t, err, ErrProofPathInvalid)
 		require.ErrorContains(t, err, "co-input path depth exceeds 3")
 		require.Nil(t, decoded.ConfirmedBaseProof)
 	})
@@ -704,7 +705,7 @@ func TestAssetProofPathRejectsHostileEncodings(t *testing.T) {
 
 		// The declared count exceeds the bound and the garbage blobs
 		// after it could never parse: the count check must trip first.
-		garbage := make([][]byte, AssetProofPathMaxStepCoPaths+1)
+		garbage := make([][]byte, ProofPathMaxStepCoPaths+1)
 		for i := range garbage {
 			garbage[i] = []byte{0xff}
 		}
@@ -712,20 +713,20 @@ func TestAssetProofPathRejectsHostileEncodings(t *testing.T) {
 			t, merge.firstBaseFile, []byte{1}, garbage,
 		)
 
-		var decoded AssetProofPath
+		var decoded ProofPath
 		err := decoded.UnmarshalBinary(blob)
-		require.ErrorIs(t, err, ErrAssetProofPathInvalid)
+		require.ErrorIs(t, err, ErrProofPathInvalid)
 		require.ErrorContains(t, err, "limit is 15")
 	})
 
 	t.Run("unknown format rejected", func(t *testing.T) {
 		t.Parallel()
 
-		path := &AssetProofPath{
+		path := &ProofPath{
 			ConfirmedBaseProof: merge.firstBaseFile,
-			Steps: []AssetProofPathStep{{
+			Steps: []ProofPathStep{{
 				TransitionProof: merge.transitionProof,
-				CoInputPaths: []*AssetProofPath{{
+				CoInputPaths: []*ProofPath{{
 					ConfirmedBaseProof: merge.
 						secondBaseFile,
 				}},
@@ -739,9 +740,9 @@ func TestAssetProofPathRejectsHostileEncodings(t *testing.T) {
 		)
 		recomputeAssetProofPathChecksum(encoded)
 
-		var decoded AssetProofPath
+		var decoded ProofPath
 		err = decoded.UnmarshalBinary(encoded)
-		require.ErrorIs(t, err, ErrAssetProofPathUnknownFormat)
+		require.ErrorIs(t, err, ErrProofPathUnknownFormat)
 	})
 }
 
