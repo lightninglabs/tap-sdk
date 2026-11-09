@@ -59,6 +59,10 @@ type InputSigningPlan struct {
 	// out of band. The SDK derives no signing request and the backend
 	// must not sign it.
 	CallerSigned *CallerSignedPlan `json:"caller_signed,omitempty"`
+
+	// BackendSigned declares an asset anchor input that the backend owns
+	// and signs when the transfer is published.
+	BackendSigned *BackendSignedPlan `json:"backend_signed,omitempty"`
 }
 
 // KeyPathSigningPlan identifies the internal key that must
@@ -86,6 +90,13 @@ type MuSig2SigningPlan struct {
 // the caller, outside the SDK's signing-request flow: typically a funding
 // input from the caller's own on-chain wallet on a caller-funded anchor.
 type CallerSignedPlan struct{}
+
+// BackendSignedPlan declares an asset anchor input that the backend signs
+// and finalizes at publish, so the caller never handles its key. It is valid
+// only under FundingCallerFundedExact and only for an input that spends the
+// anchor of an asset input. The input must reach publish without a final
+// witness.
+type BackendSignedPlan struct{}
 
 // ScriptPathSigningPlan identifies one exact committed Taproot
 // leaf and any external keys expected to contribute witness signatures. The
@@ -339,6 +350,14 @@ func customAnchorSigningRequests(packet *btcpsbt.Packet,
 		case plan.CallerSigned != nil:
 			// The caller supplies this input's witness out of
 			// band; no signing request is derived.
+
+		case plan.BackendSigned != nil:
+			// Backend-owned anchors are always P2TR, so any other
+			// prevout cannot be signed by the backend.
+			if !txscript.IsPayToTaproot(prevOut.PkScript) {
+				return nil, fmt.Errorf("input %d backend-signed "+
+					"input is not pay-to-taproot", inputIndex)
+			}
 		}
 	}
 
@@ -525,8 +544,9 @@ func (p *TransferPackage) ApplyScriptPathWitness(
 }
 
 // VerifyFinalAnchorPSBT verifies that a signed or finalized PSBT contains the
-// exact committed unsigned transaction. A fully finalized PSBT must also use
-// every sealed external signing path and pass consensus witness validation.
+// exact committed unsigned transaction. Once every input outside the
+// backend-signed plans is finalized, the PSBT must also use every sealed
+// external signing path and pass consensus witness validation.
 func (p *TransferPackage) VerifyFinalAnchorPSBT(
 	finalAnchorPsbt []byte) error {
 
@@ -540,14 +560,20 @@ func (p *TransferPackage) VerifyFinalAnchorPSBT(
 	if err != nil {
 		return err
 	}
+	backendSigned := backendSignedInputs(p.SigningPlans)
+	if err := rejectFinalizedBackendSignedInputs(
+		finalPacket, backendSigned,
+	); err != nil {
+		return err
+	}
 
 	// A partially signed PSBT can only be checked for transaction and PSBT
 	// metadata equality here. Once all inputs are finalized, also enforce the
 	// sealed signing path and execute every final witness.
-	if !allAnchorInputsFinalized(finalPacket) {
+	if !anchorInputsFinalized(finalPacket, backendSigned) {
 		return nil
 	}
-	finalTx, err := btcpsbt.Extract(finalPacket)
+	finalTx, err := extractFinalAnchorTx(finalPacket, backendSigned)
 	if err != nil {
 		return fmt.Errorf("final anchor PSBT is not finalized: %w", err)
 	}
@@ -555,14 +581,15 @@ func (p *TransferPackage) VerifyFinalAnchorPSBT(
 		return err
 	}
 
-	return verifyFinalAnchorWitnesses(finalPacket, finalTx)
+	return verifyFinalAnchorWitnesses(finalPacket, finalTx, backendSigned)
 }
 
 // WithFinalAnchorPSBT verifies and stores a fully finalized anchor PSBT on an
 // immutable package clone. Each external input must use its sealed path and
-// exact sighash, while backend-managed inputs remain consensus-validated. All
-// non-final PSBT metadata is restored from the committed snapshot before the
-// current package digest is refreshed.
+// exact sighash, while backend-managed inputs remain consensus-validated.
+// Backend-signed inputs must stay unfinalized because the backend signs them
+// at publish. All non-final PSBT metadata is restored from the committed
+// snapshot before the current package digest is refreshed.
 func (p *TransferPackage) WithFinalAnchorPSBT(
 	finalAnchorPsbt []byte) (*TransferPackage, error) {
 
@@ -575,14 +602,22 @@ func (p *TransferPackage) WithFinalAnchorPSBT(
 	if err != nil {
 		return nil, err
 	}
-	finalTx, err := btcpsbt.Extract(finalPacket)
+	backendSigned := backendSignedInputs(p.SigningPlans)
+	if err := rejectFinalizedBackendSignedInputs(
+		finalPacket, backendSigned,
+	); err != nil {
+		return nil, err
+	}
+	finalTx, err := extractFinalAnchorTx(finalPacket, backendSigned)
 	if err != nil {
 		return nil, fmt.Errorf("final anchor PSBT is not finalized: %w", err)
 	}
 	if err := p.verifyFinalAnchorSigningPlans(finalTx); err != nil {
 		return nil, err
 	}
-	if err := verifyFinalAnchorWitnesses(finalPacket, finalTx); err != nil {
+	if err := verifyFinalAnchorWitnesses(
+		finalPacket, finalTx, backendSigned,
+	); err != nil {
 		return nil, err
 	}
 
@@ -642,10 +677,14 @@ func (p *TransferPackage) verifyFinalAnchorSigningPlans(
 			callerSigned[plan.InputIndex] = struct{}{}
 		}
 	}
+	backendSigned := backendSignedInputs(p.SigningPlans)
 
 	for idx := range finalTx.TxIn {
 		inputIndex := uint32(idx)
 		if _, ok := backendManaged[inputIndex]; ok {
+			continue
+		}
+		if _, ok := backendSigned[inputIndex]; ok {
 			continue
 		}
 
@@ -810,16 +849,91 @@ func verifyRequiredScriptPathSignatures(witnessElements wire.TxWitness,
 	return nil
 }
 
-func allAnchorInputsFinalized(packet *btcpsbt.Packet) bool {
-	for idx := range packet.Inputs {
-		if len(packet.Inputs[idx].FinalScriptSig) == 0 &&
-			len(packet.Inputs[idx].FinalScriptWitness) == 0 {
+// backendSignedInputs returns the inputs whose plan leaves signing to the
+// backend at publish.
+func backendSignedInputs(
+	plans []InputSigningPlan) map[uint32]struct{} {
 
+	backendSigned := make(map[uint32]struct{})
+	for _, plan := range plans {
+		if plan.BackendSigned != nil {
+			backendSigned[plan.InputIndex] = struct{}{}
+		}
+	}
+
+	return backendSigned
+}
+
+// anchorInputsFinalized reports whether every input outside skip carries a
+// final scriptSig or witness.
+func anchorInputsFinalized(packet *btcpsbt.Packet,
+	skip map[uint32]struct{}) bool {
+
+	for idx := range packet.Inputs {
+		if _, ok := skip[uint32(idx)]; ok {
+			continue
+		}
+		if !anchorInputFinalized(&packet.Inputs[idx]) {
 			return false
 		}
 	}
 
 	return true
+}
+
+func anchorInputFinalized(pInput *btcpsbt.PInput) bool {
+	return len(pInput.FinalScriptSig) != 0 ||
+		len(pInput.FinalScriptWitness) != 0
+}
+
+// rejectFinalizedBackendSignedInputs fails if a backend-signed input already
+// carries final data. The backend leaves finalized inputs untouched, so such
+// an input would bypass the plan the package was sealed with.
+func rejectFinalizedBackendSignedInputs(packet *btcpsbt.Packet,
+	backendSigned map[uint32]struct{}) error {
+
+	for idx := range packet.Inputs {
+		if _, ok := backendSigned[uint32(idx)]; !ok {
+			continue
+		}
+		if anchorInputFinalized(&packet.Inputs[idx]) {
+			return fmt.Errorf("anchor input %d is signed by the backend "+
+				"at publish and must not be finalized", idx)
+		}
+	}
+
+	return nil
+}
+
+// extractFinalAnchorTx extracts the final anchor transaction. Backend-signed
+// inputs keep an empty witness; every other input must be finalized.
+func extractFinalAnchorTx(packet *btcpsbt.Packet,
+	backendSigned map[uint32]struct{}) (*wire.MsgTx, error) {
+
+	if len(backendSigned) == 0 {
+		return btcpsbt.Extract(packet)
+	}
+
+	// Extract requires every input to be finalized, so an empty witness
+	// stands in for each backend-signed input on a shallow copy.
+	stub := *packet
+	stub.Inputs = append([]btcpsbt.PInput(nil), packet.Inputs...)
+	for idx := range stub.Inputs {
+		if _, ok := backendSigned[uint32(idx)]; ok {
+			stub.Inputs[idx].FinalScriptWitness = []byte{0x00}
+		}
+	}
+	finalTx, err := btcpsbt.Extract(&stub)
+	if err != nil {
+		return nil, err
+	}
+	for idx := range finalTx.TxIn {
+		if _, ok := backendSigned[uint32(idx)]; ok {
+			finalTx.TxIn[idx].Witness = nil
+		}
+	}
+
+	return finalTx, nil
 }
 
 func customAnchorWitnessHasAnnex(witness wire.TxWitness) bool {
@@ -904,6 +1018,9 @@ func validateCustomAnchorSigningPlans(
 		if plan.CallerSigned != nil {
 			variants++
 		}
+		if plan.BackendSigned != nil {
+			variants++
+		}
 		if variants != 1 {
 			return fmt.Errorf(
 				"signing plan %d must set exactly one spending path", i,
@@ -927,6 +1044,35 @@ func validateCustomAnchorSigningPlans(
 	for inputIndex := range inputCount {
 		if _, ok := seen[inputIndex]; !ok {
 			return fmt.Errorf("anchor input %d is not classified", inputIndex)
+		}
+	}
+
+	return nil
+}
+
+// validateCustomAnchorBackendSignedPlans limits backend-signed plans to the
+// anchor inputs of asset inputs on a caller-funded exact anchor. The backend
+// signs only anchors it owns, and wallet-funded fee inputs still need the
+// backend wallet's own signer.
+func validateCustomAnchorBackendSignedPlans(mode FundingMode,
+	plans []InputSigningPlan,
+	inputs []AssetInputSummary) error {
+
+	assetAnchors := make(map[uint32]struct{}, len(inputs))
+	for idx := range inputs {
+		assetAnchors[inputs[idx].AnchorInputIndex] = struct{}{}
+	}
+	for _, plan := range plans {
+		if plan.BackendSigned == nil {
+			continue
+		}
+		if mode != FundingCallerFundedExact {
+			return fmt.Errorf("input %d backend signing requires "+
+				"caller-funded exact funding", plan.InputIndex)
+		}
+		if _, ok := assetAnchors[plan.InputIndex]; !ok {
+			return fmt.Errorf("input %d backend signing requires an "+
+				"asset anchor input", plan.InputIndex)
 		}
 	}
 
@@ -960,6 +1106,10 @@ func cloneCustomAnchorSigningPlans(
 		if plans[i].CallerSigned != nil {
 			callerSigned := *plans[i].CallerSigned
 			clone[i].CallerSigned = &callerSigned
+		}
+		if plans[i].BackendSigned != nil {
+			backendSigned := *plans[i].BackendSigned
+			clone[i].BackendSigned = &backendSigned
 		}
 		if plans[i].ScriptPath != nil {
 			scriptPath := *plans[i].ScriptPath

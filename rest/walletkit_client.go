@@ -546,6 +546,7 @@ type jsonPublishAndLogRequest struct {
 
 	SkipAnchorTxBroadcast bool   `json:"skip_anchor_tx_broadcast,omitempty"` //nolint:lll
 	Label                 string `json:"label,omitempty"`
+	SignAnchorInputs      bool   `json:"sign_anchor_inputs,omitempty"`
 }
 
 // PublishAndLogTransfer publishes the anchor transaction using the legacy
@@ -630,6 +631,7 @@ func marshalPublishAndLogTransferRequest(
 		LndLockedUtxos:        lockedUTXOs,
 		SkipAnchorTxBroadcast: req.SkipAnchorTxBroadcast,
 		Label:                 req.Label,
+		SignAnchorInputs:      req.SignAnchorInputs,
 	}, nil
 }
 

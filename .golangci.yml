@@ -83,6 +83,10 @@ linters:
         - G115 # Integer overflow conversion.
     lll:
       line-length: 80
+    modernize:
+      disable:
+        # Keep explicit embedded struct literals.
+        - embedlit
     revive:
       rules:
         - name: exported # To enforce conventions around exported comments.

@@ -1,6 +1,6 @@
 module github.com/lightninglabs/tap-sdk
 
-go 1.26.8
+go 1.27.3
 
 require (
 	github.com/btcsuite/btcd v0.26.0
@@ -13,7 +13,7 @@ require (
 	github.com/btcsuite/btcd/wire/v2 v2.0.0
 	github.com/coder/websocket v1.8.14
 	github.com/lightninglabs/taproot-assets v0.7.1-0.20261006112023-1434ab66b3bb
-	github.com/lightninglabs/taproot-assets/taprpc v1.1.1-0.20261005091416-8daf7dec6b63
+	github.com/lightninglabs/taproot-assets/taprpc v1.1.1-0.20261109140140-9d4fed15579d
 	github.com/lightningnetwork/lnd v0.21.0-beta.rc2.0.20260903094101-d66a7c137d32
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/grpc v1.83.2
@@ -94,7 +94,7 @@ require (
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/kcalvinalvin/anet v0.0.0-20251112173137-d8ddc1f6dbee // indirect
 	github.com/kkdai/bstream v1.0.0 // indirect
-	github.com/klauspost/compress v1.18.0 // indirect
+	github.com/klauspost/compress v1.18.7 // indirect
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf // indirect
 	github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.4-0.20250610182311-2f1d46ef18b7 // indirect
@@ -119,7 +119,7 @@ require (
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/moby/api v1.54.2 // indirect
 	github.com/moby/moby/client v0.4.1 // indirect
-	github.com/moby/sys/user v0.3.0 // indirect
+	github.com/moby/sys/user v0.4.1 // indirect
 	github.com/moby/term v0.5.2 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect

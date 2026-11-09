@@ -793,6 +793,11 @@ func (p *TransferPackage) validateStructure() error {
 	); err != nil {
 		return err
 	}
+	if err := validateCustomAnchorBackendSignedPlans(
+		p.Funding.Mode, p.SigningPlans, p.Inputs,
+	); err != nil {
+		return err
+	}
 	if len(p.FundingLock.CustomLockID) != 0 {
 		funding := FundingPlan{
 			Mode: FundingWalletFunded,

@@ -351,22 +351,22 @@ func newRESTDecodedProofBase(t *testing.T) (*jsonDecodedProof,
 	require.NoError(t, err)
 
 	return &jsonDecodedProof{
-			Asset: &jsonDecodedAsset{
-				AssetGenesis: &jsonGenesisInfo{
-					AssetID:   hex.EncodeToString(assetIDBytes),
-					AssetType: assetTypeNormalJSON,
-				},
-				ScriptKey: hex.EncodeToString(scriptKeyBytes),
-				ChainAnchor: &jsonChainAnchor{
-					AnchorOutpoint: restDecodedProofOutpoint,
-				},
+		Asset: &jsonDecodedAsset{
+			AssetGenesis: &jsonGenesisInfo{
+				AssetID:   hex.EncodeToString(assetIDBytes),
+				AssetType: assetTypeNormalJSON,
 			},
-		}, restDecodedProofExpected{
-			assetRef:   tapsdk.AssetRefFromAssetID(assetID),
-			issuanceID: assetID,
-			scriptKey:  scriptKey,
-			outpoint:   outpoint,
-		}
+			ScriptKey: hex.EncodeToString(scriptKeyBytes),
+			ChainAnchor: &jsonChainAnchor{
+				AnchorOutpoint: restDecodedProofOutpoint,
+			},
+		},
+	}, restDecodedProofExpected{
+		assetRef:   tapsdk.AssetRefFromAssetID(assetID),
+		issuanceID: assetID,
+		scriptKey:  scriptKey,
+		outpoint:   outpoint,
+	}
 }
 
 func restDecodedProofPrevID(t *testing.T, outpoint string, idByte,

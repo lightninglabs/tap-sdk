@@ -339,21 +339,21 @@ func newGRPCDecodedProofBase(t *testing.T) (*taprpc.DecodedProof,
 	require.NoError(t, err)
 
 	return &taprpc.DecodedProof{
-			Asset: &taprpc.Asset{
-				AssetGenesis: &taprpc.GenesisInfo{
-					AssetId: assetIDBytes,
-				},
-				ScriptKey: scriptKeyBytes,
-				ChainAnchor: &taprpc.AnchorInfo{
-					AnchorOutpoint: grpcDecodedProofOutpoint,
-				},
+		Asset: &taprpc.Asset{
+			AssetGenesis: &taprpc.GenesisInfo{
+				AssetId: assetIDBytes,
 			},
-		}, grpcDecodedProofExpected{
-			assetRef:   tapsdk.AssetRefFromAssetID(assetID),
-			issuanceID: assetID,
-			scriptKey:  scriptKey,
-			outpoint:   outpoint,
-		}
+			ScriptKey: scriptKeyBytes,
+			ChainAnchor: &taprpc.AnchorInfo{
+				AnchorOutpoint: grpcDecodedProofOutpoint,
+			},
+		},
+	}, grpcDecodedProofExpected{
+		assetRef:   tapsdk.AssetRefFromAssetID(assetID),
+		issuanceID: assetID,
+		scriptKey:  scriptKey,
+		outpoint:   outpoint,
+	}
 }
 
 func grpcDecodedProofPrevID(t *testing.T, outpoint string, idByte,

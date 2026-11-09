@@ -194,6 +194,7 @@ func (p *Plan) Commit(ctx context.Context,
 
 	if err := requireCustomAnchorCommitCapabilities(
 		ctx, p.client, p.request.Funding, opts.Publish,
+		p.request.SigningPlans,
 	); err != nil {
 		return nil, err
 	}
@@ -535,7 +536,10 @@ func validateCustomAnchorLockInventory(funding FundingPlan,
 
 // PublishTransfer verifies that the final PSBT has the exact committed
 // unsigned transaction and commitments, then publishes/logs it through the
-// wallet using the metadata sealed into the package.
+// wallet using the metadata sealed into the package. If any input has a
+// backend-signed plan, the backend signs those inputs before it publishes, and
+// the returned anchor transaction must keep the committed txid and pass full
+// witness verification.
 func PublishTransfer(ctx context.Context, wallet *tapsdk.Wallet,
 	packageSnapshot *TransferPackage,
 	finalAnchorPSBT []byte) (*tapsdk.AssetPacket, error) {
@@ -602,6 +606,18 @@ func PublishTransfer(ctx context.Context, wallet *tapsdk.Wallet,
 			return nil, err
 		}
 	}
+	backendSigned := backendSignedInputs(packageSnapshot.SigningPlans)
+	if len(backendSigned) != 0 {
+		if err := requireCustomAnchorCapability(
+			ctx, wallet.Client(), CapabilityBackendAnchorSigning,
+		); err != nil {
+			return nil, err
+		}
+	}
+	finalTx, err := extractFinalAnchorTx(finalAnchor, backendSigned)
+	if err != nil {
+		return nil, fmt.Errorf("extract final anchor transaction: %w", err)
+	}
 	advancedClient, err := requireCustomAnchorWalletKitClient(
 		wallet.Client(), CapabilityCommit,
 	)
@@ -624,7 +640,8 @@ func PublishTransfer(ctx context.Context, wallet *tapsdk.Wallet,
 			),
 			SkipAnchorTxBroadcast: packageSnapshot.Publish.
 				SkipAnchorTxBroadcast,
-			Label: packageSnapshot.Publish.Label,
+			Label:            packageSnapshot.Publish.Label,
+			SignAnchorInputs: len(backendSigned) != 0,
 		},
 	)
 	if err != nil {
@@ -641,19 +658,18 @@ func PublishTransfer(ctx context.Context, wallet *tapsdk.Wallet,
 		}
 	}
 
-	finalTx, err := psbt.Extract(finalAnchor)
-	if err != nil {
-		return nil, fmt.Errorf("extract final anchor transaction: %w", err)
+	if err := verifyPublishedAnchorTx(
+		result.AnchorTransaction, finalTx, finalAnchor, backendSigned,
+	); err != nil {
+		return nil, &PublishAttemptError{
+			Err: fmt.Errorf("publish custom anchor response does not "+
+				"match the finalized transfer: %w", err),
+			OutcomeUnknown: true,
+		}
 	}
-	var expectedAnchorTx bytes.Buffer
-	if err := finalTx.Serialize(&expectedAnchorTx); err != nil {
-		return nil, fmt.Errorf("serialize final anchor transaction: %w", err)
-	}
-	if !bytes.Equal(result.AnchorTransaction, expectedAnchorTx.Bytes()) ||
-		!equalCustomAnchorPacketSlices(
-			result.VirtualTransactions,
-			packageSnapshot.ActiveVirtualPsbts,
-		) || !equalCustomAnchorPacketSlices(
+	if !equalCustomAnchorPacketSlices(
+		result.VirtualTransactions, packageSnapshot.ActiveVirtualPsbts,
+	) || !equalCustomAnchorPacketSlices(
 		result.PassiveAssetTransactions,
 		packageSnapshot.PassiveVirtualPsbts,
 	) {
@@ -666,6 +682,66 @@ func PublishTransfer(ctx context.Context, wallet *tapsdk.Wallet,
 	}
 
 	return result, nil
+}
+
+// verifyPublishedAnchorTx checks the anchor transaction returned by publish.
+// Without backend-signed inputs it must equal the finalized transaction.
+// Otherwise the backend adds witnesses the caller never held, so the
+// transaction must keep the committed txid and every caller witness, and all
+// witnesses must verify against the committed prevouts.
+func verifyPublishedAnchorTx(published []byte, finalTx *wire.MsgTx,
+	finalAnchor *psbt.Packet, backendSigned map[uint32]struct{}) error {
+
+	if len(backendSigned) == 0 {
+		var expected bytes.Buffer
+		if err := finalTx.Serialize(&expected); err != nil {
+			return fmt.Errorf("serialize final anchor transaction: %w",
+				err)
+		}
+		if !bytes.Equal(published, expected.Bytes()) {
+			return fmt.Errorf("anchor transaction changed")
+		}
+
+		return nil
+	}
+
+	var publishedTx wire.MsgTx
+	reader := bytes.NewReader(published)
+	if err := publishedTx.Deserialize(reader); err != nil {
+		return fmt.Errorf("decode anchor transaction: %w", err)
+	}
+	if reader.Len() != 0 {
+		return fmt.Errorf("anchor transaction has trailing bytes")
+	}
+	if publishedTx.TxHash() != finalTx.TxHash() {
+		return fmt.Errorf("anchor transaction txid changed")
+	}
+	for idx := range finalTx.TxIn {
+		if _, ok := backendSigned[uint32(idx)]; ok {
+			continue
+		}
+		if !equalTxWitness(
+			publishedTx.TxIn[idx].Witness, finalTx.TxIn[idx].Witness,
+		) {
+
+			return fmt.Errorf("anchor input %d witness changed", idx)
+		}
+	}
+
+	return verifyFinalAnchorWitnesses(finalAnchor, &publishedTx, nil)
+}
+
+func equalTxWitness(left, right wire.TxWitness) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for idx := range left {
+		if !bytes.Equal(left[idx], right[idx]) {
+			return false
+		}
+	}
+
+	return true
 }
 
 func equalCustomAnchorPacketSlices(left, right [][]byte) bool {
@@ -722,8 +798,8 @@ func requireCustomAnchorWalletKitClient(client tapsdk.Client,
 }
 
 func requireCustomAnchorCommitCapabilities(ctx context.Context,
-	client tapsdk.Client, funding FundingPlan,
-	publish PublishMetadata) error {
+	client tapsdk.Client, funding FundingPlan, publish PublishMetadata,
+	signingPlans []InputSigningPlan) error {
 
 	required := []Capability{
 		CapabilityCommit,
@@ -743,6 +819,11 @@ func requireCustomAnchorCommitCapabilities(ctx context.Context,
 	}
 	if publish.SkipAnchorTxBroadcast {
 		required = append(required, CapabilitySkipBroadcast)
+	}
+	if len(backendSignedInputs(signingPlans)) != 0 {
+		required = append(
+			required, CapabilityBackendAnchorSigning,
+		)
 	}
 
 	for _, capability := range required {
@@ -1515,8 +1596,10 @@ func verifyCommittedProofSuffixes(anchor *psbt.Packet, expected,
 	return nil
 }
 
-func verifyFinalAnchorWitnesses(packet *psbt.Packet,
-	finalTx *wire.MsgTx) error {
+// verifyFinalAnchorWitnesses executes every input witness outside skip
+// against its committed prevout.
+func verifyFinalAnchorWitnesses(packet *psbt.Packet, finalTx *wire.MsgTx,
+	skip map[uint32]struct{}) error {
 
 	prevOutFetcher, prevOuts, err := anchorPrevOuts(packet)
 	if err != nil {
@@ -1524,6 +1607,10 @@ func verifyFinalAnchorWitnesses(packet *psbt.Packet,
 	}
 	sigHashes := txscript.NewTxSigHashes(finalTx, prevOutFetcher)
 	for idx := range finalTx.TxIn {
+		if _, ok := skip[uint32(idx)]; ok {
+			continue
+		}
+
 		engine, err := txscript.NewEngine(
 			prevOuts[idx].PkScript, finalTx, idx,
 			txscript.StandardVerifyFlags, nil, sigHashes,

@@ -4,11 +4,13 @@ package itest
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"testing"
 
+	"github.com/btcsuite/btcd/address/v2"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil/v2"
 	"github.com/btcsuite/btcd/chainhash/v2"
@@ -27,6 +29,8 @@ const (
 	customAnchorITestSequence = uint32(0xffff_fffc)
 	customAnchorITestFeeSat   = int64(250)
 	customAnchorITestChildFee = int64(1_000)
+
+	customAnchorITestCallerFeeSat = int64(1_000)
 )
 
 // TestCustomAnchorBuilderEndToEnd exercises the exact caller-funded custom
@@ -492,6 +496,387 @@ func TestCustomAnchorBuilderExternalP2AEndToEnd(t *testing.T) {
 		)
 		require.Equal(t, minted.Asset.Amount, bobBalance)
 	})
+}
+
+// TestCustomAnchorBuilderBackendSignedAnchor exercises a caller-funded exact
+// transfer whose BTC funding input and change belong to a key that neither
+// tapd nor lnd controls. The caller signs only that input, and tapd signs its
+// own asset anchor at publish.
+func TestCustomAnchorBuilderBackendSignedAnchor(t *testing.T) {
+	runForTransports(t, func(t *testing.T, transport Transport) {
+		h, ctx := newHarnessContextFor(t, transport)
+		skipBelowTapdVersion(t, ctx, h.AliceClient, 0, 8, 99)
+		h.FundLndWallet(t, ctx)
+		wallet := newBackendAnchorSigningWallet(t, h)
+
+		name := uniqueEventLabel(fmt.Sprintf(
+			"custom-anchor-backend-signed-%s", transport,
+		))
+		mintSpec := mintGroupedAssetSpec(name, 1_000)
+		mintSpec.AssetVersion = tapsdk.AssetVersionV1
+		minted, err := h.MintAssetAndConfirm(t, ctx, mintSpec)
+		require.NoError(t, err)
+
+		inputProof, err := h.AliceWallet.ExportProofFile(
+			ctx,
+			tapsdk.AssetRefFromAssetID(
+				minted.Asset.Genesis.IssuanceID,
+			),
+			minted.Asset.ScriptKey.PubKey, nil,
+		)
+		require.NoError(t, err)
+		proofFile, err := proof.DecodeFile(inputProof.RawProofFile)
+		require.NoError(t, err)
+		lastProof, err := proofFile.LastProof()
+		require.NoError(t, err)
+
+		receiverKeys, err := h.BobWallet.DeriveKeys(ctx)
+		require.NoError(t, err)
+
+		callerKey, err := btcec.NewPrivateKey()
+		require.NoError(t, err)
+		callerUTXO := fundCustomAnchorCallerUTXO(t, ctx, h, callerKey)
+		anchorPsbt, anchorValue := customAnchorCallerFundedITestPSBT(
+			t, lastProof, receiverKeys.InternalKey, callerUTXO,
+		)
+		request := &customanchor.Request{
+			Inputs: []customanchor.AssetInput{{
+				ID:        "mint-output",
+				AssetRef:  minted.Ref,
+				Amount:    minted.Asset.Amount,
+				ProofFile: inputProof.RawProofFile,
+				Witness: customanchor.AssetWitnessPlan{
+					Mode: customanchor.AssetWitnessBackendSigner,
+				},
+			}},
+			Outputs: []customanchor.AssetOutput{{
+				ID:                "bob-output",
+				AssetRef:          minted.Ref,
+				Amount:            minted.Asset.Amount,
+				AnchorOutputIndex: 0,
+				AnchorValueSat:    uint64(anchorValue),
+				Script: customanchor.AssetScriptPlan{
+					Mode: customanchor.AssetScriptExternal,
+					External: &customanchor.AssetExternalScriptPlan{
+						ScriptKey: receiverKeys.ScriptKey,
+					},
+				},
+				Anchor: customanchor.OutputPlan{
+					InternalKey: receiverKeys.InternalKey,
+				},
+			}},
+			AnchorPSBT: anchorPsbt,
+			Funding: customanchor.FundingPlan{
+				Mode:              customanchor.FundingCallerFundedExact,
+				CallerFundedExact: &customanchor.CallerFundedExact{},
+			},
+			PassiveAssets: customanchor.PassiveAssets{
+				Policy: customanchor.PassiveReject,
+			},
+			LossPolicy: customanchor.LossPolicy{
+				Mode: customanchor.LossReject,
+			},
+			SigningPlans: []customanchor.InputSigningPlan{
+				{
+					InputIndex: 0,
+					BackendSigned: &customanchor.
+						BackendSignedPlan{},
+				},
+				{
+					InputIndex: 1,
+					CallerSigned: &customanchor.
+						CallerSignedPlan{},
+				},
+			},
+		}
+
+		plan, err := customanchor.NewTxBuilder(wallet).Build(ctx, request)
+		require.NoError(t, err)
+		sealed, err := plan.Commit(ctx, customanchor.CommitOptions{
+			Publish: customanchor.PublishMetadata{Label: name},
+		})
+		require.NoError(t, err)
+		require.Len(t, sealed.Outputs, 1)
+
+		signingRequests, err := sealed.SigningRequests()
+		require.NoError(t, err)
+		require.Empty(t, signingRequests.KeyPath)
+		require.Empty(t, signingRequests.MuSig2)
+		require.Empty(t, signingRequests.ScriptPath)
+
+		finalAnchorPsbt := signCustomAnchorCallerInput(
+			t, sealed.AnchorPsbt, 1, callerKey,
+		)
+		require.NoError(t, sealed.VerifyFinalAnchorPSBT(finalAnchorPsbt))
+		finalPacket := decodeCustomAnchorITestPSBT(t, finalAnchorPsbt)
+		require.Empty(t, finalPacket.Inputs[0].FinalScriptWitness)
+
+		published, err := customanchor.PublishTransfer(
+			ctx, wallet, sealed, finalAnchorPsbt,
+		)
+		require.NoError(t, err)
+
+		// tapd must have added a key-path witness for its anchor and
+		// left the caller's witness and the committed txid intact.
+		var anchorTx wire.MsgTx
+		require.NoError(t, anchorTx.Deserialize(
+			bytes.NewReader(published.AnchorTransaction),
+		))
+		require.Equal(t, finalPacket.UnsignedTx.TxHash(),
+			anchorTx.TxHash())
+		require.Len(t, anchorTx.TxIn[0].Witness, 1)
+		var callerWitness bytes.Buffer
+		require.NoError(t, psbt.WriteTxWitness(
+			&callerWitness, anchorTx.TxIn[1].Witness,
+		))
+		require.Equal(t, finalPacket.Inputs[1].FinalScriptWitness,
+			callerWitness.Bytes())
+
+		h.MineBlocks(t, defaultMineBlocks)
+		h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
+		h.WaitForSync(t, ctx, h.BobClient, defaultSyncTimeout)
+
+		output := sealed.Outputs[0]
+		completedProof := h.WaitForProofFile(
+			t, ctx, h.AliceWallet,
+			tapsdk.AssetRefFromAssetID(output.IssuanceID),
+			output.ScriptKey, &output.AnchorOutpoint,
+		)
+		h.EnableUniverseBootstrap(t, ctx)
+		registered, err := h.BobWallet.ImportProofFile(
+			ctx, completedProof,
+		)
+		require.NoError(t, err)
+		require.Equal(t, minted.Asset.Amount, registered.Amount)
+
+		bobBalance := h.WaitForBalance(
+			t, ctx, h.BobWallet, minted.Ref, minted.Asset.Amount,
+			balanceTimeoutFor(minted.Ref),
+		)
+		require.Equal(t, minted.Asset.Amount, bobBalance)
+	})
+}
+
+// skipBelowTapdVersion skips the test when tapd is older than the given
+// version. The pinned CI image lags tapd main, which reports 0.8.99 until the
+// next minor release.
+func skipBelowTapdVersion(t *testing.T, ctx context.Context,
+	client tapsdk.Client, major, minor, patch int) {
+
+	t.Helper()
+	info, err := client.GetInfo(ctx)
+	require.NoError(t, err)
+
+	var got [3]int
+	_, err = fmt.Sscanf(
+		info.Version, "%d.%d.%d", &got[0], &got[1], &got[2],
+	)
+	require.NoError(t, err, "tapd version %q", info.Version)
+
+	want := [3]int{major, minor, patch}
+	for idx := range want {
+		if got[idx] > want[idx] {
+			return
+		}
+		if got[idx] < want[idx] {
+			t.Skipf("tapd %s is older than %d.%d.%d", info.Version,
+				major, minor, patch)
+		}
+	}
+}
+
+// customAnchorITestClient is the client surface the custom-anchor lifecycle
+// needs.
+type customAnchorITestClient interface {
+	tapsdk.Client
+	tapsdk.CustomAnchorWalletKitClient
+	customanchor.CapabilityProvider
+}
+
+// backendAnchorSigningClient reports backend anchor signing as supported.
+// The pinned tapd profile leaves it unknown until a tapd release ships it,
+// while the stack under test runs a tapd that has it.
+type backendAnchorSigningClient struct {
+	customAnchorITestClient
+}
+
+// CustomAnchorCapabilities returns the wrapped profile with backend anchor
+// signing enabled.
+func (c backendAnchorSigningClient) CustomAnchorCapabilities(
+	ctx context.Context) (*customanchor.Capabilities, error) {
+
+	caps, err := c.customAnchorITestClient.CustomAnchorCapabilities(ctx)
+	if err != nil {
+		return nil, err
+	}
+	caps.BackendAnchorSigning = customanchor.CapabilitySupported
+
+	return caps, nil
+}
+
+func newBackendAnchorSigningWallet(t testing.TB,
+	h *TestHarness) *tapsdk.Wallet {
+
+	t.Helper()
+	client, ok := h.AliceClient.(customAnchorITestClient)
+	require.True(t, ok)
+
+	return tapsdk.NewWallet(
+		backendAnchorSigningClient{customAnchorITestClient: client},
+		tapsdk.NetworkRegtest,
+	)
+}
+
+type customAnchorCallerUTXO struct {
+	outpoint wire.OutPoint
+	txOut    *wire.TxOut
+}
+
+// fundCustomAnchorCallerUTXO pays a confirmed P2WPKH output to key from the
+// bitcoind miner wallet.
+func fundCustomAnchorCallerUTXO(t testing.TB, ctx context.Context,
+	h *TestHarness, key *btcec.PrivateKey) customAnchorCallerUTXO {
+
+	t.Helper()
+	pkScript, err := txscript.NewScriptBuilder().
+		AddOp(txscript.OP_0).
+		AddData(address.Hash160(key.PubKey().SerializeCompressed())).
+		Script()
+	require.NoError(t, err)
+
+	decodedJSON := h.bitcoindRPCWallet(
+		t, "miner", "decodescript",
+		fmt.Sprintf("%q", hex.EncodeToString(pkScript)),
+	)
+	var decoded struct {
+		Address string `json:"address"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(decodedJSON), &decoded))
+	require.NotEmpty(t, decoded.Address)
+
+	txidJSON := h.bitcoindRPCWallet(
+		t, "miner", "sendtoaddress",
+		fmt.Sprintf("%q", decoded.Address), "0.001",
+	)
+	var txid string
+	require.NoError(t, json.Unmarshal([]byte(txidJSON), &txid))
+	txJSON := h.bitcoindRPCWallet(
+		t, "miner", "gettransaction", fmt.Sprintf("%q", txid),
+		"true", "true",
+	)
+	var funding struct {
+		Decoded struct {
+			Vout []struct {
+				Value        float64 `json:"value"`
+				N            uint32  `json:"n"`
+				ScriptPubKey struct {
+					Hex string `json:"hex"`
+				} `json:"scriptPubKey"`
+			} `json:"vout"`
+		} `json:"decoded"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(txJSON), &funding))
+
+	hash, err := chainhash.NewHashFromStr(txid)
+	require.NoError(t, err)
+	for _, vout := range funding.Decoded.Vout {
+		if vout.ScriptPubKey.Hex != hex.EncodeToString(pkScript) {
+			continue
+		}
+		amount, err := btcutil.NewAmount(vout.Value)
+		require.NoError(t, err)
+
+		h.MineBlocks(t, 1)
+		h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
+
+		return customAnchorCallerUTXO{
+			outpoint: wire.OutPoint{Hash: *hash, Index: vout.N},
+			txOut: &wire.TxOut{
+				Value:    int64(amount),
+				PkScript: pkScript,
+			},
+		}
+	}
+
+	require.FailNow(t, "funding transaction has no caller output")
+	return customAnchorCallerUTXO{}
+}
+
+// customAnchorCallerFundedITestPSBT spends the asset anchor and the caller
+// UTXO. The asset output keeps the anchor value and the caller UTXO pays the
+// fee into P2WPKH change back to the caller.
+func customAnchorCallerFundedITestPSBT(t testing.TB,
+	inputProof *proof.Proof, receiverInternalKey tapsdk.InternalKey,
+	caller customAnchorCallerUTXO) ([]byte, int64) {
+
+	t.Helper()
+
+	inputOutpoint := inputProof.OutPoint()
+	anchorValue := inputProof.AnchorTx.TxOut[inputOutpoint.Index].Value
+	changeValue := caller.txOut.Value - customAnchorITestCallerFeeSat
+	require.Positive(t, changeValue)
+
+	internalKey, err := btcec.ParsePubKey(receiverInternalKey.PubKey[:])
+	require.NoError(t, err)
+	outputKey := txscript.ComputeTaprootKeyNoScript(internalKey)
+	placeholderScript, err := txscript.PayToTaprootScript(outputKey)
+	require.NoError(t, err)
+
+	anchorTx := wire.NewMsgTx(customAnchorITestVersion)
+	anchorTx.AddTxIn(wire.NewTxIn(&inputOutpoint, nil, nil))
+	anchorTx.AddTxIn(wire.NewTxIn(&caller.outpoint, nil, nil))
+	for _, txIn := range anchorTx.TxIn {
+		txIn.Sequence = customAnchorITestSequence
+	}
+	anchorTx.AddTxOut(&wire.TxOut{
+		Value:    anchorValue,
+		PkScript: placeholderScript,
+	})
+	anchorTx.AddTxOut(&wire.TxOut{
+		Value:    changeValue,
+		PkScript: caller.txOut.PkScript,
+	})
+
+	packet, err := psbt.NewFromUnsignedTx(anchorTx)
+	require.NoError(t, err)
+	packet.Inputs[1].WitnessUtxo = caller.txOut
+
+	var buffer bytes.Buffer
+	require.NoError(t, packet.Serialize(&buffer))
+
+	return buffer.Bytes(), anchorValue
+}
+
+// signCustomAnchorCallerInput finalizes one P2WPKH caller input outside tapd
+// and lnd.
+func signCustomAnchorCallerInput(t testing.TB, rawPsbt []byte,
+	inputIndex int, key *btcec.PrivateKey) []byte {
+
+	t.Helper()
+	packet := decodeCustomAnchorITestPSBT(t, rawPsbt)
+	prevOuts := txscript.NewMultiPrevOutFetcher(nil)
+	for idx, txIn := range packet.UnsignedTx.TxIn {
+		require.NotNil(t, packet.Inputs[idx].WitnessUtxo)
+		prevOuts.AddPrevOut(
+			txIn.PreviousOutPoint, packet.Inputs[idx].WitnessUtxo,
+		)
+	}
+	sigHashes := txscript.NewTxSigHashes(packet.UnsignedTx, prevOuts)
+	prevOut := packet.Inputs[inputIndex].WitnessUtxo
+	witness, err := txscript.WitnessSignature(
+		packet.UnsignedTx, sigHashes, inputIndex, prevOut.Value,
+		prevOut.PkScript, txscript.SigHashAll, key, true,
+	)
+	require.NoError(t, err)
+
+	var serialized bytes.Buffer
+	require.NoError(t, psbt.WriteTxWitness(&serialized, witness))
+	packet.Inputs[inputIndex].FinalScriptWitness = serialized.Bytes()
+
+	var buffer bytes.Buffer
+	require.NoError(t, packet.Serialize(&buffer))
+
+	return buffer.Bytes()
 }
 
 func customAnchorITestPSBT(t testing.TB, inputProof *proof.Proof,

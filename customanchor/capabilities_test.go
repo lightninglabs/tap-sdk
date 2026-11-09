@@ -81,6 +81,11 @@ func TestCustomAnchorCapabilitiesSupport(t *testing.T) {
 			want:       CapabilityUnsupported,
 		},
 		{
+			name:       "backend anchor signing",
+			capability: CapabilityBackendAnchorSigning,
+			want:       CapabilityUnknown,
+		},
+		{
 			name:       "unknown capability",
 			capability: Capability("future"),
 			want:       CapabilityUnknown,

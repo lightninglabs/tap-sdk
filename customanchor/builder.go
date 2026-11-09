@@ -534,6 +534,11 @@ func (b *TxBuilder) Build(ctx context.Context,
 	}
 	inputSummaries = append(inputSummaries, passiveInputs...)
 	plannedOutputs = append(plannedOutputs, passiveOutputs...)
+	if err := validateCustomAnchorBackendSignedPlans(
+		request.Funding.Mode, request.SigningPlans, inputSummaries,
+	); err != nil {
+		return nil, fmt.Errorf("validate anchor signing plans: %w", err)
+	}
 
 	return &Plan{
 		client:              b.client,

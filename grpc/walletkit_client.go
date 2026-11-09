@@ -346,6 +346,7 @@ func marshalPublishAndLogTransferRequest(
 		LndLockedUtxos:        rpcLockedUTXOs,
 		SkipAnchorTxBroadcast: req.SkipAnchorTxBroadcast,
 		Label:                 req.Label,
+		SignAnchorInputs:      req.SignAnchorInputs,
 	}, nil
 }
 

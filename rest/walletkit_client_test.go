@@ -403,6 +403,7 @@ func TestPublishAndLogTransferSendsAdvancedFields(t *testing.T) {
 			} `json:"lnd_locked_utxos"`
 			SkipAnchorTxBroadcast bool   `json:"skip_anchor_tx_broadcast"`
 			Label                 string `json:"label"`
+			SignAnchorInputs      bool   `json:"sign_anchor_inputs"`
 		}
 		if !assert.NoError(t, json.Unmarshal(bodyBytes, &body)) {
 			return
@@ -423,6 +424,7 @@ func TestPublishAndLogTransferSendsAdvancedFields(t *testing.T) {
 			body.LndLockedUtxos[0].OutputIndex)
 		assert.True(t, body.SkipAnchorTxBroadcast)
 		assert.Equal(t, "custom-label", body.Label)
+		assert.True(t, body.SignAnchorInputs)
 
 		_, err = fmt.Fprintf(
 			w, `{"transfer":{"anchor_tx":%q}}`,
@@ -448,6 +450,7 @@ func TestPublishAndLogTransferSendsAdvancedFields(t *testing.T) {
 			LockedUTXOs:           []tapsdk.Outpoint{locked},
 			SkipAnchorTxBroadcast: true,
 			Label:                 "custom-label",
+			SignAnchorInputs:      true,
 		},
 	)
 	require.NoError(t, err)

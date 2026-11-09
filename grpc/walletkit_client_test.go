@@ -337,6 +337,7 @@ func TestMarshalPublishAndLogTransferRequest(t *testing.T) {
 		LockedUTXOs:           []tapsdk.Outpoint{outpoint},
 		SkipAnchorTxBroadcast: true,
 		Label:                 "custom-label",
+		SignAnchorInputs:      true,
 	}
 
 	rpcReq, err := marshalPublishAndLogTransferRequest(req)
@@ -348,4 +349,5 @@ func TestMarshalPublishAndLogTransferRequest(t *testing.T) {
 	require.Equal(t, uint32(5), rpcReq.LndLockedUtxos[0].OutputIndex)
 	require.True(t, rpcReq.SkipAnchorTxBroadcast)
 	require.Equal(t, "custom-label", rpcReq.Label)
+	require.True(t, rpcReq.SignAnchorInputs)
 }

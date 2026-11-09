@@ -147,6 +147,12 @@ const (
 	CapabilityBackendVerification = Capability(
 		"backend_verification",
 	)
+
+	// CapabilityBackendAnchorSigning signs the backend-owned asset anchor
+	// inputs of a caller-funded transfer at publish.
+	CapabilityBackendAnchorSigning = Capability(
+		"backend_anchor_signing",
+	)
 )
 
 // CapabilityStatus describes whether a capability is available.
@@ -202,6 +208,7 @@ type Capabilities struct {
 	ProofRegistration        CapabilityStatus
 	LocalVerification        CapabilityStatus
 	BackendVerification      CapabilityStatus
+	BackendAnchorSigning     CapabilityStatus
 }
 
 // DefaultTapdCapabilities returns an SDK-version-pinned assumption
@@ -222,6 +229,7 @@ func DefaultTapdCapabilities() Capabilities {
 		ProofRegistration:        CapabilityUnknown,
 		LocalVerification:        CapabilityUnsupported,
 		BackendVerification:      CapabilityUnknown,
+		BackendAnchorSigning:     CapabilityUnknown,
 	}
 }
 
@@ -263,6 +271,9 @@ func (c Capabilities) Support(
 
 	case CapabilityBackendVerification:
 		return c.BackendVerification
+
+	case CapabilityBackendAnchorSigning:
+		return c.BackendAnchorSigning
 
 	default:
 		return CapabilityUnknown
