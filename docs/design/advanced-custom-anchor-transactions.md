@@ -289,9 +289,10 @@ The concrete lifecycle is:
    invokes an `AnchorSigner` for wallet-managed Bitcoin inputs when needed.
 9. `VerifyFinalAnchorPSBT` compares the complete unsigned transaction and all
    non-signature PSBT metadata with the frozen committed transaction.
-10. `customanchor.PublishTransfer` additionally requires a fully
-   finalized PSBT, revalidates all asset commitments, checks skip-broadcast
-   capability, and calls tapd's publish-and-log operation.
+10. `customanchor.PublishTransfer` additionally requires every input outside
+   a backend-signed plan to be finalized, revalidates all asset commitments,
+   checks the skip-broadcast and backend anchor signing capabilities when the
+   package uses them, and calls tapd's publish-and-log operation.
 
 Caller-provided virtual asset witnesses necessarily exist before commit;
 Bitcoin anchor signatures necessarily come after commit. Moving either to the
@@ -428,6 +429,22 @@ that the typed request does not model. Opcode parsing distinguishes a real
 separator from the same byte inside pushed data. Backend-managed inputs are
 still fully consensus-validated but are not constrained to an external signing
 plan.
+
+A caller-funded exact transfer can leave its asset anchor inputs to tapd. A
+`BackendSigned` plan on such an input derives no signing request, and the input
+must reach publish without a final witness. Publish then sets
+`sign_anchor_inputs`, and tapd signs and finalizes the input in the same call
+that logs the transfer. The builder and the sealed package reject the plan on an input that
+does not spend the anchor of an asset input, and under any other funding mode.
+tapd signs only the anchors it owns, never the lnd wallet coins that wallet
+funding adds.
+
+The anchor transaction that tapd returns carries witnesses the caller never
+held, so publish cannot compare it byte for byte. It checks instead that the
+txid is the committed one and that every caller witness is unchanged, then
+verifies every witness against the committed prevouts. Commit and publish both
+require the `backend_anchor_signing` capability, which the pinned tapd profile
+reports as unknown until a tapd release carries `sign_anchor_inputs`.
 
 The SDK intentionally does not own MuSig2 nonce generation, nonce exchange,
 partial-signature aggregation, or session storage. The integrating protocol
