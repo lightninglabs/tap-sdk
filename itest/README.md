@@ -43,7 +43,9 @@ nodes set `proofactivationheight=1` so the suite exercises the new proof
 rules even on regtest. Image pins are in
 [`docker-compose.yml`](docker-compose.yml). The local override
 [`docker-compose.local.yml`](docker-compose.local.yml) rebuilds tapd from the
-upstream `taproot-assets` `main` branch.
+upstream `taproot-assets` `main` branch. It also skips universe TLS
+verification for the `tapd-alice` and `tapd-bob` hosts, since their
+self-signed certificates do not name those hosts.
 
 Use `make itest-main` when SDK `main` intentionally depends on unreleased tapd
 behavior.
