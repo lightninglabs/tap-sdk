@@ -175,6 +175,11 @@ type PublishAndLogTransferRequest struct {
 
 	// Label is an optional short label for transfer tracking.
 	Label string
+
+	// SignAnchorInputs asks tapd to sign and finalize the anchor inputs
+	// it owns before publishing. Every other input must already be
+	// finalized.
+	SignAnchorInputs bool
 }
 
 // Validate checks that a publish-and-log transfer request can be sent.
