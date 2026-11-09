@@ -1134,6 +1134,287 @@ func TestPublishCustomAnchorTransferRejectsUnsignedDrift(t *testing.T) {
 	require.Zero(t, publishCalls)
 }
 
+// customAnchorBackendSignedFixture builds a caller-funded exact transfer
+// whose caller input 0 is signed out of band and whose asset anchor input 1
+// is left to the backend.
+func customAnchorBackendSignedFixture(
+	t *testing.T) *customAnchorBuilderFixture {
+
+	t.Helper()
+
+	fixture := newCustomAnchorBuilderFixture(t)
+	fixture.request.Funding = FundingPlan{
+		Mode:              FundingCallerFundedExact,
+		CallerFundedExact: &CallerFundedExact{},
+	}
+	fixture.request.SigningPlans = []InputSigningPlan{
+		{
+			InputIndex:   0,
+			CallerSigned: &CallerSignedPlan{},
+		},
+		{
+			InputIndex:    1,
+			BackendSigned: &BackendSignedPlan{},
+		},
+	}
+	fixture.client.signVirtual = func(_ context.Context, packet []byte) (
+		[]byte, error) {
+
+		return customAnchorSignVirtualPacket(
+			t, fixture.assetSpendKey, packet,
+		), nil
+	}
+	fixture.client.commit = func(_ context.Context,
+		req *tapsdk.CommitVirtualPsbtsRequest) (
+		*tapsdk.CommitVirtualPsbtsResponse, error) {
+
+		return customAnchorTestCommitResponse(t, req), nil
+	}
+
+	return fixture
+}
+
+// TestCustomAnchorBackendSigningRequiresCapability proves both commit and
+// publish fail closed before any backend call when the backend does not
+// report anchor signing.
+func TestCustomAnchorBackendSigningRequiresCapability(t *testing.T) {
+	t.Parallel()
+
+	fixture := customAnchorBackendSignedFixture(t)
+	commitCalls, publishCalls := 0, 0
+	commit := fixture.client.commit
+	fixture.client.commit = func(ctx context.Context,
+		req *tapsdk.CommitVirtualPsbtsRequest) (
+		*tapsdk.CommitVirtualPsbtsResponse, error) {
+
+		commitCalls++
+		return commit(ctx, req)
+	}
+	fixture.client.publish = func(context.Context,
+		*tapsdk.PublishAndLogTransferRequest) (*tapsdk.AssetPacket, error) {
+
+		publishCalls++
+		return nil, errors.New("unexpected publish")
+	}
+	capabilities := DefaultTapdCapabilities()
+	client := &capableCustomAnchorBuilderTestClient{
+		customAnchorBuilderTestClient: fixture.client,
+		capabilities:                  &capabilities,
+	}
+	wallet := tapsdk.NewWallet(client, tapsdk.NetworkRegtest)
+	plan, err := NewTxBuilder(wallet).Build(
+		context.Background(), fixture.request,
+	)
+	require.NoError(t, err)
+
+	_, err = plan.Commit(context.Background())
+	var capabilityErr *UnsupportedCapabilityError
+	require.ErrorAs(t, err, &capabilityErr)
+	require.Equal(t, CapabilityBackendAnchorSigning,
+		capabilityErr.Capability)
+	require.Zero(t, commitCalls)
+
+	capabilities.BackendAnchorSigning = CapabilitySupported
+	packageSnapshot, err := plan.Commit(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 1, commitCalls)
+
+	capabilities.BackendAnchorSigning = CapabilityUnknown
+	finalPacket := mustDecodeAnchorPSBT(t, packageSnapshot.AnchorPsbt)
+	setCustomAnchorTestKeyPathWitness(
+		t, finalPacket, 0, fixture.btcInputKey,
+		txscript.SigHashDefault,
+	)
+	_, err = PublishTransfer(
+		context.Background(), wallet, packageSnapshot,
+		mustSerializeAnchorPSBT(t, finalPacket),
+	)
+	require.ErrorAs(t, err, &capabilityErr)
+	require.Equal(t, CapabilityBackendAnchorSigning,
+		capabilityErr.Capability)
+	require.Zero(t, publishCalls)
+}
+
+// TestCustomAnchorBackendSignedPublish proves publish asks the backend to
+// sign the anchor and accepts the returned transaction only if it keeps the
+// committed txid and caller witnesses and every witness verifies.
+func TestCustomAnchorBackendSignedPublish(t *testing.T) {
+	t.Parallel()
+
+	signAnchor := func(t *testing.T, packet *psbt.Packet,
+		key *btcec.PrivateKey) {
+
+		setCustomAnchorTestKeyPathWitness(
+			t, packet, 1, key, txscript.SigHashDefault,
+		)
+	}
+	tests := []struct {
+		name string
+
+		// respond turns the published PSBT into the backend's anchor
+		// transaction bytes.
+		respond func(*testing.T, *customAnchorBuilderFixture,
+			*psbt.Packet) []byte
+
+		wantErr string
+	}{
+		{
+			name: "backend signs the anchor",
+			respond: func(t *testing.T, f *customAnchorBuilderFixture,
+				packet *psbt.Packet) []byte {
+
+				signAnchor(t, packet, f.anchorInputKey)
+				return customAnchorTestTxBytes(t, packet)
+			},
+		},
+		{
+			name: "anchor left unsigned",
+			respond: func(t *testing.T, _ *customAnchorBuilderFixture,
+				packet *psbt.Packet) []byte {
+
+				setCustomAnchorTestWitness(
+					t, &packet.Inputs[1], wire.TxWitness{},
+				)
+				return customAnchorTestTxBytes(t, packet)
+			},
+			wantErr: "verify final anchor input 1 witness",
+		},
+		{
+			name: "anchor signed by another key",
+			respond: func(t *testing.T, f *customAnchorBuilderFixture,
+				packet *psbt.Packet) []byte {
+
+				signAnchor(t, packet, f.btcInputKey)
+				return customAnchorTestTxBytes(t, packet)
+			},
+			wantErr: "verify final anchor input 1 witness",
+		},
+		{
+			name: "caller witness replaced",
+			respond: func(t *testing.T, f *customAnchorBuilderFixture,
+				packet *psbt.Packet) []byte {
+
+				signAnchor(t, packet, f.anchorInputKey)
+				setCustomAnchorTestKeyPathWitness(
+					t, packet, 0, f.btcInputKey,
+					txscript.SigHashAll,
+				)
+				return customAnchorTestTxBytes(t, packet)
+			},
+			wantErr: "anchor input 0 witness changed",
+		},
+		{
+			name: "txid changed",
+			respond: func(t *testing.T, f *customAnchorBuilderFixture,
+				packet *psbt.Packet) []byte {
+
+				signAnchor(t, packet, f.anchorInputKey)
+				packet.UnsignedTx.LockTime++
+				return customAnchorTestTxBytes(t, packet)
+			},
+			wantErr: "anchor transaction txid changed",
+		},
+		{
+			name: "trailing bytes",
+			respond: func(t *testing.T, f *customAnchorBuilderFixture,
+				packet *psbt.Packet) []byte {
+
+				signAnchor(t, packet, f.anchorInputKey)
+				return append(customAnchorTestTxBytes(t, packet), 0)
+			},
+			wantErr: "trailing bytes",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			fixture := customAnchorBackendSignedFixture(t)
+			var publishReq *tapsdk.PublishAndLogTransferRequest
+			fixture.client.publish = func(_ context.Context,
+				req *tapsdk.PublishAndLogTransferRequest) (*tapsdk.AssetPacket,
+				error) {
+
+				publishReq = cloneCustomAnchorPublishRequest(req)
+				packet := mustDecodeAnchorPSBT(t, req.AnchorPsbt)
+
+				return &tapsdk.AssetPacket{
+					AnchorTransaction: test.respond(
+						t, fixture, packet,
+					),
+					VirtualTransactions: cloneByteSlices(
+						req.VirtualPsbts,
+					),
+					PassiveAssetTransactions: cloneByteSlices(
+						req.PassiveAssetPsbts,
+					),
+				}, nil
+			}
+			capabilities := DefaultTapdCapabilities()
+			capabilities.BackendAnchorSigning =
+				CapabilitySupported
+			client := &capableCustomAnchorBuilderTestClient{
+				customAnchorBuilderTestClient: fixture.client,
+				capabilities:                  &capabilities,
+			}
+			wallet := tapsdk.NewWallet(client, tapsdk.NetworkRegtest)
+			plan, err := NewTxBuilder(wallet).Build(
+				context.Background(), fixture.request,
+			)
+			require.NoError(t, err)
+			packageSnapshot, err := plan.Commit(context.Background())
+			require.NoError(t, err)
+
+			finalPacket := mustDecodeAnchorPSBT(
+				t, packageSnapshot.AnchorPsbt,
+			)
+			setCustomAnchorTestKeyPathWitness(
+				t, finalPacket, 0, fixture.btcInputKey,
+				txscript.SigHashDefault,
+			)
+			result, err := PublishTransfer(
+				context.Background(), wallet, packageSnapshot,
+				mustSerializeAnchorPSBT(t, finalPacket),
+			)
+
+			require.NotNil(t, publishReq)
+			require.True(t, publishReq.SignAnchorInputs)
+			sent := mustDecodeAnchorPSBT(t, publishReq.AnchorPsbt)
+			require.NotEmpty(t, sent.Inputs[0].FinalScriptWitness)
+			require.Empty(t, sent.Inputs[1].FinalScriptWitness)
+
+			if test.wantErr != "" {
+				var attemptErr *PublishAttemptError
+				require.ErrorAs(t, err, &attemptErr)
+				require.True(t, attemptErr.OutcomeUnknown)
+				require.ErrorContains(t, err, test.wantErr)
+				return
+			}
+			require.NoError(t, err)
+
+			var anchorTx wire.MsgTx
+			require.NoError(t, anchorTx.Deserialize(
+				bytes.NewReader(result.AnchorTransaction),
+			))
+			require.Equal(t, sent.UnsignedTx.TxHash(),
+				anchorTx.TxHash())
+			require.Len(t, anchorTx.TxIn[1].Witness, 1)
+		})
+	}
+}
+
+func customAnchorTestTxBytes(t *testing.T, packet *psbt.Packet) []byte {
+	t.Helper()
+
+	tx, err := psbt.Extract(packet)
+	require.NoError(t, err)
+	var buffer bytes.Buffer
+	require.NoError(t, tx.Serialize(&buffer))
+
+	return buffer.Bytes()
+}
+
 func customAnchorSignVirtualPacket(t *testing.T,
 	privateKey *btcec.PrivateKey, packetBytes []byte) []byte {
 
