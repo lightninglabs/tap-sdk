@@ -292,7 +292,8 @@ The concrete lifecycle is:
 10. `customanchor.PublishTransfer` additionally requires every input outside
    a backend-signed plan to be finalized, revalidates all asset commitments,
    checks the skip-broadcast and backend anchor signing capabilities when the
-   package uses them, and calls tapd's publish-and-log operation.
+   package uses them, and calls tapd's publish-and-log operation with any
+   input proof files the caller supplies.
 
 Caller-provided virtual asset witnesses necessarily exist before commit;
 Bitcoin anchor signatures necessarily come after commit. Moving either to the
@@ -549,12 +550,13 @@ rejected.
 
 These paths are an application-level unconfirmed representation. They must not
 be imported into tapd or a universe as confirmed proofs. Once the relevant
-branch confirms, the integration obtains or materializes ordinary
-chain-anchored proofs, verifies them normally, imports/registers them, and may
-replace the compact path with a new confirmed base. A public SDK helper for
-materializing every transition from block headers and merkle proofs is future
-work; the current upstream `proof.UpdateTransitionProof` primitive uses
-implementation types and is intentionally not leaked through this API.
+branch confirms, `ProofPath.ConfirmProofFile` materializes every transition
+from the confirming blocks into an ordinary chain-anchored proof file. The
+integration verifies it normally and may replace the compact path with it as a
+new confirmed base. To spend the output in a custom-anchor transfer, the
+integration passes the file to `PublishTransfer` through
+`WithInputProofFiles`. tapd verifies it with the transfer and keeps it for
+confirmation, so the history never enters the wallet or a universe.
 
 An unconfirmed path package cannot be passed to
 `customanchor.PublishTransfer`. Today tapd's chain porter verifies every input

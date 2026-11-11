@@ -534,6 +534,27 @@ func validateCustomAnchorLockInventory(funding FundingPlan,
 	return nil
 }
 
+// PublishOption configures PublishTransfer.
+type PublishOption func(*publishOptions)
+
+// publishOptions holds the optional PublishTransfer parameters.
+type publishOptions struct {
+	inputProofFiles [][]byte
+}
+
+// WithInputProofFiles supplies the proof files of asset inputs the backend
+// holds no proof for, such as an input whose last transitions happened in
+// transactions the backend never saw. Each file must end in the proof of one
+// of the transfer's inputs. The backend verifies the files with the transfer
+// and keeps them, so it can confirm the transfer.
+func WithInputProofFiles(files ...[]byte) PublishOption {
+	return func(opts *publishOptions) {
+		opts.inputProofFiles = append(
+			opts.inputProofFiles, cloneByteSlices(files)...,
+		)
+	}
+}
+
 // PublishTransfer verifies that the final PSBT has the exact committed
 // unsigned transaction and commitments, then publishes/logs it through the
 // wallet using the metadata sealed into the package. If any input has a
@@ -541,8 +562,13 @@ func validateCustomAnchorLockInventory(funding FundingPlan,
 // the returned anchor transaction must keep the committed txid and pass full
 // witness verification.
 func PublishTransfer(ctx context.Context, wallet *tapsdk.Wallet,
-	packageSnapshot *TransferPackage,
-	finalAnchorPSBT []byte) (*tapsdk.AssetPacket, error) {
+	packageSnapshot *TransferPackage, finalAnchorPSBT []byte,
+	opts ...PublishOption) (*tapsdk.AssetPacket, error) {
+
+	var options publishOptions
+	for _, opt := range opts {
+		opt(&options)
+	}
 
 	if wallet == nil || wallet.Client() == nil {
 		return nil, fmt.Errorf("wallet has no client")
@@ -642,6 +668,7 @@ func PublishTransfer(ctx context.Context, wallet *tapsdk.Wallet,
 				SkipAnchorTxBroadcast,
 			Label:            packageSnapshot.Publish.Label,
 			SignAnchorInputs: len(backendSigned) != 0,
+			InputProofFiles:  options.inputProofFiles,
 		},
 	)
 	if err != nil {
