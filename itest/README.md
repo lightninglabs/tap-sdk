@@ -102,6 +102,9 @@ keys from a random seed and reads the chain from the bitcoind above.
 - `NewEmbeddedNode` starts an embedded engine next to the tapd nodes.
   `SendToEmbedded` moves an asset from Alice's tapd into it. The engine holds
   no Bitcoin: fund its anchor transactions with `fundLndInput`.
+- `runForCustomAnchorSenders` runs a custom-anchor case with Alice's tapd as
+  the sender, and again with an embedded engine that receives the asset from
+  her first.
 
 ## Coverage Themes
 
