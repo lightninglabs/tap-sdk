@@ -79,6 +79,10 @@ Checked-in config lives under:
 - `itest/lnd/`
 - `itest/tapd/`
 
+Tests of the `embedded` transport start the engine inside the test process.
+It needs no container of its own: it keeps its state in memory, derives its
+keys from a random seed and reads the chain from the bitcoind above.
+
 ## Test Helpers
 
 - `NewTestHarness` creates Alice and Bob SDK clients and wallets.
@@ -95,6 +99,9 @@ Checked-in config lives under:
   flow for Bob.
 - `fundLndInput` pays a Bitcoin output to a key of lnd-alice, for tests that
   fund an anchor transaction from outside tapd.
+- `NewEmbeddedNode` starts an embedded engine next to the tapd nodes.
+  `SendToEmbedded` moves an asset from Alice's tapd into it. The engine holds
+  no Bitcoin: fund its anchor transactions with `fundLndInput`.
 
 ## Coverage Themes
 
