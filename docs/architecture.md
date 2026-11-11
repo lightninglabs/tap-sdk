@@ -38,6 +38,7 @@ tapd
 | `customanchor` | Advanced custom-anchor transaction builder, transfer packages, proof paths, and capability profiles |
 | `grpc` | Native gRPC client, TLS setup, macaroon auth, proto marshal/unmarshal |
 | `rest` | REST client, TLS setup, macaroon auth, JSON marshal/unmarshal, WebSocket event streams |
+| `embedded` | In-process engine behind the same `Client` interface: proof verification, asset keys, sealing and publishing of caller-funded transfers, on host-supplied key ring, chain and store ports |
 | `macaroon` | Low-level macaroon source helpers shared by transports |
 | `internal/anchor` | Anchor PSBT helpers |
 | `internal/codec` | Internal TLV/alt-leaf/STXO encoding helpers |

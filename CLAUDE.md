@@ -49,6 +49,7 @@ tap-sdk/
 │                  reverse)
 ├── grpc/          gRPC client implementation
 ├── rest/          REST client implementation
+├── embedded/      In-process engine answering the client calls without tapd
 ├── internal/vpsbt/ Virtual PSBT encoding for interactive transfers
 ├── internal/codec/ Cryptographic utilities (alt-leaves, STXO derivation)
 ├── macaroon/      Authentication helpers

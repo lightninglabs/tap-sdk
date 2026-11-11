@@ -111,6 +111,7 @@ func main() {
 | `github.com/lightninglabs/tap-sdk` | Public asset model, `Wallet`, `Issuer`, `Universe`, builders, errors, and all business types |
 | `github.com/lightninglabs/tap-sdk/grpc` | gRPC transport, TLS config, macaroon auth, tapd marshal/unmarshal |
 | `github.com/lightninglabs/tap-sdk/rest` | REST transport, TLS config, macaroon auth, WebSocket event streams |
+| `github.com/lightninglabs/tap-sdk/embedded` | In-process transport: holds, verifies and moves assets inside the host application, with no tapd |
 | `github.com/lightninglabs/tap-sdk/macaroon` | Low-level macaroon source helpers |
 
 Most application code imports the root package plus one transport package.
