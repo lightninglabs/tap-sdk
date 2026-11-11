@@ -338,6 +338,7 @@ func TestMarshalPublishAndLogTransferRequest(t *testing.T) {
 		SkipAnchorTxBroadcast: true,
 		Label:                 "custom-label",
 		SignAnchorInputs:      true,
+		InputProofFiles:       [][]byte{[]byte("proof")},
 	}
 
 	rpcReq, err := marshalPublishAndLogTransferRequest(req)
@@ -350,4 +351,9 @@ func TestMarshalPublishAndLogTransferRequest(t *testing.T) {
 	require.True(t, rpcReq.SkipAnchorTxBroadcast)
 	require.Equal(t, "custom-label", rpcReq.Label)
 	require.True(t, rpcReq.SignAnchorInputs)
+	require.Equal(t, [][]byte{[]byte("proof")}, rpcReq.InputProofFiles)
+
+	req.InputProofFiles = [][]byte{nil}
+	_, err = marshalPublishAndLogTransferRequest(req)
+	require.ErrorContains(t, err, "input proof file 0 is empty")
 }
