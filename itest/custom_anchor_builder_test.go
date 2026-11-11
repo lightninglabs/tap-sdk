@@ -685,15 +685,10 @@ func skipBelowTapdVersion(t *testing.T, ctx context.Context,
 	}
 }
 
-type customAnchorCallerUTXO struct {
-	outpoint wire.OutPoint
-	txOut    *wire.TxOut
-}
-
 // fundCustomAnchorCallerUTXO pays a confirmed P2WPKH output to key from the
 // bitcoind miner wallet.
 func fundCustomAnchorCallerUTXO(t testing.TB, ctx context.Context,
-	h *TestHarness, key *btcec.PrivateKey) customAnchorCallerUTXO {
+	h *TestHarness, key *btcec.PrivateKey) fundedOutput {
 
 	t.Helper()
 	pkScript, err := txscript.NewScriptBuilder().
@@ -702,62 +697,7 @@ func fundCustomAnchorCallerUTXO(t testing.TB, ctx context.Context,
 		Script()
 	require.NoError(t, err)
 
-	decodedJSON := h.bitcoindRPCWallet(
-		t, "miner", "decodescript",
-		fmt.Sprintf("%q", hex.EncodeToString(pkScript)),
-	)
-	var decoded struct {
-		Address string `json:"address"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(decodedJSON), &decoded))
-	require.NotEmpty(t, decoded.Address)
-
-	txidJSON := h.bitcoindRPCWallet(
-		t, "miner", "sendtoaddress",
-		fmt.Sprintf("%q", decoded.Address), "0.001",
-	)
-	var txid string
-	require.NoError(t, json.Unmarshal([]byte(txidJSON), &txid))
-	txJSON := h.bitcoindRPCWallet(
-		t, "miner", "gettransaction", fmt.Sprintf("%q", txid),
-		"true", "true",
-	)
-	var funding struct {
-		Decoded struct {
-			Vout []struct {
-				Value        float64 `json:"value"`
-				N            uint32  `json:"n"`
-				ScriptPubKey struct {
-					Hex string `json:"hex"`
-				} `json:"scriptPubKey"`
-			} `json:"vout"`
-		} `json:"decoded"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(txJSON), &funding))
-
-	hash, err := chainhash.NewHashFromStr(txid)
-	require.NoError(t, err)
-	for _, vout := range funding.Decoded.Vout {
-		if vout.ScriptPubKey.Hex != hex.EncodeToString(pkScript) {
-			continue
-		}
-		amount, err := btcutil.NewAmount(vout.Value)
-		require.NoError(t, err)
-
-		h.MineBlocks(t, 1)
-		h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
-
-		return customAnchorCallerUTXO{
-			outpoint: wire.OutPoint{Hash: *hash, Index: vout.N},
-			txOut: &wire.TxOut{
-				Value:    int64(amount),
-				PkScript: pkScript,
-			},
-		}
-	}
-
-	require.FailNow(t, "funding transaction has no caller output")
-	return customAnchorCallerUTXO{}
+	return h.fundScript(t, ctx, pkScript)
 }
 
 // customAnchorCallerFundedITestPSBT spends the asset anchor and the caller
@@ -765,7 +705,7 @@ func fundCustomAnchorCallerUTXO(t testing.TB, ctx context.Context,
 // fee into P2WPKH change back to the caller.
 func customAnchorCallerFundedITestPSBT(t testing.TB,
 	inputProof *proof.Proof, receiverInternalKey tapsdk.InternalKey,
-	caller customAnchorCallerUTXO) ([]byte, int64) {
+	caller fundedOutput) ([]byte, int64) {
 
 	t.Helper()
 

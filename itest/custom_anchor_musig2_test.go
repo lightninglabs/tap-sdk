@@ -258,7 +258,9 @@ func TestCustomAnchorBuilderMuSig2KeyPathSweep(t *testing.T) {
 
 	// Finalize the aggregate key-path signature into a broadcastable witness,
 	// the step an external key-path signer such as lnd performs.
-	finalAnchorPsbt := customAnchorFinalizeKeyPath(t, witnessed.AnchorPsbt)
+	finalAnchorPsbt := customAnchorFinalizeKeyPath(
+		t, witnessed.AnchorPsbt, 0,
+	)
 	require.NoError(t, witnessed.VerifyFinalAnchorPSBT(finalAnchorPsbt))
 
 	_, err = customanchor.PublishTransfer(
@@ -293,12 +295,14 @@ func TestCustomAnchorBuilderMuSig2KeyPathSweep(t *testing.T) {
 }
 
 // customAnchorFinalizeKeyPath finalizes a Taproot key-path input by promoting
-// its aggregate key-spend signature to the final witness stack, then returns
-// the serialized PSBT ready for broadcast.
-func customAnchorFinalizeKeyPath(t testing.TB, rawPsbt []byte) []byte {
+// its key-spend signature to the final witness stack, then returns the
+// serialized PSBT.
+func customAnchorFinalizeKeyPath(t testing.TB, rawPsbt []byte,
+	inputIndex int) []byte {
+
 	t.Helper()
 	packet := decodeCustomAnchorITestPSBT(t, rawPsbt)
-	ok, err := psbt.MaybeFinalize(packet, 0)
+	ok, err := psbt.MaybeFinalize(packet, inputIndex)
 	require.NoError(t, err)
 	require.True(t, ok)
 

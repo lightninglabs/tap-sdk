@@ -93,6 +93,8 @@ Checked-in config lives under:
   helpers should use.
 - `CreateGroupedReceiveAddress` centralizes the V2 grouped receive bootstrap
   flow for Bob.
+- `fundLndInput` pays a Bitcoin output to a key of lnd-alice, for tests that
+  fund an anchor transaction from outside tapd.
 
 ## Coverage Themes
 
