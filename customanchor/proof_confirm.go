@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
+	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/btcsuite/btcd/wire/v2"
 	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/proof"
@@ -19,6 +20,57 @@ type AnchorConfirmation struct {
 	// Block is the serialized Bitcoin block containing the anchor
 	// transaction.
 	Block []byte
+}
+
+// AnchorTransactions returns the anchor transaction of every step of the
+// path, co-input paths included, once each and in path order. These are the
+// transactions whose blocks ConfirmProofFile needs.
+func (p *ProofPath) AnchorTransactions() ([]*wire.MsgTx, error) {
+	if err := p.Validate(); err != nil {
+		return nil, err
+	}
+
+	var (
+		txs  []*wire.MsgTx
+		seen = make(map[chainhash.Hash]struct{})
+	)
+	err := p.collectAnchorTransactions(&txs, seen)
+	if err != nil {
+		return nil, err
+	}
+
+	return txs, nil
+}
+
+// collectAnchorTransactions appends the anchor transactions of the path's
+// steps that seen does not hold yet, co-input paths before the step that
+// merges them.
+func (p *ProofPath) collectAnchorTransactions(txs *[]*wire.MsgTx,
+	seen map[chainhash.Hash]struct{}) error {
+
+	for i := range p.Steps {
+		for _, coPath := range p.stepCoInputPaths(i) {
+			err := coPath.collectAnchorTransactions(txs, seen)
+			if err != nil {
+				return err
+			}
+		}
+
+		transition, err := decodeAssetProofPathStep(
+			&p.Steps[i], p.stepWitnessCount(i),
+		)
+		if err != nil {
+			return fmt.Errorf("step %d: %w", i, err)
+		}
+		txid := transition.AnchorTx.TxHash()
+		if _, ok := seen[txid]; ok {
+			continue
+		}
+		seen[txid] = struct{}{}
+		*txs = append(*txs, transition.AnchorTx.Copy())
+	}
+
+	return nil
 }
 
 // ConfirmProofFile assembles a standard confirmed proof file for the path's

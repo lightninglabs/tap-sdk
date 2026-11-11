@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/btcsuite/btcd/wire/v2"
 	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/proof"
@@ -186,6 +187,18 @@ func TestConfirmProofFileConfirmsCoInputPaths(t *testing.T) {
 			),
 		},
 	}
+	anchors, err := path.AnchorTransactions()
+	require.NoError(t, err)
+	anchorTxids := make([]chainhash.Hash, 0, len(anchors))
+	for _, tx := range anchors {
+		anchorTxids = append(anchorTxids, tx.TxHash())
+	}
+	require.Equal(t, []chainhash.Hash{
+		spineTransition.AnchorTx.TxHash(),
+		coTransition.AnchorTx.TxHash(),
+		mergeTransition.AnchorTx.TxHash(),
+	}, anchorTxids)
+
 	encoded, err := path.ConfirmProofFile(confirmations)
 	require.NoError(t, err)
 
