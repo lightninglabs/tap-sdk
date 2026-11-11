@@ -141,6 +141,23 @@ func (h *TestHarness) fundScript(t testing.TB, ctx context.Context,
 	return fundedOutput{}
 }
 
+// invalidateBestBlock removes the best block from the chain and returns its
+// hash. The transactions of the block return to the mempool.
+func (h *TestHarness) invalidateBestBlock(t testing.TB) chainhash.Hash {
+	t.Helper()
+
+	var best string
+	require.NoError(t, json.Unmarshal(
+		[]byte(h.bitcoindCurlRPC(t, "getbestblockhash")), &best,
+	))
+	hash, err := chainhash.NewHashFromStr(best)
+	require.NoError(t, err)
+
+	h.bitcoindCurlRPC(t, "invalidateblock", fmt.Sprintf("%q", best))
+
+	return *hash
+}
+
 // lndNewAddress generates a new p2wkh address from an LND container using
 // lncli.
 func (h *TestHarness) lndNewAddress(t testing.TB, container string) string {

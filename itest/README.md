@@ -116,6 +116,8 @@ The suite is intentionally written as user workflows:
 - burn fungibles and NFT collection items
 - receive mint, send, and receive events
 - prove and verify ownership
+- receive, send and re-org assets in an embedded engine, with tapd on the
+  other side of each transfer
 - reject bad TLS and macaroon material
 - verify read-only macaroon permissions
 
