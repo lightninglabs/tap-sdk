@@ -68,6 +68,9 @@ address sends, burns and event streams. The engine holds no Bitcoin, so
 `CommitVirtualPsbts` accepts caller-funded anchor transactions only, and
 `customanchor.QueryCapabilities` reports wallet funding as unsupported.
 
+The engine has no universe, so `Wallet.GetBalance` and `Wallet.ListBalances`
+treat an asset as known when the wallet holds or has spent an output of it.
+
 A proof of a grouped asset verifies only if its group key is trusted. Trust
 comes from `Config.GroupKeys`, from `Client.TrustGroupKey`, and from the assets
 the wallet already holds.

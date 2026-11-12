@@ -205,8 +205,9 @@ func (s *Wallet) resolveExactGroupRef(ctx context.Context,
 // error wrapping ErrAssetUnknown; detect it with errors.Is. "Known"
 // means the local universe has an issuance or transfer root for the
 // ref, which tapd populates for assets the wallet minted, received,
-// or bootstrapped via SyncUniverse. A known asset with zero confirmed
-// units returns (0, nil).
+// or bootstrapped via SyncUniverse. A backend without a universe, such
+// as the embedded engine, knows the assets its wallet holds or has
+// spent. A known asset with zero confirmed units returns (0, nil).
 //
 // The universe probe fires only on the cold path where ListBalances
 // returns an empty map, so the common "have I been paid?" poll still
@@ -277,6 +278,8 @@ func (s *Wallet) ListBalances(ctx context.Context,
 	))
 }
 
+// assetKnown reports whether the backend has a record of the asset ref. A
+// backend without a universe knows the assets its wallet holds or has spent.
 func (s *Wallet) assetKnown(ctx context.Context,
 	ref AssetRef) (bool, error) {
 
@@ -284,7 +287,11 @@ func (s *Wallet) assetKnown(ctx context.Context,
 		AssetRef:  ref,
 		ProofType: ProofTypeIssuance,
 	})
-	if err != nil {
+	switch {
+	case isUnimplemented(err):
+		return s.walletHasRecord(ctx, ref)
+
+	case err != nil:
 		return false, err
 	}
 	if roots != nil &&

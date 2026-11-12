@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // refMockClient is a full mock of the Client interface for testing AssetRef-
@@ -831,6 +833,54 @@ func TestGetBalance_UnknownAsset(t *testing.T) {
 	require.Zero(t, balance)
 
 	mc.AssertExpectations(t)
+}
+
+// TestGetBalance_WithoutUniverse covers a backend that serves no universe.
+// The wallet's own records decide whether a ref with no balance is known.
+func TestGetBalance_WithoutUniverse(t *testing.T) {
+	ref := AssetRefFromGroupKey(testRefGroupKey(t))
+	rootID := issuanceRootID(ref)
+	noUniverse := status.Error(codes.Unimplemented, "no universe")
+	recordsReq := &ListAssetsRequest{
+		AssetRef:      &ref,
+		IncludeSpent:  true,
+		ScriptKeyType: &ScriptKeyTypeQuery{AllTypes: true},
+	}
+
+	tests := []struct {
+		name    string
+		records []*AssetRecord
+		wantErr error
+	}{{
+		name:    "spent asset is known",
+		records: []*AssetRecord{{AssetRef: ref}},
+	}, {
+		name:    "asset never held is unknown",
+		records: []*AssetRecord{},
+		wantErr: ErrAssetUnknown,
+	}}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mc := new(refMockClient)
+			w := NewWallet(mc, NetworkRegtest)
+			ctx := context.Background()
+
+			expectEmptyBalances(mc, ctx, ref)
+			mc.On("QueryAssetRoots", ctx, rootID).Return(
+				nil, noUniverse,
+			)
+			mc.On("ListAssetRecords", ctx, recordsReq).Return(
+				tc.records, nil,
+			)
+
+			balance, err := w.GetBalance(ctx, ref)
+			require.ErrorIs(t, err, tc.wantErr)
+			require.Zero(t, balance)
+
+			mc.AssertExpectations(t)
+		})
+	}
 }
 
 func TestGetBalance_ListBalancesError(t *testing.T) {

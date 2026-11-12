@@ -153,6 +153,12 @@ func normalizeErr(op string, err error) error {
 	return fmt.Errorf("%w: %w", sentinel, err)
 }
 
+// isUnimplemented reports whether a backend answered a call with
+// codes.Unimplemented.
+func isUnimplemented(err error) bool {
+	return status.Code(err) == codes.Unimplemented
+}
+
 func wrapsKnownErr(err error) bool {
 	for _, sentinel := range knownSentinelErrors {
 		if errors.Is(err, sentinel) {
