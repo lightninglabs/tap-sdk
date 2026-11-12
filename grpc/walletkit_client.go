@@ -347,6 +347,7 @@ func marshalPublishAndLogTransferRequest(
 		SkipAnchorTxBroadcast: req.SkipAnchorTxBroadcast,
 		Label:                 req.Label,
 		SignAnchorInputs:      req.SignAnchorInputs,
+		InputProofFiles:       req.InputProofFiles,
 	}, nil
 }
 

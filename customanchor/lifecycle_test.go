@@ -234,13 +234,16 @@ func TestCustomAnchorLifecycleBackendSigningAndPublish(t *testing.T) {
 		t, packageSnapshot.AnchorPsbt, fixture.btcInputKey,
 		fixture.anchorInputKey,
 	)
+	inputProof := []byte("input-proof")
 	result, err := PublishTransfer(
 		context.Background(), wallet, packageSnapshot, finalAnchorPSBT,
+		WithInputProofFiles(inputProof),
 	)
 	require.NoError(t, err)
 	require.Same(t, expectedResult, result)
 	require.NotNil(t, publishReq)
 	require.Equal(t, finalAnchorPSBT, publishReq.AnchorPsbt)
+	require.Equal(t, [][]byte{inputProof}, publishReq.InputProofFiles)
 	require.Equal(t, packageSnapshot.ActiveVirtualPsbts,
 		publishReq.VirtualPsbts)
 	require.Equal(t, packageSnapshot.PassiveVirtualPsbts,

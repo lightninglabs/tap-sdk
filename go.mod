@@ -13,7 +13,7 @@ require (
 	github.com/btcsuite/btcd/wire/v2 v2.0.0
 	github.com/coder/websocket v1.8.14
 	github.com/lightninglabs/taproot-assets v0.7.1-0.20261006112023-1434ab66b3bb
-	github.com/lightninglabs/taproot-assets/taprpc v1.1.1-0.20261109140140-9d4fed15579d
+	github.com/lightninglabs/taproot-assets/taprpc v1.1.1-0.20261112123219-14aa3fd90e6a
 	github.com/lightningnetwork/lnd v0.21.0-beta.rc2.0.20260903094101-d66a7c137d32
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/grpc v1.83.2

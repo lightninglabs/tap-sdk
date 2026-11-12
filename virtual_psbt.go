@@ -180,6 +180,14 @@ type PublishAndLogTransferRequest struct {
 	// it owns before publishing. Every other input must already be
 	// finalized.
 	SignAnchorInputs bool
+
+	// InputProofFiles are the proof files of asset inputs the backend
+	// holds no proof for, such as an input whose last transitions
+	// happened in transactions the backend never saw. Each file must end
+	// in the proof of one of the transfer's inputs. tapd stores them so
+	// it can confirm the transfer; a tapd that predates the field ignores
+	// it and fails the publish for want of the input's proof.
+	InputProofFiles [][]byte
 }
 
 // Validate checks that a publish-and-log transfer request can be sent.
@@ -192,6 +200,11 @@ func (r *PublishAndLogTransferRequest) Validate() error {
 	}
 	if len(r.VirtualPsbts) == 0 {
 		return fmt.Errorf("at least one virtual PSBT is required")
+	}
+	for idx, file := range r.InputProofFiles {
+		if len(file) == 0 {
+			return fmt.Errorf("input proof file %d is empty", idx)
+		}
 	}
 
 	return nil
