@@ -3,6 +3,7 @@ package embedded
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 
@@ -303,6 +304,152 @@ func (s *walletServer) ListAssets(ctx context.Context,
 	}
 
 	return resp, nil
+}
+
+// errInvalidGroupBy rejects a balance query that names no grouping.
+var errInvalidGroupBy = status.Error(codes.InvalidArgument, "invalid group_by")
+
+// ListBalances sums the wallet's unspent asset outputs by asset ID or by
+// group key. The engine leases no outputs, so every unspent output counts.
+func (s *walletServer) ListBalances(ctx context.Context,
+	req *taprpc.ListBalancesRequest) (*taprpc.ListBalancesResponse, error) {
+
+	scriptKeyType, _, err := rpcutils.ParseScriptKeyTypeQuery(
+		req.ScriptKeyType,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("unable to parse script key type "+
+			"query: %w", err)
+	}
+
+	held, err := s.engine.ownedAssets(ctx, false, scriptKeyType)
+	if err != nil {
+		return nil, err
+	}
+
+	resp := &taprpc.ListBalancesResponse{}
+	switch groupBy := req.GroupBy.(type) {
+	case *taprpc.ListBalancesRequest_AssetId:
+		if !groupBy.AssetId {
+			return nil, errInvalidGroupBy
+		}
+		resp.AssetBalances, err = balancesByAsset(
+			held, req.AssetFilter,
+		)
+
+	case *taprpc.ListBalancesRequest_GroupKey:
+		if !groupBy.GroupKey {
+			return nil, errInvalidGroupBy
+		}
+		resp.AssetGroupBalances, err = balancesByGroup(
+			held, req.GroupKeyFilter,
+		)
+
+	default:
+		return nil, errInvalidGroupBy
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	// The outputs of a pending transfer are in no balance, so callers get
+	// the number of transfers still to confirm.
+	transfers, err := s.engine.store.ListTransfers(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query transfers: %w", err)
+	}
+	for idx := range transfers {
+		if transfers[idx].State == TransferPending {
+			resp.UnconfirmedTransfers++
+		}
+	}
+
+	return resp, nil
+}
+
+// balancesByAsset sums the held units of each asset ID. An empty filter
+// matches every asset.
+func balancesByAsset(held []*holding,
+	filter []byte) (map[string]*taprpc.AssetBalance, error) {
+
+	if len(filter) != 0 && len(filter) != len(asset.ID{}) {
+		return nil, status.Error(codes.InvalidArgument,
+			"invalid asset filter")
+	}
+
+	balances := make(map[string]*taprpc.AssetBalance)
+	for _, h := range held {
+		id := h.chainAsset.ID()
+		if len(filter) != 0 && !bytes.Equal(id[:], filter) {
+			continue
+		}
+
+		key := hex.EncodeToString(id[:])
+		if balance, ok := balances[key]; ok {
+			balance.Balance += h.chainAsset.Amount
+			continue
+		}
+
+		genesis := h.chainAsset.Genesis
+		balance := &taprpc.AssetBalance{
+			AssetGenesis: &taprpc.GenesisInfo{
+				GenesisPoint: genesis.FirstPrevOut.String(),
+				AssetType:    taprpc.AssetType(genesis.Type),
+				Name:         genesis.Tag,
+				MetaHash:     genesis.MetaHash[:],
+				AssetId:      id[:],
+			},
+			Balance: h.chainAsset.Amount,
+		}
+		if h.chainAsset.GroupKey != nil {
+			balance.GroupKey = h.chainAsset.GroupKey.GroupPubKey.
+				SerializeCompressed()
+		}
+		balances[key] = balance
+	}
+
+	return balances, nil
+}
+
+// balancesByGroup sums the held units of each asset group. Assets without a
+// group are left out, as in tapd. An empty filter matches every group.
+func balancesByGroup(held []*holding,
+	filter []byte) (map[string]*taprpc.AssetGroupBalance, error) {
+
+	var wanted []byte
+	if len(filter) != 0 {
+		groupKey, err := btcec.ParsePubKey(filter)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument,
+				"invalid group key filter: %v", err)
+		}
+		wanted = groupKey.SerializeCompressed()
+	}
+
+	balances := make(map[string]*taprpc.AssetGroupBalance)
+	for _, h := range held {
+		if h.chainAsset.GroupKey == nil {
+			continue
+		}
+
+		groupKey := h.chainAsset.GroupKey.GroupPubKey.
+			SerializeCompressed()
+		if wanted != nil && !bytes.Equal(groupKey, wanted) {
+			continue
+		}
+
+		key := hex.EncodeToString(groupKey)
+		if balance, ok := balances[key]; ok {
+			balance.Balance += h.chainAsset.Amount
+			continue
+		}
+		balances[key] = &taprpc.AssetGroupBalance{
+			GroupKey: groupKey,
+			Balance:  h.chainAsset.Amount,
+		}
+	}
+
+	return balances, nil
 }
 
 // ListTransfers lists the transfers the engine recorded.

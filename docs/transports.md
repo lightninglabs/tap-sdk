@@ -59,7 +59,7 @@ It covers what a wallet needs to hold and move assets:
 
 - verify, decode, export and import proof files;
 - derive, declare and look up script keys and anchor internal keys;
-- list owned asset outputs and recorded transfers;
+- list owned asset outputs, balances and recorded transfers;
 - sign, commit and publish caller-funded custom-anchor transfers, and write
   the final proofs once the anchor transaction confirms.
 

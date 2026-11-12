@@ -3,6 +3,7 @@ package embedded
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"testing"
 	"time"
 
@@ -13,6 +14,8 @@ import (
 	"github.com/btcsuite/btcd/wire/v2"
 	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/customanchor"
+	"github.com/lightninglabs/taproot-assets/asset"
+	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -507,6 +510,128 @@ func TestTransferRejectsSpentInput(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Len(t, transfers, 1)
+}
+
+// TestBalances follows the balance of an asset through a transfer, and tells
+// an asset the wallet has spent from one it never held.
+func TestBalances(t *testing.T) {
+	h := newTestHarness(t)
+	ctx := t.Context()
+
+	minted := h.receive("balance")
+	balance, err := h.wallet.GetBalance(ctx, minted.ref)
+	require.NoError(t, err)
+	require.EqualValues(t, receivedUnits, balance)
+
+	sent := h.commitTransfer(minted, receivedUnits, 600, 7)
+	_, err = customanchor.PublishTransfer(
+		ctx, h.wallet, sent.transfer, sent.finalPSBT,
+	)
+	require.NoError(t, err)
+
+	// The change is unconfirmed, so the wallet holds nothing of an asset
+	// it still knows.
+	filtered, err := h.wallet.ListBalances(ctx, &tapsdk.ListBalancesRequest{
+		AssetRef: &minted.ref,
+	})
+	require.NoError(t, err)
+	require.Len(t, filtered.Balances, 1)
+	require.Zero(t, filtered.Balances[minted.ref.String()].Balance)
+	require.EqualValues(t, 1, filtered.UnconfirmedTransfers)
+
+	h.chain.mine(t)
+	h.waitTransfer(sent.txid, TransferConfirmed)
+
+	all, err := h.wallet.ListBalances(ctx, nil)
+	require.NoError(t, err)
+	require.Len(t, all.Balances, 1)
+	require.EqualValues(t, 400, all.Balances[minted.ref.String()].Balance)
+	require.Zero(t, all.UnconfirmedTransfers)
+
+	// A ref the wallet never held is unknown, by asset ID and by group
+	// key.
+	groupKey := newTestKeyRing(4).privKey(1, 0).PubKey()
+	for _, neverHeld := range []tapsdk.AssetRef{
+		tapsdk.AssetRefFromAssetID(tapsdk.AssetID{1}),
+		tapsdk.AssetRefFromGroupKey(sdkPubKey(t, groupKey)),
+	} {
+		_, err = h.wallet.GetBalance(ctx, neverHeld)
+		require.ErrorIs(t, err, tapsdk.ErrAssetUnknown)
+	}
+
+	// A query has to name its grouping.
+	server := &walletServer{engine: h.client.engine}
+	_, err = server.ListBalances(ctx, &taprpc.ListBalancesRequest{})
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
+// TestBalanceSums sums asset outputs by asset ID and by group key.
+func TestBalanceSums(t *testing.T) {
+	groupKey := newTestKeyRing(4).privKey(1, 0).PubKey()
+	otherKey := newTestKeyRing(4).privKey(1, 1).PubKey()
+
+	newHolding := func(tag string, amount uint64,
+		group *btcec.PublicKey) *holding {
+
+		held := &asset.Asset{
+			Genesis: asset.Genesis{Tag: tag},
+			Amount:  amount,
+		}
+		if group != nil {
+			held.GroupKey = &asset.GroupKey{GroupPubKey: *group}
+		}
+
+		return &holding{chainAsset: asset.ChainAsset{Asset: held}}
+	}
+	held := []*holding{
+		newHolding("plain", 5, nil),
+		newHolding("plain", 7, nil),
+		newHolding("tranche-1", 11, groupKey),
+		newHolding("tranche-2", 13, groupKey),
+	}
+	assetKey := func(h *holding) string {
+		id := h.chainAsset.ID()
+
+		return hex.EncodeToString(id[:])
+	}
+	groupHex := hex.EncodeToString(groupKey.SerializeCompressed())
+
+	byAsset, err := balancesByAsset(held, nil)
+	require.NoError(t, err)
+	require.Len(t, byAsset, 3)
+	plain := byAsset[assetKey(held[0])]
+	require.EqualValues(t, 12, plain.Balance)
+	require.Equal(t, "plain", plain.AssetGenesis.Name)
+	require.Empty(t, plain.GroupKey)
+	tranche := byAsset[assetKey(held[2])]
+	require.EqualValues(t, 11, tranche.Balance)
+	require.Equal(t, groupKey.SerializeCompressed(), tranche.GroupKey)
+
+	trancheID := held[3].chainAsset.ID()
+	byAsset, err = balancesByAsset(held, trancheID[:])
+	require.NoError(t, err)
+	require.Len(t, byAsset, 1)
+	require.EqualValues(t, 13, byAsset[assetKey(held[3])].Balance)
+
+	_, err = balancesByAsset(held, []byte{1, 2, 3})
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+
+	// Assets without a group are in no group balance.
+	byGroup, err := balancesByGroup(held, nil)
+	require.NoError(t, err)
+	require.Len(t, byGroup, 1)
+	require.EqualValues(t, 24, byGroup[groupHex].Balance)
+
+	byGroup, err = balancesByGroup(held, groupKey.SerializeCompressed())
+	require.NoError(t, err)
+	require.EqualValues(t, 24, byGroup[groupHex].Balance)
+
+	byGroup, err = balancesByGroup(held, otherKey.SerializeCompressed())
+	require.NoError(t, err)
+	require.Empty(t, byGroup)
+
+	_, err = balancesByGroup(held, []byte{1, 2, 3})
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
 }
 
 // TestUnimplementedCalls reports calls outside the engine's scope with the
