@@ -315,6 +315,106 @@ func TestInteractiveTxBuilder_WithAltLeaves(t *testing.T) {
 	mockWalletKit.AssertExpectations(t)
 }
 
+func TestInteractiveTxBuilder_AssetVersion(t *testing.T) {
+	v0, v1 := AssetVersionV0, AssetVersionV1
+
+	var receiverKeys DerivedKeys
+	copy(
+		receiverKeys.ScriptKey.PubKey[:],
+		[]byte("script_key_pubkey_33_bytes_long"),
+	)
+	copy(
+		receiverKeys.InternalKey.PubKey[:],
+		[]byte("internal_key_pubkey_33_bytes_lo"),
+	)
+
+	tests := []struct {
+		name    string
+		version *AssetVersion
+		want    AssetVersion
+	}{
+		{
+			name: "default",
+			want: AssetVersionV0,
+		},
+		{
+			name:    "v0",
+			version: &v0,
+			want:    AssetVersionV0,
+		},
+		{
+			name:    "v1",
+			version: &v1,
+			want:    AssetVersionV1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			mockWalletKit := new(MockWalletKitClient)
+
+			fundedPsbt := []byte("funded_psbt")
+			signedPsbt := []byte("signed_psbt")
+
+			var capturedPsbt []byte
+			mockWalletKit.On(
+				"FundInteractivePsbt", ctx, mock.Anything,
+			).Run(func(args mock.Arguments) {
+				psbtBytes := args.Get(1).([]byte)
+				capturedPsbt = append([]byte(nil), psbtBytes...)
+			}).Return(&FundedTransfer{
+				FundedPsbt: fundedPsbt,
+			}, nil)
+			mockWalletKit.On(
+				"SignVirtualPsbt", ctx, fundedPsbt,
+			).Return(signedPsbt, nil)
+			mockWalletKit.On(
+				"AnchorVirtualPsbts", ctx, [][]byte{signedPsbt},
+			).Return(&AssetTransfer{}, nil)
+
+			builder := newInteractiveTxBuilder(
+				mockWalletKit, "tapassetr", 1,
+			)
+			builder.SetAsset(
+				AssetRefFromAssetID(AssetID{1}), 1000,
+			).SetReceiverKeys(receiverKeys)
+			if tc.version != nil {
+				builder.SetAssetVersion(*tc.version)
+			}
+
+			_, err := builder.Execute(ctx)
+			require.NoError(t, err)
+
+			requireInteractiveOutputAssetVersion(
+				t, capturedPsbt, tc.want,
+			)
+
+			mockWalletKit.AssertExpectations(t)
+		})
+	}
+}
+
+func requireInteractiveOutputAssetVersion(t *testing.T, rawPSBT []byte,
+	want AssetVersion) {
+
+	t.Helper()
+
+	packet, err := btcpsbt.NewFromRawBytes(bytes.NewReader(rawPSBT), false)
+	require.NoError(t, err)
+	require.Len(t, packet.Outputs, 1)
+
+	var version []byte
+	for _, u := range packet.Outputs[0].Unknowns {
+		if bytes.Equal(u.Key, []byte{0x79}) {
+			version = u.Value
+			break
+		}
+	}
+
+	require.Equal(t, []byte{byte(want)}, version)
+}
+
 func requireInteractiveInputAssetID(t *testing.T, rawPSBT []byte,
 	want AssetID) {
 
@@ -396,6 +496,22 @@ func TestInteractiveTxBuilder_Validation(t *testing.T) {
 
 	_, err = builder4.Execute(ctx)
 	require.ErrorIs(t, err, ErrGroupKeyNotSupported)
+
+	// Test unknown asset version.
+	builder5 := services.NewInteractiveTxBuilder()
+	builder5.SetAsset(AssetRefFromAssetID(assetID), 1000).
+		SetReceiverKeys(DerivedKeys{
+			ScriptKey: ScriptKey{
+				PubKey: PubKey{1},
+			},
+			InternalKey: InternalKey{
+				PubKey: PubKey{1},
+			},
+		}).
+		SetAssetVersion(AssetVersionV1 + 1)
+
+	_, err = builder5.Execute(ctx)
+	require.ErrorIs(t, err, ErrInvalidAssetVersion)
 }
 
 func TestInteractiveTxBuilder_AlreadyFinished(t *testing.T) {

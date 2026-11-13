@@ -245,6 +245,10 @@ var (
 	// with zero amount.
 	ErrZeroAmount = errors.New("amount must be greater than zero")
 
+	// ErrInvalidAssetVersion is returned when attempting to execute a
+	// transfer with an asset version the SDK does not know.
+	ErrInvalidAssetVersion = errors.New("invalid asset version")
+
 	// ErrGroupKeyNotSupported is returned when a group-key AssetRef is
 	// used in a context that cannot resolve it to a concrete issuance.
 	ErrGroupKeyNotSupported = errors.New(
