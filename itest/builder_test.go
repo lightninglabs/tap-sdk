@@ -68,6 +68,19 @@ func TestTxBuilderEndToEnd(t *testing.T) {
 // receiver derives keys, sender builds with those keys, sender returns the
 // proof, and the receiver imports it into their wallet.
 func TestInteractiveTxBuilderEndToEnd(t *testing.T) {
+	testInteractiveTxBuilderEndToEnd(t, nil)
+}
+
+// TestInteractiveTxBuilderAssetVersion runs the interactive flow with a V1
+// receiver output.
+func TestInteractiveTxBuilderAssetVersion(t *testing.T) {
+	version := tapsdk.AssetVersionV1
+	testInteractiveTxBuilderEndToEnd(t, &version)
+}
+
+func testInteractiveTxBuilderEndToEnd(t *testing.T,
+	version *tapsdk.AssetVersion) {
+
 	runForTransports(t, func(t *testing.T, transport Transport) {
 		h, ctx := newFundedHarnessFor(t, transport)
 
@@ -83,10 +96,17 @@ func TestInteractiveTxBuilderEndToEnd(t *testing.T) {
 		require.NotNil(t, receiverKeys)
 
 		const amount = uint64(75)
-		transfer, err := h.AliceWallet.NewInteractiveTxBuilder().
+		builder := h.AliceWallet.NewInteractiveTxBuilder().
 			SetAsset(minted.Ref, amount).
-			SetReceiverKeys(*receiverKeys).
-			Execute(ctx)
+			SetReceiverKeys(*receiverKeys)
+
+		wantVersion := tapsdk.AssetVersionV0
+		if version != nil {
+			builder.SetAssetVersion(*version)
+			wantVersion = *version
+		}
+
+		transfer, err := builder.Execute(ctx)
 		require.NoError(t, err)
 		require.NotEmpty(t, transfer.AnchorTxid)
 
@@ -118,6 +138,18 @@ func TestInteractiveTxBuilderEndToEnd(t *testing.T) {
 			balanceTimeoutFor(minted.Ref),
 		)
 		require.Equal(t, amount, bobBalance)
+
+		records, err := h.BobClient.ListAssetRecords(
+			ctx, &tapsdk.ListAssetsRequest{
+				AssetRef: &minted.Ref,
+			},
+		)
+		require.NoError(t, err)
+		record := assetRecordForScriptKey(
+			t, records, receiverKeys.ScriptKey.PubKey,
+		)
+		require.Equal(t, wantVersion,
+			tapsdk.AssetVersion(record.Version))
 	})
 }
 
@@ -170,4 +202,19 @@ func transferOutputForScriptKey(t testing.TB,
 
 	require.FailNow(t, "receiver output not found")
 	return tapsdk.TransferOutput{}
+}
+
+func assetRecordForScriptKey(t testing.TB, records []*tapsdk.AssetRecord,
+	scriptKey tapsdk.PubKey) *tapsdk.AssetRecord {
+
+	t.Helper()
+
+	for _, record := range records {
+		if record != nil && record.ScriptKey.PubKey == scriptKey {
+			return record
+		}
+	}
+
+	require.FailNow(t, "receiver asset record not found")
+	return nil
 }
