@@ -26,6 +26,7 @@ type InteractiveTxBuilder struct {
 	receiverKeys     *DerivedKeys
 	lockTime         uint64
 	relativeLockTime uint64
+	assetVersion     AssetVersion
 	altLeaves        map[PubKey][][]byte
 
 	// Internal state
@@ -118,6 +119,19 @@ func (b *InteractiveTxBuilder) SetRelativeLockTime(
 	return b
 }
 
+// SetAssetVersion sets the asset version of the receiver's output. The
+// default is AssetVersionV0. Unconfirmed custom-anchor proof paths need an
+// AssetVersionV1 base asset.
+func (b *InteractiveTxBuilder) SetAssetVersion(
+	version AssetVersion) *InteractiveTxBuilder {
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.assetVersion = version
+	return b
+}
+
 // WithAltLeaves attaches auxiliary Taproot leaves that should be committed to
 // the receiver's output.
 func (b *InteractiveTxBuilder) WithAltLeaves(
@@ -205,6 +219,17 @@ func (b *InteractiveTxBuilder) validate() error {
 		return &Error{Op: "Execute", Err: ErrZeroAmount}
 	}
 
+	switch b.assetVersion {
+	case AssetVersionV0, AssetVersionV1:
+
+	default:
+		return &Error{
+			Op: "Execute",
+			Err: fmt.Errorf("%w: %d", ErrInvalidAssetVersion,
+				b.assetVersion),
+		}
+	}
+
 	return nil
 }
 
@@ -288,7 +313,7 @@ func (b *InteractiveTxBuilder) buildVPacket(assetID AssetID) error {
 		LockTime:          b.lockTime,
 		RelativeLockTime:  b.relativeLockTime,
 		AnchorOutputIndex: 0,
-		AssetVersion:      vpsbt.AssetVersionV0,
+		AssetVersion:      uint8(b.assetVersion),
 		NetworkHRP:        b.networkHRP,
 		CoinType:          b.coinType,
 	}
