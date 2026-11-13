@@ -4,6 +4,7 @@ package itest
 
 import (
 	"bytes"
+	"context"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -29,17 +30,24 @@ import (
 // It exercises the MuSig2 signing surface that both existing custom-anchor
 // itests assert is empty.
 func TestCustomAnchorBuilderMuSig2KeyPathSweep(t *testing.T) {
-	h, ctx := newFundedHarnessFor(t, TransportGRPC)
+	runForCustomAnchorSenders(
+		t, []Transport{TransportGRPC}, testCustomAnchorMuSig2Sweep,
+	)
+}
 
-	name := uniqueEventLabel("custom-anchor-musig2")
+func testCustomAnchorMuSig2Sweep(t *testing.T, ctx context.Context,
+	h *TestHarness, sender *customAnchorSender) {
+
+	name := uniqueEventLabel("custom-anchor-musig2-" + sender.name)
 	minted, err := h.CreateFungibleAndConfirm(t, ctx, name, 1_000)
 	require.NoError(t, err)
 	require.True(t, minted.Ref.IsGroupRef())
 
-	mintProof, err := h.AliceWallet.ExportProofFile(
+	inputKey, inputPoint := sender.hold(t, ctx, h, minted)
+	mintProof, err := sender.wallet.ExportProofFile(
 		ctx,
 		tapsdk.AssetRefFromAssetID(minted.Asset.Genesis.IssuanceID),
-		minted.Asset.ScriptKey.PubKey, nil,
+		inputKey, inputPoint,
 	)
 	require.NoError(t, err)
 
@@ -120,7 +128,7 @@ func TestCustomAnchorBuilderMuSig2KeyPathSweep(t *testing.T) {
 		}},
 	}
 
-	lockPlan, err := customanchor.NewTxBuilder(h.AliceWallet).Build(
+	lockPlan, err := customanchor.NewTxBuilder(sender.wallet).Build(
 		ctx, lockRequest,
 	)
 	require.NoError(t, err)
@@ -135,12 +143,12 @@ func TestCustomAnchorBuilderMuSig2KeyPathSweep(t *testing.T) {
 	muSig2Output := lockSealed.Outputs[0]
 	require.NotNil(t, muSig2Output.OPTrueSpend)
 
-	lockFinal, err := newAliceLndAnchorSigner(t)(ctx, lockSealed.AnchorPsbt)
+	lockFinal, err := sender.signAnchor(ctx, lockSealed.AnchorPsbt)
 	require.NoError(t, err)
 	require.NoError(t, lockSealed.VerifyFinalAnchorPSBT(lockFinal))
 
 	_, err = customanchor.PublishTransfer(
-		ctx, h.AliceWallet, lockSealed, lockFinal,
+		ctx, sender.wallet, lockSealed, lockFinal,
 	)
 	require.NoError(t, err)
 
@@ -148,7 +156,7 @@ func TestCustomAnchorBuilderMuSig2KeyPathSweep(t *testing.T) {
 	h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
 
 	lockProof := h.WaitForProofFile(
-		t, ctx, h.AliceWallet,
+		t, ctx, sender.wallet,
 		tapsdk.AssetRefFromAssetID(muSig2Output.IssuanceID),
 		muSig2Output.ScriptKey, &muSig2Output.AnchorOutpoint,
 	)
@@ -220,7 +228,7 @@ func TestCustomAnchorBuilderMuSig2KeyPathSweep(t *testing.T) {
 		}},
 	}
 
-	sweepPlan, err := customanchor.NewTxBuilder(h.AliceWallet).Build(
+	sweepPlan, err := customanchor.NewTxBuilder(sender.wallet).Build(
 		ctx, sweepRequest,
 	)
 	require.NoError(t, err)
@@ -258,11 +266,13 @@ func TestCustomAnchorBuilderMuSig2KeyPathSweep(t *testing.T) {
 
 	// Finalize the aggregate key-path signature into a broadcastable witness,
 	// the step an external key-path signer such as lnd performs.
-	finalAnchorPsbt := customAnchorFinalizeKeyPath(t, witnessed.AnchorPsbt)
+	finalAnchorPsbt := customAnchorFinalizeKeyPath(
+		t, witnessed.AnchorPsbt, 0,
+	)
 	require.NoError(t, witnessed.VerifyFinalAnchorPSBT(finalAnchorPsbt))
 
 	_, err = customanchor.PublishTransfer(
-		ctx, h.AliceWallet, witnessed, finalAnchorPsbt,
+		ctx, sender.wallet, witnessed, finalAnchorPsbt,
 	)
 	require.NoError(t, err)
 
@@ -272,7 +282,7 @@ func TestCustomAnchorBuilderMuSig2KeyPathSweep(t *testing.T) {
 
 	sweptOutput := sweepSealed.Outputs[0]
 	sweptProof := h.WaitForProofFile(
-		t, ctx, h.AliceWallet,
+		t, ctx, sender.wallet,
 		tapsdk.AssetRefFromAssetID(sweptOutput.IssuanceID),
 		sweptOutput.ScriptKey, &sweptOutput.AnchorOutpoint,
 	)
@@ -293,12 +303,14 @@ func TestCustomAnchorBuilderMuSig2KeyPathSweep(t *testing.T) {
 }
 
 // customAnchorFinalizeKeyPath finalizes a Taproot key-path input by promoting
-// its aggregate key-spend signature to the final witness stack, then returns
-// the serialized PSBT ready for broadcast.
-func customAnchorFinalizeKeyPath(t testing.TB, rawPsbt []byte) []byte {
+// its key-spend signature to the final witness stack, then returns the
+// serialized PSBT.
+func customAnchorFinalizeKeyPath(t testing.TB, rawPsbt []byte,
+	inputIndex int) []byte {
+
 	t.Helper()
 	packet := decodeCustomAnchorITestPSBT(t, rawPsbt)
-	ok, err := psbt.MaybeFinalize(packet, 0)
+	ok, err := psbt.MaybeFinalize(packet, inputIndex)
 	require.NoError(t, err)
 	require.True(t, ok)
 

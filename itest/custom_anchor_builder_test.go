@@ -34,9 +34,10 @@ const (
 )
 
 // TestCustomAnchorBuilderEndToEnd exercises the exact caller-funded custom
-// anchor lifecycle through both SDK transports. In particular, it proves that
-// the caller's transaction version, sequence, and fee survive virtual signing,
-// commitment, external anchor signing, and publishing unchanged.
+// anchor lifecycle through both SDK transports and an embedded engine. In
+// particular, it proves that the caller's transaction version, sequence, and
+// fee survive virtual signing, commitment, external anchor signing, and
+// publishing unchanged.
 func TestCustomAnchorBuilderEndToEnd(t *testing.T) {
 	testCustomAnchorBuilderEndToEnd(t, false)
 }
@@ -48,11 +49,17 @@ func TestCustomAnchorBuilderReceivedAsset(t *testing.T) {
 }
 
 func testCustomAnchorBuilderEndToEnd(t *testing.T, received bool) {
-	runForTransports(t, func(t *testing.T, transport Transport) {
-		h, ctx := newFundedHarnessFor(t, transport)
+	run := runForCustomAnchorSenders
+	if received {
+		// An embedded engine receives no address transfers.
+		run = runForTapdCustomAnchorSenders
+	}
+
+	run(t, selectedTransports(t), func(t *testing.T, ctx context.Context,
+		h *TestHarness, sender *customAnchorSender) {
 
 		name := uniqueEventLabel(fmt.Sprintf(
-			"custom-anchor-%s", transport,
+			"custom-anchor-%s", sender.name,
 		))
 		mintSpec := mintGroupedAssetSpec(name, 1_000)
 		mintSpec.AssetVersion = tapsdk.AssetVersionV1
@@ -60,8 +67,7 @@ func testCustomAnchorBuilderEndToEnd(t *testing.T, received bool) {
 		require.NoError(t, err)
 		require.True(t, minted.Ref.IsGroupRef())
 
-		inputKey := minted.Asset.ScriptKey.PubKey
-		var inputPoint *tapsdk.Outpoint
+		inputKey, inputPoint := sender.hold(t, ctx, h, minted)
 		if received {
 			// Move the whole asset to a fresh V2 address in Alice's
 			// wallet so the custom spend starts from a received key.
@@ -112,7 +118,7 @@ func testCustomAnchorBuilderEndToEnd(t *testing.T, received bool) {
 			require.Len(t, key.TapTweak, 32)
 		}
 
-		inputProof, err := h.AliceWallet.ExportProofFile(
+		inputProof, err := sender.wallet.ExportProofFile(
 			ctx,
 			tapsdk.AssetRefFromAssetID(
 				minted.Asset.Genesis.IssuanceID,
@@ -184,7 +190,7 @@ func testCustomAnchorBuilderEndToEnd(t *testing.T, received bool) {
 			}},
 		}
 
-		plan, err := customanchor.NewTxBuilder(h.AliceWallet).Build(
+		plan, err := customanchor.NewTxBuilder(sender.wallet).Build(
 			ctx, request,
 		)
 		require.NoError(t, err)
@@ -250,7 +256,7 @@ func testCustomAnchorBuilderEndToEnd(t *testing.T, received bool) {
 		require.Equal(t, anchorSigner.XOnly(),
 			signingRequests.KeyPath[0].Signer)
 
-		finalAnchorPsbt, err := newAliceLndAnchorSigner(t)(
+		finalAnchorPsbt, err := sender.signAnchor(
 			ctx, sealed.AnchorPsbt,
 		)
 		require.NoError(t, err)
@@ -262,7 +268,7 @@ func testCustomAnchorBuilderEndToEnd(t *testing.T, received bool) {
 		require.NotEmpty(t, finalPacket.Inputs[0].FinalScriptWitness)
 
 		published, err := customanchor.PublishTransfer(
-			ctx, h.AliceWallet, sealed, finalAnchorPsbt,
+			ctx, sender.wallet, sealed, finalAnchorPsbt,
 		)
 		require.NoError(t, err)
 		require.NotEmpty(t, published.AnchorTransaction)
@@ -274,7 +280,7 @@ func testCustomAnchorBuilderEndToEnd(t *testing.T, received bool) {
 
 		output := sealed.Outputs[0]
 		completedProof := h.WaitForProofFile(
-			t, ctx, h.AliceWallet,
+			t, ctx, sender.wallet,
 			tapsdk.AssetRefFromAssetID(output.IssuanceID),
 			output.ScriptKey, &output.AnchorOutpoint,
 		)
@@ -298,15 +304,17 @@ func testCustomAnchorBuilderEndToEnd(t *testing.T, received bool) {
 }
 
 // TestCustomAnchorBuilderExternalP2AEndToEnd proves the external broadcaster
-// flow used by hosts that retain ownership of Bitcoin fee management. Tapd
-// commits and logs the transfer without broadcasting, while the caller signs,
-// finalizes, and broadcasts the v3 parent containing the P2A hook.
+// flow used by hosts that retain ownership of Bitcoin fee management. The
+// backend commits and logs the transfer without broadcasting, while the
+// caller signs, finalizes, and broadcasts the v3 parent containing the P2A
+// hook.
 func TestCustomAnchorBuilderExternalP2AEndToEnd(t *testing.T) {
-	runForTransports(t, func(t *testing.T, transport Transport) {
-		h, ctx := newFundedHarnessFor(t, transport)
+	runForCustomAnchorSenders(t, selectedTransports(t), func(t *testing.T,
+		ctx context.Context, h *TestHarness,
+		sender *customAnchorSender) {
 
 		name := uniqueEventLabel(fmt.Sprintf(
-			"custom-anchor-p2a-%s", transport,
+			"custom-anchor-p2a-%s", sender.name,
 		))
 		minted, err := h.CreateFungibleAndConfirm(
 			t, ctx, name, 1_000,
@@ -314,12 +322,13 @@ func TestCustomAnchorBuilderExternalP2AEndToEnd(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, minted.Ref.IsGroupRef())
 
-		inputProof, err := h.AliceWallet.ExportProofFile(
+		inputKey, inputPoint := sender.hold(t, ctx, h, minted)
+		inputProof, err := sender.wallet.ExportProofFile(
 			ctx,
 			tapsdk.AssetRefFromAssetID(
 				minted.Asset.Genesis.IssuanceID,
 			),
-			minted.Asset.ScriptKey.PubKey, nil,
+			inputKey, inputPoint,
 		)
 		require.NoError(t, err)
 		require.NotEmpty(t, inputProof.RawProofFile)
@@ -392,7 +401,7 @@ func TestCustomAnchorBuilderExternalP2AEndToEnd(t *testing.T) {
 			}},
 		}
 
-		plan, err := customanchor.NewTxBuilder(h.AliceWallet).Build(
+		plan, err := customanchor.NewTxBuilder(sender.wallet).Build(
 			ctx, request,
 		)
 		require.NoError(t, err)
@@ -432,7 +441,7 @@ func TestCustomAnchorBuilderExternalP2AEndToEnd(t *testing.T) {
 		require.Equal(t, anchorSigner.XOnly(),
 			signingRequests.KeyPath[0].Signer)
 
-		finalAnchorPsbt, err := newAliceLndAnchorSigner(t)(
+		finalAnchorPsbt, err := sender.signAnchor(
 			ctx, sealed.AnchorPsbt,
 		)
 		require.NoError(t, err)
@@ -456,7 +465,7 @@ func TestCustomAnchorBuilderExternalP2AEndToEnd(t *testing.T) {
 			"ephemeral P2A parent must pay zero fee")
 
 		logged, err := customanchor.PublishTransfer(
-			ctx, h.AliceWallet, sealed, finalAnchorPsbt,
+			ctx, sender.wallet, sealed, finalAnchorPsbt,
 		)
 		require.NoError(t, err)
 		require.NotEmpty(t, logged.AnchorTransaction)
@@ -475,7 +484,7 @@ func TestCustomAnchorBuilderExternalP2AEndToEnd(t *testing.T) {
 
 		output := sealed.Outputs[0]
 		completedProof := h.WaitForProofFile(
-			t, ctx, h.AliceWallet,
+			t, ctx, sender.wallet,
 			tapsdk.AssetRefFromAssetID(output.IssuanceID),
 			output.ScriptKey, &output.AnchorOutpoint,
 		)
@@ -500,29 +509,30 @@ func TestCustomAnchorBuilderExternalP2AEndToEnd(t *testing.T) {
 
 // TestCustomAnchorBuilderBackendSignedAnchor exercises a caller-funded exact
 // transfer whose BTC funding input and change belong to a key that neither
-// tapd nor lnd controls. The caller signs only that input, and tapd signs its
-// own asset anchor at publish.
+// the sender's backend nor lnd controls. The caller signs only that input,
+// and the backend signs its own asset anchor at publish.
 func TestCustomAnchorBuilderBackendSignedAnchor(t *testing.T) {
-	runForTransports(t, func(t *testing.T, transport Transport) {
-		h, ctx := newHarnessContextFor(t, transport)
-		skipBelowTapdVersion(t, ctx, h.AliceClient, 0, 8, 99)
-		h.FundLndWallet(t, ctx)
-		wallet := h.AliceWallet
+	runForCustomAnchorSenders(t, selectedTransports(t), func(t *testing.T,
+		ctx context.Context, h *TestHarness,
+		sender *customAnchorSender) {
+
+		wallet := sender.backendSigningWallet(t, ctx, h)
 
 		name := uniqueEventLabel(fmt.Sprintf(
-			"custom-anchor-backend-signed-%s", transport,
+			"custom-anchor-backend-signed-%s", sender.name,
 		))
 		mintSpec := mintGroupedAssetSpec(name, 1_000)
 		mintSpec.AssetVersion = tapsdk.AssetVersionV1
 		minted, err := h.MintAssetAndConfirm(t, ctx, mintSpec)
 		require.NoError(t, err)
 
-		inputProof, err := h.AliceWallet.ExportProofFile(
+		inputKey, inputPoint := sender.hold(t, ctx, h, minted)
+		inputProof, err := sender.wallet.ExportProofFile(
 			ctx,
 			tapsdk.AssetRefFromAssetID(
 				minted.Asset.Genesis.IssuanceID,
 			),
-			minted.Asset.ScriptKey.PubKey, nil,
+			inputKey, inputPoint,
 		)
 		require.NoError(t, err)
 		proofFile, err := proof.DecodeFile(inputProof.RawProofFile)
@@ -616,8 +626,9 @@ func TestCustomAnchorBuilderBackendSignedAnchor(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		// tapd must have added a key-path witness for its anchor and
-		// left the caller's witness and the committed txid intact.
+		// The backend must have added a key-path witness for its
+		// anchor and left the caller's witness and the committed txid
+		// intact.
 		var anchorTx wire.MsgTx
 		require.NoError(t, anchorTx.Deserialize(
 			bytes.NewReader(published.AnchorTransaction),
@@ -638,7 +649,7 @@ func TestCustomAnchorBuilderBackendSignedAnchor(t *testing.T) {
 
 		output := sealed.Outputs[0]
 		completedProof := h.WaitForProofFile(
-			t, ctx, h.AliceWallet,
+			t, ctx, sender.wallet,
 			tapsdk.AssetRefFromAssetID(output.IssuanceID),
 			output.ScriptKey, &output.AnchorOutpoint,
 		)
@@ -685,15 +696,10 @@ func skipBelowTapdVersion(t *testing.T, ctx context.Context,
 	}
 }
 
-type customAnchorCallerUTXO struct {
-	outpoint wire.OutPoint
-	txOut    *wire.TxOut
-}
-
 // fundCustomAnchorCallerUTXO pays a confirmed P2WPKH output to key from the
 // bitcoind miner wallet.
 func fundCustomAnchorCallerUTXO(t testing.TB, ctx context.Context,
-	h *TestHarness, key *btcec.PrivateKey) customAnchorCallerUTXO {
+	h *TestHarness, key *btcec.PrivateKey) fundedOutput {
 
 	t.Helper()
 	pkScript, err := txscript.NewScriptBuilder().
@@ -702,62 +708,7 @@ func fundCustomAnchorCallerUTXO(t testing.TB, ctx context.Context,
 		Script()
 	require.NoError(t, err)
 
-	decodedJSON := h.bitcoindRPCWallet(
-		t, "miner", "decodescript",
-		fmt.Sprintf("%q", hex.EncodeToString(pkScript)),
-	)
-	var decoded struct {
-		Address string `json:"address"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(decodedJSON), &decoded))
-	require.NotEmpty(t, decoded.Address)
-
-	txidJSON := h.bitcoindRPCWallet(
-		t, "miner", "sendtoaddress",
-		fmt.Sprintf("%q", decoded.Address), "0.001",
-	)
-	var txid string
-	require.NoError(t, json.Unmarshal([]byte(txidJSON), &txid))
-	txJSON := h.bitcoindRPCWallet(
-		t, "miner", "gettransaction", fmt.Sprintf("%q", txid),
-		"true", "true",
-	)
-	var funding struct {
-		Decoded struct {
-			Vout []struct {
-				Value        float64 `json:"value"`
-				N            uint32  `json:"n"`
-				ScriptPubKey struct {
-					Hex string `json:"hex"`
-				} `json:"scriptPubKey"`
-			} `json:"vout"`
-		} `json:"decoded"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(txJSON), &funding))
-
-	hash, err := chainhash.NewHashFromStr(txid)
-	require.NoError(t, err)
-	for _, vout := range funding.Decoded.Vout {
-		if vout.ScriptPubKey.Hex != hex.EncodeToString(pkScript) {
-			continue
-		}
-		amount, err := btcutil.NewAmount(vout.Value)
-		require.NoError(t, err)
-
-		h.MineBlocks(t, 1)
-		h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
-
-		return customAnchorCallerUTXO{
-			outpoint: wire.OutPoint{Hash: *hash, Index: vout.N},
-			txOut: &wire.TxOut{
-				Value:    int64(amount),
-				PkScript: pkScript,
-			},
-		}
-	}
-
-	require.FailNow(t, "funding transaction has no caller output")
-	return customAnchorCallerUTXO{}
+	return h.fundScript(t, ctx, pkScript)
 }
 
 // customAnchorCallerFundedITestPSBT spends the asset anchor and the caller
@@ -765,7 +716,7 @@ func fundCustomAnchorCallerUTXO(t testing.TB, ctx context.Context,
 // fee into P2WPKH change back to the caller.
 func customAnchorCallerFundedITestPSBT(t testing.TB,
 	inputProof *proof.Proof, receiverInternalKey tapsdk.InternalKey,
-	caller customAnchorCallerUTXO) ([]byte, int64) {
+	caller fundedOutput) ([]byte, int64) {
 
 	t.Helper()
 

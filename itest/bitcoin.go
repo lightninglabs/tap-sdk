@@ -5,6 +5,7 @@ package itest
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -12,6 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/stretchr/testify/require"
 )
 
@@ -64,6 +68,94 @@ func (h *TestHarness) FundLndWallet(t testing.TB, ctx context.Context) {
 
 	h.WaitForSync(t, ctx, h.AliceClient, 60*time.Second)
 	h.WaitForSync(t, ctx, h.BobClient, 60*time.Second)
+}
+
+// fundedOutput is a confirmed transaction output.
+type fundedOutput struct {
+	outpoint wire.OutPoint
+	txOut    *wire.TxOut
+}
+
+// fundScript pays a confirmed output to pkScript from the bitcoind miner
+// wallet.
+func (h *TestHarness) fundScript(t testing.TB, ctx context.Context,
+	pkScript []byte) fundedOutput {
+
+	t.Helper()
+
+	decodedJSON := h.bitcoindRPCWallet(
+		t, "miner", "decodescript",
+		fmt.Sprintf("%q", hex.EncodeToString(pkScript)),
+	)
+	var decoded struct {
+		Address string `json:"address"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(decodedJSON), &decoded))
+	require.NotEmpty(t, decoded.Address)
+
+	txidJSON := h.bitcoindRPCWallet(
+		t, "miner", "sendtoaddress",
+		fmt.Sprintf("%q", decoded.Address), "0.001",
+	)
+	var txid string
+	require.NoError(t, json.Unmarshal([]byte(txidJSON), &txid))
+	txJSON := h.bitcoindRPCWallet(
+		t, "miner", "gettransaction", fmt.Sprintf("%q", txid),
+		"true", "true",
+	)
+	var funding struct {
+		Decoded struct {
+			Vout []struct {
+				Value        float64 `json:"value"`
+				N            uint32  `json:"n"`
+				ScriptPubKey struct {
+					Hex string `json:"hex"`
+				} `json:"scriptPubKey"`
+			} `json:"vout"`
+		} `json:"decoded"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(txJSON), &funding))
+
+	hash, err := chainhash.NewHashFromStr(txid)
+	require.NoError(t, err)
+	for _, vout := range funding.Decoded.Vout {
+		if vout.ScriptPubKey.Hex != hex.EncodeToString(pkScript) {
+			continue
+		}
+		amount, err := btcutil.NewAmount(vout.Value)
+		require.NoError(t, err)
+
+		h.MineBlocks(t, 1)
+		h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
+
+		return fundedOutput{
+			outpoint: wire.OutPoint{Hash: *hash, Index: vout.N},
+			txOut: &wire.TxOut{
+				Value:    int64(amount),
+				PkScript: pkScript,
+			},
+		}
+	}
+
+	require.FailNow(t, "funding transaction has no output for the script")
+	return fundedOutput{}
+}
+
+// invalidateBestBlock removes the best block from the chain and returns its
+// hash. The transactions of the block return to the mempool.
+func (h *TestHarness) invalidateBestBlock(t testing.TB) chainhash.Hash {
+	t.Helper()
+
+	var best string
+	require.NoError(t, json.Unmarshal(
+		[]byte(h.bitcoindCurlRPC(t, "getbestblockhash")), &best,
+	))
+	hash, err := chainhash.NewHashFromStr(best)
+	require.NoError(t, err)
+
+	h.bitcoindCurlRPC(t, "invalidateblock", fmt.Sprintf("%q", best))
+
+	return *hash
 }
 
 // lndNewAddress generates a new p2wkh address from an LND container using

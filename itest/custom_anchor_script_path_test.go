@@ -4,6 +4,7 @@ package itest
 
 import (
 	"bytes"
+	"context"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -35,17 +36,24 @@ const customAnchorCSVDelay = int64(4)
 // It deliberately exercises the ScriptPath signing surface that both existing
 // custom-anchor itests assert is empty.
 func TestCustomAnchorBuilderScriptPathTimeoutSweep(t *testing.T) {
-	h, ctx := newFundedHarnessFor(t, TransportGRPC)
+	runForCustomAnchorSenders(
+		t, []Transport{TransportGRPC}, testCustomAnchorTimeoutSweep,
+	)
+}
 
-	name := uniqueEventLabel("custom-anchor-script-path")
+func testCustomAnchorTimeoutSweep(t *testing.T, ctx context.Context,
+	h *TestHarness, sender *customAnchorSender) {
+
+	name := uniqueEventLabel("custom-anchor-script-path-" + sender.name)
 	minted, err := h.CreateFungibleAndConfirm(t, ctx, name, 1_000)
 	require.NoError(t, err)
 	require.True(t, minted.Ref.IsGroupRef())
 
-	mintProof, err := h.AliceWallet.ExportProofFile(
+	inputKey, inputPoint := sender.hold(t, ctx, h, minted)
+	mintProof, err := sender.wallet.ExportProofFile(
 		ctx,
 		tapsdk.AssetRefFromAssetID(minted.Asset.Genesis.IssuanceID),
-		minted.Asset.ScriptKey.PubKey, nil,
+		inputKey, inputPoint,
 	)
 	require.NoError(t, err)
 	require.NotEmpty(t, mintProof.RawProofFile)
@@ -134,7 +142,7 @@ func TestCustomAnchorBuilderScriptPathTimeoutSweep(t *testing.T) {
 		}},
 	}
 
-	lockPlan, err := customanchor.NewTxBuilder(h.AliceWallet).Build(
+	lockPlan, err := customanchor.NewTxBuilder(sender.wallet).Build(
 		ctx, lockRequest,
 	)
 	require.NoError(t, err)
@@ -160,12 +168,12 @@ func TestCustomAnchorBuilderScriptPathTimeoutSweep(t *testing.T) {
 		timeoutOutput.ScriptKey,
 	))
 
-	lockFinal, err := newAliceLndAnchorSigner(t)(ctx, lockSealed.AnchorPsbt)
+	lockFinal, err := sender.signAnchor(ctx, lockSealed.AnchorPsbt)
 	require.NoError(t, err)
 	require.NoError(t, lockSealed.VerifyFinalAnchorPSBT(lockFinal))
 
 	_, err = customanchor.PublishTransfer(
-		ctx, h.AliceWallet, lockSealed, lockFinal,
+		ctx, sender.wallet, lockSealed, lockFinal,
 	)
 	require.NoError(t, err)
 
@@ -173,7 +181,7 @@ func TestCustomAnchorBuilderScriptPathTimeoutSweep(t *testing.T) {
 	h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
 
 	timeoutProof := h.WaitForProofFile(
-		t, ctx, h.AliceWallet,
+		t, ctx, sender.wallet,
 		tapsdk.AssetRefFromAssetID(timeoutOutput.IssuanceID),
 		timeoutOutput.ScriptKey, &timeoutOutput.AnchorOutpoint,
 	)
@@ -249,7 +257,7 @@ func TestCustomAnchorBuilderScriptPathTimeoutSweep(t *testing.T) {
 		}},
 	}
 
-	sweepPlan, err := customanchor.NewTxBuilder(h.AliceWallet).Build(
+	sweepPlan, err := customanchor.NewTxBuilder(sender.wallet).Build(
 		ctx, sweepRequest,
 	)
 	require.NoError(t, err)
@@ -308,7 +316,7 @@ func TestCustomAnchorBuilderScriptPathTimeoutSweep(t *testing.T) {
 	// The sweep pays its own fee, so tapd broadcasts it directly with no
 	// external fee-bump child.
 	_, err = customanchor.PublishTransfer(
-		ctx, h.AliceWallet, witnessed, witnessed.AnchorPsbt,
+		ctx, sender.wallet, witnessed, witnessed.AnchorPsbt,
 	)
 	require.NoError(t, err)
 
@@ -318,7 +326,7 @@ func TestCustomAnchorBuilderScriptPathTimeoutSweep(t *testing.T) {
 
 	sweptOutput := sweepSealed.Outputs[0]
 	sweptProof := h.WaitForProofFile(
-		t, ctx, h.AliceWallet,
+		t, ctx, sender.wallet,
 		tapsdk.AssetRefFromAssetID(sweptOutput.IssuanceID),
 		sweptOutput.ScriptKey, &sweptOutput.AnchorOutpoint,
 	)
