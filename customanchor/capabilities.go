@@ -229,7 +229,7 @@ func DefaultTapdCapabilities() Capabilities {
 		ProofRegistration:        CapabilityUnknown,
 		LocalVerification:        CapabilityUnsupported,
 		BackendVerification:      CapabilityUnknown,
-		BackendAnchorSigning:     CapabilityUnknown,
+		BackendAnchorSigning:     CapabilitySupported,
 	}
 }
 
