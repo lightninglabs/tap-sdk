@@ -88,3 +88,24 @@ jobs:
 
       - name: run unit tests
         run: make unit
+
+  # The embedded engine runs in browsers, so its tests also run on js/wasm.
+  unit-test-wasm:
+    name: Unit tests (js/wasm)
+    runs-on: ubuntu-latest
+    steps:
+      - name: git checkout
+        uses: actions/checkout@v4
+
+      - name: Setup go ${{ env.GO_VERSION }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: '${{ env.GO_VERSION }}'
+
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: run embedded engine tests on js/wasm
+        run: make unit-wasm

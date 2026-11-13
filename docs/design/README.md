@@ -15,4 +15,8 @@ changes and future SDKs in other languages.
 - [Advanced Custom-Anchor Transactions][advanced-custom-anchor]: define
   the advanced builder, runtime, and transport boundary model.
 
+- [Embedded Transport](embedded-transport.md): answer the client calls a
+  wallet needs inside the host process, by calling tapd's packages on
+  host-supplied ports.
+
 [advanced-custom-anchor]: advanced-custom-anchor-transactions.md

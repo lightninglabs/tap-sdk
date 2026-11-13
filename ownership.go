@@ -235,7 +235,7 @@ func (s *Wallet) ownershipCandidates(ctx context.Context,
 func (s *Wallet) ownershipNoCandidatesErr(ctx context.Context,
 	ref AssetRef) error {
 
-	known, err := s.ownershipRefKnown(ctx, ref)
+	known, err := s.walletHasRecord(ctx, ref)
 	if err != nil {
 		return wrapErr("ProveOwnership", err)
 	}
@@ -250,7 +250,9 @@ func (s *Wallet) ownershipNoCandidatesErr(ctx context.Context,
 	))
 }
 
-func (s *Wallet) ownershipRefKnown(ctx context.Context,
+// walletHasRecord reports whether the wallet holds or has spent an output of
+// the asset ref.
+func (s *Wallet) walletHasRecord(ctx context.Context,
 	ref AssetRef) (bool, error) {
 
 	allTypes := &ScriptKeyTypeQuery{AllTypes: true}

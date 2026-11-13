@@ -7,16 +7,18 @@ require (
 	github.com/btcsuite/btcd/address/v2 v2.0.0
 	github.com/btcsuite/btcd/btcec/v2 v2.5.0
 	github.com/btcsuite/btcd/btcutil/v2 v2.0.0
+	github.com/btcsuite/btcd/chaincfg/v2 v2.0.0
 	github.com/btcsuite/btcd/chainhash/v2 v2.0.0
 	github.com/btcsuite/btcd/psbt/v2 v2.0.0
 	github.com/btcsuite/btcd/txscript/v2 v2.0.0
 	github.com/btcsuite/btcd/wire/v2 v2.0.0
 	github.com/coder/websocket v1.8.14
-	github.com/lightninglabs/taproot-assets v0.7.1-0.20261006112023-1434ab66b3bb
-	github.com/lightninglabs/taproot-assets/taprpc v1.1.1-0.20261112123219-14aa3fd90e6a
+	github.com/lightninglabs/taproot-assets v0.7.1-0.20261113151742-18e87e38fe99
+	github.com/lightninglabs/taproot-assets/taprpc v1.1.1-0.20261113151742-18e87e38fe99
 	github.com/lightningnetwork/lnd v0.21.0-beta.rc2.0.20260903094101-d66a7c137d32
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/grpc v1.83.2
+	google.golang.org/protobuf v1.36.11
 )
 
 require (
@@ -28,7 +30,6 @@ require (
 	github.com/aead/siphash v1.0.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/btcsuite/btcd/btcutil v1.2.0 // indirect
-	github.com/btcsuite/btcd/chaincfg/v2 v2.0.0 // indirect
 	github.com/btcsuite/btcd/v2transport v1.0.1 // indirect
 	github.com/btcsuite/btclog v1.0.0 // indirect
 	github.com/btcsuite/btclog/v2 v2.0.1-0.20250728225537-6090e87c6c5b // indirect
@@ -98,12 +99,9 @@ require (
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf // indirect
 	github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.4-0.20250610182311-2f1d46ef18b7 // indirect
-	github.com/lightninglabs/lndclient v1.0.1-0.20260701212139-09c54915cfba // indirect
 	github.com/lightninglabs/neutrino v0.18.0 // indirect
 	github.com/lightninglabs/neutrino/cache v1.1.4 // indirect
 	github.com/lightningnetwork/lightning-onion v1.4.0 // indirect
-	github.com/lightningnetwork/lnd/actor v0.0.6 // indirect
-	github.com/lightningnetwork/lnd/cert v1.2.2 // indirect
 	github.com/lightningnetwork/lnd/clock v1.1.1 // indirect
 	github.com/lightningnetwork/lnd/fn/v2 v2.0.9 // indirect
 	github.com/lightningnetwork/lnd/healthcheck v1.2.6 // indirect
@@ -183,7 +181,6 @@ require (
 	google.golang.org/genproto v0.0.0-20240213162025-012b6fc9bca9 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260803160001-6ac0973c030d // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260803160001-6ac0973c030d // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/errgo.v1 v1.0.1 // indirect
 	gopkg.in/macaroon-bakery.v2 v2.3.0 // indirect
 	gopkg.in/macaroon.v2 v2.1.0 // indirect

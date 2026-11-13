@@ -24,6 +24,7 @@ tap-sdk/
 │   └── errors.go              — SDK error types and sentinels
 ├── grpc/                      — gRPC client implementation
 ├── rest/                      — REST client implementation
+├── embedded/                  — In-process engine, no tapd
 ├── internal/vpsbt/            — Virtual PSBT encoding
 ├── internal/codec/            — Cryptographic utilities (alt-leaves, STXO)
 ├── macaroon/                  — Authentication helpers

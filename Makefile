@@ -118,6 +118,12 @@ unit-race:
 	@$(call print, "Running unit race tests.")
 	env CGO_ENABLED=1 GORACE="history_size=7 halt_on_errors=1" $(GOTEST) -race ./...
 
+unit-wasm:
+	@$(call print, "Running the embedded engine tests on js/wasm.")
+	GOOS=js GOARCH=wasm $(GOTEST) \
+		-exec="$$($(GOCC) env GOROOT)/lib/wasm/go_js_wasm_exec" \
+		./embedded/...
+
 # =====================
 # INTEGRATION TESTS
 # =====================
@@ -220,6 +226,7 @@ lint-fix: docker-tools
 	build \
 	unit \
 	unit-race \
+	unit-wasm \
 	itest \
 	itest-main \
 	itest-up \

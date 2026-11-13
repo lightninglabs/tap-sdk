@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/macaroon"
@@ -116,6 +117,26 @@ func NewClient(cfg *Config) (*Client, error) {
 		grpcConn:        conn,
 		macaroons:       macaroons,
 	}, nil
+}
+
+// NewClientFromConn creates a Client over an established connection, such as
+// an in-process one. The caller owns the connection, so Close leaves it open,
+// and calls carry no macaroons.
+func NewClientFromConn(conn grpc.ClientConnInterface,
+	rpcTimeout time.Duration) *Client {
+
+	if rpcTimeout == 0 {
+		rpcTimeout = defaultRPCTimeout
+	}
+
+	return &Client{
+		walletClient:    NewWalletClient(conn, rpcTimeout, ""),
+		walletKitClient: NewWalletKitClient(conn, rpcTimeout, ""),
+		proofClient:     NewProofClient(conn, rpcTimeout, ""),
+		universeClient:  NewUniverseClient(conn, rpcTimeout, ""),
+		mintClient:      NewMintClient(conn, rpcTimeout, ""),
+		eventClient:     NewEventClient(conn, rpcTimeout, "", ""),
+	}
 }
 
 // Close tears down the underlying gRPC connection.

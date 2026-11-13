@@ -1,6 +1,7 @@
 # Transports and Auth
 
-`tap-sdk` supports gRPC and REST transports. Both satisfy the same root
+`tap-sdk` supports gRPC and REST transports to a tapd, and an embedded
+transport that runs without one. All three satisfy the same root
 `tapsdk.Client` interface and return the same SDK business types.
 
 ## gRPC
@@ -29,6 +30,53 @@ client, err := taprest.NewClient(&taprest.Config{
 
 REST requires `https://` URLs. Event subscriptions use tapd's grpc-gateway
 WebSocket bridge internally.
+
+## Embedded
+
+```go
+client, err := embedded.NewClient(&embedded.Config{
+    Network: tapsdk.NetworkRegtest,
+    Store:   store,   // keys, proofs and transfers
+    KeyRing: keyRing, // lnd's keychain.SecretKeyRing fits
+    Chain:   chain,   // headers, broadcast, confirmations
+})
+if err != nil {
+    return err
+}
+if err := client.Start(ctx); err != nil {
+    return err
+}
+defer client.Close()
+
+wallet := tapsdk.NewWallet(client, tapsdk.NetworkRegtest)
+```
+
+The embedded transport answers the client calls inside the host process. There
+is no tapd and no lnd: the host supplies a key ring, a chain source and a
+store, and the engine applies the asset rules by calling tapd's packages.
+
+It covers what a wallet needs to hold and move assets:
+
+- verify, decode, export and import proof files;
+- derive, declare and look up script keys and anchor internal keys;
+- list owned asset outputs, balances and recorded transfers;
+- sign, commit and publish caller-funded custom-anchor transfers, and write
+  the final proofs once the anchor transaction confirms.
+
+Every other call returns `codes.Unimplemented`: minting, universe queries,
+address sends, burns and event streams. The engine holds no Bitcoin, so
+`CommitVirtualPsbts` accepts caller-funded anchor transactions only, and
+`customanchor.QueryCapabilities` reports wallet funding as unsupported.
+
+The engine has no universe, so `Wallet.GetBalance` and `Wallet.ListBalances`
+treat an asset as known when the wallet holds or has spent an output of it.
+
+A proof of a grouped asset verifies only if its group key is trusted. Trust
+comes from `Config.GroupKeys`, from `Client.TrustGroupKey`, and from the assets
+the wallet already holds.
+
+`embedded.NewMemoryStore` is a store for tests. The package builds for js/wasm,
+and `make unit-wasm` runs its tests there.
 
 ## TLS Sources
 
