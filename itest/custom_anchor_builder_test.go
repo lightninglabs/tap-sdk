@@ -507,7 +507,7 @@ func TestCustomAnchorBuilderBackendSignedAnchor(t *testing.T) {
 		h, ctx := newHarnessContextFor(t, transport)
 		skipBelowTapdVersion(t, ctx, h.AliceClient, 0, 8, 99)
 		h.FundLndWallet(t, ctx)
-		wallet := newBackendAnchorSigningWallet(t, h)
+		wallet := h.AliceWallet
 
 		name := uniqueEventLabel(fmt.Sprintf(
 			"custom-anchor-backend-signed-%s", transport,
@@ -683,48 +683,6 @@ func skipBelowTapdVersion(t *testing.T, ctx context.Context,
 				major, minor, patch)
 		}
 	}
-}
-
-// customAnchorITestClient is the client surface the custom-anchor lifecycle
-// needs.
-type customAnchorITestClient interface {
-	tapsdk.Client
-	tapsdk.CustomAnchorWalletKitClient
-	customanchor.CapabilityProvider
-}
-
-// backendAnchorSigningClient reports backend anchor signing as supported.
-// The pinned tapd profile leaves it unknown until a tapd release ships it,
-// while the stack under test runs a tapd that has it.
-type backendAnchorSigningClient struct {
-	customAnchorITestClient
-}
-
-// CustomAnchorCapabilities returns the wrapped profile with backend anchor
-// signing enabled.
-func (c backendAnchorSigningClient) CustomAnchorCapabilities(
-	ctx context.Context) (*customanchor.Capabilities, error) {
-
-	caps, err := c.customAnchorITestClient.CustomAnchorCapabilities(ctx)
-	if err != nil {
-		return nil, err
-	}
-	caps.BackendAnchorSigning = customanchor.CapabilitySupported
-
-	return caps, nil
-}
-
-func newBackendAnchorSigningWallet(t testing.TB,
-	h *TestHarness) *tapsdk.Wallet {
-
-	t.Helper()
-	client, ok := h.AliceClient.(customAnchorITestClient)
-	require.True(t, ok)
-
-	return tapsdk.NewWallet(
-		backendAnchorSigningClient{customAnchorITestClient: client},
-		tapsdk.NetworkRegtest,
-	)
 }
 
 type customAnchorCallerUTXO struct {

@@ -1200,6 +1200,7 @@ func TestCustomAnchorBackendSigningRequiresCapability(t *testing.T) {
 		return nil, errors.New("unexpected publish")
 	}
 	capabilities := DefaultTapdCapabilities()
+	capabilities.BackendAnchorSigning = CapabilityUnknown
 	client := &capableCustomAnchorBuilderTestClient{
 		customAnchorBuilderTestClient: fixture.client,
 		capabilities:                  &capabilities,

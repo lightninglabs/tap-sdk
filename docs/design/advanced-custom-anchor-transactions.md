@@ -445,7 +445,9 @@ held, so publish cannot compare it byte for byte. It checks instead that the
 txid is the committed one and that every caller witness is unchanged, then
 verifies every witness against the committed prevouts. Commit and publish both
 require the `backend_anchor_signing` capability, which the pinned tapd profile
-reports as unknown until a tapd release carries `sign_anchor_inputs`.
+reports as supported because the pinned API carries `sign_anchor_inputs`. A
+tapd without it drops the field and refuses the publish, since the anchor input
+it should have signed has no final witness, so nothing is logged or broadcast.
 
 The SDK intentionally does not own MuSig2 nonce generation, nonce exchange,
 partial-signature aggregation, or session storage. The integrating protocol
