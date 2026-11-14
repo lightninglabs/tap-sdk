@@ -195,10 +195,14 @@ func (e *engine) followOnce(ctx context.Context, txid chainhash.Hash,
 			pending = true
 
 		case <-events.Done:
+			// The confirmation may be ready along with Done.
 			if unapplied != nil || pending {
-				return false, fmt.Errorf("confirmation of %v "+
-					"became final before it was applied",
-					txid)
+				err := e.confirmReady(
+					ctx, txid, events.Confirmed,
+				)
+				if err != nil {
+					return false, err
+				}
 			}
 			if err := e.finishTransfer(ctx, txid); err != nil {
 				return false, err
@@ -214,5 +218,29 @@ func (e *engine) followOnce(ctx context.Context, txid chainhash.Hash,
 		case <-ctx.Done():
 			return false, nil
 		}
+	}
+}
+
+// confirmReady applies a confirmation that is ready on the channel, and
+// fails if there is none.
+func (e *engine) confirmReady(ctx context.Context, txid chainhash.Hash,
+	confirmed <-chan *Confirmation) error {
+
+	select {
+	case conf, ok := <-confirmed:
+		if !ok {
+			return fmt.Errorf("confirmation events ended")
+		}
+		if err := e.confirmTransfer(ctx, txid, conf); err != nil {
+			return fmt.Errorf("write final proofs: %w", err)
+		}
+		e.log.Infof("Transfer %v confirmed at height %d", txid,
+			conf.Height)
+
+		return nil
+
+	default:
+		return fmt.Errorf("confirmation of %v became final before "+
+			"it was applied", txid)
 	}
 }

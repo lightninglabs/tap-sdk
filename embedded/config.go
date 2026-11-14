@@ -42,6 +42,11 @@ type Confirmation struct {
 
 // ConfirmationEvents follows one transaction until its confirmation is
 // final.
+//
+// The engine receives from the three channels in no fixed order. It
+// tolerates a confirmation and Done that are ready together, and applies the
+// confirmation first. A host must not have Reorged ready together with
+// another event.
 type ConfirmationEvents struct {
 	// Confirmed delivers the confirming block each time the transaction
 	// confirms.
