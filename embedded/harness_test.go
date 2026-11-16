@@ -385,7 +385,7 @@ func (h *testHarness) restart() {
 		Chain:   h.chain,
 	})
 	require.NoError(h.t, err)
-	require.NoError(h.t, client.Start(h.t.Context()))
+	require.NoError(h.t, client.ResumeTransfers(h.t.Context()))
 	h.t.Cleanup(func() { _ = client.Close() })
 
 	h.client = client

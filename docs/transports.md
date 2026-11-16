@@ -43,7 +43,7 @@ client, err := embedded.NewClient(&embedded.Config{
 if err != nil {
     return err
 }
-if err := client.Start(ctx); err != nil {
+if err := client.ResumeTransfers(ctx); err != nil {
     return err
 }
 defer client.Close()
@@ -54,6 +54,12 @@ wallet := tapsdk.NewWallet(client, tapsdk.NetworkRegtest)
 The embedded transport answers the client calls inside the host process. There
 is no tapd and no lnd: the host supplies a key ring, a chain source and a
 store, and the engine applies the asset rules by calling tapd's packages.
+
+`NewClient` opens no listener and starts no background work, and the client
+answers calls at once. The engine follows a transfer it publishes until the
+confirmation is final. `ResumeTransfers` does the same for the transfers an
+earlier run left unconfirmed, so a host calls it once its chain source is
+ready. `Close` stops following transfers.
 
 It covers what a wallet needs to hold and move assets:
 

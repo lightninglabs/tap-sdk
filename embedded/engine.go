@@ -35,6 +35,10 @@ type engine struct {
 	groupMu   sync.RWMutex
 	groupKeys map[asset.SerializedKey]struct{}
 
+	// heldGroupsLoaded is set once the groups of the assets the wallet
+	// holds are in groupKeys.
+	heldGroupsLoaded bool
+
 	stagedMu sync.Mutex
 	staged   map[ProofLocator][]byte
 
@@ -117,13 +121,34 @@ func (e *engine) trustGroupKey(groupKey tapsdk.PubKey) {
 	e.groupKeys[asset.SerializedKey(groupKey)] = struct{}{}
 }
 
-// trustOwnedGroups trusts the group of every asset output the wallet holds.
-func (e *engine) trustOwnedGroups(ctx context.Context) error {
+// isGroupTrusted reports whether a group key is in the trusted set.
+func (e *engine) isGroupTrusted(groupKey asset.SerializedKey) bool {
+	e.groupMu.RLock()
+	defer e.groupMu.RUnlock()
+
+	_, ok := e.groupKeys[groupKey]
+
+	return ok
+}
+
+// trustHeldGroups trusts the group of every asset output the wallet holds.
+// The store is read once, since an asset received later is of a group that
+// was trusted when its proof verified.
+func (e *engine) trustHeldGroups(ctx context.Context) error {
+	e.groupMu.RLock()
+	loaded := e.heldGroupsLoaded
+	e.groupMu.RUnlock()
+
+	if loaded {
+		return nil
+	}
+
 	records, err := e.store.ListOwnedProofs(ctx, true)
 	if err != nil {
 		return fmt.Errorf("list owned assets: %w", err)
 	}
 
+	var held []asset.SerializedKey
 	for idx := range records {
 		file, err := proof.DecodeFile(records[idx].ProofFile)
 		if err != nil {
@@ -139,28 +164,42 @@ func (e *engine) trustOwnedGroups(ctx context.Context) error {
 			continue
 		}
 
-		e.groupMu.Lock()
-		e.groupKeys[asset.ToSerialized(
+		held = append(held, asset.ToSerialized(
 			&tip.Asset.GroupKey.GroupPubKey,
-		)] = struct{}{}
-		e.groupMu.Unlock()
+		))
 	}
+
+	e.groupMu.Lock()
+	defer e.groupMu.Unlock()
+
+	for _, groupKey := range held {
+		e.groupKeys[groupKey] = struct{}{}
+	}
+	e.heldGroupsLoaded = true
 
 	return nil
 }
 
-// verifyGroupKey accepts the group keys the wallet trusts.
-func (e *engine) verifyGroupKey(groupKey *btcec.PublicKey) error {
-	e.groupMu.RLock()
-	defer e.groupMu.RUnlock()
+// verifyGroupKey accepts the group keys the wallet trusts: the configured
+// and added ones, and the group of every asset the wallet holds, whose proof
+// verified when it was received.
+func (e *engine) verifyGroupKey(ctx context.Context,
+	groupKey *btcec.PublicKey) error {
 
 	serialized := asset.ToSerialized(groupKey)
-	if _, ok := e.groupKeys[serialized]; !ok {
-		return fmt.Errorf("asset group %x is not trusted by this "+
-			"wallet", serialized[:])
+	if e.isGroupTrusted(serialized) {
+		return nil
 	}
 
-	return nil
+	if err := e.trustHeldGroups(ctx); err != nil {
+		return err
+	}
+	if e.isGroupTrusted(serialized) {
+		return nil
+	}
+
+	return fmt.Errorf("asset group %x is not trusted by this wallet",
+		serialized[:])
 }
 
 // verifyHeader checks that a block header is the best-chain header at its
@@ -190,7 +229,9 @@ func (e *engine) verifierCtx(ctx context.Context) proof.VerifierCtx {
 			return e.verifyHeader(ctx, header, height)
 		},
 		MerkleVerifier: proof.DefaultMerkleVerifier,
-		GroupVerifier:  e.verifyGroupKey,
+		GroupVerifier: func(groupKey *btcec.PublicKey) error {
+			return e.verifyGroupKey(ctx, groupKey)
+		},
 		ChainLookupGen: &chainLookupGen{chain: e.chain},
 	}
 }

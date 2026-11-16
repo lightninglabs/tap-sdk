@@ -15,6 +15,7 @@ import (
 	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/customanchor"
 	"github.com/lightninglabs/taproot-assets/asset"
+	"github.com/lightninglabs/taproot-assets/proof"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -731,11 +732,55 @@ func TestGroupKeyTrust(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.NoError(t, client.engine.verifyGroupKey(configured))
+	ctx := t.Context()
+	require.NoError(t, client.engine.verifyGroupKey(ctx, configured))
 	require.ErrorContains(
-		t, client.engine.verifyGroupKey(added), "is not trusted",
+		t, client.engine.verifyGroupKey(ctx, added), "is not trusted",
 	)
 
 	client.TrustGroupKey(sdkPubKey(t, added))
-	require.NoError(t, client.engine.verifyGroupKey(added))
+	require.NoError(t, client.engine.verifyGroupKey(ctx, added))
+}
+
+// TestGroupKeyTrustHeldAsset verifies grouped assets for the group of an
+// asset the wallet holds, which no configuration names.
+func TestGroupKeyTrustHeldAsset(t *testing.T) {
+	h := newTestHarness(t)
+	ctx := t.Context()
+
+	held := newTestKeyRing(3).privKey(1, 0).PubKey()
+	other := newTestKeyRing(3).privKey(1, 1).PubKey()
+
+	// The wallet holds an asset of the group.
+	h.receive("held")
+	records, err := h.store.ListOwnedProofs(ctx, true)
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+
+	file, err := proof.DecodeFile(records[0].ProofFile)
+	require.NoError(t, err)
+	tip, err := file.LastProof()
+	require.NoError(t, err)
+	tip.Asset.GroupKey = &asset.GroupKey{GroupPubKey: *held}
+	require.NoError(t, file.ReplaceLastProof(*tip))
+
+	var encoded bytes.Buffer
+	require.NoError(t, file.Encode(&encoded))
+	records[0].ProofFile = encoded.Bytes()
+	require.NoError(t, h.store.InsertProof(ctx, records[0]))
+
+	// A new client over the store trusts the group before any other
+	// call.
+	client, err := NewClient(&Config{
+		Network: tapsdk.NetworkRegtest,
+		Store:   h.store,
+		KeyRing: h.keys,
+		Chain:   h.chain,
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, client.engine.verifyGroupKey(ctx, held))
+	require.ErrorContains(
+		t, client.engine.verifyGroupKey(ctx, other), "is not trusted",
+	)
 }
