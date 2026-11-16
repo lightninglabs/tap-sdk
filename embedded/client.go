@@ -27,8 +27,8 @@ var (
 	_ customanchor.CapabilityProvider    = (*Client)(nil)
 )
 
-// NewClient creates an embedded client. Call Start before using calls that
-// publish transfers, and Close to stop it.
+// NewClient creates an embedded client. Call Start to follow the transfers
+// an earlier run left unconfirmed, and Close to stop following transfers.
 func NewClient(cfg *Config) (*Client, error) {
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("embedded: %w", err)
@@ -63,13 +63,8 @@ func NewClient(cfg *Config) (*Client, error) {
 
 // Start resumes following the transfers recorded before the last shutdown:
 // pending anchor transactions are broadcast again and confirmed transfers
-// get their final proofs. It also trusts the group of every asset the wallet
-// holds, since those proofs verified when they were received.
+// get their final proofs.
 func (c *Client) Start(ctx context.Context) error {
-	if err := c.engine.trustOwnedGroups(ctx); err != nil {
-		return err
-	}
-
 	return c.engine.resumeTransfers(ctx)
 }
 
