@@ -6,6 +6,8 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"maps"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -106,6 +108,10 @@ type testChain struct {
 
 	// publishErr fails PublishTransaction when set.
 	publishErr error
+
+	// finalAtRegistration makes a registration for a confirmed
+	// transaction hold its confirmation and Done from the start.
+	finalAtRegistration bool
 }
 
 // newTestChain returns a chain with a few empty blocks.
@@ -205,6 +211,9 @@ func (c *testChain) RegisterConfirmation(_ context.Context,
 
 	if height, block, ok := c.findTx(txid); ok {
 		sub.confirmed <- &Confirmation{Height: height, Block: block}
+		if c.finalAtRegistration {
+			sub.done <- struct{}{}
+		}
 	}
 
 	return &ConfirmationEvents{
@@ -319,6 +328,20 @@ func (c *testChain) finalize(txid chainhash.Hash) {
 			default:
 			}
 		}
+	}
+}
+
+// clone returns a copy of the store.
+func (m *MemoryStore) clone() *MemoryStore {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return &MemoryStore{
+		internalKeys: maps.Clone(m.internalKeys),
+		scriptKeys:   maps.Clone(m.scriptKeys),
+		proofs:       maps.Clone(m.proofs),
+		transfers:    maps.Clone(m.transfers),
+		order:        slices.Clone(m.order),
 	}
 }
 

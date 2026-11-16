@@ -482,6 +482,59 @@ func TestTransferResume(t *testing.T) {
 	require.EqualValues(t, 400, h.ownedUnits())
 }
 
+// TestTransferResumeFinal resumes a transfer that confirmed while nothing
+// followed it, on a chain that holds its confirmation and Done at
+// registration. The transfer ends final with its proofs written, whichever
+// event the tracker receives first.
+func TestTransferResumeFinal(t *testing.T) {
+	h := newTestHarness(t)
+	ctx := t.Context()
+
+	minted := h.receive("final")
+	sent := h.commitTransfer(minted, 1_000, 600, 7)
+	_, err := customanchor.PublishTransfer(
+		ctx, h.wallet, sent.transfer, sent.finalPSBT,
+	)
+	require.NoError(t, err)
+
+	require.NoError(t, h.client.Close())
+	block, height := h.chain.mine(t)
+
+	h.chain.mu.Lock()
+	h.chain.finalAtRegistration = true
+	h.chain.mu.Unlock()
+
+	// The tracker receives Done first about half of the time, so the
+	// pending transfer is resumed often enough to see both orders.
+	pending := h.store
+	for range 32 {
+		h.store = pending.clone()
+		h.restart()
+		h.waitTransfer(sent.txid, TransferFinal)
+
+		transfers, err := h.store.ListTransfers(ctx, &sent.txid)
+		require.NoError(t, err)
+		require.Equal(t, block.BlockHash(), transfers[0].BlockHash)
+		require.Equal(t, height, transfers[0].BlockHeight)
+		require.EqualValues(t, 400, h.ownedUnits())
+
+		for _, scriptKey := range []tapsdk.PubKey{
+			sent.recipient.PubKey, sent.change.PubKey,
+		} {
+			exported, err := h.client.ExportProof(
+				ctx, minted.ref, scriptKey, nil,
+			)
+			require.NoError(t, err)
+
+			verified, err := h.client.VerifyProof(
+				ctx, exported.RawProofFile,
+			)
+			require.NoError(t, err)
+			require.True(t, verified.Valid)
+		}
+	}
+}
+
 // TestTransferRejectsSpentInput refuses a second transfer of an asset a
 // recorded transfer spends, before anything is recorded.
 func TestTransferRejectsSpentInput(t *testing.T) {
