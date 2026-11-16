@@ -60,7 +60,7 @@ func (h *TestHarness) NewEmbeddedNode(t testing.TB,
 		Logger:    logger,
 	})
 	require.NoError(t, err)
-	require.NoError(t, client.Start(context.Background()))
+	require.NoError(t, client.ResumeTransfers(context.Background()))
 
 	t.Cleanup(func() {
 		_ = client.Close()
