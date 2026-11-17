@@ -6,6 +6,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
@@ -73,6 +74,15 @@ func (c *localConn) Invoke(ctx context.Context, method string, args,
 
 		return nil
 	}
+
+	// Over a network the caller's outgoing metadata, such as an empty
+	// macaroon, reaches the server as incoming metadata. A handler that
+	// calls another gRPC service with this context, as a host's lnd
+	// does, must not forward it.
+	md, _ := metadata.FromOutgoingContext(ctx)
+	ctx = metadata.NewIncomingContext(
+		metadata.NewOutgoingContext(ctx, metadata.MD{}), md,
+	)
 
 	result, err := registered.handler(registered.server, ctx, decode, nil)
 	if err != nil {
