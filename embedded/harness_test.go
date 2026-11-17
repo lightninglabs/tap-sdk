@@ -396,7 +396,8 @@ func (h *testHarness) restart() {
 	client, err := NewClient(&Config{
 		Network: tapsdk.NetworkRegtest,
 		Store:   h.store,
-		KeyRing: h.keys,
+		KeyRing: NewLocalKeyRing(h.keys),
+		Signer:  NewKeyRingSigner(h.keys),
 		Chain:   h.chain,
 	})
 	require.NoError(h.t, err)

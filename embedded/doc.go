@@ -5,8 +5,8 @@
 // proofs once they confirm.
 //
 // Every asset rule is applied by tapd's own packages. The host supplies what a
-// tapd would take from lnd and its database: a key ring, a chain source and a
-// store.
+// tapd would take from lnd and its database: a key ring, a signer, a chain
+// source and a store.
 //
 // The engine covers the calls a wallet needs to hold, receive and move assets
 // with caller-funded anchor transactions. Minting, universe queries, address

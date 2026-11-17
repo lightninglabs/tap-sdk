@@ -89,7 +89,7 @@ func (e *engine) nextInternalKey(ctx context.Context,
 	e.keyMu.Lock()
 	defer e.keyMu.Unlock()
 
-	keyDesc, err := e.keys.DeriveNextKey(family)
+	keyDesc, err := e.keys.DeriveNextKey(ctx, family)
 	if err != nil {
 		return keychain.KeyDescriptor{}, fmt.Errorf("derive key: %w",
 			err)
@@ -310,11 +310,18 @@ func (s *walletKitServer) SignVirtualPsbt(ctx context.Context,
 	}
 
 	err = tapsend.SignVirtualTransaction(
-		vPkt, &keyRingSigner{keys: e.keys}, witnessValidator{},
+		vPkt, &virtualTxSigner{ctx: ctx, signer: e.signer},
+		witnessValidator{},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error signing packet: unable to "+
 			"generate Taproot Asset witness data: %w", err)
+	}
+
+	// A signer that ignores the deadline may answer after it. The caller
+	// has given up by then, as it would have over a network.
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	signedInputs := make([]uint32, len(vPkt.Inputs))
