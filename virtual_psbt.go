@@ -184,9 +184,9 @@ type PublishAndLogTransferRequest struct {
 	// InputProofFiles are the proof files of asset inputs the backend
 	// holds no proof for, such as an input whose last transitions
 	// happened in transactions the backend never saw. Each file must end
-	// in the proof of one of the transfer's inputs. tapd stores them so
-	// it can confirm the transfer; a tapd that predates the field ignores
-	// it and fails the publish for want of the input's proof.
+	// in the proof of one of the transfer's inputs. The backend stores
+	// them so it can confirm the transfer; a tapd that predates the field
+	// ignores it and fails the publish for want of the input's proof.
 	InputProofFiles [][]byte
 }
 
