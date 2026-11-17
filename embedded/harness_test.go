@@ -370,6 +370,21 @@ func newTestHarness(t *testing.T) *testHarness {
 	return h
 }
 
+// peer returns another wallet, with keys of its own, on the chain of h.
+func (h *testHarness) peer(seed byte) *testHarness {
+	h.t.Helper()
+
+	peer := &testHarness{
+		t:     h.t,
+		chain: h.chain,
+		keys:  newTestKeyRing(seed),
+		store: NewMemoryStore(),
+	}
+	peer.restart()
+
+	return peer
+}
+
 // restart replaces the client with a new one over the same store.
 func (h *testHarness) restart() {
 	h.t.Helper()
@@ -510,6 +525,10 @@ type fundingInput struct {
 	privKey  *btcec.PrivateKey
 	outpoint wire.OutPoint
 	txOut    *wire.TxOut
+
+	// merkleRoot is the script root the coin's output key commits to. It
+	// is empty for a coin without scripts.
+	merkleRoot []byte
 }
 
 // newFundingInput returns a coin of the given value.
@@ -551,7 +570,8 @@ func (f *fundingInput) sign(t *testing.T, packet *psbt.Packet) {
 	sigHashes := txscript.NewTxSigHashes(packet.UnsignedTx, fetcher)
 	sig, err := txscript.RawTxInTaprootSignature(
 		packet.UnsignedTx, sigHashes, index, f.txOut.Value,
-		f.txOut.PkScript, nil, txscript.SigHashDefault, f.privKey,
+		f.txOut.PkScript, f.merkleRoot, txscript.SigHashDefault,
+		f.privKey,
 	)
 	require.NoError(t, err)
 

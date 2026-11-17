@@ -40,7 +40,6 @@ func (h *testHarness) commitTransfer(source *mintedAsset, total,
 	amount uint64, seed byte) *testTransfer {
 
 	h.t.Helper()
-	ctx := h.t.Context()
 
 	recipientKeys := newTestKeyRing(seed)
 	recipientRaw, err := recipientKeys.DeriveNextKey(1)
@@ -56,6 +55,28 @@ func (h *testHarness) commitTransfer(source *mintedAsset, total,
 			RawKeyBytes: sdkPubKey(h.t, recipientRaw.PubKey),
 		},
 	}
+
+	result := h.commitTransferTo(
+		source, total, amount, seed, customanchor.AssetScriptPlan{
+			Mode: customanchor.AssetScriptExternal,
+			External: &customanchor.AssetExternalScriptPlan{
+				ScriptKey: recipient,
+			},
+		}, recipientAnchor.PubKey,
+	)
+	result.recipient = recipient
+
+	return result
+}
+
+// commitTransferTo is commitTransfer to a recipient with the given asset
+// script, in an anchor output under the given internal key.
+func (h *testHarness) commitTransferTo(source *mintedAsset, total,
+	amount uint64, seed byte, recipientScript customanchor.AssetScriptPlan,
+	recipientAnchor *btcec.PublicKey) *testTransfer {
+
+	h.t.Helper()
+	ctx := h.t.Context()
 
 	funding := newFundingInput(h.t, seed, 100_000)
 
@@ -82,17 +103,10 @@ func (h *testHarness) commitTransfer(source *mintedAsset, total,
 			Amount:            amount,
 			AnchorOutputIndex: 0,
 			AnchorValueSat:    1_000,
-			Script: customanchor.AssetScriptPlan{
-				Mode: customanchor.AssetScriptExternal,
-				External: &customanchor.AssetExternalScriptPlan{
-					ScriptKey: recipient,
-				},
-			},
+			Script:            recipientScript,
 			Anchor: customanchor.OutputPlan{
 				InternalKey: tapsdk.InternalKey{
-					PubKey: sdkPubKey(
-						h.t, recipientAnchor.PubKey,
-					),
+					PubKey: sdkPubKey(h.t, recipientAnchor),
 				},
 			},
 		}},
@@ -115,7 +129,7 @@ func (h *testHarness) commitTransfer(source *mintedAsset, total,
 		}},
 	}
 
-	result := &testTransfer{recipient: recipient}
+	result := &testTransfer{}
 	if amount < total {
 		changeKey, err := h.client.DeriveScriptKey(ctx)
 		require.NoError(h.t, err)
@@ -173,6 +187,196 @@ func (h *testHarness) commitTransfer(source *mintedAsset, total,
 	result.txid = committed.UnsignedTx.TxHash()
 
 	return result
+}
+
+// lockedAsset is a confirmed asset output under an OP_TRUE script key, in an
+// anchor output whose key no wallet holds. It stands for an output a
+// contract holds, which whoever satisfies the contract spends.
+type lockedAsset struct {
+	ref       tapsdk.AssetRef
+	amount    uint64
+	scriptKey tapsdk.PubKey
+	witness   [][]byte
+	proofFile []byte
+	anchor    *fundingInput
+}
+
+// lockAsset moves amount units of the wallet's asset held at source into a
+// locked output and confirms the transfer. The surplus returns to the
+// wallet.
+func (h *testHarness) lockAsset(source *mintedAsset, total, amount uint64,
+	seed byte) *lockedAsset {
+
+	h.t.Helper()
+	ctx := h.t.Context()
+
+	keys := newTestKeyRing(seed)
+	anchorKey := keys.privKey(1, 0)
+	scriptInternalKey := keys.privKey(1, 1).PubKey()
+	sent := h.commitTransferTo(
+		source, total, amount, seed, customanchor.AssetScriptPlan{
+			Mode: customanchor.AssetScriptOPTrue,
+			OPTrue: &customanchor.AssetOPTrueScriptPlan{
+				InternalKey: tapsdk.KeyDescriptor{
+					RawKeyBytes: sdkPubKey(
+						h.t, scriptInternalKey,
+					),
+				},
+			},
+		}, anchorKey.PubKey(),
+	)
+	_, err := customanchor.PublishTransfer(
+		ctx, h.wallet, sent.transfer, sent.finalPSBT,
+	)
+	require.NoError(h.t, err)
+	h.chain.mine(h.t)
+	h.waitTransfer(sent.txid, TransferConfirmed)
+
+	var output *customanchor.AssetOutputSummary
+	for idx := range sent.transfer.Outputs {
+		if sent.transfer.Outputs[idx].OPTrueSpend != nil {
+			output = &sent.transfer.Outputs[idx]
+		}
+	}
+	require.NotNil(h.t, output)
+
+	exported, err := h.client.ExportProof(
+		ctx, source.ref, output.ScriptKey, nil,
+	)
+	require.NoError(h.t, err)
+
+	anchorPacket, err := psbt.NewFromRawBytes(
+		bytes.NewReader(sent.finalPSBT), false,
+	)
+	require.NoError(h.t, err)
+	anchorIndex := output.AnchorOutputIndex
+
+	return &lockedAsset{
+		ref:       source.ref,
+		amount:    amount,
+		scriptKey: output.ScriptKey,
+		witness:   output.OPTrueSpend.WitnessStack(),
+		proofFile: exported.RawProofFile,
+		anchor: &fundingInput{
+			privKey: anchorKey,
+			outpoint: wire.OutPoint{
+				Hash:  sent.txid,
+				Index: anchorIndex,
+			},
+			txOut:      anchorPacket.UnsignedTx.TxOut[anchorIndex],
+			merkleRoot: output.TaprootMerkleRoot[:],
+		},
+	}
+}
+
+// commitClaim commits a transfer of a locked asset to keys the wallet
+// derives. The anchor transaction spends only the locked output, at its full
+// value, and the key of that output signs it.
+func (h *testHarness) commitClaim(locked *lockedAsset) *testTransfer {
+	h.t.Helper()
+	ctx := h.t.Context()
+
+	scriptKey, err := h.client.DeriveScriptKey(ctx)
+	require.NoError(h.t, err)
+	internalKey, err := h.client.DeriveInternalKey(ctx)
+	require.NoError(h.t, err)
+
+	tx := wire.NewMsgTx(2)
+	tx.AddTxIn(wire.NewTxIn(&locked.anchor.outpoint, nil, nil))
+	placeholder := []byte{txscript.OP_1, txscript.OP_DATA_32}
+	placeholder = append(placeholder, make([]byte, 32)...)
+	tx.AddTxOut(&wire.TxOut{
+		Value:    locked.anchor.txOut.Value,
+		PkScript: placeholder,
+	})
+
+	packet, err := psbt.NewFromUnsignedTx(tx)
+	require.NoError(h.t, err)
+	packet.Inputs[0].WitnessUtxo = locked.anchor.txOut
+	var template bytes.Buffer
+	require.NoError(h.t, packet.Serialize(&template))
+
+	request := &customanchor.Request{
+		Inputs: []customanchor.AssetInput{{
+			ID:        "locked",
+			AssetRef:  locked.ref,
+			Amount:    locked.amount,
+			ProofFile: locked.proofFile,
+			Witness: customanchor.AssetWitnessPlan{
+				Mode:  customanchor.AssetWitnessCallerProvided,
+				Stack: locked.witness,
+			},
+		}},
+		Outputs: []customanchor.AssetOutput{{
+			ID:                "claimed",
+			AssetRef:          locked.ref,
+			Amount:            locked.amount,
+			AnchorOutputIndex: 0,
+			AnchorValueSat:    uint64(locked.anchor.txOut.Value),
+			Script: customanchor.AssetScriptPlan{
+				Mode: customanchor.AssetScriptExternal,
+				External: &customanchor.AssetExternalScriptPlan{
+					ScriptKey: *scriptKey,
+				},
+			},
+			Anchor: customanchor.OutputPlan{
+				InternalKey: *internalKey,
+			},
+		}},
+		AnchorPSBT: template.Bytes(),
+		Funding: customanchor.FundingPlan{
+			Mode:              customanchor.FundingCallerFundedExact,
+			CallerFundedExact: &customanchor.CallerFundedExact{},
+		},
+		PassiveAssets: customanchor.PassiveAssets{
+			Policy: customanchor.PassiveReject,
+		},
+		LossPolicy: customanchor.LossPolicy{
+			Mode: customanchor.LossReject,
+		},
+		SigningPlans: []customanchor.InputSigningPlan{{
+			InputIndex:   0,
+			CallerSigned: &customanchor.CallerSignedPlan{},
+		}},
+	}
+
+	plan, err := customanchor.NewTxBuilder(h.wallet).Build(ctx, request)
+	require.NoError(h.t, err)
+	transfer, err := plan.Commit(ctx, customanchor.CommitOptions{
+		Publish: customanchor.PublishMetadata{Label: "test-claim"},
+	})
+	require.NoError(h.t, err)
+
+	committed, err := psbt.NewFromRawBytes(
+		bytes.NewReader(transfer.AnchorPsbt), false,
+	)
+	require.NoError(h.t, err)
+	locked.anchor.sign(h.t, committed)
+	var final bytes.Buffer
+	require.NoError(h.t, committed.Serialize(&final))
+	require.NoError(h.t, transfer.VerifyFinalAnchorPSBT(final.Bytes()))
+
+	return &testTransfer{
+		transfer:  transfer,
+		finalPSBT: final.Bytes(),
+		txid:      committed.UnsignedTx.TxHash(),
+		change:    scriptKey,
+	}
+}
+
+// inputRecords returns the wallet's proof records of a locked asset.
+func (h *testHarness) inputRecords(locked *lockedAsset) []AssetProof {
+	h.t.Helper()
+
+	assetID, ok := locked.ref.AssetID()
+	require.True(h.t, ok)
+	records, err := h.store.FetchProofs(
+		h.t.Context(), assetID, locked.scriptKey,
+		&locked.anchor.outpoint,
+	)
+	require.NoError(h.t, err)
+
+	return records
 }
 
 // sdkPubKey converts a public key to the SDK's compressed form.
@@ -564,6 +768,179 @@ func TestTransferRejectsSpentInput(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Len(t, transfers, 1)
+}
+
+// TestTransferInputProofFiles publishes a transfer that spends an asset
+// output the wallet does not hold, with the output's proof file supplied at
+// publish. The wallet keeps the file without owning the output, and extends
+// it once the transfer confirms.
+func TestTransferInputProofFiles(t *testing.T) {
+	tests := []struct {
+		name string
+
+		// own makes the wallet that locked the asset spend it. That
+		// wallet already keeps the locked output's proof.
+		own bool
+
+		wantUnits uint64
+	}{{
+		name:      "output of another wallet",
+		wantUnits: 600,
+	}, {
+		name:      "output of an own transfer",
+		own:       true,
+		wantUnits: receivedUnits,
+	}}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			holder := newTestHarness(t)
+			ctx := t.Context()
+
+			minted := holder.receive("locked")
+			locked := holder.lockAsset(
+				minted, receivedUnits, 600, 7,
+			)
+
+			h := holder
+			if !tc.own {
+				h = holder.peer(2)
+				require.Empty(t, h.inputRecords(locked))
+			}
+			before := h.ownedUnits()
+
+			claim := h.commitClaim(locked)
+			_, err := customanchor.PublishTransfer(
+				ctx, h.wallet, claim.transfer, claim.finalPSBT,
+				customanchor.WithInputProofFiles(
+					locked.proofFile,
+				),
+			)
+			require.NoError(t, err)
+
+			records := h.inputRecords(locked)
+			require.Len(t, records, 1)
+			require.False(t, records[0].Owned)
+			require.Equal(t, locked.proofFile, records[0].ProofFile)
+			require.Equal(t, before, h.ownedUnits())
+
+			h.chain.mine(t)
+			h.waitTransfer(claim.txid, TransferConfirmed)
+			require.Equal(t, tc.wantUnits, h.ownedUnits())
+
+			// The claimed output's file is the supplied one plus
+			// the claim.
+			exported, err := h.client.ExportProof(
+				ctx, locked.ref, claim.change.PubKey, nil,
+			)
+			require.NoError(t, err)
+			verified, err := h.client.VerifyProof(
+				ctx, exported.RawProofFile,
+			)
+			require.NoError(t, err)
+			require.True(t, verified.Valid)
+			require.Equal(
+				t, locked.amount, verified.DecodedProof.Amount,
+			)
+
+			inputFile, err := proof.DecodeFile(locked.proofFile)
+			require.NoError(t, err)
+			claimedFile, err := proof.DecodeFile(
+				exported.RawProofFile,
+			)
+			require.NoError(t, err)
+			require.Equal(
+				t, inputFile.NumProofs()+1,
+				claimedFile.NumProofs(),
+			)
+		})
+	}
+}
+
+// TestTransferRejectsInputProofFiles refuses a transfer whose supplied proof
+// files do not prove its inputs, before anything is recorded.
+func TestTransferRejectsInputProofFiles(t *testing.T) {
+	holder := newTestHarness(t)
+	ctx := t.Context()
+
+	minted := holder.receive("locked")
+	locked := holder.lockAsset(minted, receivedUnits, 600, 7)
+	other := holder.receive("other")
+
+	// A file that holds only the locked output's last proof, as a proof
+	// of ownership, shows who controls the output but not that the asset
+	// was ever issued.
+	lockedFile, err := proof.DecodeFile(locked.proofFile)
+	require.NoError(t, err)
+	tip, err := lockedFile.LastProof()
+	require.NoError(t, err)
+	tip.ChallengeWitness = locked.witness
+	tipFile, err := proof.NewFile(proof.V0, *tip)
+	require.NoError(t, err)
+	var tipOnly bytes.Buffer
+	require.NoError(t, tipFile.Encode(&tipOnly))
+
+	h := holder.peer(2)
+	claim := h.commitClaim(locked)
+
+	tests := []struct {
+		name    string
+		files   [][]byte
+		code    codes.Code
+		wantErr string
+	}{{
+		name:    "no file",
+		code:    codes.FailedPrecondition,
+		wantErr: "no proof stored for asset input",
+	}, {
+		name:    "undecodable file",
+		files:   [][]byte{{0x01}},
+		code:    codes.InvalidArgument,
+		wantErr: "error decoding input proof file 0",
+	}, {
+		name:    "duplicate file",
+		files:   [][]byte{locked.proofFile, locked.proofFile},
+		code:    codes.InvalidArgument,
+		wantErr: "duplicate input proof file",
+	}, {
+		name:    "file of another asset",
+		files:   [][]byte{locked.proofFile, other.proofFile},
+		code:    codes.InvalidArgument,
+		wantErr: "does not match a transfer input",
+	}, {
+		name:    "file without its history",
+		files:   [][]byte{tipOnly.Bytes()},
+		code:    codes.InvalidArgument,
+		wantErr: "error verifying input proofs",
+	}}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := customanchor.PublishTransfer(
+				ctx, h.wallet, claim.transfer, claim.finalPSBT,
+				customanchor.WithInputProofFiles(tc.files...),
+			)
+			var attempt *customanchor.PublishAttemptError
+			require.ErrorAs(t, err, &attempt)
+			require.False(t, attempt.OutcomeUnknown)
+			require.Equal(t, tc.code, status.Code(err))
+			require.ErrorContains(t, err, tc.wantErr)
+
+			transfers, err := h.client.ListTransfers(
+				ctx, &tapsdk.ListTransfersRequest{},
+			)
+			require.NoError(t, err)
+			require.Empty(t, transfers)
+			require.Empty(t, h.inputRecords(locked))
+		})
+	}
+
+	// The refused transfer publishes with the locked output's file.
+	_, err = customanchor.PublishTransfer(
+		ctx, h.wallet, claim.transfer, claim.finalPSBT,
+		customanchor.WithInputProofFiles(locked.proofFile),
+	)
+	require.NoError(t, err)
 }
 
 // TestBalances follows the balance of an asset through a transfer, and tells

@@ -452,7 +452,8 @@ func (e *engine) validateInputAssets(ctx context.Context, btcPkt *psbt.Packet,
 
 // PublishAndLogTransfer records a committed transfer, signs the anchor inputs
 // the wallet owns when asked to, broadcasts the anchor transaction and
-// follows it until its final proofs are stored.
+// follows it until its final proofs are stored. An input the wallet does not
+// hold is proved by a stored proof file or by one supplied with the request.
 func (s *walletKitServer) PublishAndLogTransfer(ctx context.Context,
 	req *wrpc.PublishAndLogRequest) (*taprpc.SendAssetResponse, error) {
 
@@ -510,6 +511,11 @@ func (s *walletKitServer) PublishAndLogTransfer(ctx context.Context,
 		label = fmt.Sprintf("pubandlog-%s", finalTx.TxHash())
 	}
 
+	inputProofs, err := unmarshalInputProofFiles(req.InputProofFiles)
+	if err != nil {
+		return nil, invalidTransfer(err)
+	}
+
 	transfer, err := e.shipTransfer(ctx, &shipment{
 		anchorPkt:      pkt,
 		anchorTx:       finalTx,
@@ -518,12 +524,52 @@ func (s *walletKitServer) PublishAndLogTransfer(ctx context.Context,
 		passivePackets: passivePackets,
 		label:          label,
 		skipBroadcast:  req.SkipAnchorTxBroadcast,
+		inputProofs:    inputProofs,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error requesting delivery: %w", err)
 	}
 
 	return &taprpc.SendAssetResponse{Transfer: transfer}, nil
+}
+
+// unmarshalInputProofFiles decodes caller-supplied input proof files and keys
+// each by the input its last proof describes.
+func unmarshalInputProofFiles(
+	files [][]byte) (map[asset.PrevID]*inputProof, error) {
+
+	if len(files) == 0 {
+		return nil, nil
+	}
+
+	inputProofs := make(map[asset.PrevID]*inputProof, len(files))
+	for idx, blob := range files {
+		file, err := proof.DecodeFile(blob)
+		if err != nil {
+			return nil, fmt.Errorf("error decoding input proof "+
+				"file %d: %w", idx, err)
+		}
+		last, err := file.LastProof()
+		if err != nil {
+			return nil, fmt.Errorf("error reading input proof "+
+				"file %d: %w", idx, err)
+		}
+
+		prevID := asset.PrevID{
+			OutPoint: last.OutPoint(),
+			ID:       last.Asset.ID(),
+			ScriptKey: asset.ToSerialized(
+				last.Asset.ScriptKey.PubKey,
+			),
+		}
+		if _, ok := inputProofs[prevID]; ok {
+			return nil, fmt.Errorf("duplicate input proof file "+
+				"for %v", prevID.OutPoint)
+		}
+		inputProofs[prevID] = &inputProof{blob: blob, file: file}
+	}
+
+	return inputProofs, nil
 }
 
 // signAnchorInputs signs and finalizes the unsigned inputs of the anchor

@@ -50,6 +50,34 @@ type shipment struct {
 	passivePackets []*tappsbt.VPacket
 	label          string
 	skipBroadcast  bool
+
+	// inputProofs are the caller-supplied proof files of inputs, keyed by
+	// the input each file ends in.
+	inputProofs map[asset.PrevID]*inputProof
+}
+
+// inputProof is a caller-supplied proof file of a transfer input.
+type inputProof struct {
+	blob []byte
+	file *proof.File
+}
+
+// validate checks that every supplied proof file is of an active input.
+func (s *shipment) validate() error {
+	inputs := make(map[asset.PrevID]struct{})
+	for _, vPkt := range s.activePackets {
+		for _, vIn := range vPkt.Inputs {
+			inputs[vIn.PrevID] = struct{}{}
+		}
+	}
+	for prevID := range s.inputProofs {
+		if _, ok := inputs[prevID]; !ok {
+			return fmt.Errorf("input proof for %v does not match "+
+				"a transfer input", prevID.OutPoint)
+		}
+	}
+
+	return nil
 }
 
 // transferPayload is what the engine stores with a recorded transfer.
@@ -184,6 +212,11 @@ func (e *engine) shipTransfer(ctx context.Context,
 
 	txid := s.anchorTx.TxHash()
 
+	if err := s.validate(); err != nil {
+		return nil, invalidTransfer(fmt.Errorf("failed to validate "+
+			"parcel: %w", err))
+	}
+
 	rpcTransfer, pending, err := e.recordTransfer(ctx, s)
 	if err != nil {
 		return nil, err
@@ -234,19 +267,21 @@ func (e *engine) recordTransfer(ctx context.Context,
 		return nil, false, invalidTransfer(err)
 	}
 
-	// Every input must have its proof file in the store: the final
-	// proofs of the outputs extend those files.
+	// Every input needs a proof file: the final proofs of the outputs
+	// extend those files.
 	var (
 		inputFiles = make(map[asset.PrevID]*proof.File)
 		spends     []ProofLocator
+		supplied   []asset.PrevID
 	)
 	for _, vPkt := range allPackets {
 		for _, vIn := range vPkt.Inputs {
-			record, file, err := e.fetchInputProof(ctx, vIn.PrevID)
+			record, err := e.storedInputProof(ctx, vIn.PrevID)
 			if err != nil {
 				return nil, false, err
 			}
-			if record.Owned && record.Spent {
+			owned := record != nil && record.Owned
+			if owned && record.Spent {
 				return nil, false, status.Errorf(
 					codes.FailedPrecondition, "asset "+
 						"input %v is spent by a "+
@@ -254,8 +289,24 @@ func (e *engine) recordTransfer(ctx context.Context,
 					vIn.PrevID.OutPoint,
 				)
 			}
-			if record.Owned {
+			if owned {
 				spends = append(spends, record.ProofLocator)
+			}
+
+			// The wallet's own file comes first, since a re-org
+			// rewrites it. A supplied file shadows one the wallet
+			// only keeps, which may predate a re-org.
+			given, ok := s.inputProofs[vIn.PrevID]
+			if ok && !owned {
+				inputFiles[vIn.PrevID] = given.file
+				supplied = append(supplied, vIn.PrevID)
+
+				continue
+			}
+
+			file, err := decodeInputProof(record, vIn.PrevID)
+			if err != nil {
+				return nil, false, err
 			}
 			inputFiles[vIn.PrevID] = file
 		}
@@ -264,6 +315,11 @@ func (e *engine) recordTransfer(ctx context.Context,
 	err = e.verifyPacketsPreBroadcast(ctx, allPackets, inputFiles)
 	if err != nil {
 		return nil, false, invalidTransfer(err)
+	}
+
+	suppliedProofs, err := e.verifyInputProofs(ctx, supplied, s.inputProofs)
+	if err != nil {
+		return nil, false, err
 	}
 
 	heightHint, _, err := e.chain.BestBlock(ctx)
@@ -303,6 +359,16 @@ func (e *engine) recordTransfer(ctx context.Context,
 		return nil, false, err
 	}
 
+	// Confirmation reads an input's proof file from the store, so the
+	// supplied files are stored before the transfer.
+	for _, suppliedProof := range suppliedProofs {
+		err := e.store.InsertProof(ctx, suppliedProof)
+		if err != nil {
+			return nil, false, fmt.Errorf("unable to store input "+
+				"proof: %w", err)
+		}
+	}
+
 	err = e.store.InsertTransfer(ctx, Transfer{
 		AnchorTxid: txid,
 		State:      TransferPending,
@@ -328,34 +394,92 @@ func invalidTransfer(err error) error {
 	return status.Error(codes.InvalidArgument, err.Error())
 }
 
-// fetchInputProof returns the stored proof file of a transfer input.
-func (e *engine) fetchInputProof(ctx context.Context,
-	prevID asset.PrevID) (*AssetProof, *proof.File, error) {
+// storedInputProof returns the stored proof record of a transfer input, or
+// nil when the store has none.
+func (e *engine) storedInputProof(ctx context.Context,
+	prevID asset.PrevID) (*AssetProof, error) {
 
 	locator, err := prevIDLocator(prevID)
 	if err != nil {
-		return nil, nil, invalidTransfer(err)
+		return nil, invalidTransfer(err)
 	}
 
 	records, err := e.store.FetchProofs(
 		ctx, locator.AssetID, locator.ScriptKey, &locator.Outpoint,
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if len(records) != 1 {
-		return nil, nil, status.Errorf(codes.FailedPrecondition,
-			"no proof stored for asset input %v, register it "+
-				"with RegisterTransfer first", prevID.OutPoint)
+		return nil, nil
 	}
 
-	file, err := proof.DecodeFile(records[0].ProofFile)
+	return &records[0], nil
+}
+
+// decodeInputProof decodes the stored proof file of a transfer input. A nil
+// record means the input has no proof.
+func decodeInputProof(record *AssetProof,
+	prevID asset.PrevID) (*proof.File, error) {
+
+	if record == nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "no proof "+
+			"stored for asset input %v, register it with "+
+			"RegisterTransfer or supply its proof file with the "+
+			"transfer", prevID.OutPoint)
+	}
+
+	file, err := proof.DecodeFile(record.ProofFile)
 	if err != nil {
-		return nil, nil, fmt.Errorf("unable to decode input proof "+
-			"file: %w", err)
+		return nil, fmt.Errorf("unable to decode input proof file: %w",
+			err)
 	}
 
-	return &records[0], file, nil
+	return file, nil
+}
+
+// fetchInputProof returns the stored proof file of a transfer input.
+func (e *engine) fetchInputProof(ctx context.Context,
+	prevID asset.PrevID) (*proof.File, error) {
+
+	record, err := e.storedInputProof(ctx, prevID)
+	if err != nil {
+		return nil, err
+	}
+
+	return decodeInputProof(record, prevID)
+}
+
+// verifyInputProofs verifies the supplied proof files a transfer uses back
+// to their issuance and returns the records that keep them. The wallet does
+// not hold these inputs, so the records are not owned.
+func (e *engine) verifyInputProofs(ctx context.Context, used []asset.PrevID,
+	inputProofs map[asset.PrevID]*inputProof) ([]AssetProof, error) {
+
+	vCtx := e.verifierCtx(ctx)
+
+	records := make([]AssetProof, 0, len(used))
+	for _, prevID := range used {
+		given := inputProofs[prevID]
+
+		_, err := given.file.Verify(ctx, vCtx)
+		if err != nil {
+			return nil, invalidTransfer(fmt.Errorf("error "+
+				"verifying input proofs: unable to verify "+
+				"proof of %v: %w", prevID.OutPoint, err))
+		}
+
+		locator, err := prevIDLocator(prevID)
+		if err != nil {
+			return nil, invalidTransfer(err)
+		}
+		records = append(records, AssetProof{
+			ProofLocator: locator,
+			ProofFile:    given.blob,
+		})
+	}
+
+	return records, nil
 }
 
 // verifyPacketsPreBroadcast checks the packets as far as an unconfirmed
@@ -760,7 +884,7 @@ func (e *engine) confirmTransfer(ctx context.Context, txid chainhash.Hash,
 	// re-org, the transfer that created the input rewrites the file once
 	// it confirms again, so a stale file is retried rather than extended.
 	fetchInput := func(prevID asset.PrevID) (*proof.File, error) {
-		_, file, err := e.fetchInputProof(ctx, prevID)
+		file, err := e.fetchInputProof(ctx, prevID)
 		if err != nil {
 			return nil, err
 		}
