@@ -67,7 +67,11 @@ It covers what a wallet needs to hold and move assets:
 - derive, declare and look up script keys and anchor internal keys;
 - list owned asset outputs, balances and recorded transfers;
 - sign, commit and publish caller-funded custom-anchor transfers, and write
-  the final proofs once the anchor transaction confirms.
+  the final proofs once the anchor transaction confirms;
+- publish a transfer that spends an asset output the wallet does not hold,
+  when the publish request carries the output's proof file
+  (`customanchor.WithInputProofFiles`). The engine verifies the file back to
+  the issuance and keeps it without owning the output.
 
 Every other call returns `codes.Unimplemented`: minting, universe queries,
 address sends, burns and event streams. The engine holds no Bitcoin, so
