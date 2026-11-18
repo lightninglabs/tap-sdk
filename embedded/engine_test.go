@@ -613,6 +613,82 @@ func TestTransferSpendsChange(t *testing.T) {
 	require.EqualValues(t, 400, verified.DecodedProof.Amount)
 }
 
+// TestTransferSpendsTweakedOutput sends an asset to a script key tweaked
+// from a key the wallet derived, as each issuance of a grouped output is.
+// The wallet never derived that script key, so it records the key with the
+// transfer, credits the output and signs its spend.
+func TestTransferSpendsTweakedOutput(t *testing.T) {
+	h := newTestHarness(t)
+	ctx := t.Context()
+
+	minted := h.receive("tweaked")
+
+	base, err := h.client.DeriveScriptKey(ctx)
+	require.NoError(t, err)
+	rawKey, err := btcec.ParsePubKey(base.KeyDesc.RawKeyBytes[:])
+	require.NoError(t, err)
+	unique, err := asset.DeriveUniqueScriptKey(
+		*rawKey, minted.assetID,
+		asset.ScriptKeyDerivationUniquePedersen,
+	)
+	require.NoError(t, err)
+	recipient := tapsdk.ScriptKey{
+		PubKey:   sdkPubKey(t, evenKey(unique.PubKey)),
+		KeyDesc:  base.KeyDesc,
+		TapTweak: unique.Tweak,
+	}
+	anchor, err := h.client.DeriveInternalKey(ctx)
+	require.NoError(t, err)
+	anchorKey, err := btcec.ParsePubKey(anchor.PubKey[:])
+	require.NoError(t, err)
+
+	first := h.commitTransferTo(
+		minted, 1_000, 1_000, 7, customanchor.AssetScriptPlan{
+			Mode: customanchor.AssetScriptExternal,
+			External: &customanchor.AssetExternalScriptPlan{
+				ScriptKey: recipient,
+			},
+		}, anchorKey,
+	)
+	_, err = customanchor.PublishTransfer(
+		ctx, h.wallet, first.transfer, first.finalPSBT,
+	)
+	require.NoError(t, err)
+	h.chain.mine(t)
+	h.waitTransfer(first.txid, TransferConfirmed)
+
+	// The wallet lists the output under the type of its key.
+	keyType := tapsdk.ScriptKeyTypeUniquePedersen
+	uniqueKeys := &tapsdk.ListUtxosRequest{
+		ScriptKeyType: &tapsdk.ScriptKeyTypeQuery{
+			ExplicitType: &keyType,
+		},
+	}
+	held, err := h.client.ListUtxos(ctx, uniqueKeys)
+	require.NoError(t, err)
+	require.Len(t, held, 1)
+
+	received, err := h.client.ExportProof(
+		ctx, minted.ref, recipient.PubKey, nil,
+	)
+	require.NoError(t, err)
+	second := h.commitTransfer(&mintedAsset{
+		ref:       minted.ref,
+		assetID:   minted.assetID,
+		proofFile: received.RawProofFile,
+		outpoint:  wire.OutPoint{Hash: first.txid, Index: 0},
+	}, 1_000, 1_000, 8)
+	_, err = customanchor.PublishTransfer(
+		ctx, h.wallet, second.transfer, second.finalPSBT,
+	)
+	require.NoError(t, err)
+	h.chain.mine(t)
+	h.waitTransfer(second.txid, TransferConfirmed)
+	held, err = h.client.ListUtxos(ctx, uniqueKeys)
+	require.NoError(t, err)
+	require.Empty(t, held)
+}
+
 // TestTransferReorg takes a confirmed transfer through a re-org: its change
 // leaves the wallet, and returns with proofs of the new block.
 func TestTransferReorg(t *testing.T) {

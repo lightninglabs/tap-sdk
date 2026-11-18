@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/btcsuite/btcd/psbt/v2"
+	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
 	"github.com/lightninglabs/taproot-assets/address"
 	"github.com/lightninglabs/taproot-assets/asset"
@@ -359,6 +360,17 @@ func (e *engine) recordTransfer(ctx context.Context,
 		return nil, false, err
 	}
 
+	// A spend of an output reads the wallet's record of its script key.
+	for _, vPkt := range allPackets {
+		for _, vOut := range vPkt.Outputs {
+			err := e.recordOutputScriptKey(ctx, vOut)
+			if err != nil {
+				return nil, false, fmt.Errorf("unable to "+
+					"store script key: %w", err)
+			}
+		}
+	}
+
 	// Confirmation reads an input's proof file from the store, so the
 	// supplied files are stored before the transfer.
 	for _, suppliedProof := range suppliedProofs {
@@ -612,6 +624,67 @@ func (e *engine) isLocalScriptKey(ctx context.Context,
 	}
 
 	return e.IsLocalKey(ctx, stored.RawKey), nil
+}
+
+// recordOutputScriptKey records the script key of an output that pays a key
+// tweaked from one the wallet derived, unless the wallet knows the script key
+// already. A grouped output split per issuance pays such a key, and the
+// wallet signs its spend from this record.
+func (e *engine) recordOutputScriptKey(ctx context.Context,
+	vOut *tappsbt.VOutput) error {
+
+	scriptKey := vOut.ScriptKey
+	if scriptKey.PubKey == nil || scriptKey.TweakedScriptKey == nil ||
+		scriptKey.RawKey.PubKey == nil || vOut.Asset == nil {
+
+		return nil
+	}
+
+	_, err := e.fetchScriptKey(ctx, scriptKey.PubKey)
+	if !errors.Is(err, address.ErrScriptKeyNotFound) {
+		return err
+	}
+	rawKey, err := e.fetchKeyDescriptor(ctx, scriptKey.RawKey.PubKey)
+	switch {
+	case errors.Is(err, ErrNotFound):
+		return nil
+
+	case err != nil:
+		return err
+	}
+
+	// The record is only as good as its tweak, so a key the tweak does
+	// not produce is left out.
+	derived := txscript.ComputeTaprootOutputKey(
+		rawKey.PubKey, scriptKey.Tweak,
+	)
+	if scriptKeyBytes(derived) != scriptKeyBytes(scriptKey.PubKey) {
+		return nil
+	}
+
+	known := asset.ScriptKey{
+		PubKey: scriptKey.PubKey,
+		TweakedScriptKey: &asset.TweakedScriptKey{
+			RawKey: rawKey,
+			Tweak:  scriptKey.Tweak,
+		},
+	}
+	assetID := vOut.Asset.ID()
+	unique, err := asset.DeriveUniqueScriptKey(
+		*rawKey.PubKey, assetID,
+		asset.ScriptKeyDerivationUniquePedersen,
+	)
+	switch {
+	case err == nil &&
+		scriptKeyBytes(unique.PubKey) == scriptKeyBytes(derived):
+
+		known.Type = asset.ScriptKeyUniquePedersen
+
+	default:
+		known.Type = known.DetermineType(&assetID)
+	}
+
+	return e.insertScriptKey(ctx, known)
 }
 
 // marshalShipment builds the transfer ListTransfers returns for a shipment.
