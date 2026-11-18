@@ -687,6 +687,70 @@ func TestTransferResume(t *testing.T) {
 	require.EqualValues(t, 400, h.ownedUnits())
 }
 
+// TestTransferResumeStaleConfirmation resumes a transfer whose confirming
+// block left the chain while nothing followed it. No re-org event reports
+// that block, so the tracker finds it gone, returns the transfer to pending
+// and broadcasts it again.
+func TestTransferResumeStaleConfirmation(t *testing.T) {
+	h := newTestHarness(t)
+	ctx := t.Context()
+
+	minted := h.receive("stale")
+	sent := h.commitTransfer(minted, 1_000, 600, 7)
+	_, err := customanchor.PublishTransfer(
+		ctx, h.wallet, sent.transfer, sent.finalPSBT,
+	)
+	require.NoError(t, err)
+
+	first, height := h.chain.mine(t)
+	h.waitTransfer(sent.txid, TransferConfirmed)
+	require.EqualValues(t, 400, h.ownedUnits())
+
+	// While the wallet is down, another block replaces the confirming
+	// one and the network forgets the transaction.
+	require.NoError(t, h.client.Close())
+	h.chain.reorg(1)
+	h.chain.mu.Lock()
+	h.chain.mempool = nil
+	h.chain.mu.Unlock()
+	replaced, replacedHeight := h.chain.mine(t)
+	require.Equal(t, height, replacedHeight)
+	require.NotEqual(t, first.BlockHash(), replaced.BlockHash())
+
+	h.restart()
+	h.waitTransfer(sent.txid, TransferPending)
+	require.Zero(t, h.ownedUnits())
+	require.Eventually(t, func() bool {
+		h.chain.mu.Lock()
+		defer h.chain.mu.Unlock()
+
+		return len(h.chain.mempool) == 1
+	}, 10*time.Second, 10*time.Millisecond)
+
+	second, _ := h.chain.mine(t)
+	h.waitTransfer(sent.txid, TransferConfirmed)
+	require.EqualValues(t, 400, h.ownedUnits())
+
+	transfers, err := h.store.ListTransfers(ctx, &sent.txid)
+	require.NoError(t, err)
+	require.Equal(t, second.BlockHash(), transfers[0].BlockHash)
+
+	// A restart on the same chain keeps the confirmation. The new
+	// tracker registers in the background, so Done is offered until it
+	// is taken.
+	h.restart()
+	require.Eventually(t, func() bool {
+		h.chain.finalize(sent.txid)
+		transfers, err := h.store.ListTransfers(ctx, &sent.txid)
+
+		return err == nil && transfers[0].State == TransferFinal
+	}, 10*time.Second, 10*time.Millisecond)
+	transfers, err = h.store.ListTransfers(ctx, &sent.txid)
+	require.NoError(t, err)
+	require.Equal(t, second.BlockHash(), transfers[0].BlockHash)
+	require.EqualValues(t, 400, h.ownedUnits())
+}
+
 // TestTransferResumeFinal resumes a transfer that confirmed while nothing
 // followed it, on a chain that holds its confirmation and Done at
 // registration. The transfer ends final with its proofs written, whichever
