@@ -16,13 +16,20 @@ key ring and a way to publish and confirm a transfer.
 ## Decision
 
 The `embedded` package is a third transport. It implements `tapsdk.Client`
-inside the host process and takes three ports from the host:
+inside the host process and takes four ports from the host:
 
 | Port | The engine uses it to |
 |------|------------------------|
 | `Store` | persist keys, proof files and transfers |
-| `KeyRing` | derive asset keys and their private keys |
+| `KeyRing` | derive asset keys |
+| `Signer` | sign asset witnesses and anchor inputs with those keys |
 | `Chain` | read block headers, broadcast, and follow confirmations |
+
+`Signer` has the shape of lnd's `input.Signer` plus a context, so the engine
+never holds a private key: a host can sign with a local key ring through
+`NewKeyRingSigner`, or with a remote lnd through its signer RPC. Both
+`KeyRing` and `Signer` take the context of the engine call, so a stalled
+remote signer ends at the call's deadline.
 
 The engine implements the subset of tapd's gRPC services a wallet needs and
 serves it over an in-process connection. The existing gRPC client code runs

@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/btcsuite/btcd/wire/v2"
 	tapsdk "github.com/lightninglabs/tap-sdk"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 )
 
@@ -20,15 +20,25 @@ const (
 	Version = "embedded-0.1.0"
 )
 
-// KeyRing derives the wallet's asset keys. lnd's keychain.SecretKeyRing
-// implements it.
+// KeyRing derives the wallet's asset keys. NewLocalKeyRing derives with a
+// local key ring.
 type KeyRing interface {
-	// DeriveNextKey derives the next unused key of the family.
-	DeriveNextKey(family keychain.KeyFamily) (keychain.KeyDescriptor,
-		error)
+	// DeriveNextKey derives the next unused key of the family. ctx
+	// carries the deadline of the engine call that needs the key.
+	DeriveNextKey(ctx context.Context,
+		family keychain.KeyFamily) (keychain.KeyDescriptor, error)
+}
 
-	// DerivePrivKey derives the private key of a key descriptor.
-	DerivePrivKey(desc keychain.KeyDescriptor) (*btcec.PrivateKey, error)
+// Signer signs transaction inputs with keys the KeyRing derived, so the keys
+// can stay in a remote signer such as lnd. NewKeyRingSigner signs with local
+// private keys.
+type Signer interface {
+	// SignOutputRaw signs the input of tx that signDesc describes, as
+	// lnd's input.Signer does. ctx carries the deadline of the engine call
+	// that needs the signature. The engine only signs Taproot inputs, and
+	// expects a Schnorr signature without a sighash flag.
+	SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
+		signDesc *input.SignDescriptor) (input.Signature, error)
 }
 
 // Confirmation is the block that confirms a transaction.
@@ -99,8 +109,11 @@ type Config struct {
 	// Store persists keys, proofs and transfers.
 	Store Store
 
-	// KeyRing derives and holds the wallet's asset keys.
+	// KeyRing derives the wallet's asset keys.
 	KeyRing KeyRing
+
+	// Signer signs with the keys KeyRing derives.
+	Signer Signer
 
 	// Chain provides headers, broadcast and confirmations.
 	Chain Chain
@@ -128,6 +141,9 @@ func (c *Config) validate() error {
 
 	case c.KeyRing == nil:
 		return fmt.Errorf("key ring is required")
+
+	case c.Signer == nil:
+		return fmt.Errorf("signer is required")
 
 	case c.Chain == nil:
 		return fmt.Errorf("chain is required")

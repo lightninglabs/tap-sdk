@@ -25,6 +25,7 @@ type engine struct {
 	params address.ChainParams
 	store  Store
 	keys   KeyRing
+	signer Signer
 	chain  Chain
 	log    Logger
 
@@ -68,6 +69,7 @@ func newEngine(cfg *Config) (*engine, error) {
 		params:    params,
 		store:     cfg.Store,
 		keys:      cfg.KeyRing,
+		signer:    cfg.Signer,
 		chain:     cfg.Chain,
 		log:       logger,
 		groupKeys: make(map[asset.SerializedKey]struct{}),

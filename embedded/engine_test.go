@@ -1240,10 +1240,12 @@ func TestGroupKeyTrust(t *testing.T) {
 	configured := newTestKeyRing(3).privKey(1, 0).PubKey()
 	added := newTestKeyRing(3).privKey(1, 1).PubKey()
 
+	keys := newTestKeyRing(1)
 	client, err := NewClient(&Config{
 		Network:   tapsdk.NetworkRegtest,
 		Store:     NewMemoryStore(),
-		KeyRing:   newTestKeyRing(1),
+		KeyRing:   NewLocalKeyRing(keys),
+		Signer:    NewKeyRingSigner(keys),
 		Chain:     newTestChain(t),
 		GroupKeys: []tapsdk.PubKey{sdkPubKey(t, configured)},
 	})
@@ -1291,7 +1293,8 @@ func TestGroupKeyTrustHeldAsset(t *testing.T) {
 	client, err := NewClient(&Config{
 		Network: tapsdk.NetworkRegtest,
 		Store:   h.store,
-		KeyRing: h.keys,
+		KeyRing: NewLocalKeyRing(h.keys),
+		Signer:  NewKeyRingSigner(h.keys),
 		Chain:   h.chain,
 	})
 	require.NoError(t, err)

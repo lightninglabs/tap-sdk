@@ -37,7 +37,8 @@ WebSocket bridge internally.
 client, err := embedded.NewClient(&embedded.Config{
     Network: tapsdk.NetworkRegtest,
     Store:   store,   // keys, proofs and transfers
-    KeyRing: keyRing, // lnd's keychain.SecretKeyRing fits
+    KeyRing: keyRing, // embedded.NewLocalKeyRing, or lnd below
+    Signer:  signer,  // embedded.NewKeyRingSigner, or lnd below
     Chain:   chain,   // headers, broadcast, confirmations
 })
 if err != nil {
@@ -52,8 +53,65 @@ wallet := tapsdk.NewWallet(client, tapsdk.NetworkRegtest)
 ```
 
 The embedded transport answers the client calls inside the host process. There
-is no tapd and no lnd: the host supplies a key ring, a chain source and a
+is no tapd: the host supplies a key ring, a signer, a chain source and a
 store, and the engine applies the asset rules by calling tapd's packages.
+`embedded.NewLocalKeyRing` and `embedded.NewKeyRingSigner` derive and sign
+with a local key ring. Both ports take the context of the engine call, so a
+remote key ring or signer stops at the call's deadline.
+
+A host whose keys stay in a standalone lnd adapts lnd's wallet kit and signer
+RPCs. lnd computes a Taproot sighash over every previous output, and finds a
+key outside its default family only by its key locator, which
+`SignOutputRawKeyLocator` forwards beside the public key:
+
+```go
+type lndKeys struct {
+    walletKit lndclient.WalletKitClient
+    signer    lndclient.SignerClient
+}
+
+func (k *lndKeys) DeriveNextKey(ctx context.Context,
+    family keychain.KeyFamily) (keychain.KeyDescriptor, error) {
+
+    desc, err := k.walletKit.DeriveNextKey(ctx, int32(family))
+    if err != nil {
+        return keychain.KeyDescriptor{}, err
+    }
+
+    return *desc, nil
+}
+
+func (k *lndKeys) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
+    desc *input.SignDescriptor) (input.Signature, error) {
+
+    prevOuts := make([]*wire.TxOut, len(tx.TxIn))
+    for idx, txIn := range tx.TxIn {
+        prevOuts[idx] = desc.PrevOutputFetcher.FetchPrevOutput(
+            txIn.PreviousOutPoint,
+        )
+    }
+
+    sigs, err := k.signer.SignOutputRawKeyLocator(
+        ctx, tx, []*lndclient.SignDescriptor{{
+            KeyDesc:       desc.KeyDesc,
+            SingleTweak:   desc.SingleTweak,
+            TapTweak:      desc.TapTweak,
+            WitnessScript: desc.WitnessScript,
+            SignMethod:    desc.SignMethod,
+            Output:        desc.Output,
+            HashType:      desc.HashType,
+            InputIndex:    desc.InputIndex,
+        }}, prevOuts,
+    )
+    if err != nil {
+        return nil, err
+    }
+
+    return schnorr.ParseSignature(sigs[0])
+}
+```
+
+A `*lndKeys` then serves as both `KeyRing` and `Signer`.
 
 `NewClient` opens no listener and starts no background work, and the client
 answers calls at once. The engine follows a transfer it publishes until the

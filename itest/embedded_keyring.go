@@ -23,8 +23,8 @@ type hdKeyRing struct {
 	next map[keychain.KeyFamily]uint32
 }
 
-// A compile-time check that hdKeyRing is a key ring of the engine.
-var _ embedded.KeyRing = (*hdKeyRing)(nil)
+// A compile-time check that hdKeyRing derives keys for the engine.
+var _ embedded.NextKeyDeriver = (*hdKeyRing)(nil)
 
 // newHDKeyRing returns a key ring for the seed on the given network.
 func newHDKeyRing(seed []byte, params *chaincfg.Params) (*hdKeyRing, error) {
