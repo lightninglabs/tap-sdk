@@ -114,6 +114,25 @@ func (e *engine) followOnce(ctx context.Context, txid chainhash.Hash,
 		return true, nil
 	}
 
+	// A block recorded before this registration can have left the best
+	// chain while nothing followed the transfer, and no event reports
+	// that.
+	if transfer.State == TransferConfirmed {
+		onChain, err := e.onBestChain(
+			ctx, transfer.BlockHash, transfer.BlockHeight,
+		)
+		if err != nil {
+			return false, err
+		}
+		if !onChain {
+			if err := e.unconfirmTransfer(ctx, txid); err != nil {
+				return false, err
+			}
+			e.log.Infof("Transfer %v left the best chain", txid)
+			transfer.State = TransferPending
+		}
+	}
+
 	var anchorTx wire.MsgTx
 	err = anchorTx.Deserialize(bytes.NewReader(payload.transfer.AnchorTx))
 	if err != nil {
@@ -219,6 +238,28 @@ func (e *engine) followOnce(ctx context.Context, txid chainhash.Hash,
 			return false, nil
 		}
 	}
+}
+
+// onBestChain reports whether the best chain holds the block at height.
+func (e *engine) onBestChain(ctx context.Context, block chainhash.Hash,
+	height uint32) (bool, error) {
+
+	tip, _, err := e.chain.BestBlock(ctx)
+	if err != nil {
+		return false, fmt.Errorf("unable to get current height: %w",
+			err)
+	}
+	if tip < height {
+		return false, nil
+	}
+
+	header, err := e.chain.BlockHeader(ctx, height)
+	if err != nil {
+		return false, fmt.Errorf("fetch block header at height %d: %w",
+			height, err)
+	}
+
+	return header != nil && header.BlockHash() == block, nil
 }
 
 // confirmReady applies a confirmation that is ready on the channel, and

@@ -613,6 +613,82 @@ func TestTransferSpendsChange(t *testing.T) {
 	require.EqualValues(t, 400, verified.DecodedProof.Amount)
 }
 
+// TestTransferSpendsTweakedOutput sends an asset to a script key tweaked
+// from a key the wallet derived, as each issuance of a grouped output is.
+// The wallet never derived that script key, so it records the key with the
+// transfer, credits the output and signs its spend.
+func TestTransferSpendsTweakedOutput(t *testing.T) {
+	h := newTestHarness(t)
+	ctx := t.Context()
+
+	minted := h.receive("tweaked")
+
+	base, err := h.client.DeriveScriptKey(ctx)
+	require.NoError(t, err)
+	rawKey, err := btcec.ParsePubKey(base.KeyDesc.RawKeyBytes[:])
+	require.NoError(t, err)
+	unique, err := asset.DeriveUniqueScriptKey(
+		*rawKey, minted.assetID,
+		asset.ScriptKeyDerivationUniquePedersen,
+	)
+	require.NoError(t, err)
+	recipient := tapsdk.ScriptKey{
+		PubKey:   sdkPubKey(t, evenKey(unique.PubKey)),
+		KeyDesc:  base.KeyDesc,
+		TapTweak: unique.Tweak,
+	}
+	anchor, err := h.client.DeriveInternalKey(ctx)
+	require.NoError(t, err)
+	anchorKey, err := btcec.ParsePubKey(anchor.PubKey[:])
+	require.NoError(t, err)
+
+	first := h.commitTransferTo(
+		minted, 1_000, 1_000, 7, customanchor.AssetScriptPlan{
+			Mode: customanchor.AssetScriptExternal,
+			External: &customanchor.AssetExternalScriptPlan{
+				ScriptKey: recipient,
+			},
+		}, anchorKey,
+	)
+	_, err = customanchor.PublishTransfer(
+		ctx, h.wallet, first.transfer, first.finalPSBT,
+	)
+	require.NoError(t, err)
+	h.chain.mine(t)
+	h.waitTransfer(first.txid, TransferConfirmed)
+
+	// The wallet lists the output under the type of its key.
+	keyType := tapsdk.ScriptKeyTypeUniquePedersen
+	uniqueKeys := &tapsdk.ListUtxosRequest{
+		ScriptKeyType: &tapsdk.ScriptKeyTypeQuery{
+			ExplicitType: &keyType,
+		},
+	}
+	held, err := h.client.ListUtxos(ctx, uniqueKeys)
+	require.NoError(t, err)
+	require.Len(t, held, 1)
+
+	received, err := h.client.ExportProof(
+		ctx, minted.ref, recipient.PubKey, nil,
+	)
+	require.NoError(t, err)
+	second := h.commitTransfer(&mintedAsset{
+		ref:       minted.ref,
+		assetID:   minted.assetID,
+		proofFile: received.RawProofFile,
+		outpoint:  wire.OutPoint{Hash: first.txid, Index: 0},
+	}, 1_000, 1_000, 8)
+	_, err = customanchor.PublishTransfer(
+		ctx, h.wallet, second.transfer, second.finalPSBT,
+	)
+	require.NoError(t, err)
+	h.chain.mine(t)
+	h.waitTransfer(second.txid, TransferConfirmed)
+	held, err = h.client.ListUtxos(ctx, uniqueKeys)
+	require.NoError(t, err)
+	require.Empty(t, held)
+}
+
 // TestTransferReorg takes a confirmed transfer through a re-org: its change
 // leaves the wallet, and returns with proofs of the new block.
 func TestTransferReorg(t *testing.T) {
@@ -684,6 +760,70 @@ func TestTransferResume(t *testing.T) {
 
 	h.chain.mine(t)
 	h.waitTransfer(sent.txid, TransferConfirmed)
+	require.EqualValues(t, 400, h.ownedUnits())
+}
+
+// TestTransferResumeStaleConfirmation resumes a transfer whose confirming
+// block left the chain while nothing followed it. No re-org event reports
+// that block, so the tracker finds it gone, returns the transfer to pending
+// and broadcasts it again.
+func TestTransferResumeStaleConfirmation(t *testing.T) {
+	h := newTestHarness(t)
+	ctx := t.Context()
+
+	minted := h.receive("stale")
+	sent := h.commitTransfer(minted, 1_000, 600, 7)
+	_, err := customanchor.PublishTransfer(
+		ctx, h.wallet, sent.transfer, sent.finalPSBT,
+	)
+	require.NoError(t, err)
+
+	first, height := h.chain.mine(t)
+	h.waitTransfer(sent.txid, TransferConfirmed)
+	require.EqualValues(t, 400, h.ownedUnits())
+
+	// While the wallet is down, another block replaces the confirming
+	// one and the network forgets the transaction.
+	require.NoError(t, h.client.Close())
+	h.chain.reorg(1)
+	h.chain.mu.Lock()
+	h.chain.mempool = nil
+	h.chain.mu.Unlock()
+	replaced, replacedHeight := h.chain.mine(t)
+	require.Equal(t, height, replacedHeight)
+	require.NotEqual(t, first.BlockHash(), replaced.BlockHash())
+
+	h.restart()
+	h.waitTransfer(sent.txid, TransferPending)
+	require.Zero(t, h.ownedUnits())
+	require.Eventually(t, func() bool {
+		h.chain.mu.Lock()
+		defer h.chain.mu.Unlock()
+
+		return len(h.chain.mempool) == 1
+	}, 10*time.Second, 10*time.Millisecond)
+
+	second, _ := h.chain.mine(t)
+	h.waitTransfer(sent.txid, TransferConfirmed)
+	require.EqualValues(t, 400, h.ownedUnits())
+
+	transfers, err := h.store.ListTransfers(ctx, &sent.txid)
+	require.NoError(t, err)
+	require.Equal(t, second.BlockHash(), transfers[0].BlockHash)
+
+	// A restart on the same chain keeps the confirmation. The new
+	// tracker registers in the background, so Done is offered until it
+	// is taken.
+	h.restart()
+	require.Eventually(t, func() bool {
+		h.chain.finalize(sent.txid)
+		transfers, err := h.store.ListTransfers(ctx, &sent.txid)
+
+		return err == nil && transfers[0].State == TransferFinal
+	}, 10*time.Second, 10*time.Millisecond)
+	transfers, err = h.store.ListTransfers(ctx, &sent.txid)
+	require.NoError(t, err)
+	require.Equal(t, second.BlockHash(), transfers[0].BlockHash)
 	require.EqualValues(t, 400, h.ownedUnits())
 }
 
