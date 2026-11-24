@@ -3,6 +3,7 @@ package embedded
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/btcsuite/btcd/chainhash/v2"
@@ -101,6 +102,33 @@ type Logger interface {
 	Errorf(format string, args ...any)
 }
 
+// ReceiveConfig enables Taproot Asset addresses.
+type ReceiveConfig struct {
+	// Store persists the wallet's addresses.
+	Store AddressStore
+
+	// DefaultCourier is the proof courier of an address whose request
+	// names none, as an authmailbox+universerpc address. Nil makes every
+	// request name its courier.
+	DefaultCourier *url.URL
+}
+
+// validate checks that the receive configuration is complete.
+func (c *ReceiveConfig) validate() error {
+	if c.Store == nil {
+		return fmt.Errorf("address store is required")
+	}
+	if c.DefaultCourier == nil {
+		return nil
+	}
+
+	if err := validateCourier(c.DefaultCourier); err != nil {
+		return fmt.Errorf("default courier: %w", err)
+	}
+
+	return nil
+}
+
 // Config configures the embedded engine.
 type Config struct {
 	// Network is the Bitcoin network the wallet runs on.
@@ -128,6 +156,10 @@ type Config struct {
 
 	// Logger receives background events. Nil discards them.
 	Logger Logger
+
+	// Receive enables Taproot Asset addresses. Nil leaves the address
+	// calls unimplemented.
+	Receive *ReceiveConfig
 }
 
 // validate checks that the configuration is complete.
@@ -147,6 +179,12 @@ func (c *Config) validate() error {
 
 	case c.Chain == nil:
 		return fmt.Errorf("chain is required")
+	}
+
+	if c.Receive != nil {
+		if err := c.Receive.validate(); err != nil {
+			return fmt.Errorf("receive: %w", err)
+		}
 	}
 
 	return nil

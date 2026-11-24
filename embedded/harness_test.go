@@ -354,6 +354,9 @@ type testHarness struct {
 	store  *MemoryStore
 	client *Client
 	wallet *tapsdk.Wallet
+
+	// addresses enables addresses on the next restart.
+	addresses *ReceiveConfig
 }
 
 // newTestHarness starts an embedded client with an empty store.
@@ -400,6 +403,7 @@ func (h *testHarness) restart() {
 		KeyRing: NewLocalKeyRing(h.keys),
 		Signer:  NewKeyRingSigner(h.keys),
 		Chain:   h.chain,
+		Receive: h.addresses,
 	})
 	require.NoError(h.t, err)
 	require.NoError(h.t, client.ResumeTransfers(h.t.Context()))

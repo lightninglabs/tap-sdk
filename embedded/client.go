@@ -40,10 +40,14 @@ func NewClient(cfg *Config) (*Client, error) {
 		return nil, fmt.Errorf("embedded: %w", err)
 	}
 
+	wallet := &walletServer{engine: e}
+	var walletService taprpc.TaprootAssetsServer = wallet
+	if cfg.Receive != nil {
+		walletService = newAddressServer(wallet, cfg.Receive)
+	}
+
 	conn := newLocalConn()
-	conn.register(
-		&taprpc.TaprootAssets_ServiceDesc, &walletServer{engine: e},
-	)
+	conn.register(&taprpc.TaprootAssets_ServiceDesc, walletService)
 	conn.register(
 		&wrpc.AssetWallet_ServiceDesc, &walletKitServer{engine: e},
 	)

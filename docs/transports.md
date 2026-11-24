@@ -129,12 +129,18 @@ It covers what a wallet needs to hold and move assets:
 - publish a transfer that spends an asset output the wallet does not hold,
   when the publish request carries the output's proof file
   (`customanchor.WithInputProofFiles`). The engine verifies the file back to
-  the issuance and keeps it without owning the output.
+  the issuance and keeps it without owning the output;
+- create, decode and list V2 addresses, when the host sets `Config.Receive`.
+  An address takes the next two asset keys of the wallet, names the raw
+  script key and requests asset version 1. Its proof courier is the one the
+  request names, or `ReceiveConfig.DefaultCourier`. The engine does not
+  detect a transfer to an address.
 
 Every other call returns `codes.Unimplemented`: minting, universe queries,
-address sends, burns and event streams. The engine holds no Bitcoin, so
-`CommitVirtualPsbts` accepts caller-funded anchor transactions only, and
-`customanchor.QueryCapabilities` reports wallet funding as unsupported.
+address receive events, address sends, burns and event streams. The engine
+holds no Bitcoin, so `CommitVirtualPsbts` accepts caller-funded anchor
+transactions only, and `customanchor.QueryCapabilities` reports wallet funding
+as unsupported.
 
 The engine has no universe, so `Wallet.GetBalance` and `Wallet.ListBalances`
 treat an asset as known when the wallet holds or has spent an output of it.
