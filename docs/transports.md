@@ -168,6 +168,26 @@ answers both calls with lnd's `DeriveSharedKey` and `SignMessage` signer
 RPCs. A `Courier` moves opaque bytes: one universe leaf per query, and the
 messages of a mailbox after a signed challenge.
 
+`courier.NewDialer`, in the `embedded/courier` package, connects to a tapd
+courier over gRPC, with a keepalive that ends the streams of a dead
+connection. A courier serves its universe and its mailbox to the public, so
+the client sends no macaroon. An `Endpoint` reaches a courier at another host
+and port than its address names, or with a TLS configuration of its own. The
+package is separate from the engine, so a host that reaches its couriers
+another way does not link it.
+
+```go
+client, err := embedded.NewClient(&embedded.Config{
+    // ...
+    Receive: &embedded.ReceiveConfig{
+        Store:          store,
+        Keys:           embedded.NewKeyRingReceiveKeys(keys),
+        Dial:           courier.NewDialer(nil),
+        DefaultCourier: courierURL,
+    },
+})
+```
+
 The engine reads a mailbox in two ways:
 
 - `ResumeReceives` holds the mailbox of every address open, and works on the
