@@ -17,6 +17,7 @@ import (
 	"github.com/lightninglabs/taproot-assets/asset"
 	"github.com/lightninglabs/taproot-assets/proof"
 	"github.com/lightninglabs/taproot-assets/taprpc"
+	"github.com/lightninglabs/taproot-assets/tapscript"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -1302,5 +1303,53 @@ func TestGroupKeyTrustHeldAsset(t *testing.T) {
 	require.NoError(t, client.engine.verifyGroupKey(ctx, held))
 	require.ErrorContains(
 		t, client.engine.verifyGroupKey(ctx, other), "is not trusted",
+	)
+}
+
+// TestGroupKeyTrustAddress verifies grouped assets for the group of an
+// address the wallet created, before and after a restart.
+func TestGroupKeyTrustAddress(t *testing.T) {
+	h := newAddressHarness(t, testCourier)
+	ctx := t.Context()
+
+	group := newTestKeyRing(3).privKey(1, 0).PubKey()
+	other := newTestKeyRing(3).privKey(1, 1).PubKey()
+
+	// The address is the only source of trust in the group.
+	require.ErrorContains(
+		t, h.client.engine.verifyGroupKey(ctx, group), "is not trusted",
+	)
+	_, err := h.wallet.NewReceiveAddress(
+		ctx, tapsdk.AssetRefFromGroupKey(sdkPubKey(t, group)),
+	)
+	require.NoError(t, err)
+	_, err = h.wallet.NewReceiveAddress(
+		ctx, tapsdk.AssetRefFromAssetID(tapsdk.AssetID{1}),
+	)
+	require.NoError(t, err)
+
+	requireTrust := func() {
+		t.Helper()
+
+		// The address may name the key with the other parity than
+		// the proofs of the group do.
+		engine := h.client.engine
+		flipped := tapscript.FlipParity(group)
+		require.NoError(t, engine.verifyGroupKey(ctx, group))
+		require.NoError(t, engine.verifyGroupKey(ctx, flipped))
+		require.ErrorContains(
+			t, engine.verifyGroupKey(ctx, other), "is not trusted",
+		)
+	}
+	requireTrust()
+
+	h.restart()
+	requireTrust()
+
+	// A wallet without addresses reads no address store.
+	h.addresses = nil
+	h.restart()
+	require.ErrorContains(
+		t, h.client.engine.verifyGroupKey(ctx, group), "is not trusted",
 	)
 }
