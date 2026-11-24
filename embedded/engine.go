@@ -29,6 +29,9 @@ type engine struct {
 	chain  Chain
 	log    Logger
 
+	// addrs is nil when the host enabled no addresses.
+	addrs AddressStore
+
 	// keyMu serializes key derivation with the store insert that makes
 	// the key known.
 	keyMu sync.Mutex
@@ -39,6 +42,10 @@ type engine struct {
 	// heldGroupsLoaded is set once the groups of the assets the wallet
 	// holds are in groupKeys.
 	heldGroupsLoaded bool
+
+	// addrGroupsLoaded is set once the groups of the stored addresses are
+	// in groupKeys.
+	addrGroupsLoaded bool
 
 	stagedMu sync.Mutex
 	staged   map[ProofLocator][]byte
@@ -79,6 +86,9 @@ func newEngine(cfg *Config) (*engine, error) {
 	}
 	for _, groupKey := range cfg.GroupKeys {
 		e.groupKeys[asset.SerializedKey(groupKey)] = struct{}{}
+	}
+	if cfg.Receive != nil {
+		e.addrs = cfg.Receive.Store
 	}
 
 	return e, nil
@@ -182,9 +192,75 @@ func (e *engine) trustHeldGroups(ctx context.Context) error {
 	return nil
 }
 
+// trustAddressGroup trusts the group an address of the wallet names. An
+// address holds the group key as its creator wrote it, so the key is trusted
+// with either parity.
+func (e *engine) trustAddressGroup(groupKey *btcec.PublicKey) {
+	e.groupMu.Lock()
+	defer e.groupMu.Unlock()
+
+	e.addAddressGroup(groupKey)
+}
+
+// addAddressGroup adds both parities of a group key to the trusted set. The
+// caller holds groupMu.
+func (e *engine) addAddressGroup(groupKey *btcec.PublicKey) {
+	serialized := asset.ToSerialized(groupKey)
+	for _, parity := range []byte{0x02, 0x03} {
+		serialized[0] = parity
+		e.groupKeys[serialized] = struct{}{}
+	}
+}
+
+// trustAddressGroups trusts the group of every stored address: creating an
+// address for a group is how the user accepts its assets. The store is read
+// once, since NewAddr trusts the group of each address it creates.
+func (e *engine) trustAddressGroups(ctx context.Context) error {
+	if e.addrs == nil {
+		return nil
+	}
+
+	e.groupMu.RLock()
+	loaded := e.addrGroupsLoaded
+	e.groupMu.RUnlock()
+
+	if loaded {
+		return nil
+	}
+
+	records, err := e.addrs.ListAddresses(ctx)
+	if err != nil {
+		return fmt.Errorf("list addresses: %w", err)
+	}
+
+	var groups []*btcec.PublicKey
+	for idx := range records {
+		addr, err := address.DecodeAddress(
+			records[idx].Encoded, &e.params,
+		)
+		if err != nil {
+			return fmt.Errorf("decode stored address: %w", err)
+		}
+		if addr.GroupKey != nil {
+			groups = append(groups, addr.GroupKey)
+		}
+	}
+
+	e.groupMu.Lock()
+	defer e.groupMu.Unlock()
+
+	for _, groupKey := range groups {
+		e.addAddressGroup(groupKey)
+	}
+	e.addrGroupsLoaded = true
+
+	return nil
+}
+
 // verifyGroupKey accepts the group keys the wallet trusts: the configured
-// and added ones, and the group of every asset the wallet holds, whose proof
-// verified when it was received.
+// and added ones, the group of every asset the wallet holds, whose proof
+// verified when it was received, and the group of every address the wallet
+// created.
 func (e *engine) verifyGroupKey(ctx context.Context,
 	groupKey *btcec.PublicKey) error {
 
@@ -194,6 +270,9 @@ func (e *engine) verifyGroupKey(ctx context.Context,
 	}
 
 	if err := e.trustHeldGroups(ctx); err != nil {
+		return err
+	}
+	if err := e.trustAddressGroups(ctx); err != nil {
 		return err
 	}
 	if e.isGroupTrusted(serialized) {

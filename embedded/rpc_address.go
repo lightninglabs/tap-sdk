@@ -131,6 +131,10 @@ func (s *addressServer) NewAddr(ctx context.Context,
 		return nil, fmt.Errorf("error storing address: %w", err)
 	}
 
+	if groupKey != nil {
+		s.engine.trustAddressGroup(groupKey)
+	}
+
 	return rpcAddr, nil
 }
 
