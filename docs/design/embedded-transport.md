@@ -25,9 +25,17 @@ inside the host process and takes four ports from the host:
 | `Signer` | sign asset witnesses and anchor inputs with those keys |
 | `Chain` | read block headers, broadcast, and follow confirmations |
 
-A host that creates Taproot Asset addresses also sets `ReceiveConfig`, whose
-`AddressStore` persists them. Without it the address calls return
-`codes.Unimplemented`.
+A host that receives at Taproot Asset addresses also sets `ReceiveConfig`,
+with three more ports:
+
+| Port | The engine uses it to |
+|------|------------------------|
+| `AddressStore` | persist addresses and the transfers to them |
+| `ReceiveKeys` | decrypt and authenticate with the script key of an address |
+| `CourierDialer` | reach the proof courier an address names |
+
+Without it the address calls return `codes.Unimplemented`, and the engine
+contacts no courier.
 
 `Signer` has the shape of lnd's `input.Signer` plus a context, so the engine
 never holds a private key: a host can sign with a local key ring through
@@ -61,7 +69,18 @@ the calls.
   confirmation final, and resumes after a restart from the store.
 - The store keeps a transfer as an opaque payload that the engine encodes, so
   a host schema needs four tables: keys, script keys, proofs and transfers.
-  Addresses take a fifth.
+  Addresses and the transfers to them take two more.
+- The engine creates version 2 addresses only. A sender announces a transfer
+  to such an address in the auth mailbox of a proof courier, so the engine
+  detects it on every platform without watching the chain. The `Courier` port
+  moves opaque bytes: the engine decrypts the messages with tapd's
+  `proof.DecryptSendFragment`, walks the proof chain with
+  `proof.FetchProofProvenance` and verifies the file itself.
+- A receive is recorded when it is detected and updated once its proofs
+  verify, so the engine resumes it after a restart from the store. Each
+  announcement of an output has a record of its own, since anyone who knows
+  an address can announce one. A received transfer is not followed through a
+  re-org yet.
 
 ## Non-Goals
 

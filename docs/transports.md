@@ -117,7 +117,7 @@ A `*lndKeys` then serves as both `KeyRing` and `Signer`.
 answers calls at once. The engine follows a transfer it publishes until the
 confirmation is final. `ResumeTransfers` does the same for the transfers an
 earlier run left unconfirmed, so a host calls it once its chain source is
-ready. `Close` stops following transfers.
+ready. `Close` stops following transfers and receives.
 
 It covers what a wallet needs to hold and move assets:
 
@@ -133,11 +133,12 @@ It covers what a wallet needs to hold and move assets:
 - create, decode and list V2 addresses, when the host sets `Config.Receive`.
   An address takes the next two asset keys of the wallet, names the raw
   script key and requests asset version 1. Its proof courier is the one the
-  request names, or `ReceiveConfig.DefaultCourier`. The engine does not
-  detect a transfer to an address.
+  request names, or `ReceiveConfig.DefaultCourier`;
+- receive the transfers sent to those addresses, and list them with
+  `AddrReceives`.
 
 Every other call returns `codes.Unimplemented`: minting, universe queries,
-address receive events, address sends, burns and event streams. The engine
+address sends, burns and event streams. The engine
 holds no Bitcoin, so `CommitVirtualPsbts` accepts caller-funded anchor
 transactions only, and `customanchor.QueryCapabilities` reports wallet funding
 as unsupported.
@@ -146,8 +147,63 @@ The engine has no universe, so `Wallet.GetBalance` and `Wallet.ListBalances`
 treat an asset as known when the wallet holds or has spent an output of it.
 
 A proof of a grouped asset verifies only if its group key is trusted. Trust
-comes from `Config.GroupKeys`, from `Client.TrustGroupKey`, and from the assets
-the wallet already holds.
+comes from `Config.GroupKeys`, from `Client.TrustGroupKey`, from the assets
+the wallet already holds, and from the addresses it created for a group key.
+
+### Receiving at an address
+
+A sender pays a V2 address into an output the wallet cannot predict, and
+announces the transfer in the auth mailbox of the address's proof courier.
+The engine reads that mailbox, so it detects a transfer without help from a
+Bitcoin wallet. `ReceiveConfig` takes three ports for it:
+
+| Port | The engine uses it to |
+|------|------------------------|
+| `AddressStore` | persist addresses and the transfers to them |
+| `ReceiveKeys` | decrypt a mailbox message and sign the mailbox challenge with the script key of an address |
+| `CourierDialer` | reach the courier of an address |
+
+`embedded.NewKeyRingReceiveKeys` uses local private keys. A host on lnd
+answers both calls with lnd's `DeriveSharedKey` and `SignMessage` signer
+RPCs. A `Courier` moves opaque bytes: one universe leaf per query, and the
+messages of a mailbox after a signed challenge.
+
+The engine reads a mailbox in two ways:
+
+- `ResumeReceives` holds the mailbox of every address open, and works on the
+  receives an earlier run left unfinished. A host calls it once the wallet is
+  unlocked. The courier delivers its stored messages first, which covers the
+  transfers sent while the host was not running.
+- `SyncReceives` runs one pass and disconnects: it reads the stored messages
+  and works once on every unfinished receive. It suits an app that returns to
+  the foreground.
+
+For each transfer the engine checks the block the sender names against the
+chain source, fetches the proofs from the courier's universe back to the
+issuance, and verifies the file. It then checks that the last proof creates
+the announced output under the keys of the address: the script key derived
+for the asset, the internal key of the address, and no tapscript sibling. The
+output must also be one the wallet can spend: of the asset version of the
+address, and without a time lock. A transfer that passes is stored as an owned
+asset output. One that does not is recorded as failed, and the wallet takes
+none of its proofs.
+
+Anyone who knows an address can announce a transfer to it, so the engine
+records each announcement on its own. A wrong announcement of an output fails
+or stays unfinished, and does not keep the sender's announcement from being
+confirmed. An announcement that names no asset beyond those the wallet
+received through other announcements of the same output is recorded as
+failed, so that one transfer is not listed as two confirmed receives.
+
+The engine leaves its messages on the courier, and a message it reads again
+maps to the receive it already recorded. It does not follow a received
+transfer through a re-org of its confirming block.
+
+A sender needs one confirmed transaction to announce a transfer whose proofs
+never reach the courier. The engine therefore fetches the proofs of a few
+receives at a time, and a client works on one receive twelve times at most on
+its own, with a delay that doubles from five seconds. `SyncReceives` tries
+such a receive again.
 
 `embedded.NewMemoryStore` is a store for tests. The package builds for js/wasm,
 and `make unit-wasm` runs its tests there.
