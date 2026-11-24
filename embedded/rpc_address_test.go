@@ -30,7 +30,12 @@ func newAddressHarness(t *testing.T, defaultCourier string) *testHarness {
 	t.Helper()
 
 	h := newTestHarness(t)
-	h.addresses = &ReceiveConfig{Store: h.store}
+	h.courier = newMemCourier()
+	h.addresses = &ReceiveConfig{
+		Store: h.store,
+		Keys:  NewKeyRingReceiveKeys(h.keys),
+		Dial:  h.courier.dial,
+	}
 	if defaultCourier != "" {
 		courier, err := url.Parse(defaultCourier)
 		require.NoError(t, err)
@@ -569,9 +574,25 @@ func TestReceiveConfigValidation(t *testing.T) {
 		receive: &ReceiveConfig{},
 		errText: "address store is required",
 	}, {
+		name: "no keys",
+		receive: &ReceiveConfig{
+			Store: NewMemoryStore(),
+			Dial:  newMemCourier().dial,
+		},
+		errText: "receive keys are required",
+	}, {
+		name: "no dialer",
+		receive: &ReceiveConfig{
+			Store: NewMemoryStore(),
+			Keys:  NewKeyRingReceiveKeys(newTestKeyRing(1)),
+		},
+		errText: "courier dialer is required",
+	}, {
 		name: "universe courier",
 		receive: &ReceiveConfig{
 			Store: NewMemoryStore(),
+			Keys:  NewKeyRingReceiveKeys(newTestKeyRing(1)),
+			Dial:  newMemCourier().dial,
 			DefaultCourier: &url.URL{
 				Scheme: "universerpc",
 				Host:   "courier.test:10029",
@@ -582,6 +603,8 @@ func TestReceiveConfigValidation(t *testing.T) {
 		name: "courier without port",
 		receive: &ReceiveConfig{
 			Store: NewMemoryStore(),
+			Keys:  NewKeyRingReceiveKeys(newTestKeyRing(1)),
+			Dial:  newMemCourier().dial,
 			DefaultCourier: &url.URL{
 				Scheme: "authmailbox+universerpc",
 				Host:   "courier.test",
@@ -592,6 +615,8 @@ func TestReceiveConfigValidation(t *testing.T) {
 		name: "courier without host",
 		receive: &ReceiveConfig{
 			Store: NewMemoryStore(),
+			Keys:  NewKeyRingReceiveKeys(newTestKeyRing(1)),
+			Dial:  newMemCourier().dial,
 			DefaultCourier: &url.URL{
 				Scheme: "authmailbox+universerpc",
 				Host:   ":10029",

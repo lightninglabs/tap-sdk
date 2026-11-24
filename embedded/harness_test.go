@@ -112,6 +112,9 @@ type testChain struct {
 	// finalAtRegistration makes a registration for a confirmed
 	// transaction hold its confirmation and Done from the start.
 	finalAtRegistration bool
+
+	// headersDownBelow fails BlockHeader below a height when set.
+	headersDownBelow uint32
 }
 
 // newTestChain returns a chain with a few empty blocks.
@@ -145,6 +148,9 @@ func (c *testChain) BlockHeader(_ context.Context,
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if height < c.headersDownBelow {
+		return nil, fmt.Errorf("chain source is down")
+	}
 	if int(height) >= len(c.blocks) {
 		return nil, fmt.Errorf("no block at height %d", height)
 	}
@@ -176,6 +182,14 @@ func (c *testChain) PublishTransaction(_ context.Context, tx *wire.MsgTx,
 	c.mempool = append(c.mempool, tx.Copy())
 
 	return nil
+}
+
+// failBelow fails the header lookups below a height. Zero ends the failure.
+func (c *testChain) failBelow(height uint32) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.headersDownBelow = height
 }
 
 // findTx returns the height and block of a confirmed transaction.
@@ -358,6 +372,12 @@ type testHarness struct {
 
 	// addresses enables addresses on the next restart.
 	addresses *ReceiveConfig
+
+	// courier is the proof courier of a wallet with addresses.
+	courier *memCourier
+
+	// sends counts the address sends of the wallet.
+	sends byte
 }
 
 // newTestHarness starts an embedded client with an empty store.
@@ -443,6 +463,17 @@ func (h *testHarness) mintTo(scriptKey *tapsdk.ScriptKey,
 
 	h.t.Helper()
 
+	return h.mint(scriptKey, internalKey, amount, tag, nil)
+}
+
+// mint is mintTo for an asset of the group that groupPriv signs for, when
+// one is given.
+func (h *testHarness) mint(scriptKey *tapsdk.ScriptKey,
+	internalKey *tapsdk.InternalKey, amount uint64, tag string,
+	groupPriv *btcec.PrivateKey) *mintedAsset {
+
+	h.t.Helper()
+
 	scriptPubKey, err := btcec.ParsePubKey(scriptKey.PubKey[:])
 	require.NoError(h.t, err)
 	anchorKey, err := btcec.ParsePubKey(internalKey.PubKey[:])
@@ -450,8 +481,24 @@ func (h *testHarness) mintTo(scriptKey *tapsdk.ScriptKey,
 
 	genesis := testGenesis(tag)
 	genesisPoint := genesis.FirstPrevOut
+
+	var groupKey *asset.GroupKey
+	if groupPriv != nil {
+		ungrouped, err := asset.New(
+			genesis, amount, 0, 0,
+			asset.NewScriptKey(scriptPubKey), nil,
+		)
+		require.NoError(h.t, err)
+		groupKey, _ = asset.RandGroupKeyWithSigner(
+			h.t, groupPriv, genesis, ungrouped,
+		)
+
+		// The issuance proof verifies as it is created.
+		h.client.TrustGroupKey(sdkPubKey(h.t, &groupKey.GroupPubKey))
+	}
 	newAsset, err := asset.New(
-		genesis, amount, 0, 0, asset.NewScriptKey(scriptPubKey), nil,
+		genesis, amount, 0, 0, asset.NewScriptKey(scriptPubKey),
+		groupKey,
 	)
 	require.NoError(h.t, err)
 
@@ -472,6 +519,8 @@ func (h *testHarness) mintTo(scriptKey *tapsdk.ScriptKey,
 
 	block, height := h.chain.mine(h.t, genesisTx)
 
+	vCtx := h.client.engine.verifierCtx(h.t.Context())
+	vCtx.GroupAnchorVerifier = proof.MockGroupAnchorVerifier
 	proofs, err := proof.NewMintingBlobs(&proof.MintParams{
 		BaseProofParams: proof.BaseProofParams{
 			Block:            block,
@@ -483,7 +532,7 @@ func (h *testHarness) mintTo(scriptKey *tapsdk.ScriptKey,
 			TaprootAssetRoot: tapCommitment,
 		},
 		GenesisPoint: genesisPoint,
-	}, h.client.engine.verifierCtx(h.t.Context()))
+	}, vCtx)
 	require.NoError(h.t, err)
 
 	genesisProof := proofs[asset.ToSerialized(newAsset.ScriptKey.PubKey)]
@@ -495,9 +544,15 @@ func (h *testHarness) mintTo(scriptKey *tapsdk.ScriptKey,
 	require.NoError(h.t, file.Encode(&encoded))
 
 	assetID := newAsset.ID()
+	ref := tapsdk.AssetRefFromAssetID(tapsdk.AssetID(assetID))
+	if groupKey != nil {
+		ref = tapsdk.AssetRefFromGroupKey(
+			sdkPubKey(h.t, &groupKey.GroupPubKey),
+		)
+	}
 
 	return &mintedAsset{
-		ref:       tapsdk.AssetRefFromAssetID(tapsdk.AssetID(assetID)),
+		ref:       ref,
 		assetID:   assetID,
 		proofFile: encoded.Bytes(),
 		outpoint: wire.OutPoint{
@@ -515,13 +570,23 @@ const receivedUnits = 1_000
 func (h *testHarness) receive(tag string) *mintedAsset {
 	h.t.Helper()
 
+	return h.receiveOf(tag, nil)
+}
+
+// receiveOf is receive for an asset of the group that groupPriv signs for,
+// when one is given. The wallet trusts the group.
+func (h *testHarness) receiveOf(tag string,
+	groupPriv *btcec.PrivateKey) *mintedAsset {
+
+	h.t.Helper()
+
 	ctx := h.t.Context()
 	scriptKey, err := h.client.DeriveScriptKey(ctx)
 	require.NoError(h.t, err)
 	internalKey, err := h.client.DeriveInternalKey(ctx)
 	require.NoError(h.t, err)
 
-	minted := h.mintTo(scriptKey, internalKey, receivedUnits, tag)
+	minted := h.mint(scriptKey, internalKey, receivedUnits, tag, groupPriv)
 	registered, err := h.wallet.ImportProofFile(
 		ctx, &tapsdk.ProofFile{RawProofFile: minted.proofFile},
 	)

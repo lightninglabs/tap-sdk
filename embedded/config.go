@@ -180,9 +180,10 @@ type Courier interface {
 // CourierDialer connects to the courier a proof courier address names.
 type CourierDialer func(ctx context.Context, addr *url.URL) (Courier, error)
 
-// ReceiveConfig enables Taproot Asset addresses.
+// ReceiveConfig enables Taproot Asset addresses and the receipt of the
+// transfers sent to them.
 type ReceiveConfig struct {
-	// Store persists the wallet's addresses.
+	// Store persists the wallet's addresses and the transfers to them.
 	Store AddressStore
 
 	// Keys decrypts and authenticates with the script keys of the
@@ -200,8 +201,15 @@ type ReceiveConfig struct {
 
 // validate checks that the receive configuration is complete.
 func (c *ReceiveConfig) validate() error {
-	if c.Store == nil {
+	switch {
+	case c.Store == nil:
 		return fmt.Errorf("address store is required")
+
+	case c.Keys == nil:
+		return fmt.Errorf("receive keys are required")
+
+	case c.Dial == nil:
+		return fmt.Errorf("courier dialer is required")
 	}
 	if c.DefaultCourier == nil {
 		return nil
@@ -243,7 +251,7 @@ type Config struct {
 	Logger Logger
 
 	// Receive enables Taproot Asset addresses. Nil leaves the address
-	// calls unimplemented.
+	// calls unimplemented, and the client contacts no courier.
 	Receive *ReceiveConfig
 }
 
