@@ -15,6 +15,7 @@ import (
 	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/customanchor"
 	"github.com/lightninglabs/taproot-assets/asset"
+	"github.com/lightninglabs/taproot-assets/fn"
 	"github.com/lightninglabs/taproot-assets/proof"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightninglabs/taproot-assets/tapscript"
@@ -467,6 +468,56 @@ func TestReceive(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.EqualValues(t, 1_000, h.ownedUnits())
+}
+
+// TestListUniquePedersenKeys lists an asset under a script key that a sender
+// derived from a wallet key for the asset, as for a BIP-86 key.
+func TestListUniquePedersenKeys(t *testing.T) {
+	h := newTestHarness(t)
+	ctx := t.Context()
+
+	rawKey, err := h.client.DeriveInternalKey(ctx)
+	require.NoError(t, err)
+	rawPubKey, err := btcec.ParsePubKey(rawKey.PubKey[:])
+	require.NoError(t, err)
+	internalKey, err := h.client.DeriveInternalKey(ctx)
+	require.NoError(t, err)
+
+	scriptKey, err := asset.DeriveUniqueScriptKey(
+		*rawPubKey, testGenesis("pedersen").ID(),
+		asset.ScriptKeyDerivationUniquePedersen,
+	)
+	require.NoError(t, err)
+	scriptKey.RawKey, err = h.client.engine.fetchKeyDescriptor(
+		ctx, rawPubKey,
+	)
+	require.NoError(t, err)
+	require.NoError(t, h.client.engine.insertScriptKey(ctx, scriptKey))
+
+	minted := h.mintTo(&tapsdk.ScriptKey{
+		PubKey: sdkPubKey(t, scriptKey.PubKey),
+	}, internalKey, 500, "pedersen")
+	_, err = h.wallet.ImportProofFile(
+		ctx, &tapsdk.ProofFile{RawProofFile: minted.proofFile},
+	)
+	require.NoError(t, err)
+
+	require.EqualValues(t, 500, h.ownedUnits())
+	balance, err := h.wallet.GetBalance(ctx, minted.ref)
+	require.NoError(t, err)
+	require.EqualValues(t, 500, balance)
+
+	// A query for another type leaves the asset out.
+	listed, err := h.client.engine.ownedAssets(
+		ctx, false, fn.Some(asset.ScriptKeyScriptPathExternal),
+	)
+	require.NoError(t, err)
+	require.Empty(t, listed)
+	listed, err = h.client.engine.ownedAssets(
+		ctx, false, fn.Some(asset.ScriptKeyUniquePedersen),
+	)
+	require.NoError(t, err)
+	require.Len(t, listed, 1)
 }
 
 // TestReceiveUnknownScriptKey refuses a proof whose asset the wallet could

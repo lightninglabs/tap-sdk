@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
@@ -626,6 +627,10 @@ func (e *engine) ownedAssets(ctx context.Context, includeSpent bool,
 		return nil, fmt.Errorf("unable to read assets: %w", err)
 	}
 
+	// As in tapd, a query for BIP-86 keys matches the keys a sender
+	// derives from an address, which are spent the same way.
+	wantedTypes := asset.ScriptKeyTypeForDatabaseQuery(false, scriptKeyType)
+
 	held := make([]*holding, 0, len(records))
 	for idx := range records {
 		record := &records[idx]
@@ -640,12 +645,7 @@ func (e *engine) ownedAssets(ctx context.Context, includeSpent bool,
 		if h.chainAsset.ScriptKey.TweakedScriptKey != nil {
 			keyType = h.chainAsset.ScriptKey.Type
 		}
-		excluded := fn.MapOptionZ(
-			scriptKeyType, func(t asset.ScriptKeyType) bool {
-				return keyType != t
-			},
-		)
-		if excluded {
+		if !slices.Contains(wantedTypes, keyType) {
 			continue
 		}
 
