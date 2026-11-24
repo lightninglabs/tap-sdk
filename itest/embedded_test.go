@@ -597,13 +597,26 @@ func requireBobImportsEmbeddedOutput(t *testing.T, ctx context.Context,
 
 	t.Helper()
 
+	requireTapdImportsEmbeddedOutput(
+		t, ctx, h.BobWallet, h.BobClient, node, output, amount,
+	)
+}
+
+// requireTapdImportsEmbeddedOutput exports the proof file of a transfer
+// output from the engine and imports it into a tapd, which verifies it.
+func requireTapdImportsEmbeddedOutput(t *testing.T, ctx context.Context,
+	tapdWallet *tapsdk.Wallet, tapd tapsdk.Client, node *EmbeddedNode,
+	output customanchor.AssetOutputSummary, amount uint64) {
+
+	t.Helper()
+
 	proofFile, err := node.Wallet.ExportProofFile(
 		ctx, tapsdk.AssetRefFromAssetID(output.IssuanceID),
 		output.ScriptKey, &output.AnchorOutpoint,
 	)
 	require.NoError(t, err)
 
-	registered, err := h.BobWallet.ImportProofFile(ctx, proofFile)
+	registered, err := tapdWallet.ImportProofFile(ctx, proofFile)
 	require.NoError(t, err)
 	require.Equal(t, output.IssuanceID, registered.IssuanceID)
 	require.Equal(t, output.ScriptKey, registered.ScriptKey)
@@ -611,6 +624,6 @@ func requireBobImportsEmbeddedOutput(t *testing.T, ctx context.Context,
 	require.Equal(t, amount, registered.Amount)
 
 	requireSameProofAnswers(
-		t, ctx, h.BobClient, node.Client, proofFile.RawProofFile,
+		t, ctx, tapd, node.Client, proofFile.RawProofFile,
 	)
 }

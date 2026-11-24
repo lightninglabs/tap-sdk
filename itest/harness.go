@@ -93,6 +93,41 @@ type tapdNodeConfig struct {
 	container       string
 }
 
+var (
+	// aliceTapd is how a test reaches Alice's tapd.
+	aliceTapd = tapdNodeConfig{
+		grpcHostEnv:     "TAPD_ALICE_HOST",
+		defaultGRPCHost: defaultAliceHost,
+		restHostEnv:     "TAPD_ALICE_REST",
+		defaultRESTHost: defaultAliceRestHost,
+		tlsEnv:          "TAPD_ALICE_TLS",
+		macaroonEnv:     "TAPD_ALICE_MAC",
+		container:       "tap-sdk-tapd-alice",
+	}
+
+	// bobTapd is how a test reaches Bob's tapd.
+	bobTapd = tapdNodeConfig{
+		grpcHostEnv:     "TAPD_BOB_HOST",
+		defaultGRPCHost: defaultBobHost,
+		restHostEnv:     "TAPD_BOB_REST",
+		defaultRESTHost: defaultBobRestHost,
+		tlsEnv:          "TAPD_BOB_TLS",
+		macaroonEnv:     "TAPD_BOB_MAC",
+		container:       "tap-sdk-tapd-bob",
+	}
+)
+
+// tlsCertPath returns the local path of the node's TLS certificate.
+func (c tapdNodeConfig) tlsCertPath(t testing.TB) string {
+	t.Helper()
+
+	if tlsPath := os.Getenv(c.tlsEnv); tlsPath != "" {
+		return tlsPath
+	}
+
+	return extractDockerFile(t, c.container, "/root/.tapd/tls.cert")
+}
+
 // TestHarness holds the SDK clients and helper state shared by the regtest
 // integration tests.
 type TestHarness struct {
@@ -120,28 +155,8 @@ func NewTestHarnessWithTransport(t testing.TB,
 
 	t.Helper()
 
-	aliceSpec := tapdNodeConfig{
-		grpcHostEnv:     "TAPD_ALICE_HOST",
-		defaultGRPCHost: defaultAliceHost,
-		restHostEnv:     "TAPD_ALICE_REST",
-		defaultRESTHost: defaultAliceRestHost,
-		tlsEnv:          "TAPD_ALICE_TLS",
-		macaroonEnv:     "TAPD_ALICE_MAC",
-		container:       "tap-sdk-tapd-alice",
-	}
-
-	bobSpec := tapdNodeConfig{
-		grpcHostEnv:     "TAPD_BOB_HOST",
-		defaultGRPCHost: defaultBobHost,
-		restHostEnv:     "TAPD_BOB_REST",
-		defaultRESTHost: defaultBobRestHost,
-		tlsEnv:          "TAPD_BOB_TLS",
-		macaroonEnv:     "TAPD_BOB_MAC",
-		container:       "tap-sdk-tapd-bob",
-	}
-
-	aliceClient := newTapdClient(t, transport, aliceSpec)
-	bobClient := newTapdClient(t, transport, bobSpec)
+	aliceClient := newTapdClient(t, transport, aliceTapd)
+	bobClient := newTapdClient(t, transport, bobTapd)
 
 	bobWalletOpt := tapsdk.WithAuthMailboxCourier(
 		defaultBobProofCourierHost,
@@ -178,10 +193,7 @@ func newTapdClient(t testing.TB, transport Transport,
 
 	t.Helper()
 
-	tlsPath := os.Getenv(spec.tlsEnv)
-	if tlsPath == "" {
-		tlsPath = extractDockerFile(t, spec.container, "/root/.tapd/tls.cert")
-	}
+	tlsPath := spec.tlsCertPath(t)
 
 	macaroonPath := os.Getenv(spec.macaroonEnv)
 	if macaroonPath == "" {
