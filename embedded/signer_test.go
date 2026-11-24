@@ -3,9 +3,11 @@ package embedded
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/btcsuite/btcd/psbt/v2"
@@ -13,6 +15,7 @@ import (
 	"github.com/btcsuite/btcd/wire/v2"
 	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/asset"
+	"github.com/lightninglabs/taproot-assets/proof"
 	"github.com/lightninglabs/taproot-assets/tappsbt"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -264,4 +267,70 @@ func TestConfigRequiresSigner(t *testing.T) {
 		Chain:   newTestChain(t),
 	})
 	require.ErrorContains(t, err, "signer is required")
+}
+
+// TestKeyRingReceiveKeys derives the shared key tapd encrypts a send fragment
+// to, and signs a mailbox challenge as lnd verifies it. A mailbox knows the
+// receiver by its x-only key, so both parities of the key are covered.
+func TestKeyRingReceiveKeys(t *testing.T) {
+	keyRing := newTestKeyRing(1)
+	keys := NewKeyRingReceiveKeys(keyRing)
+	ctx := t.Context()
+
+	parities := make(map[byte]struct{})
+	for index := uint32(0); len(parities) < 2; index++ {
+		locator := keychain.KeyLocator{
+			Family: asset.TaprootAssetsKeyFamily,
+			Index:  index,
+		}
+		privKey := keyRing.privKey(locator.Family, locator.Index)
+		pubKey := privKey.PubKey()
+		parities[pubKey.SerializeCompressed()[0]] = struct{}{}
+
+		fragment := &proof.SendFragment{
+			Version:     proof.SendFragmentV1,
+			BlockHeight: index + 1,
+			Outputs: map[asset.ID]proof.SendOutput{
+				{1}: {Amount: 5},
+			},
+		}
+		payload, err := proof.EncryptSendFragment(fragment, pubKey)
+		require.NoError(t, err)
+
+		decrypted, err := proof.DecryptSendFragment(
+			ctx, payload, func(ctx context.Context,
+				sender *btcec.PublicKey) ([32]byte, error) {
+
+				return keys.ECDH(ctx, locator, sender)
+			},
+		)
+		require.NoError(t, err)
+		require.Equal(t, fragment.BlockHeight, decrypted.BlockHeight)
+		require.Equal(t, fragment.Outputs, decrypted.Outputs)
+
+		// lnd's VerifyMessage checks a Schnorr signature against the
+		// SHA-256 of the message and the x-only key.
+		challenge := sha256.Sum256([]byte{byte(index)})
+		sig, err := keys.SignMessageSchnorr(ctx, locator, challenge[:])
+		require.NoError(t, err)
+
+		xOnlyKey, err := schnorr.ParsePubKey(
+			schnorr.SerializePubKey(pubKey),
+		)
+		require.NoError(t, err)
+		require.True(
+			t, sig.Verify(chainhash.HashB(challenge[:]), xOnlyKey),
+		)
+	}
+
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	_, err := keys.ECDH(
+		canceled, keychain.KeyLocator{}, keyRing.privKey(1, 0).PubKey(),
+	)
+	require.ErrorIs(t, err, context.Canceled)
+	_, err = keys.SignMessageSchnorr(
+		canceled, keychain.KeyLocator{}, nil,
+	)
+	require.ErrorIs(t, err, context.Canceled)
 }

@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/btcsuite/btcd/wire/v2"
 	tapsdk "github.com/lightninglabs/tap-sdk"
@@ -102,10 +104,93 @@ type Logger interface {
 	Errorf(format string, args ...any)
 }
 
+// ReceiveKeys decrypts and authenticates with keys the KeyRing derived, so
+// the keys can stay in a remote signer such as lnd. NewKeyRingReceiveKeys
+// uses local private keys.
+type ReceiveKeys interface {
+	// ECDH returns the SHA-256 of the compressed shared point of the key
+	// at locator and pubKey, as lnd's DeriveSharedKey does.
+	ECDH(ctx context.Context, locator keychain.KeyLocator,
+		pubKey *btcec.PublicKey) ([32]byte, error)
+
+	// SignMessageSchnorr returns the BIP-340 signature of the key at
+	// locator over the SHA-256 of msg, as lnd's SignMessage does for a
+	// Schnorr signature without a tag or a Taproot tweak.
+	SignMessageSchnorr(ctx context.Context, locator keychain.KeyLocator,
+		msg []byte) (*schnorr.Signature, error)
+}
+
+// ProofKey names one leaf of a courier's universe.
+type ProofKey struct {
+	// AssetID selects the universe of one asset. It is not read when
+	// GroupKey is set.
+	AssetID [32]byte
+
+	// GroupKey selects the universe of an asset group. Nil selects the
+	// universe of AssetID.
+	GroupKey *[33]byte
+
+	// ScriptKey is the compressed script key of the asset output.
+	ScriptKey [33]byte
+
+	// Outpoint is the anchor output holding the asset.
+	Outpoint wire.OutPoint
+}
+
+// MailboxMessage is one message of a courier's mailbox.
+type MailboxMessage struct {
+	// ID is the courier's ID of the message.
+	ID uint64
+
+	// Payload is the encrypted message.
+	Payload []byte
+}
+
+// MessageStream delivers the messages of one mailbox.
+type MessageStream interface {
+	// Recv blocks until the courier delivers messages. It fails once the
+	// stream ends, which the context of Courier.ReceiveMessages controls.
+	Recv() ([]MailboxMessage, error)
+}
+
+// ChallengeSigner signs the challenge of a mailbox with the key of the
+// receiver.
+type ChallengeSigner func(ctx context.Context,
+	challenge []byte) (*schnorr.Signature, error)
+
+// Courier is a proof courier that runs a universe and an auth mailbox. It
+// moves opaque bytes: the engine decrypts the messages and verifies the
+// proofs.
+type Courier interface {
+	// QueryProof returns the encoded proof at a universe leaf, or
+	// ErrNotFound when the universe does not hold the leaf.
+	QueryProof(ctx context.Context, key ProofKey) ([]byte, error)
+
+	// ReceiveMessages authenticates as the receiver and returns the
+	// stream of its mailbox: the stored messages whose transaction
+	// confirmed at startBlock or later, then the ones that arrive. sign
+	// answers the courier's challenge. The stream ends with ctx.
+	ReceiveMessages(ctx context.Context, receiver [33]byte,
+		startBlock uint32, sign ChallengeSigner) (MessageStream, error)
+
+	// Close releases the connection to the courier.
+	Close() error
+}
+
+// CourierDialer connects to the courier a proof courier address names.
+type CourierDialer func(ctx context.Context, addr *url.URL) (Courier, error)
+
 // ReceiveConfig enables Taproot Asset addresses.
 type ReceiveConfig struct {
 	// Store persists the wallet's addresses.
 	Store AddressStore
+
+	// Keys decrypts and authenticates with the script keys of the
+	// wallet's addresses.
+	Keys ReceiveKeys
+
+	// Dial connects to the proof courier of an address.
+	Dial CourierDialer
 
 	// DefaultCourier is the proof courier of an address whose request
 	// names none, as an authmailbox+universerpc address. Nil makes every
