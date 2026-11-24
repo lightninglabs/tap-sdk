@@ -9,6 +9,7 @@
 // source and a store.
 //
 // The engine covers the calls a wallet needs to hold, receive and move assets
-// with caller-funded anchor transactions. Minting, universe queries, address
-// sends and event streams return codes.Unimplemented.
+// with caller-funded anchor transactions. With a ReceiveConfig it also
+// creates, decodes and lists version 2 addresses. Minting, universe queries,
+// address sends and event streams return codes.Unimplemented.
 package embedded

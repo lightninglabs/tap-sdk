@@ -25,6 +25,10 @@ inside the host process and takes four ports from the host:
 | `Signer` | sign asset witnesses and anchor inputs with those keys |
 | `Chain` | read block headers, broadcast, and follow confirmations |
 
+A host that creates Taproot Asset addresses also sets `ReceiveConfig`, whose
+`AddressStore` persists them. Without it the address calls return
+`codes.Unimplemented`.
+
 `Signer` has the shape of lnd's `input.Signer` plus a context, so the engine
 never holds a private key: a host can sign with a local key ring through
 `NewKeyRingSigner`, or with a remote lnd through its signer RPC. Both
@@ -57,6 +61,7 @@ the calls.
   confirmation final, and resumes after a restart from the store.
 - The store keeps a transfer as an opaque payload that the engine encodes, so
   a host schema needs four tables: keys, script keys, proofs and transfers.
+  Addresses take a fifth.
 
 ## Non-Goals
 
