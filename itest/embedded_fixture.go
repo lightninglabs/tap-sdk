@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -46,6 +47,13 @@ func (h *TestHarness) NewEmbeddedNode(t testing.TB,
 	keys, err := newHDKeyRing(seed, &chaincfg.RegressionNetParams)
 	require.NoError(t, err)
 
+	// The engine's addresses name the courier of Bob's V2 addresses.
+	courier, err := url.Parse(envOr(
+		"TAPD_BOB_PROOF_COURIER_ADDR",
+		"authmailbox+universerpc://"+defaultBobProofCourierHost,
+	))
+	require.NoError(t, err)
+
 	var (
 		chain  = newBitcoindChain(h.bitcoindHost)
 		store  = embedded.NewMemoryStore()
@@ -59,6 +67,10 @@ func (h *TestHarness) NewEmbeddedNode(t testing.TB,
 		Chain:     chain,
 		GroupKeys: groupKeys,
 		Logger:    logger,
+		Receive: &embedded.ReceiveConfig{
+			Store:          store,
+			DefaultCourier: courier,
+		},
 	})
 	require.NoError(t, err)
 	require.NoError(t, client.ResumeTransfers(context.Background()))

@@ -71,6 +71,47 @@ func TestEmbeddedTransfer(t *testing.T) {
 	})
 }
 
+// TestEmbeddedAddress creates addresses on an embedded engine for assets of
+// Alice's tapd, which decodes them to what the engine reported.
+func TestEmbeddedAddress(t *testing.T) {
+	h, ctx := newFundedHarness(t)
+	node := h.NewEmbeddedNode(t)
+
+	ungrouped, err := h.MintAssetAndConfirm(t, ctx, &tapsdk.MintAsset{
+		AssetType:     tapsdk.AssetTypeFungible,
+		Name:          uniqueEventLabel("embedded-addr-ungrouped"),
+		InitialSupply: embeddedITestSupply,
+	})
+	require.NoError(t, err)
+	require.True(t, ungrouped.Ref.IsAssetIDRef())
+
+	grouped, err := h.CreateFungibleAndConfirm(
+		t, ctx, uniqueEventLabel("embedded-addr-grouped"),
+		embeddedITestSupply,
+	)
+	require.NoError(t, err)
+	require.True(t, grouped.Ref.IsGroupRef())
+
+	var created []*tapsdk.Address
+	for _, ref := range []tapsdk.AssetRef{ungrouped.Ref, grouped.Ref} {
+		addr, err := node.Wallet.NewReceiveAddress(ctx, ref)
+		require.NoError(t, err)
+		require.Equal(t, ref, addr.AssetRef)
+		require.Equal(t, tapsdk.AddressVersionV2, addr.AddressVersion)
+		require.Equal(t, tapsdk.AssetVersionV1, addr.AssetVersion)
+
+		decoded, err := h.AliceClient.DecodeAddr(ctx, addr.Encoded)
+		require.NoError(t, err)
+		require.Equal(t, addr, decoded)
+
+		created = append(created, addr)
+	}
+
+	listed, err := node.Client.QueryAddrs(ctx, nil)
+	require.NoError(t, err)
+	require.Equal(t, created, listed)
+}
+
 func testEmbeddedTransfer(t *testing.T, ctx context.Context, h *TestHarness,
 	node *EmbeddedNode, minted *MintResult) {
 
