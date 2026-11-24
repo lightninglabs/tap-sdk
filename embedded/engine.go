@@ -29,8 +29,9 @@ type engine struct {
 	chain  Chain
 	log    Logger
 
-	// addrs is nil when the host enabled no addresses.
-	addrs AddressStore
+	// addrs and receive are nil when the host enabled no addresses.
+	addrs   AddressStore
+	receive *receiver
 
 	// keyMu serializes key derivation with the store insert that makes
 	// the key known.
@@ -89,6 +90,7 @@ func newEngine(cfg *Config) (*engine, error) {
 	}
 	if cfg.Receive != nil {
 		e.addrs = cfg.Receive.Store
+		e.receive = newReceiver(e, cfg.Receive)
 	}
 
 	return e, nil
@@ -290,8 +292,8 @@ func (e *engine) verifyHeader(ctx context.Context, header wire.BlockHeader,
 
 	known, err := e.chain.BlockHeader(ctx, height)
 	if err != nil {
-		return fmt.Errorf("fetch block header at height %d: %w", height,
-			err)
+		return chainFailure{fmt.Errorf("fetch block header at height "+
+			"%d: %w", height, err)}
 	}
 	if known == nil || known.BlockHash() != header.BlockHash() {
 		return fmt.Errorf("block %v is not on the best chain at "+
@@ -299,6 +301,25 @@ func (e *engine) verifyHeader(ctx context.Context, header wire.BlockHeader,
 	}
 
 	return nil
+}
+
+// chainFailure is an error of the chain source, as opposed to an answer from
+// it. It leaves a proof unjudged.
+type chainFailure struct {
+	error
+}
+
+// Unwrap returns the error of the chain source.
+func (f chainFailure) Unwrap() error {
+	return f.error
+}
+
+// isChainFailure reports whether a verification stopped at an error of the
+// chain source.
+func isChainFailure(err error) bool {
+	var failure chainFailure
+
+	return errors.As(err, &failure)
 }
 
 // verifierCtx returns the context proofs are verified in.

@@ -72,10 +72,12 @@ func (h *testHarness) commitTransfer(source *mintedAsset, total,
 }
 
 // commitTransferTo is commitTransfer to a recipient with the given asset
-// script, in an anchor output under the given internal key.
+// script, in an anchor output under the given internal key that commits to
+// the given tapscript leaves.
 func (h *testHarness) commitTransferTo(source *mintedAsset, total,
 	amount uint64, seed byte, recipientScript customanchor.AssetScriptPlan,
-	recipientAnchor *btcec.PublicKey) *testTransfer {
+	recipientAnchor *btcec.PublicKey,
+	anchorLeaves ...tapsdk.TapLeaf) *testTransfer {
 
 	h.t.Helper()
 	ctx := h.t.Context()
@@ -109,6 +111,9 @@ func (h *testHarness) commitTransferTo(source *mintedAsset, total,
 			Anchor: customanchor.OutputPlan{
 				InternalKey: tapsdk.InternalKey{
 					PubKey: sdkPubKey(h.t, recipientAnchor),
+				},
+				Tapscript: customanchor.TapscriptPlan{
+					TapLeaves: anchorLeaves,
 				},
 			},
 		}},

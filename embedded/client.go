@@ -2,6 +2,7 @@ package embedded
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
@@ -11,6 +12,10 @@ import (
 	wrpc "github.com/lightninglabs/taproot-assets/taprpc/assetwalletrpc"
 	unirpc "github.com/lightninglabs/taproot-assets/taprpc/universerpc"
 )
+
+// errNoReceive is returned by the receive calls of a client whose host set no
+// ReceiveConfig.
+var errNoReceive = errors.New("embedded: receive is not configured")
 
 // Client is a tapsdk.Client answered by the embedded engine.
 type Client struct {
@@ -29,7 +34,8 @@ var (
 
 // NewClient creates an embedded client, which answers calls at once. Call
 // ResumeTransfers to follow the transfers an earlier run left unconfirmed,
-// and Close to stop following transfers.
+// ResumeReceives to receive at the wallet's addresses, and Close to stop
+// both.
 func NewClient(cfg *Config) (*Client, error) {
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("embedded: %w", err)
@@ -74,8 +80,34 @@ func (c *Client) ResumeTransfers(ctx context.Context) error {
 	return c.engine.resumeTransfers(ctx)
 }
 
-// Close stops following transfers. ResumeTransfers of a later client picks
-// the recorded ones up.
+// ResumeReceives holds the mailbox of every address open, so a transfer to an
+// address is received when its sender announces it, and works on the receives
+// an earlier run left unfinished. A courier delivers its stored messages
+// first, which covers the transfers sent while no client ran. The mailbox of
+// an address created later is held open without this call.
+func (c *Client) ResumeReceives(ctx context.Context) error {
+	if c.engine.receive == nil {
+		return errNoReceive
+	}
+
+	return c.engine.receive.resume(ctx)
+}
+
+// SyncReceives reads the stored messages of every mailbox and works once on
+// every unfinished receive, then disconnects unless ResumeReceives holds the
+// mailboxes open. It suits a host that cannot keep a connection, such as an
+// app that returns to the foreground. A transfer whose block or proofs are
+// not available yet is left to a later call without an error.
+func (c *Client) SyncReceives(ctx context.Context) error {
+	if c.engine.receive == nil {
+		return errNoReceive
+	}
+
+	return c.engine.receive.sync(ctx)
+}
+
+// Close stops following transfers and receives. ResumeTransfers and
+// ResumeReceives of a later client pick the recorded ones up.
 func (c *Client) Close() error {
 	c.engine.stopTracking()
 

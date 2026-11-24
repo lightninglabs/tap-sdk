@@ -64,7 +64,8 @@ func (e *engine) track(txid chainhash.Hash, rebroadcast bool) {
 	})
 }
 
-// stopTracking cancels every tracker and waits for them to return.
+// stopTracking cancels every tracker and the receive flow, and waits for
+// them to return.
 func (e *engine) stopTracking() {
 	e.stopOnce.Do(func() {
 		e.trackMu.Lock()
@@ -74,7 +75,15 @@ func (e *engine) stopTracking() {
 		}
 		e.trackMu.Unlock()
 
+		if e.receive != nil {
+			e.receive.stop()
+		}
+
 		e.wg.Wait()
+
+		if e.receive != nil {
+			e.receive.closeCouriers()
+		}
 	})
 }
 

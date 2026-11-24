@@ -5,6 +5,7 @@ package itest
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -68,7 +69,15 @@ func (h *TestHarness) NewEmbeddedNode(t testing.TB,
 		GroupKeys: groupKeys,
 		Logger:    logger,
 		Receive: &embedded.ReceiveConfig{
-			Store:          store,
+			Store: store,
+			Keys:  embedded.NewKeyRingReceiveKeys(keys),
+
+			// The tests create and decode addresses, and pay none.
+			Dial: func(context.Context,
+				*url.URL) (embedded.Courier, error) {
+
+				return nil, errors.New("no courier client")
+			},
 			DefaultCourier: courier,
 		},
 	})

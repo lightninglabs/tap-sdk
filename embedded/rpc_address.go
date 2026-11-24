@@ -120,20 +120,21 @@ func (s *addressServer) NewAddr(ctx context.Context,
 		return nil, err
 	}
 
-	err = s.addrs.InsertAddress(ctx, AddressRecord{
+	record := AddressRecord{
 		ScriptKey:      asset.ToSerialized(scriptKey.PubKey),
 		Encoded:        rpcAddr.Encoded,
 		InternalKey:    asset.ToSerialized(internalKey.PubKey),
 		CreationHeight: height,
 		CreatedAt:      time.Now(),
-	})
-	if err != nil {
+	}
+	if err := s.addrs.InsertAddress(ctx, record); err != nil {
 		return nil, fmt.Errorf("error storing address: %w", err)
 	}
 
 	if groupKey != nil {
 		s.engine.trustAddressGroup(groupKey)
 	}
+	s.engine.receive.subscribe(record)
 
 	return rpcAddr, nil
 }
