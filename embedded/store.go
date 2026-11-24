@@ -17,6 +17,10 @@ var (
 	// ErrTransferExists is returned by Store.InsertTransfer when a
 	// transfer with the same anchor transaction is already recorded.
 	ErrTransferExists = errors.New("transfer already exists")
+
+	// ErrAddressExists is returned by AddressStore.InsertAddress when an
+	// address with the same script key is already recorded.
+	ErrAddressExists = errors.New("address already exists")
 )
 
 // KeyRecord is a wallet key and its derivation path.
@@ -171,4 +175,37 @@ type Store interface {
 	// anchor transaction ID matches every transfer.
 	ListTransfers(ctx context.Context,
 		anchorTxid *chainhash.Hash) ([]Transfer, error)
+}
+
+// AddressRecord is a Taproot Asset address the wallet created.
+type AddressRecord struct {
+	// ScriptKey is the compressed raw script key of the address. A sender
+	// encrypts to it and derives the script key of each asset output from
+	// it.
+	ScriptKey [33]byte
+
+	// Encoded is the bech32m encoding of the address.
+	Encoded string
+
+	// InternalKey is the compressed internal key of the anchor outputs
+	// that pay the address.
+	InternalKey [33]byte
+
+	// CreationHeight is the chain height at which the address was
+	// created. No transfer to the address confirms below it.
+	CreationHeight uint32
+
+	// CreatedAt is when the address was created.
+	CreatedAt time.Time
+}
+
+// AddressStore persists the wallet's Taproot Asset addresses. Every method is
+// atomic. Implementations must be safe for concurrent use.
+type AddressStore interface {
+	// InsertAddress records an address. It returns ErrAddressExists when
+	// an address with the same script key is already recorded.
+	InsertAddress(ctx context.Context, addr AddressRecord) error
+
+	// ListAddresses returns the recorded addresses, oldest first.
+	ListAddresses(ctx context.Context) ([]AddressRecord, error)
 }
