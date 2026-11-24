@@ -342,6 +342,7 @@ func (m *MemoryStore) clone() *MemoryStore {
 		proofs:       maps.Clone(m.proofs),
 		transfers:    maps.Clone(m.transfers),
 		order:        slices.Clone(m.order),
+		addresses:    slices.Clone(m.addresses),
 	}
 }
 

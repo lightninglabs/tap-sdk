@@ -2,6 +2,7 @@ package embedded
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"sync"
 
@@ -9,8 +10,8 @@ import (
 	"github.com/btcsuite/btcd/wire/v2"
 )
 
-// MemoryStore is a Store that keeps everything in memory. It suits tests and
-// wallets that verify proofs without holding assets.
+// MemoryStore is a Store and an AddressStore that keeps everything in memory.
+// It suits tests and wallets that verify proofs without holding assets.
 type MemoryStore struct {
 	mu sync.Mutex
 
@@ -19,10 +20,14 @@ type MemoryStore struct {
 	proofs       map[ProofLocator]AssetProof
 	transfers    map[chainhash.Hash]Transfer
 	order        []chainhash.Hash
+	addresses    []AddressRecord
 }
 
-// A compile-time check that MemoryStore is a Store.
-var _ Store = (*MemoryStore)(nil)
+// A compile-time check that MemoryStore is a Store and an AddressStore.
+var (
+	_ Store        = (*MemoryStore)(nil)
+	_ AddressStore = (*MemoryStore)(nil)
+)
 
 // NewMemoryStore returns an empty in-memory store.
 func NewMemoryStore() *MemoryStore {
@@ -225,6 +230,33 @@ func (m *MemoryStore) ListTransfers(_ context.Context,
 	}
 
 	return transfers, nil
+}
+
+// InsertAddress records an address.
+func (m *MemoryStore) InsertAddress(_ context.Context,
+	addr AddressRecord) error {
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for idx := range m.addresses {
+		if m.addresses[idx].ScriptKey == addr.ScriptKey {
+			return ErrAddressExists
+		}
+	}
+	m.addresses = append(m.addresses, addr)
+
+	return nil
+}
+
+// ListAddresses returns the recorded addresses, oldest first.
+func (m *MemoryStore) ListAddresses(context.Context) ([]AddressRecord,
+	error) {
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return slices.Clone(m.addresses), nil
 }
 
 // copyProof returns a proof whose file is not shared with the store.
