@@ -21,6 +21,7 @@ type MemoryStore struct {
 	transfers    map[chainhash.Hash]Transfer
 	order        []chainhash.Hash
 	addresses    []AddressRecord
+	receives     []ReceiveRecord
 }
 
 // A compile-time check that MemoryStore is a Store and an AddressStore.
@@ -257,6 +258,91 @@ func (m *MemoryStore) ListAddresses(context.Context) ([]AddressRecord,
 	defer m.mu.Unlock()
 
 	return slices.Clone(m.addresses), nil
+}
+
+// InsertReceive records a receive, or returns the recorded one with the same
+// outpoint, address and announcement.
+func (m *MemoryStore) InsertReceive(_ context.Context,
+	receive ReceiveRecord) (*ReceiveRecord, error) {
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if idx := m.receiveIndex(receive); idx >= 0 {
+		known := copyReceive(m.receives[idx])
+
+		return &known, nil
+	}
+	m.receives = append(m.receives, copyReceive(receive))
+
+	return &receive, nil
+}
+
+// UpdateReceive replaces a recorded receive and stores its proofs.
+func (m *MemoryStore) UpdateReceive(_ context.Context, receive ReceiveRecord,
+	putProofs []AssetProof) error {
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	idx := m.receiveIndex(receive)
+	if idx < 0 {
+		return ErrNotFound
+	}
+
+	receive.CreatedAt = m.receives[idx].CreatedAt
+	m.receives[idx] = copyReceive(receive)
+
+	for _, proof := range putProofs {
+		m.putProof(proof)
+	}
+
+	return nil
+}
+
+// ListReceives returns the recorded receives that match the filter, oldest
+// first.
+func (m *MemoryStore) ListReceives(_ context.Context,
+	filter ReceiveFilter) ([]ReceiveRecord, error) {
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	var receives []ReceiveRecord
+	for idx := range m.receives {
+		receive := &m.receives[idx]
+		if filter.Outpoint != nil &&
+			receive.Outpoint != *filter.Outpoint {
+
+			continue
+		}
+		if filter.Address != nil && receive.Address != *filter.Address {
+			continue
+		}
+		if filter.State != nil && receive.State != *filter.State {
+			continue
+		}
+		receives = append(receives, copyReceive(*receive))
+	}
+
+	return receives, nil
+}
+
+// receiveIndex returns the position of the recorded receive with the
+// outpoint, address and announcement of receive, or -1.
+func (m *MemoryStore) receiveIndex(receive ReceiveRecord) int {
+	return slices.IndexFunc(m.receives, func(known ReceiveRecord) bool {
+		return known.Outpoint == receive.Outpoint &&
+			known.Address == receive.Address &&
+			known.Announcement == receive.Announcement
+	})
+}
+
+// copyReceive returns a receive whose payload is not shared with the store.
+func copyReceive(receive ReceiveRecord) ReceiveRecord {
+	receive.Payload = append([]byte(nil), receive.Payload...)
+
+	return receive
 }
 
 // copyProof returns a proof whose file is not shared with the store.
