@@ -199,8 +199,72 @@ type AddressRecord struct {
 	CreatedAt time.Time
 }
 
-// AddressStore persists the wallet's Taproot Asset addresses. Every method is
-// atomic. Implementations must be safe for concurrent use.
+// ReceiveState is the lifecycle state of a transfer to an address.
+type ReceiveState uint8
+
+const (
+	// ReceiveDetected is a transfer a sender announced in the mailbox of
+	// the address. The wallet does not hold its assets yet.
+	ReceiveDetected ReceiveState = iota
+
+	// ReceiveConfirmed is a transfer whose proofs verified and are stored
+	// as asset outputs of the wallet.
+	ReceiveConfirmed
+
+	// ReceiveFailed is a transfer the wallet took no asset from: its
+	// proofs do not verify or do not match the address, or another
+	// announcement of its output delivered the assets.
+	ReceiveFailed
+)
+
+// ReceiveRecord is one announcement of a transfer to an address of the
+// wallet. The anchor outpoint, the address and the announcement identify it.
+type ReceiveRecord struct {
+	// Outpoint is the anchor output that holds the transferred assets.
+	Outpoint wire.OutPoint
+
+	// Address is the script key of the address the transfer pays, as in
+	// AddressRecord.ScriptKey.
+	Address [33]byte
+
+	// Announcement is the engine's hash of what the sender announced.
+	// Anyone who knows an address can announce an output, so one output
+	// may have several records.
+	Announcement [32]byte
+
+	// State is the receive's lifecycle state.
+	State ReceiveState
+
+	// BlockHash is the block confirming the anchor transaction. It is
+	// zero until the receive is confirmed.
+	BlockHash chainhash.Hash
+
+	// BlockHeight is the height of BlockHash.
+	BlockHeight uint32
+
+	// CreatedAt is when the receive was recorded.
+	CreatedAt time.Time
+
+	// Payload is the engine's encoding of the receive. A store keeps it
+	// as an opaque blob.
+	Payload []byte
+}
+
+// ReceiveFilter selects receive records. A nil field matches every record.
+type ReceiveFilter struct {
+	// Outpoint matches the receives of this anchor output.
+	Outpoint *wire.OutPoint
+
+	// Address matches the receives of the address with this script key.
+	Address *[33]byte
+
+	// State matches the receives in this state.
+	State *ReceiveState
+}
+
+// AddressStore persists the wallet's Taproot Asset addresses and the
+// transfers to them. Every method is atomic. Implementations must be safe for
+// concurrent use.
 type AddressStore interface {
 	// InsertAddress records an address. It returns ErrAddressExists when
 	// an address with the same script key is already recorded.
@@ -208,4 +272,22 @@ type AddressStore interface {
 
 	// ListAddresses returns the recorded addresses, oldest first.
 	ListAddresses(ctx context.Context) ([]AddressRecord, error)
+
+	// InsertReceive records a receive and returns it. When a receive with
+	// the same outpoint, address and announcement is recorded, it returns
+	// that record and changes nothing.
+	InsertReceive(ctx context.Context,
+		receive ReceiveRecord) (*ReceiveRecord, error)
+
+	// UpdateReceive replaces the state, block and payload of a recorded
+	// receive and stores putProofs as Store.InsertProof does, so the
+	// engine's Store must read the same data. It returns ErrNotFound for
+	// a receive that is not recorded.
+	UpdateReceive(ctx context.Context, receive ReceiveRecord,
+		putProofs []AssetProof) error
+
+	// ListReceives returns the recorded receives that match the filter,
+	// oldest first.
+	ListReceives(ctx context.Context,
+		filter ReceiveFilter) ([]ReceiveRecord, error)
 }
