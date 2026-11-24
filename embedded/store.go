@@ -11,7 +11,7 @@ import (
 
 var (
 	// ErrNotFound is returned by a Store when a key, proof or transfer
-	// does not exist.
+	// does not exist, and by a Courier that does not hold a proof.
 	ErrNotFound = errors.New("not found")
 
 	// ErrTransferExists is returned by Store.InsertTransfer when a

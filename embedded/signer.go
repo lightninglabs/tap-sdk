@@ -7,6 +7,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 	"github.com/btcsuite/btcd/btcutil/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
 	"github.com/btcsuite/btcd/wire/v2"
@@ -138,6 +139,56 @@ func (s *keyRingSigner) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
 	}
 
 	return sig, nil
+}
+
+// keyRingReceiveKeys decrypts and authenticates with the private keys of a
+// local key ring.
+type keyRingReceiveKeys struct {
+	keys PrivKeyDeriver
+}
+
+// NewKeyRingReceiveKeys returns ReceiveKeys that use the private keys that
+// keys derives.
+func NewKeyRingReceiveKeys(keys PrivKeyDeriver) ReceiveKeys {
+	return &keyRingReceiveKeys{keys: keys}
+}
+
+// ECDH returns the SHA-256 of the compressed shared point of the key at
+// locator and pubKey.
+func (k *keyRingReceiveKeys) ECDH(ctx context.Context,
+	locator keychain.KeyLocator, pubKey *btcec.PublicKey) ([32]byte,
+	error) {
+
+	if err := ctx.Err(); err != nil {
+		return [32]byte{}, err
+	}
+
+	privKey, err := k.keys.DerivePrivKey(keychain.KeyDescriptor{
+		KeyLocator: locator,
+	})
+	if err != nil {
+		return [32]byte{}, fmt.Errorf("derive key: %w", err)
+	}
+
+	return (&keychain.PrivKeyECDH{PrivKey: privKey}).ECDH(pubKey)
+}
+
+// SignMessageSchnorr signs the SHA-256 of msg with the key at locator.
+func (k *keyRingReceiveKeys) SignMessageSchnorr(ctx context.Context,
+	locator keychain.KeyLocator, msg []byte) (*schnorr.Signature, error) {
+
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	privKey, err := k.keys.DerivePrivKey(keychain.KeyDescriptor{
+		KeyLocator: locator,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("derive key: %w", err)
+	}
+
+	return schnorr.Sign(privKey, chainhash.HashB(msg))
 }
 
 // virtualTxSigner signs asset witnesses with the host's signer. tapd's
