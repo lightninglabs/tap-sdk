@@ -10,6 +10,7 @@ import (
 	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/address"
 	"github.com/lightninglabs/taproot-assets/asset"
+	"github.com/lightninglabs/taproot-assets/proof"
 	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -522,9 +523,158 @@ func TestQueryAddrs(t *testing.T) {
 	}
 }
 
+// TestAddrReceives lists the transfers to the wallet's addresses with the
+// status tapd reports for them, by address, status, creation time and page.
+func TestAddrReceives(t *testing.T) {
+	h := newAddressHarness(t, testCourier)
+	sender := h.peer(2)
+	ctx := t.Context()
+
+	// One transfer of each state: confirmed, detected and failed.
+	first, firstAddr := h.newReceivingAddress(sender, "first", nil)
+	second, secondAddr := h.newReceivingAddress(sender, "second", nil)
+
+	confirmed := sender.payAddress(firstAddr.Encoded, first, 600)
+	h.courier.deliver(t, confirmed)
+	require.NoError(t, h.client.SyncReceives(ctx))
+
+	detected := sender.payAddress(secondAddr.Encoded, second, 400)
+	h.courier.announce(t, detected)
+	require.NoError(t, h.client.SyncReceives(ctx))
+
+	// A second announcement of the confirmed output.
+	failed := confirmed.announcedAs(func(fragment *proof.SendFragment) {
+		fragment.TaprootAssetRoot[0] ^= 1
+	})
+	h.courier.announce(t, failed)
+	require.NoError(t, h.client.SyncReceives(ctx))
+
+	// The receives are recorded ten seconds apart.
+	const start = uint64(1_700_000_000)
+	require.Len(t, h.store.receives, 3)
+	for idx := range h.store.receives {
+		h.store.receives[idx].CreatedAt = time.Unix(
+			int64(start)+int64(idx)*10, 0,
+		)
+	}
+
+	const announced = tapsdk.AddressEventStatusTransactionConfirmed
+	confirmedTip, err := confirmed.file.LastProof()
+	require.NoError(t, err)
+	events := []*tapsdk.AddressEvent{{
+		CreationTime:       start,
+		Address:            firstAddr,
+		Status:             tapsdk.AddressEventStatusCompleted,
+		Outpoint:           confirmed.outpoint.String(),
+		UTXOAmountSat:      1_000,
+		ConfirmationHeight: confirmedTip.BlockHeight,
+		HasProof:           true,
+	}, {
+		CreationTime:       start + 10,
+		Address:            secondAddr,
+		Status:             announced,
+		Outpoint:           detected.outpoint.String(),
+		ConfirmationHeight: detected.fragment.BlockHeight,
+	}, {
+		CreationTime: start + 20,
+		Address:      firstAddr,
+		Status:       tapsdk.AddressEventStatusUnknown,
+		Outpoint:     failed.outpoint.String(),
+	}}
+	newestFirst := []*tapsdk.AddressEvent{events[2], events[1], events[0]}
+
+	tests := []struct {
+		name  string
+		query *tapsdk.AddressReceivesQuery
+		want  []*tapsdk.AddressEvent
+	}{{
+		name: "all",
+		want: newestFirst,
+	}, {
+		name: "oldest first",
+		query: &tapsdk.AddressReceivesQuery{
+			Direction: tapsdk.SortAscending,
+		},
+		want: events,
+	}, {
+		name: "address",
+		query: &tapsdk.AddressReceivesQuery{
+			FilterAddr: firstAddr.Encoded,
+		},
+		want: []*tapsdk.AddressEvent{events[2], events[0]},
+	}, {
+		name: "completed",
+		query: &tapsdk.AddressReceivesQuery{
+			FilterStatus: tapsdk.AddressEventStatusCompleted,
+		},
+		want: events[:1],
+	}, {
+		name: "confirmed",
+		query: &tapsdk.AddressReceivesQuery{
+			FilterStatus: announced,
+		},
+		want: events[1:2],
+	}, {
+		name: "status no receive has",
+		query: &tapsdk.AddressReceivesQuery{
+			FilterStatus: tapsdk.AddressEventStatusProofReceived,
+		},
+		want: []*tapsdk.AddressEvent{},
+	}, {
+		name: "address and status",
+		query: &tapsdk.AddressReceivesQuery{
+			FilterAddr:   secondAddr.Encoded,
+			FilterStatus: tapsdk.AddressEventStatusCompleted,
+		},
+		want: []*tapsdk.AddressEvent{},
+	}, {
+		name: "created between",
+		query: &tapsdk.AddressReceivesQuery{
+			StartTimestamp: start + 10,
+			EndTimestamp:   start + 19,
+		},
+		want: events[1:2],
+	}, {
+		name: "limit and offset",
+		query: &tapsdk.AddressReceivesQuery{
+			Limit:  1,
+			Offset: 1,
+		},
+		want: events[1:2],
+	}, {
+		name: "page of a time range",
+		query: &tapsdk.AddressReceivesQuery{
+			StartTimestamp: start + 10,
+			Offset:         1,
+			Direction:      tapsdk.SortAscending,
+		},
+		want: events[2:],
+	}}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := h.client.AddrReceives(ctx, tc.query)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
+
+	for _, query := range []*tapsdk.AddressReceivesQuery{
+		{Limit: -1},
+		{Offset: -1},
+		{Direction: 7},
+		{FilterStatus: 9},
+		{FilterAddr: "not an address"},
+	} {
+		_, err := h.client.AddrReceives(ctx, query)
+		require.Equal(
+			t, codes.InvalidArgument, status.Code(err), "%v", err,
+		)
+	}
+}
+
 // TestAddressCallsNeedReceiveConfig leaves every address call unimplemented
-// for a host that set no ReceiveConfig, and the receive events for one that
-// did.
+// for a host that set no ReceiveConfig.
 func TestAddressCallsNeedReceiveConfig(t *testing.T) {
 	ctx := t.Context()
 	ref := tapsdk.AssetRefFromAssetID(tapsdk.AssetID{1})
@@ -533,8 +683,9 @@ func TestAddressCallsNeedReceiveConfig(t *testing.T) {
 	addr, err := enabled.wallet.NewReceiveAddress(ctx, ref)
 	require.NoError(t, err)
 
-	_, err = enabled.client.AddrReceives(ctx, nil)
-	require.Equal(t, codes.Unimplemented, status.Code(err))
+	receives, err := enabled.client.AddrReceives(ctx, nil)
+	require.NoError(t, err)
+	require.Empty(t, receives)
 
 	h := newTestHarness(t)
 

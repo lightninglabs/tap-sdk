@@ -10,9 +10,9 @@
 //
 // The engine covers the calls a wallet needs to hold, receive and move assets
 // with caller-funded anchor transactions. With a ReceiveConfig it also
-// creates, decodes and lists version 2 addresses, and receives the transfers
-// sent to them: it reads the auth mailbox of each address on the address's
-// proof courier, and fetches and verifies the proofs of each transfer a
-// sender announces there. Minting, universe queries, address sends and event
-// streams return codes.Unimplemented.
+// creates, decodes and lists version 2 addresses, and receives and lists the
+// transfers sent to them: it reads the auth mailbox of each address on the
+// address's proof courier, and fetches and verifies the proofs of each
+// transfer a sender announces there. Minting, universe queries, address sends
+// and event streams return codes.Unimplemented.
 package embedded

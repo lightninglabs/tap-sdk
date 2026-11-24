@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"slices"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -316,6 +317,162 @@ func (s *addressServer) QueryAddrs(ctx context.Context,
 	}
 
 	return resp, nil
+}
+
+// AddrReceives lists the transfers to the wallet's addresses, newest first
+// unless the request asks for the oldest first. tapd has no status for a
+// failed receive, which is listed with the unknown status.
+func (s *addressServer) AddrReceives(ctx context.Context,
+	req *taprpc.AddrReceivesRequest) (*taprpc.AddrReceivesResponse, error) {
+
+	if req.Limit < 0 || req.Offset < 0 {
+		return nil, status.Error(codes.InvalidArgument,
+			"limit and offset must not be negative")
+	}
+
+	var ascending bool
+	switch req.Direction {
+	case taprpc.SortDirection_SORT_DIRECTION_DESC:
+
+	case taprpc.SortDirection_SORT_DIRECTION_ASC:
+		ascending = true
+
+	default:
+		return nil, status.Errorf(codes.InvalidArgument,
+			"invalid sort direction: %v", req.Direction)
+	}
+
+	var filter ReceiveFilter
+	if req.FilterAddr != "" {
+		addr, err := address.DecodeAddress(
+			req.FilterAddr, &s.engine.params,
+		)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument,
+				"unable to decode addr: %v", err)
+		}
+		scriptKey := [33]byte(asset.ToSerialized(&addr.ScriptKey))
+		filter.Address = &scriptKey
+	}
+
+	switch req.FilterStatus {
+	case taprpc.AddrEventStatus_ADDR_EVENT_STATUS_UNKNOWN:
+
+	case taprpc.AddrEventStatus_ADDR_EVENT_STATUS_TRANSACTION_CONFIRMED:
+		state := ReceiveDetected
+		filter.State = &state
+
+	case taprpc.AddrEventStatus_ADDR_EVENT_STATUS_COMPLETED:
+		state := ReceiveConfirmed
+		filter.State = &state
+
+	// A receive is in neither of these states of tapd.
+	case taprpc.AddrEventStatus_ADDR_EVENT_STATUS_TRANSACTION_DETECTED,
+		taprpc.AddrEventStatus_ADDR_EVENT_STATUS_PROOF_RECEIVED:
+
+		return &taprpc.AddrReceivesResponse{}, nil
+
+	default:
+		return nil, status.Errorf(codes.InvalidArgument,
+			"unknown address event status <%d>", req.FilterStatus)
+	}
+
+	records, err := s.addrs.ListReceives(ctx, filter)
+	if err != nil {
+		return nil, fmt.Errorf("error querying events: %w", err)
+	}
+	if !ascending {
+		slices.Reverse(records)
+	}
+
+	addrs := make(map[[33]byte]*taprpc.Addr)
+	resp := &taprpc.AddrReceivesResponse{}
+	skip := req.Offset
+	for idx := range records {
+		record := &records[idx]
+
+		created := uint64(record.CreatedAt.Unix())
+		if req.StartTimestamp > 0 && created < req.StartTimestamp {
+			continue
+		}
+		if req.EndTimestamp > 0 && created > req.EndTimestamp {
+			continue
+		}
+
+		if skip > 0 {
+			skip--
+			continue
+		}
+		if req.Limit > 0 && len(resp.Events) == int(req.Limit) {
+			break
+		}
+
+		rpcAddr, ok := addrs[record.Address]
+		if !ok {
+			addr, err := s.engine.receive.address(
+				ctx, record.Address,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("error fetching addr "+
+					"of event: %w", err)
+			}
+			rpcAddr, err = marshalAddr(addr.tap)
+			if err != nil {
+				return nil, err
+			}
+			addrs[record.Address] = rpcAddr
+		}
+
+		event, err := marshalReceive(record, rpcAddr)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling event: %w",
+				err)
+		}
+		resp.Events = append(resp.Events, event)
+	}
+
+	return resp, nil
+}
+
+// marshalReceive converts a receive to tapd's address event.
+func marshalReceive(record *ReceiveRecord,
+	rpcAddr *taprpc.Addr) (*taprpc.AddrEvent, error) {
+
+	payload, err := decodeReceivePayload(record.Payload)
+	if err != nil {
+		return nil, err
+	}
+
+	event := &taprpc.AddrEvent{
+		CreationTimeUnixSeconds: uint64(record.CreatedAt.Unix()),
+		Addr:                    rpcAddr,
+		Outpoint:                record.Outpoint.String(),
+		UtxoAmtSat:              uint64(payload.anchorValue),
+		ConfirmationHeight:      record.BlockHeight,
+	}
+
+	switch record.State {
+	// A sender announces a transfer once its anchor transaction is
+	// confirmed, in the block the fragment names.
+	case ReceiveDetected:
+		event.Status = taprpc.
+			AddrEventStatus_ADDR_EVENT_STATUS_TRANSACTION_CONFIRMED
+		event.ConfirmationHeight = payload.fragment.BlockHeight
+
+	case ReceiveConfirmed:
+		event.Status = taprpc.
+			AddrEventStatus_ADDR_EVENT_STATUS_COMPLETED
+		event.HasProof = true
+
+	case ReceiveFailed:
+		event.Status = taprpc.AddrEventStatus_ADDR_EVENT_STATUS_UNKNOWN
+
+	default:
+		return nil, fmt.Errorf("unknown receive state %d",
+			record.State)
+	}
+
+	return event, nil
 }
 
 // marshalAddr converts a version 2 address to its RPC form. The asset type is
