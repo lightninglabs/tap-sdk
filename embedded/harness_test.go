@@ -422,6 +422,19 @@ type mintedAsset struct {
 	outpoint  wire.OutPoint
 }
 
+// testGenesis returns the genesis of the asset that is issued under a tag.
+func testGenesis(tag string) asset.Genesis {
+	return asset.Genesis{
+		FirstPrevOut: wire.OutPoint{
+			Hash:  sha256.Sum256([]byte("genesis-" + tag)),
+			Index: 0,
+		},
+		Tag:         tag,
+		OutputIndex: 0,
+		Type:        asset.Normal,
+	}
+}
+
 // mintTo issues units of a new asset to a script key in an anchor output
 // under an internal key, confirms the issuance and returns its proof file.
 func (h *testHarness) mintTo(scriptKey *tapsdk.ScriptKey,
@@ -435,16 +448,8 @@ func (h *testHarness) mintTo(scriptKey *tapsdk.ScriptKey,
 	anchorKey, err := btcec.ParsePubKey(internalKey.PubKey[:])
 	require.NoError(h.t, err)
 
-	genesisPoint := wire.OutPoint{
-		Hash:  sha256.Sum256([]byte("genesis-" + tag)),
-		Index: 0,
-	}
-	genesis := asset.Genesis{
-		FirstPrevOut: genesisPoint,
-		Tag:          tag,
-		OutputIndex:  0,
-		Type:         asset.Normal,
-	}
+	genesis := testGenesis(tag)
+	genesisPoint := genesis.FirstPrevOut
 	newAsset, err := asset.New(
 		genesis, amount, 0, 0, asset.NewScriptKey(scriptPubKey), nil,
 	)
