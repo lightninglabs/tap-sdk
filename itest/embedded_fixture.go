@@ -5,9 +5,11 @@ package itest
 import (
 	"bytes"
 	"context"
-	"errors"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -21,6 +23,7 @@ import (
 	"github.com/btcsuite/btcd/wire/v2"
 	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/embedded"
+	"github.com/lightninglabs/tap-sdk/embedded/courier"
 	"github.com/lightninglabs/taproot-assets/tappsbt"
 	"github.com/stretchr/testify/require"
 )
@@ -49,11 +52,18 @@ func (h *TestHarness) NewEmbeddedNode(t testing.TB,
 	require.NoError(t, err)
 
 	// The engine's addresses name the courier of Bob's V2 addresses.
-	courier, err := url.Parse(envOr(
+	bobCourier, err := url.Parse(envOr(
 		"TAPD_BOB_PROOF_COURIER_ADDR",
 		"authmailbox+universerpc://"+defaultBobProofCourierHost,
 	))
 	require.NoError(t, err)
+
+	// An address names a tapd by its host in the compose network. The
+	// engine runs on the host, where the tapd has another address.
+	endpoints := map[string]courier.Endpoint{
+		bobCourier.Host:          courierEndpoint(t, bobTapd),
+		defaultAliceUniverseHost: courierEndpoint(t, aliceTapd),
+	}
 
 	var (
 		chain  = newBitcoindChain(h.bitcoindHost)
@@ -69,16 +79,10 @@ func (h *TestHarness) NewEmbeddedNode(t testing.TB,
 		GroupKeys: groupKeys,
 		Logger:    logger,
 		Receive: &embedded.ReceiveConfig{
-			Store: store,
-			Keys:  embedded.NewKeyRingReceiveKeys(keys),
-
-			// The tests create and decode addresses, and pay none.
-			Dial: func(context.Context,
-				*url.URL) (embedded.Courier, error) {
-
-				return nil, errors.New("no courier client")
-			},
-			DefaultCourier: courier,
+			Store:          store,
+			Keys:           embedded.NewKeyRingReceiveKeys(keys),
+			Dial:           courier.NewDialer(endpoints),
+			DefaultCourier: bobCourier,
 		},
 	})
 	require.NoError(t, err)
@@ -98,6 +102,25 @@ func (h *TestHarness) NewEmbeddedNode(t testing.TB,
 		Wallet: tapsdk.NewWallet(client, tapsdk.NetworkRegtest),
 		Store:  store,
 		keys:   keys,
+	}
+}
+
+// courierEndpoint returns how the engine reaches the courier of a tapd node
+// from the host, trusting the node's own certificate.
+func courierEndpoint(t testing.TB, node tapdNodeConfig) courier.Endpoint {
+	t.Helper()
+
+	certPEM, err := os.ReadFile(node.tlsCertPath(t))
+	require.NoError(t, err)
+	pool := x509.NewCertPool()
+	require.True(t, pool.AppendCertsFromPEM(certPEM))
+
+	return courier.Endpoint{
+		Target: envOr(node.grpcHostEnv, node.defaultGRPCHost),
+		TLS: &tls.Config{
+			RootCAs:    pool,
+			MinVersion: tls.VersionTLS12,
+		},
 	}
 }
 
@@ -169,6 +192,69 @@ func (n *EmbeddedNode) WaitForTransferState(t testing.TB,
 			"observation: %s", txid, state,
 		lastObservation(lastStatus),
 	)
+}
+
+// WaitForAddressReceive polls until the engine lists one completed transfer
+// to the address. With sync, each poll first runs one pass over the engine's
+// mailboxes. Without it the engine must hold its mailboxes open.
+func (n *EmbeddedNode) WaitForAddressReceive(t testing.TB,
+	ctx context.Context, addr *tapsdk.Address, sync bool,
+	timeout time.Duration) *tapsdk.AddressEvent {
+
+	t.Helper()
+
+	var (
+		event      *tapsdk.AddressEvent
+		lastStatus string
+	)
+	require.Eventuallyf(t, func() bool {
+		if sync {
+			if err := n.Client.SyncReceives(ctx); err != nil {
+				lastStatus = fmt.Sprintf("sync failed: %v", err)
+
+				return false
+			}
+		}
+
+		events, err := n.Client.AddrReceives(
+			ctx, &tapsdk.AddressReceivesQuery{
+				FilterAddr: addr.Encoded,
+			},
+		)
+		switch {
+		case err != nil:
+			lastStatus = fmt.Sprintf("receive lookup failed: %v",
+				err)
+
+			return false
+
+		case len(events) != 1:
+			lastStatus = fmt.Sprintf("%d receives listed",
+				len(events))
+
+			return false
+		}
+		event = events[0]
+		lastStatus = fmt.Sprintf("status = %d", event.Status)
+
+		return event.Status == tapsdk.AddressEventStatusCompleted
+	}, timeout, time.Second,
+		"embedded address %s never completed a receive; last "+
+			"observation: %s", addr.Encoded, observed{&lastStatus},
+	)
+
+	return event
+}
+
+// observed is the last status a poll saw. It is read when the failure
+// message is formatted, after the poll ended.
+type observed struct {
+	status *string
+}
+
+// String returns the status.
+func (o observed) String() string {
+	return lastObservation(*o.status)
 }
 
 // SignAnchorPsbt signs and finalizes the Taproot key spend of every anchor
