@@ -115,6 +115,9 @@ type testChain struct {
 
 	// headersDownBelow fails BlockHeader below a height when set.
 	headersDownBelow uint32
+
+	// beforeRegister runs before each confirmation registration when set.
+	beforeRegister func()
 }
 
 // newTestChain returns a chain with a few empty blocks.
@@ -211,6 +214,13 @@ func (c *testChain) findTx(txid chainhash.Hash) (uint32, *wire.MsgBlock,
 func (c *testChain) RegisterConfirmation(_ context.Context,
 	txid chainhash.Hash, _ []byte, _ uint32) (*ConfirmationEvents,
 	error) {
+
+	c.mu.Lock()
+	beforeRegister := c.beforeRegister
+	c.mu.Unlock()
+	if beforeRegister != nil {
+		beforeRegister()
+	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()

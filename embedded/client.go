@@ -85,6 +85,12 @@ func (c *Client) ResumeTransfers(ctx context.Context) error {
 // an earlier run left unfinished. A courier delivers its stored messages
 // first, which covers the transfers sent while no client ran. The mailbox of
 // an address created later is held open without this call.
+//
+// It also follows the confirmed receives of an earlier run until their
+// confirmation is final. A receive whose block leaves the chain returns to
+// detected, and its assets leave the wallet until its anchor transaction
+// confirms again. A receive this client confirms is followed without this
+// call.
 func (c *Client) ResumeReceives(ctx context.Context) error {
 	if c.engine.receive == nil {
 		return errNoReceive
@@ -97,7 +103,8 @@ func (c *Client) ResumeReceives(ctx context.Context) error {
 // every unfinished receive, then disconnects unless ResumeReceives holds the
 // mailboxes open. It suits a host that cannot keep a connection, such as an
 // app that returns to the foreground. A transfer whose block or proofs are
-// not available yet is left to a later call without an error.
+// not available yet is left to a later call without an error. The confirmed
+// receives that are not final are followed until the client closes.
 func (c *Client) SyncReceives(ctx context.Context) error {
 	if c.engine.receive == nil {
 		return errNoReceive
