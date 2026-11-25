@@ -198,6 +198,8 @@ The engine reads a mailbox in two ways:
   and works once on every unfinished receive. It suits an app that returns to
   the foreground.
 
+Both calls also follow the confirmed receives that are not final.
+
 For each transfer the engine checks the block the sender names against the
 chain source, fetches the proofs from the courier's universe back to the
 issuance, and verifies the file. It then checks that the last proof creates
@@ -216,8 +218,22 @@ received through other announcements of the same output is recorded as
 failed, so that one transfer is not listed as two confirmed receives.
 
 The engine leaves its messages on the courier, and a message it reads again
-maps to the receive it already recorded. It does not follow a received
-transfer through a re-org of its confirming block.
+maps to the receive it already recorded.
+
+The engine follows the anchor transaction of a confirmed receive with
+`Chain.RegisterConfirmation` until the chain source reports the confirmation
+final, which moves the receive to `ReceiveFinal`. When the confirming block
+leaves the chain, the receive returns to `ReceiveDetected` and its proofs are
+kept as not owned, so the wallet does not list or spend the assets. When the
+transaction confirms again, the engine writes the new block into the proofs,
+verifies the files and stores them as owned. A client that starts compares
+the block of each confirmed receive with the best chain first. `AddrReceives`
+lists a final receive as completed, and a receive whose block left the chain
+as a detected transaction.
+
+Only the anchor transaction of the received output is given its new block. A
+proof file whose earlier proofs name a block that also left the chain does
+not verify, and its receive stays detected.
 
 A sender needs one confirmed transaction to announce a transfer whose proofs
 never reach the courier. The engine therefore fetches the proofs of a few

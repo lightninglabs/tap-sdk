@@ -79,8 +79,10 @@ the calls.
 - A receive is recorded when it is detected and updated once its proofs
   verify, so the engine resumes it after a restart from the store. Each
   announcement of an output has a record of its own, since anyone who knows
-  an address can announce one. A received transfer is not followed through a
-  re-org yet.
+  an address can announce one. The engine follows the anchor transaction of
+  a confirmed receive as it follows a transfer: a receive whose block leaves
+  the chain returns to detected with its proofs not owned, and its proofs
+  are given the new block once the transaction confirms again.
 
 ## Non-Goals
 
