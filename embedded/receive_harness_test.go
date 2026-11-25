@@ -330,7 +330,21 @@ func (h *testHarness) payAddress(encoded string, minted *mintedAsset,
 	amount uint64, plans ...anchorPlan) *addressSend {
 
 	h.t.Helper()
+
+	return h.payAddressFrom(
+		encoded, []assetSource{{asset: minted, units: receivedUnits}},
+		amount, plans...,
+	)
+}
+
+// payAddressFrom is payAddress for a transfer that spends one or more outputs
+// of an asset.
+func (h *testHarness) payAddressFrom(encoded string, sources []assetSource,
+	amount uint64, plans ...anchorPlan) *addressSend {
+
+	h.t.Helper()
 	ctx := h.t.Context()
+	minted := sources[0].asset
 
 	addr, err := address.DecodeAddress(encoded, &address.RegressionNetTap)
 	require.NoError(h.t, err)
@@ -355,8 +369,8 @@ func (h *testHarness) payAddress(encoded string, minted *mintedAsset,
 	recipient := tapsdk.ScriptKey{
 		PubKey: sdkPubKey(h.t, scriptKey.PubKey),
 	}
-	sent := h.commitTransferTo(
-		minted, receivedUnits, amount, h.sends,
+	sent := h.commitTransferFrom(
+		sources, amount, h.sends,
 		customanchor.AssetScriptPlan{
 			Mode: customanchor.AssetScriptExternal,
 			External: &customanchor.AssetExternalScriptPlan{

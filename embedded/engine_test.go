@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"fmt"
 	"testing"
 	"time"
 
@@ -72,9 +73,29 @@ func (h *testHarness) commitTransfer(source *mintedAsset, total,
 }
 
 // commitTransferTo is commitTransfer to a recipient with the given asset
-// script, in an anchor output under the given internal key that commits to
-// the given tapscript leaves.
+// script, in an anchor output under the given internal key.
 func (h *testHarness) commitTransferTo(source *mintedAsset, total,
+	amount uint64, seed byte, recipientScript customanchor.AssetScriptPlan,
+	recipientAnchor *btcec.PublicKey) *testTransfer {
+
+	h.t.Helper()
+
+	return h.commitTransferFrom(
+		[]assetSource{{asset: source, units: total}}, amount, seed,
+		recipientScript, recipientAnchor,
+	)
+}
+
+// assetSource is an asset output of the wallet that a transfer spends.
+type assetSource struct {
+	asset *mintedAsset
+	units uint64
+}
+
+// commitTransferFrom is commitTransferTo for a transfer that spends one or
+// more outputs of an asset. The anchor output of the recipient commits to the
+// given tapscript leaves.
+func (h *testHarness) commitTransferFrom(sources []assetSource,
 	amount uint64, seed byte, recipientScript customanchor.AssetScriptPlan,
 	recipientAnchor *btcec.PublicKey,
 	anchorLeaves ...tapsdk.TapLeaf) *testTransfer {
@@ -83,27 +104,48 @@ func (h *testHarness) commitTransferTo(source *mintedAsset, total,
 	ctx := h.t.Context()
 
 	funding := newFundingInput(h.t, seed, 100_000)
+	fundingIndex := len(sources)
 
-	tx := wire.NewMsgTx(2)
-	tx.AddTxIn(wire.NewTxIn(&source.outpoint, nil, nil))
+	var (
+		tx       = wire.NewMsgTx(2)
+		ref      = sources[0].asset.ref
+		total    uint64
+		inputs   []customanchor.AssetInput
+		signings []customanchor.InputSigningPlan
+	)
+	for idx, source := range sources {
+		tx.AddTxIn(wire.NewTxIn(&source.asset.outpoint, nil, nil))
+		total += source.units
+
+		inputs = append(inputs, customanchor.AssetInput{
+			ID:        fmt.Sprintf("input-%d", idx),
+			AssetRef:  ref,
+			Amount:    source.units,
+			ProofFile: source.asset.proofFile,
+			Witness: customanchor.AssetWitnessPlan{
+				Mode: customanchor.AssetWitnessBackendSigner,
+			},
+		})
+		signings = append(signings, customanchor.InputSigningPlan{
+			InputIndex:    uint32(idx),
+			BackendSigned: &customanchor.BackendSignedPlan{},
+		})
+	}
+	signings = append(signings, customanchor.InputSigningPlan{
+		InputIndex:   uint32(fundingIndex),
+		CallerSigned: &customanchor.CallerSignedPlan{},
+	})
+
 	tx.AddTxIn(wire.NewTxIn(&funding.outpoint, nil, nil))
 	placeholder := []byte{txscript.OP_1, txscript.OP_DATA_32}
 	placeholder = append(placeholder, make([]byte, 32)...)
 	tx.AddTxOut(&wire.TxOut{Value: 1_000, PkScript: placeholder})
 
 	request := &customanchor.Request{
-		Inputs: []customanchor.AssetInput{{
-			ID:        "input-0",
-			AssetRef:  source.ref,
-			Amount:    total,
-			ProofFile: source.proofFile,
-			Witness: customanchor.AssetWitnessPlan{
-				Mode: customanchor.AssetWitnessBackendSigner,
-			},
-		}},
+		Inputs: inputs,
 		Outputs: []customanchor.AssetOutput{{
 			ID:                "recipient",
-			AssetRef:          source.ref,
+			AssetRef:          ref,
 			Amount:            amount,
 			AnchorOutputIndex: 0,
 			AnchorValueSat:    1_000,
@@ -127,13 +169,7 @@ func (h *testHarness) commitTransferTo(source *mintedAsset, total,
 		LossPolicy: customanchor.LossPolicy{
 			Mode: customanchor.LossReject,
 		},
-		SigningPlans: []customanchor.InputSigningPlan{{
-			InputIndex:    0,
-			BackendSigned: &customanchor.BackendSignedPlan{},
-		}, {
-			InputIndex:   1,
-			CallerSigned: &customanchor.CallerSignedPlan{},
-		}},
+		SigningPlans: signings,
 	}
 
 	result := &testTransfer{}
@@ -148,7 +184,7 @@ func (h *testHarness) commitTransferTo(source *mintedAsset, total,
 		request.Outputs = append(
 			request.Outputs, customanchor.AssetOutput{
 				ID:                "change",
-				AssetRef:          source.ref,
+				AssetRef:          ref,
 				Amount:            total - amount,
 				AnchorOutputIndex: 1,
 				AnchorValueSat:    1_000,
@@ -168,7 +204,7 @@ func (h *testHarness) commitTransferTo(source *mintedAsset, total,
 
 	packet, err := psbt.NewFromUnsignedTx(tx)
 	require.NoError(h.t, err)
-	packet.Inputs[1].WitnessUtxo = funding.txOut
+	packet.Inputs[fundingIndex].WitnessUtxo = funding.txOut
 	var template bytes.Buffer
 	require.NoError(h.t, packet.Serialize(&template))
 	request.AnchorPSBT = template.Bytes()
