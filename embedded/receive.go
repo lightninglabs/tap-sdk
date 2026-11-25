@@ -275,9 +275,10 @@ func (r *receiver) detect(ctx context.Context, addr *receiveAddress,
 
 // advance works on a detected receive: it checks the block of the transfer,
 // fetches and verifies the proofs and stores them as owned asset outputs. It
-// reports whether the receive is finished, as confirmed or as failed. An error
-// leaves the receive detected, for a later call. Concurrent calls for one
-// receive share one run.
+// reports whether the receive needs no further work: it is confirmed or
+// failed, or its block left the chain and the tracker of its output confirms
+// it again. An error leaves the receive detected, for a later call. Concurrent
+// calls for one receive share one run.
 func (r *receiver) advance(ctx context.Context, id receiveID) (bool, error) {
 	done, err, _ := r.runs.Do(id.String(), func() (any, error) {
 		return r.advanceOnce(ctx, id)
@@ -366,6 +367,9 @@ func (r *receiver) advanceOnce(ctx context.Context, id receiveID) (bool,
 	payload, err := decodeReceivePayload(record.Payload)
 	if err != nil {
 		return false, err
+	}
+	if payload.reorged {
+		return true, nil
 	}
 	fragment := payload.fragment
 	if announcedAgain(held, fragment) {
@@ -467,6 +471,7 @@ func (r *receiver) advanceOnce(ctx context.Context, id receiveID) (bool,
 
 	r.e.log.Infof("Receive %v confirmed at height %d", id.outpoint,
 		record.BlockHeight)
+	r.track(id.outpoint)
 
 	return true, nil
 }

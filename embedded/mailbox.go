@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"github.com/btcsuite/btcd/wire/v2"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -75,6 +76,11 @@ type receiver struct {
 	// jobs are the receives the client has worked on by itself.
 	jobs map[receiveID]*receiveJob
 
+	// tracked are the anchor outputs whose confirmation is followed. An
+	// entry is set when the output is tracked again while its tracker
+	// runs.
+	tracked map[wire.OutPoint]bool
+
 	// courierMu guards couriers, so that a slow dial blocks no other
 	// state.
 	courierMu sync.Mutex
@@ -102,12 +108,14 @@ func newReceiver(e *engine, cfg *ReceiveConfig) *receiver {
 		fetches:    make(chan struct{}, maxProofFetches),
 		subscribed: make(map[[33]byte]struct{}),
 		jobs:       make(map[receiveID]*receiveJob),
+		tracked:    make(map[wire.OutPoint]bool),
 		couriers:   make(map[string]Courier),
 	}
 }
 
-// resume holds the mailbox of every stored address open and works on the
-// receives an earlier run left unfinished.
+// resume holds the mailbox of every stored address open, works on the
+// receives an earlier run left unfinished and follows the confirmed ones that
+// are not final.
 func (r *receiver) resume(ctx context.Context) error {
 	addrs, err := r.e.addrs.ListAddresses(ctx)
 	if err != nil {
@@ -115,6 +123,9 @@ func (r *receiver) resume(ctx context.Context) error {
 	}
 	unfinished, err := r.unfinished(ctx)
 	if err != nil {
+		return err
+	}
+	if err := r.trackStored(ctx); err != nil {
 		return err
 	}
 
@@ -249,9 +260,9 @@ func (r *receiver) logAttempt(id receiveID, err error) {
 	logf("Receive %v: %v", id.outpoint, err)
 }
 
-// sync reads the stored messages of every mailbox and works once on every
-// unfinished receive. A receive that waits for its block or its proofs is no
-// error.
+// sync reads the stored messages of every mailbox, works once on every
+// unfinished receive and follows the confirmed ones that are not final. A
+// receive that waits for its block or its proofs is no error.
 func (r *receiver) sync(ctx context.Context) error {
 	r.syncMu.Lock()
 	defer r.syncMu.Unlock()
@@ -314,6 +325,10 @@ func (r *receiver) sync(ctx context.Context) error {
 	}
 	close(queue)
 	wg.Wait()
+
+	if err := r.trackStored(ctx); err != nil {
+		report(err)
+	}
 
 	// Nothing else uses the couriers of a client that is not live.
 	r.mu.Lock()
