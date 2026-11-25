@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"sync"
 	"testing"
 	"time"
 
@@ -882,6 +883,48 @@ func TestTransferResumeStaleConfirmation(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, second.BlockHash(), transfers[0].BlockHash)
 	require.EqualValues(t, 400, h.ownedUnits())
+}
+
+// TestTransferReorgAtRegistration re-organizes the block of a confirmed
+// transfer right before its tracker registers for the confirmation. The
+// registration reports no event for that block, and the tracker still finds
+// it gone.
+func TestTransferReorgAtRegistration(t *testing.T) {
+	h := newTestHarness(t)
+	ctx := t.Context()
+
+	minted := h.receive("register")
+	sent := h.commitTransfer(minted, 1_000, 600, 7)
+	_, err := customanchor.PublishTransfer(
+		ctx, h.wallet, sent.transfer, sent.finalPSBT,
+	)
+	require.NoError(t, err)
+
+	first, _ := h.chain.mine(t)
+	h.waitTransfer(sent.txid, TransferConfirmed)
+	require.EqualValues(t, 400, h.ownedUnits())
+
+	require.NoError(t, h.client.Close())
+
+	var once sync.Once
+	h.chain.mu.Lock()
+	h.chain.beforeRegister = func() {
+		once.Do(func() { h.chain.reorg(1) })
+	}
+	h.chain.mu.Unlock()
+
+	h.restart()
+	h.waitTransfer(sent.txid, TransferPending)
+	require.Zero(t, h.ownedUnits())
+
+	second, _ := h.chain.mine(t)
+	require.NotEqual(t, first.BlockHash(), second.BlockHash())
+	h.waitTransfer(sent.txid, TransferConfirmed)
+	require.EqualValues(t, 400, h.ownedUnits())
+
+	transfers, err := h.store.ListTransfers(ctx, &sent.txid)
+	require.NoError(t, err)
+	require.Equal(t, second.BlockHash(), transfers[0].BlockHash)
 }
 
 // TestTransferResumeFinal resumes a transfer that confirmed while nothing
