@@ -118,6 +118,10 @@ type testChain struct {
 
 	// beforeRegister runs before each confirmation registration when set.
 	beforeRegister func()
+
+	// unreported are the transactions whose confirmation a registration
+	// does not report, as a chain source that lags behind.
+	unreported map[chainhash.Hash]struct{}
 }
 
 // newTestChain returns a chain with a few empty blocks.
@@ -233,7 +237,8 @@ func (c *testChain) RegisterConfirmation(_ context.Context,
 	}
 	c.subs = append(c.subs, sub)
 
-	if height, block, ok := c.findTx(txid); ok {
+	_, unreported := c.unreported[txid]
+	if height, block, ok := c.findTx(txid); ok && !unreported {
 		sub.confirmed <- &Confirmation{Height: height, Block: block}
 		if c.finalAtRegistration {
 			sub.done <- struct{}{}
@@ -338,6 +343,45 @@ func (c *testChain) reorg(depth int) {
 			}
 		}
 	}
+}
+
+// report sets whether the registrations of a transaction report its
+// confirmation.
+func (c *testChain) report(txid chainhash.Hash, reported bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if reported {
+		delete(c.unreported, txid)
+
+		return
+	}
+
+	if c.unreported == nil {
+		c.unreported = make(map[chainhash.Hash]struct{})
+	}
+	c.unreported[txid] = struct{}{}
+}
+
+// registrations returns how many confirmation registrations of a transaction
+// the chain took, and how many of them are not canceled.
+func (c *testChain) registrations(txid chainhash.Hash) (int, int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	var total, live int
+	for _, sub := range c.subs {
+		if sub.txid != txid {
+			continue
+		}
+
+		total++
+		if !sub.canceled {
+			live++
+		}
+	}
+
+	return total, live
 }
 
 // finalize reports the confirmation of a transaction as final.

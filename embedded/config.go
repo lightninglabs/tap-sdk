@@ -90,7 +90,10 @@ type Chain interface {
 		label string) error
 
 	// RegisterConfirmation follows the confirmation of a transaction
-	// that pays to pkScript, starting at heightHint.
+	// that pays to pkScript, starting at heightHint. A transaction that
+	// is confirmed at registration is reported too. The engine may hold
+	// several registrations of one transaction and script at a time,
+	// each with its own events and its own Cancel.
 	RegisterConfirmation(ctx context.Context, txid chainhash.Hash,
 		pkScript []byte, heightHint uint32) (*ConfirmationEvents, error)
 }

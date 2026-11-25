@@ -16,6 +16,21 @@ import (
 // the transaction below the block that left the chain.
 const receiveHintMargin = 6
 
+// anchorLookupTimeout bounds the wait for the block of the anchor transaction
+// of an earlier proof. A confirmed transaction that spends its output implies
+// that block, so the chain source reports it without waiting for a new one.
+var anchorLookupTimeout = 30 * time.Second
+
+// confirmationHint returns the height the confirmation of an anchor
+// transaction last known at height is searched from.
+func confirmationHint(height uint32) uint32 {
+	if height > receiveHintMargin {
+		return height - receiveHintMargin
+	}
+
+	return 1
+}
+
 // trackedReceive is a receive the tracker of its anchor output follows: a
 // confirmed one, or one whose confirming block left the chain.
 type trackedReceive struct {
@@ -136,13 +151,9 @@ func (r *receiver) followOutputOnce(ctx context.Context,
 	if err != nil {
 		return false, err
 	}
-	heightHint := uint32(1)
-	if height > receiveHintMargin {
-		heightHint = height - receiveHintMargin
-	}
 
 	events, err := r.e.chain.RegisterConfirmation(
-		ctx, outpoint.Hash, pkScript, heightHint,
+		ctx, outpoint.Hash, pkScript, confirmationHint(height),
 	)
 	if err != nil {
 		return false, fmt.Errorf("register confirmation: %w", err)
@@ -168,7 +179,7 @@ func (r *receiver) followOutputOnce(ctx context.Context,
 			continue
 		}
 
-		if err := r.unconfirm(ctx, outpoint); err != nil {
+		if err := r.unconfirm(ctx, outpoint, nil); err != nil {
 			return false, err
 		}
 
@@ -212,7 +223,8 @@ func (r *receiver) followOutputOnce(ctx context.Context,
 			}
 
 			unapplied = nil
-			if err := r.unconfirm(ctx, outpoint); err != nil {
+			err := r.unconfirm(ctx, outpoint, nil)
+			if err != nil {
 				return false, err
 			}
 
@@ -349,21 +361,14 @@ func (r *receiver) anchorOutput(ctx context.Context,
 }
 
 // unconfirm returns the confirmed receives of an output whose confirming
-// block left the chain to detected. Their asset outputs leave the wallet
-// until the anchor transaction confirms again.
-func (r *receiver) unconfirm(ctx context.Context,
-	outpoint wire.OutPoint) error {
+// block left the chain to detected: every one, or those that are not
+// confirmed in the block of keep. Their asset outputs leave the wallet until
+// the anchor transaction confirms again.
+func (r *receiver) unconfirm(ctx context.Context, outpoint wire.OutPoint,
+	keep *Confirmation) error {
 
 	r.e.transferMu.Lock()
 	defer r.e.transferMu.Unlock()
-
-	return r.unconfirmExcept(ctx, outpoint, nil)
-}
-
-// unconfirmExcept is unconfirm for the receives that are not confirmed in
-// the block of keep. The caller holds transferMu.
-func (r *receiver) unconfirmExcept(ctx context.Context,
-	outpoint wire.OutPoint, keep *Confirmation) error {
 
 	tracked, err := r.trackedReceives(ctx, outpoint)
 	if err != nil {
@@ -417,7 +422,8 @@ func confirmedIn(record *ReceiveRecord, conf *Confirmation) bool {
 }
 
 // reconfirm moves the tracked receives of an output to the block that
-// confirms its anchor transaction: it writes the block into their proofs,
+// confirms its anchor transaction: it writes that block into their proofs,
+// with the current block of every earlier proof whose block left the chain,
 // verifies the files and stores them as owned asset outputs.
 func (r *receiver) reconfirm(ctx context.Context, outpoint wire.OutPoint,
 	conf *Confirmation) error {
@@ -427,14 +433,21 @@ func (r *receiver) reconfirm(ctx context.Context, outpoint wire.OutPoint,
 			outpoint.Hash)
 	}
 
-	r.e.transferMu.Lock()
-	defer r.e.transferMu.Unlock()
-
 	// A receive confirmed in another block holds proofs of a block that
 	// left the chain, whether or not its new proofs verify.
-	if err := r.unconfirmExcept(ctx, outpoint, conf); err != nil {
+	if err := r.unconfirm(ctx, outpoint, conf); err != nil {
 		return err
 	}
+
+	// The chain source can take a while to answer, so it is asked before
+	// the writes of transfers are held up.
+	blocks, err := r.findAnchorBlocks(ctx, outpoint, conf)
+	if err != nil {
+		return err
+	}
+
+	r.e.transferMu.Lock()
+	defer r.e.transferMu.Unlock()
 
 	tracked, err := r.trackedReceives(ctx, outpoint)
 	if err != nil {
@@ -448,7 +461,7 @@ func (r *receiver) reconfirm(ctx context.Context, outpoint wire.OutPoint,
 			continue
 		}
 
-		proofs, err := r.restamp(ctx, receive, conf)
+		proofs, err := r.restamp(ctx, receive, blocks)
 		if err != nil {
 			return err
 		}
@@ -473,12 +486,161 @@ func (r *receiver) reconfirm(ctx context.Context, outpoint wire.OutPoint,
 	return nil
 }
 
+// anchorBlockSet holds the blocks to write into the proofs of an output.
+type anchorBlockSet struct {
+	// seen are the anchor transactions whose block is settled: it is in
+	// blocks, or the proofs name a block of the best chain.
+	seen map[chainhash.Hash]struct{}
+
+	blocks []proof.VerifiedBlockContext
+}
+
+// findAnchorBlocks returns the blocks that the proofs of the unconfirmed
+// receives of an output lack: the confirmation of the anchor transaction of
+// the output, and the block the chain source reports for the anchor
+// transaction of every other proof, those of additional inputs included, that
+// names a block which is not on the best chain.
+func (r *receiver) findAnchorBlocks(ctx context.Context,
+	outpoint wire.OutPoint, conf *Confirmation) (*anchorBlockSet, error) {
+
+	tracked, err := r.trackedReceives(ctx, outpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	found := &anchorBlockSet{seen: make(map[chainhash.Hash]struct{})}
+	for idx := range tracked {
+		receive := &tracked[idx]
+		if receive.record.State == ReceiveConfirmed {
+			continue
+		}
+
+		proofs, err := r.storedProofs(ctx, receive)
+		if err != nil {
+			return nil, err
+		}
+		for proofIdx := range proofs {
+			file, err := proof.DecodeFile(
+				proofs[proofIdx].ProofFile,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("decode proof file: %w",
+					err)
+			}
+
+			err = r.addFileBlocks(
+				ctx, file, outpoint.Hash, conf, found,
+			)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return found, nil
+}
+
+// addFileBlocks adds the blocks that a proof file and the files of its
+// additional inputs lack. conf confirms the transaction anchorTxid.
+func (r *receiver) addFileBlocks(ctx context.Context, file *proof.File,
+	anchorTxid chainhash.Hash, conf *Confirmation,
+	found *anchorBlockSet) error {
+
+	for idx := range file.NumProofs() {
+		p, err := file.ProofAt(uint32(idx))
+		if err != nil {
+			return fmt.Errorf("read proof %d: %w", idx, err)
+		}
+
+		for inputIdx := range p.AdditionalInputs {
+			err := r.addFileBlocks(
+				ctx, &p.AdditionalInputs[inputIdx], anchorTxid,
+				conf, found,
+			)
+			if err != nil {
+				return err
+			}
+		}
+
+		txid := p.AnchorTx.TxHash()
+		if _, ok := found.seen[txid]; ok {
+			continue
+		}
+
+		var block proof.VerifiedBlockContext
+		if txid == anchorTxid {
+			block, err = anchorBlock(&p.AnchorTx, conf)
+		} else {
+			block, err = r.staleAnchorBlock(ctx, p, conf.Height)
+		}
+		if err != nil {
+			return err
+		}
+
+		found.seen[txid] = struct{}{}
+		if block != nil {
+			found.blocks = append(found.blocks, block)
+		}
+	}
+
+	return nil
+}
+
+// staleAnchorBlock returns the block that confirms the anchor transaction of
+// a proof, or nil when the proof names a block of the best chain. A
+// transaction that spends the anchor transaction, directly or not, is
+// confirmed at spendHeight.
+func (r *receiver) staleAnchorBlock(ctx context.Context, p *proof.Proof,
+	spendHeight uint32) (proof.VerifiedBlockContext, error) {
+
+	onChain, err := r.e.onBestChain(
+		ctx, p.BlockHeader.BlockHash(), p.BlockHeight,
+	)
+	if err != nil || onChain {
+		return nil, err
+	}
+
+	txid := p.AnchorTx.TxHash()
+	index := p.InclusionProof.OutputIndex
+	if int(index) >= len(p.AnchorTx.TxOut) {
+		return nil, fmt.Errorf("anchor transaction %v has no output "+
+			"%d", txid, index)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, anchorLookupTimeout)
+	defer cancel()
+
+	// The transaction confirmed no later than the one that spends it.
+	events, err := r.e.chain.RegisterConfirmation(
+		ctx, txid, p.AnchorTx.TxOut[index].PkScript,
+		confirmationHint(min(p.BlockHeight, spendHeight)),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("register confirmation of %v: %w", txid,
+			err)
+	}
+	defer events.Cancel()
+
+	select {
+	case conf, ok := <-events.Confirmed:
+		if !ok || conf == nil || conf.Block == nil {
+			return nil, fmt.Errorf("confirmation events of %v "+
+				"ended", txid)
+		}
+
+		return anchorBlock(&p.AnchorTx, conf)
+
+	case <-ctx.Done():
+		return nil, fmt.Errorf("anchor transaction %v of an earlier "+
+			"proof is not confirmed: %w", txid, ctx.Err())
+	}
+}
+
 // restamp returns the stored proofs of a tracked receive as owned asset
-// outputs whose files name the confirming block of the anchor transaction.
-// Only the anchor transaction of the output is given its block: a file with
-// an earlier proof of a block that left the chain does not verify.
+// outputs, with the given blocks written into their files. A file that does
+// not verify with them is not returned.
 func (r *receiver) restamp(ctx context.Context, receive *trackedReceive,
-	conf *Confirmation) ([]AssetProof, error) {
+	found *anchorBlockSet) ([]AssetProof, error) {
 
 	proofs, err := r.storedProofs(ctx, receive)
 	if err != nil {
@@ -492,18 +654,15 @@ func (r *receiver) restamp(ctx context.Context, receive *trackedReceive,
 		if err != nil {
 			return nil, fmt.Errorf("decode proof file: %w", err)
 		}
-		tip, err := file.LastProof()
-		if err != nil {
-			return nil, err
-		}
-		block, err := anchorBlock(&tip.AnchorTx, conf)
-		if err != nil {
-			return nil, err
-		}
-		restamped, err := file.RestampAnchor(block)
-		if err != nil {
-			return nil, fmt.Errorf("write block into proof: %w",
-				err)
+
+		blob := proof.Blob(assetProof.ProofFile)
+		for _, block := range found.blocks {
+			restamped, err := file.RestampAnchor(block)
+			if err != nil {
+				return nil, fmt.Errorf("write block into "+
+					"proof: %w", err)
+			}
+			blob = restamped.Blob()
 		}
 
 		_, err = file.Verify(ctx, r.e.verifierCtx(ctx))
@@ -512,7 +671,7 @@ func (r *receiver) restamp(ctx context.Context, receive *trackedReceive,
 				assetProof.AssetID[:], err)
 		}
 
-		assetProof.ProofFile = restamped.Blob()
+		assetProof.ProofFile = blob
 		assetProof.Owned = true
 	}
 
