@@ -6,8 +6,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/btcsuite/btcd/chainhash/v2"
 	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/embedded"
+	"github.com/lightninglabs/taproot-assets/proof"
 	"github.com/stretchr/testify/require"
 )
 
@@ -270,4 +272,139 @@ func TestEmbeddedReceiveReorg(t *testing.T) {
 	)
 
 	returnEmbeddedReceive(t, ctx, h, node, lnd, minted, received)
+}
+
+// TestEmbeddedReceiveReorgEarlierProof re-organizes the blocks of two
+// transfers to addresses of an embedded engine, the second of which spends
+// the change of the first. The proof file of the second transfer returns with
+// the new block in the proofs of both transfers, and Alice's tapd verifies it
+// against its own chain backend.
+func TestEmbeddedReceiveReorgEarlierProof(t *testing.T) {
+	h, ctx := newFundedHarness(t)
+	h.EnableUniverseBootstrap(t, ctx)
+
+	minted, err := h.CreateFungibleAndConfirm(
+		t, ctx, uniqueEventLabel("embedded-receive-reorg-earlier"),
+		embeddedITestSupply,
+	)
+	require.NoError(t, err)
+
+	node := h.NewEmbeddedNode(t)
+	require.NoError(t, node.Client.ResumeReceives(ctx))
+	timeout := balanceTimeoutFor(minted.Ref)
+
+	// received is a transfer of Alice to an address of the engine.
+	type received struct {
+		addr   *tapsdk.Address
+		output tapsdk.TransferOutput
+		record *embedded.ReceiveRecord
+	}
+	const amount = embeddedITestReceived / 2
+
+	// One block confirms each transfer, so the two blocks the engine
+	// receives them in are the best ones.
+	pay := func() *received {
+		addr, err := node.Client.NewAddr(ctx, &tapsdk.NewAddressRequest{
+			AssetRef: minted.Ref,
+		})
+		require.NoError(t, err)
+
+		sent, err := h.AliceWallet.Send(
+			ctx, addr.Encoded, tapsdk.WithAmount(amount),
+		)
+		require.NoError(t, err)
+
+		var output *tapsdk.TransferOutput
+		for idx := range sent.Outputs {
+			if sent.Outputs[idx].Amount == amount {
+				output = &sent.Outputs[idx]
+			}
+		}
+		require.NotNil(t, output, "transfer has no output for the "+
+			"address")
+
+		h.MineBlocks(t, 1)
+		h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
+		node.WaitForAddressReceive(t, ctx, addr, false, timeout)
+
+		return &received{
+			addr:   addr,
+			output: *output,
+			record: node.WaitForReceiveState(
+				t, ctx, output.AnchorOutpoint,
+				embedded.ReceiveConfirmed,
+			),
+		}
+	}
+	first := pay()
+	second := pay()
+	h.WaitForBalance(
+		t, ctx, node.Wallet, minted.Ref, 2*amount, defaultWaitTimeout,
+	)
+
+	// Both confirming blocks leave the chain, and the anchor transactions
+	// return to the mempool.
+	require.Equal(t, second.record.BlockHash, h.invalidateBestBlock(t))
+	require.Equal(t, first.record.BlockHash, h.invalidateBestBlock(t))
+	for _, transfer := range []*received{first, second} {
+		node.WaitForAddressReceiveStatus(
+			t, ctx, transfer.addr, false,
+			tapsdk.AddressEventStatusTransactionDetected, timeout,
+		)
+	}
+	held, err := node.Wallet.ListAssets(ctx, &tapsdk.ListAssetsRequest{})
+	require.NoError(t, err)
+	require.Empty(t, held)
+
+	h.MineBlocks(t, defaultMineBlocks)
+	h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
+	for _, transfer := range []*received{first, second} {
+		final := node.WaitForReceiveState(
+			t, ctx, transfer.output.AnchorOutpoint,
+			embedded.ReceiveFinal,
+		)
+		require.NotEqual(t, transfer.record.BlockHash, final.BlockHash)
+		transfer.record = final
+	}
+	h.WaitForBalance(
+		t, ctx, node.Wallet, minted.Ref, 2*amount, defaultWaitTimeout,
+	)
+
+	// The file of the second transfer ends in the proof of Alice's change
+	// of the first transfer and the proof of the second transfer.
+	exported, err := node.Wallet.ExportProofFile(
+		ctx, tapsdk.AssetRefFromAssetID(second.output.IssuanceID),
+		second.output.ScriptKey, &second.output.AnchorOutpoint,
+	)
+	require.NoError(t, err)
+	file, err := proof.DecodeFile(exported.RawProofFile)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, file.NumProofs(), 3)
+
+	for depth, transfer := range []*received{second, first} {
+		p, err := file.ProofAt(uint32(file.NumProofs() - 1 - depth))
+		require.NoError(t, err)
+		require.Equal(
+			t, chainhash.Hash(transfer.output.AnchorOutpoint.Txid),
+			p.AnchorTx.TxHash(),
+		)
+		require.Equal(
+			t, transfer.record.BlockHash, p.BlockHeader.BlockHash(),
+		)
+		require.Equal(t, transfer.record.BlockHeight, p.BlockHeight)
+	}
+
+	for _, transfer := range []*received{first, second} {
+		exported, err := node.Wallet.ExportProofFile(
+			ctx,
+			tapsdk.AssetRefFromAssetID(transfer.output.IssuanceID),
+			transfer.output.ScriptKey,
+			&transfer.output.AnchorOutpoint,
+		)
+		require.NoError(t, err)
+		requireSameProofAnswers(
+			t, ctx, h.AliceClient, node.Client,
+			exported.RawProofFile,
+		)
+	}
 }
