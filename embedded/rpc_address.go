@@ -321,7 +321,8 @@ func (s *addressServer) QueryAddrs(ctx context.Context,
 
 // AddrReceives lists the transfers to the wallet's addresses, newest first
 // unless the request asks for the oldest first. tapd has no status for a
-// failed receive, which is listed with the unknown status.
+// failed receive, which is listed with the unknown status. A receive whose
+// confirming block left the chain is listed as a detected transaction.
 func (s *addressServer) AddrReceives(ctx context.Context,
 	req *taprpc.AddrReceivesRequest) (*taprpc.AddrReceivesResponse, error) {
 
@@ -356,20 +357,19 @@ func (s *addressServer) AddrReceives(ctx context.Context,
 	}
 
 	switch req.FilterStatus {
-	case taprpc.AddrEventStatus_ADDR_EVENT_STATUS_UNKNOWN:
+	// A completed receive is confirmed or final, so the status of its
+	// event selects it.
+	case taprpc.AddrEventStatus_ADDR_EVENT_STATUS_UNKNOWN,
+		taprpc.AddrEventStatus_ADDR_EVENT_STATUS_COMPLETED:
 
-	case taprpc.AddrEventStatus_ADDR_EVENT_STATUS_TRANSACTION_CONFIRMED:
+	case taprpc.AddrEventStatus_ADDR_EVENT_STATUS_TRANSACTION_DETECTED,
+		taprpc.AddrEventStatus_ADDR_EVENT_STATUS_TRANSACTION_CONFIRMED:
+
 		state := ReceiveDetected
 		filter.State = &state
 
-	case taprpc.AddrEventStatus_ADDR_EVENT_STATUS_COMPLETED:
-		state := ReceiveConfirmed
-		filter.State = &state
-
-	// A receive is in neither of these states of tapd.
-	case taprpc.AddrEventStatus_ADDR_EVENT_STATUS_TRANSACTION_DETECTED,
-		taprpc.AddrEventStatus_ADDR_EVENT_STATUS_PROOF_RECEIVED:
-
+	// A receive is never in this state of tapd.
+	case taprpc.AddrEventStatus_ADDR_EVENT_STATUS_PROOF_RECEIVED:
 		return &taprpc.AddrReceivesResponse{}, nil
 
 	default:
@@ -399,14 +399,6 @@ func (s *addressServer) AddrReceives(ctx context.Context,
 			continue
 		}
 
-		if skip > 0 {
-			skip--
-			continue
-		}
-		if req.Limit > 0 && len(resp.Events) == int(req.Limit) {
-			break
-		}
-
 		rpcAddr, ok := addrs[record.Address]
 		if !ok {
 			addr, err := s.engine.receive.address(
@@ -427,6 +419,19 @@ func (s *addressServer) AddrReceives(ctx context.Context,
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling event: %w",
 				err)
+		}
+		unfiltered := req.FilterStatus ==
+			taprpc.AddrEventStatus_ADDR_EVENT_STATUS_UNKNOWN
+		if !unfiltered && event.Status != req.FilterStatus {
+			continue
+		}
+
+		if skip > 0 {
+			skip--
+			continue
+		}
+		if req.Limit > 0 && len(resp.Events) == int(req.Limit) {
+			break
 		}
 		resp.Events = append(resp.Events, event)
 	}
@@ -451,20 +456,25 @@ func marshalReceive(record *ReceiveRecord,
 		ConfirmationHeight:      record.BlockHeight,
 	}
 
-	switch record.State {
+	switch {
+	// The block that confirmed the transfer left the chain.
+	case record.State == ReceiveDetected && payload.reorged:
+		event.Status = taprpc.
+			AddrEventStatus_ADDR_EVENT_STATUS_TRANSACTION_DETECTED
+
 	// A sender announces a transfer once its anchor transaction is
 	// confirmed, in the block the fragment names.
-	case ReceiveDetected:
+	case record.State == ReceiveDetected:
 		event.Status = taprpc.
 			AddrEventStatus_ADDR_EVENT_STATUS_TRANSACTION_CONFIRMED
 		event.ConfirmationHeight = payload.fragment.BlockHeight
 
-	case ReceiveConfirmed:
+	case holdsAssets(record.State):
 		event.Status = taprpc.
 			AddrEventStatus_ADDR_EVENT_STATUS_COMPLETED
 		event.HasProof = true
 
-	case ReceiveFailed:
+	case record.State == ReceiveFailed:
 		event.Status = taprpc.AddrEventStatus_ADDR_EVENT_STATUS_UNKNOWN
 
 	default:

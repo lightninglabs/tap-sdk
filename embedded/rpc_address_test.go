@@ -673,6 +673,113 @@ func TestAddrReceives(t *testing.T) {
 	}
 }
 
+// TestAddrReceivesStates lists a receive of every state with the status
+// tapd has for it. A completed receive is confirmed or final, and one whose
+// block left the chain is a detected transaction.
+func TestAddrReceivesStates(t *testing.T) {
+	h := newAddressHarness(t, testCourier)
+	ctx := t.Context()
+
+	addr, err := h.wallet.NewReceiveAddress(
+		ctx, tapsdk.AssetRefFromAssetID(tapsdk.AssetID{1}),
+	)
+	require.NoError(t, err)
+	decoded, err := address.DecodeAddress(
+		addr.Encoded, &address.RegressionNetTap,
+	)
+	require.NoError(t, err)
+
+	const (
+		anyStatus = tapsdk.AddressEventStatusUnknown
+		detected  = tapsdk.AddressEventStatusTransactionDetected
+		announced = tapsdk.AddressEventStatusTransactionConfirmed
+		completed = tapsdk.AddressEventStatusCompleted
+	)
+	records := []struct {
+		state   ReceiveState
+		reorged bool
+		want    tapsdk.AddressEventStatus
+	}{
+		{state: ReceiveDetected, want: announced},
+		{state: ReceiveDetected, reorged: true, want: detected},
+		{state: ReceiveConfirmed, want: completed},
+		{state: ReceiveFinal, want: completed},
+		{state: ReceiveFailed, want: anyStatus},
+	}
+	for idx, record := range records {
+		payload, err := (&receivePayload{
+			fragment: &proof.SendFragment{
+				Version: proof.SendFragmentV1,
+				Outputs: map[asset.ID]proof.SendOutput{
+					{1}: {Amount: 1},
+				},
+			},
+			reorged: record.reorged,
+		}).encode()
+		require.NoError(t, err)
+
+		_, err = h.store.InsertReceive(ctx, ReceiveRecord{
+			Address:      asset.ToSerialized(&decoded.ScriptKey),
+			Announcement: [32]byte{byte(idx)},
+			State:        record.state,
+			CreatedAt:    time.Unix(1_700_000_000+int64(idx), 0),
+			Payload:      payload,
+		})
+		require.NoError(t, err)
+	}
+
+	statuses := func(
+		filter tapsdk.AddressEventStatus) []tapsdk.AddressEventStatus {
+
+		events, err := h.client.AddrReceives(
+			ctx, &tapsdk.AddressReceivesQuery{
+				FilterStatus: filter,
+				Direction:    tapsdk.SortAscending,
+			},
+		)
+		require.NoError(t, err)
+
+		listed := make([]tapsdk.AddressEventStatus, len(events))
+		for idx, event := range events {
+			listed[idx] = event.Status
+			require.Equal(
+				t, event.Status == completed, event.HasProof,
+			)
+		}
+
+		return listed
+	}
+
+	all := make([]tapsdk.AddressEventStatus, len(records))
+	for idx, record := range records {
+		all[idx] = record.want
+	}
+	require.Equal(t, all, statuses(anyStatus))
+	require.Equal(
+		t, []tapsdk.AddressEventStatus{detected}, statuses(detected),
+	)
+	require.Equal(
+		t, []tapsdk.AddressEventStatus{announced}, statuses(announced),
+	)
+	require.Equal(
+		t, []tapsdk.AddressEventStatus{completed, completed},
+		statuses(completed),
+	)
+
+	// A page counts the listed receives only.
+	events, err := h.client.AddrReceives(
+		ctx, &tapsdk.AddressReceivesQuery{
+			FilterStatus: completed,
+			Direction:    tapsdk.SortAscending,
+			Offset:       1,
+			Limit:        1,
+		},
+	)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	require.EqualValues(t, 1_700_000_003, events[0].CreationTime)
+}
+
 // TestAddressCallsNeedReceiveConfig leaves every address call unimplemented
 // for a host that set no ReceiveConfig.
 func TestAddressCallsNeedReceiveConfig(t *testing.T) {

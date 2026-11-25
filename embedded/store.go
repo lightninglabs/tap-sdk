@@ -204,7 +204,8 @@ type ReceiveState uint8
 
 const (
 	// ReceiveDetected is a transfer a sender announced in the mailbox of
-	// the address. The wallet does not hold its assets yet.
+	// the address, or a confirmed transfer whose block left the chain. The
+	// wallet does not hold its assets.
 	ReceiveDetected ReceiveState = iota
 
 	// ReceiveConfirmed is a transfer whose proofs verified and are stored
@@ -215,6 +216,10 @@ const (
 	// proofs do not verify or do not match the address, or another
 	// announcement of its output delivered the assets.
 	ReceiveFailed
+
+	// ReceiveFinal is a confirmed transfer whose confirmation the chain
+	// source reported as final. The engine does not follow it.
+	ReceiveFinal
 )
 
 // ReceiveRecord is one announcement of a transfer to an address of the
@@ -236,7 +241,7 @@ type ReceiveRecord struct {
 	State ReceiveState
 
 	// BlockHash is the block confirming the anchor transaction. It is
-	// zero until the receive is confirmed.
+	// zero while the receive is not confirmed.
 	BlockHash chainhash.Hash
 
 	// BlockHeight is the height of BlockHash.

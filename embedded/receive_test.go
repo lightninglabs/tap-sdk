@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/chainhash/v2"
 	"github.com/btcsuite/btcd/txscript/v2"
+	"github.com/btcsuite/btcd/wire/v2"
 	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/customanchor"
 	"github.com/lightninglabs/taproot-assets/asset"
@@ -1119,5 +1121,50 @@ func TestQueryProofUniverses(t *testing.T) {
 			queries, _, _ := courier.counts()
 			require.Equal(t, tc.wantQueries, queries)
 		})
+	}
+}
+
+// TestReceivePayloadVersions decodes a payload of each version of the
+// encoding.
+func TestReceivePayloadVersions(t *testing.T) {
+	fragment := &proof.SendFragment{
+		Version:     proof.SendFragmentV1,
+		BlockHeight: 7,
+		OutPoint:    wire.OutPoint{Hash: chainhash.Hash{1}, Index: 2},
+		Outputs: map[asset.ID]proof.SendOutput{
+			{3}: {Amount: 4},
+		},
+	}
+
+	for _, reorged := range []bool{false, true} {
+		encoded, err := (&receivePayload{
+			fragment:    fragment,
+			anchorValue: 1_000,
+			failure:     "failure",
+			reorged:     reorged,
+		}).encode()
+		require.NoError(t, err)
+
+		decoded, err := decodeReceivePayload(encoded)
+		require.NoError(t, err)
+		require.Equal(t, reorged, decoded.reorged)
+		require.EqualValues(t, 1_000, decoded.anchorValue)
+		require.Equal(t, "failure", decoded.failure)
+		require.Equal(t, fragment.OutPoint, decoded.fragment.OutPoint)
+
+		// The first version ends before the re-org marker.
+		first := append([]byte{}, encoded[:len(encoded)-1]...)
+		first[0] = receivePayloadNoReorg
+		decoded, err = decodeReceivePayload(first)
+		require.NoError(t, err)
+		require.False(t, decoded.reorged)
+		require.Equal(t, "failure", decoded.failure)
+
+		_, err = decodeReceivePayload(encoded[:len(encoded)-1])
+		require.Error(t, err)
+
+		encoded[0] = receivePayloadVersion + 1
+		_, err = decodeReceivePayload(encoded)
+		require.ErrorContains(t, err, "unknown receive payload version")
 	}
 }
