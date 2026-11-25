@@ -231,9 +231,25 @@ the block of each confirmed receive with the best chain first. `AddrReceives`
 lists a final receive as completed, and a receive whose block left the chain
 as a detected transaction.
 
-Only the anchor transaction of the received output is given its new block. A
-proof file whose earlier proofs name a block that also left the chain does
-not verify, and its receive stays detected.
+The file of a receive can hold other proofs whose blocks left the chain in
+the same re-org: the proofs of the transfers before it, and the proofs in the
+files of additional inputs. When the anchor transaction of the receive
+confirms again, the engine compares the block of each of these proofs with
+the best chain. For a proof whose block left the chain, the engine registers
+the anchor transaction of that proof with `Chain.RegisterConfirmation`, takes
+the first confirmation, cancels the registration and writes the confirming
+block into the file. A proof whose block is on the best chain costs one
+header lookup and no registration.
+
+The engine waits 30 seconds for each of these confirmations. While one is
+missing, or while the file does not verify, the receive stays detected and
+the engine tries again every 30 seconds. A re-org that removes the block of
+an earlier proof also removes the block of the receive, so the confirmation
+of the receive is the only one the engine follows.
+
+A host must serve several registrations of one transaction and script at a
+time, each with its own events and its own `Cancel`. It must also report a
+transaction that is already confirmed when the engine registers it.
 
 A sender needs one confirmed transaction to announce a transfer whose proofs
 never reach the courier. The engine therefore fetches the proofs of a few
