@@ -20,8 +20,15 @@ import (
 	"github.com/lightningnetwork/lnd/keychain"
 )
 
-// receivePayloadVersion is the version of the receive payload encoding.
-const receivePayloadVersion = 0
+const (
+	// receivePayloadVersion is the version of the receive payload
+	// encoding.
+	receivePayloadVersion = 1
+
+	// receivePayloadNoReorg is the version of the encoding that ends
+	// before the re-org marker.
+	receivePayloadNoReorg = 0
+)
 
 var (
 	// errReceiveNotReady marks a receive that waits for its block to
@@ -78,6 +85,11 @@ type receivePayload struct {
 
 	// failure is why the receive failed.
 	failure string
+
+	// reorged marks a receive whose confirming block left the chain. Its
+	// proofs are stored as not owned, and the tracker of its anchor output
+	// confirms it again.
+	reorged bool
 }
 
 // encode serializes the payload.
@@ -96,6 +108,12 @@ func (p *receivePayload) encode() ([]byte, error) {
 	buf.Write(anchorValue[:])
 	writePayloadField(&buf, []byte(p.failure))
 
+	var reorged byte
+	if p.reorged {
+		reorged = 1
+	}
+	buf.WriteByte(reorged)
+
 	return buf.Bytes(), nil
 }
 
@@ -107,7 +125,7 @@ func decodeReceivePayload(encoded []byte) (*receivePayload, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decode receive payload: %w", err)
 	}
-	if version != receivePayloadVersion {
+	if version > receivePayloadVersion {
 		return nil, fmt.Errorf("unknown receive payload version %d",
 			version)
 	}
@@ -133,10 +151,20 @@ func decodeReceivePayload(encoded []byte) (*receivePayload, error) {
 		return nil, fmt.Errorf("decode receive payload: %w", err)
 	}
 
+	var reorged byte
+	if version != receivePayloadNoReorg {
+		reorged, err = r.ReadByte()
+		if err != nil {
+			return nil, fmt.Errorf("decode receive payload: %w",
+				err)
+		}
+	}
+
 	return &receivePayload{
 		fragment:    fragment,
 		anchorValue: int64(binary.BigEndian.Uint64(anchorValue[:])),
 		failure:     string(failure),
+		reorged:     reorged != 0,
 	}, nil
 }
 
@@ -284,7 +312,7 @@ func (r *receiver) load(ctx context.Context, id receiveID) (*ReceiveRecord,
 		case known.Announcement == id.announcement:
 			record = known
 
-		case known.State == ReceiveConfirmed:
+		case holdsAssets(known.State):
 			payload, err := decodeReceivePayload(known.Payload)
 			if err != nil {
 				return nil, nil, err
@@ -300,6 +328,12 @@ func (r *receiver) load(ctx context.Context, id receiveID) (*ReceiveRecord,
 	}
 
 	return record, held, nil
+}
+
+// holdsAssets reports whether the wallet holds the assets of a receive in the
+// given state.
+func holdsAssets(state ReceiveState) bool {
+	return state == ReceiveConfirmed || state == ReceiveFinal
 }
 
 // announcedAgain reports whether the wallet holds every asset of a fragment
