@@ -203,6 +203,20 @@ func (n *EmbeddedNode) WaitForAddressReceive(t testing.TB,
 
 	t.Helper()
 
+	return n.WaitForAddressReceiveStatus(
+		t, ctx, addr, sync, tapsdk.AddressEventStatusCompleted, timeout,
+	)
+}
+
+// WaitForAddressReceiveStatus is WaitForAddressReceive for a transfer the
+// engine lists with the given status.
+func (n *EmbeddedNode) WaitForAddressReceiveStatus(t testing.TB,
+	ctx context.Context, addr *tapsdk.Address, sync bool,
+	status tapsdk.AddressEventStatus,
+	timeout time.Duration) *tapsdk.AddressEvent {
+
+	t.Helper()
+
 	var (
 		event      *tapsdk.AddressEvent
 		lastStatus string
@@ -237,13 +251,59 @@ func (n *EmbeddedNode) WaitForAddressReceive(t testing.TB,
 		event = events[0]
 		lastStatus = fmt.Sprintf("status = %d", event.Status)
 
-		return event.Status == tapsdk.AddressEventStatusCompleted
+		return event.Status == status
 	}, timeout, time.Second,
-		"embedded address %s never completed a receive; last "+
-			"observation: %s", addr.Encoded, observed{&lastStatus},
+		"embedded address %s never listed a receive with status %d; "+
+			"last observation: %s", addr.Encoded, status,
+		observed{&lastStatus},
 	)
 
 	return event
+}
+
+// WaitForReceiveState polls until the engine records one transfer to the
+// anchor output in the given state, and returns the record.
+func (n *EmbeddedNode) WaitForReceiveState(t testing.TB, ctx context.Context,
+	outpoint tapsdk.Outpoint,
+	state embedded.ReceiveState) *embedded.ReceiveRecord {
+
+	t.Helper()
+
+	var (
+		record     *embedded.ReceiveRecord
+		lastStatus string
+		anchor     = wire.OutPoint{
+			Hash:  chainhash.Hash(outpoint.Txid),
+			Index: outpoint.Index,
+		}
+	)
+	require.Eventuallyf(t, func() bool {
+		records, err := n.Store.ListReceives(
+			ctx, embedded.ReceiveFilter{Outpoint: &anchor},
+		)
+		switch {
+		case err != nil:
+			lastStatus = fmt.Sprintf("receive lookup failed: %v",
+				err)
+
+			return false
+
+		case len(records) != 1:
+			lastStatus = fmt.Sprintf("%d receives recorded",
+				len(records))
+
+			return false
+		}
+		record = &records[0]
+		lastStatus = fmt.Sprintf("state = %d", record.State)
+
+		return record.State == state
+	}, defaultWaitTimeout, embeddedChainPollInterval,
+		"embedded receive at %v never reached state %d; last "+
+			"observation: %s", anchor, state, observed{&lastStatus},
+	)
+
+	return record
 }
 
 // observed is the last status a poll saw. It is read when the failure

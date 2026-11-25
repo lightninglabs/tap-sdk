@@ -142,13 +142,25 @@ func testEmbeddedAddressReceive(t *testing.T, ctx context.Context,
 		t, ctx, h.AliceClient, node.Client, sentProof.RawProofFile,
 	)
 
+	returnEmbeddedReceive(t, ctx, h, node, lnd, minted, sentProof)
+}
+
+// returnEmbeddedReceive sends the units the engine received at an address
+// back to Alice, whose tapd verifies and imports the transfer. receivedProof
+// is the proof file of the received output.
+func returnEmbeddedReceive(t *testing.T, ctx context.Context, h *TestHarness,
+	node *EmbeddedNode, lnd *lndWalletKit, minted *MintResult,
+	receivedProof *tapsdk.ProofFile) {
+
+	t.Helper()
+
 	// The engine signs for the script key Alice derived from the
 	// address, and for the anchor output under the address's internal
 	// key.
 	aliceKeys, err := h.AliceWallet.DeriveKeys(ctx)
 	require.NoError(t, err)
 	returned := commitEmbeddedTransfer(
-		t, ctx, h, node, lnd, minted.Ref, sentProof,
+		t, ctx, h, node, lnd, minted.Ref, receivedProof,
 		embeddedITestReceived, aliceKeys, embeddedITestReceived,
 	)
 	publishEmbeddedTransfer(t, ctx, node, returned)
@@ -159,7 +171,7 @@ func testEmbeddedAddressReceive(t *testing.T, ctx context.Context,
 	)
 	h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
 
-	balance, err = node.Wallet.GetBalance(ctx, minted.Ref)
+	balance, err := node.Wallet.GetBalance(ctx, minted.Ref)
 	require.NoError(t, err)
 	require.Zero(t, balance)
 
@@ -171,4 +183,91 @@ func testEmbeddedAddressReceive(t *testing.T, ctx context.Context,
 		t, ctx, h.AliceWallet, minted.Ref, embeddedITestSupply,
 		balanceTimeoutFor(minted.Ref),
 	)
+}
+
+// TestEmbeddedReceiveReorg takes a transfer to an address of an embedded
+// engine through a re-org of its confirming block: the received units leave
+// the wallet, and return with a proof of the block that confirms the transfer
+// again. The engine then returns the units to Alice, whose tapd verifies the
+// proof of the new block.
+func TestEmbeddedReceiveReorg(t *testing.T) {
+	h, ctx := newFundedHarness(t)
+	lnd := newAliceLndWalletKit(t)
+	h.EnableUniverseBootstrap(t, ctx)
+
+	minted, err := h.CreateFungibleAndConfirm(
+		t, ctx, uniqueEventLabel("embedded-receive-reorg"),
+		embeddedITestSupply,
+	)
+	require.NoError(t, err)
+
+	node := h.NewEmbeddedNode(t)
+	require.NoError(t, node.Client.ResumeReceives(ctx))
+	addr, err := node.Client.NewAddr(ctx, &tapsdk.NewAddressRequest{
+		AssetRef: minted.Ref,
+	})
+	require.NoError(t, err)
+
+	sent, err := h.AliceWallet.Send(
+		ctx, addr.Encoded, tapsdk.WithAmount(embeddedITestReceived),
+	)
+	require.NoError(t, err)
+
+	var output *tapsdk.TransferOutput
+	for idx := range sent.Outputs {
+		if sent.Outputs[idx].Amount == embeddedITestReceived {
+			output = &sent.Outputs[idx]
+		}
+	}
+	require.NotNil(t, output, "transfer has no output for the address")
+
+	// One block confirms the transfer, so the block the engine receives
+	// it in is the best one.
+	h.MineBlocks(t, 1)
+	timeout := balanceTimeoutFor(minted.Ref)
+	node.WaitForAddressReceive(t, ctx, addr, false, timeout)
+	first := node.WaitForReceiveState(
+		t, ctx, output.AnchorOutpoint, embedded.ReceiveConfirmed,
+	)
+	h.WaitForBalance(
+		t, ctx, node.Wallet, minted.Ref, embeddedITestReceived,
+		defaultWaitTimeout,
+	)
+
+	// The confirming block leaves the chain, and the anchor transaction
+	// returns to the mempool.
+	require.Equal(t, first.BlockHash, h.invalidateBestBlock(t))
+	node.WaitForAddressReceiveStatus(
+		t, ctx, addr, false,
+		tapsdk.AddressEventStatusTransactionDetected, timeout,
+	)
+	held, err := node.Wallet.ListAssets(ctx, &tapsdk.ListAssetsRequest{})
+	require.NoError(t, err)
+	require.Empty(t, held)
+
+	h.MineBlocks(t, defaultMineBlocks)
+	final := node.WaitForReceiveState(
+		t, ctx, output.AnchorOutpoint, embedded.ReceiveFinal,
+	)
+	require.NotEqual(t, first.BlockHash, final.BlockHash)
+	event := node.WaitForAddressReceive(t, ctx, addr, false, timeout)
+	require.Equal(t, final.BlockHeight, event.ConfirmationHeight)
+	h.WaitForBalance(
+		t, ctx, node.Wallet, minted.Ref, embeddedITestReceived,
+		defaultWaitTimeout,
+	)
+	h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
+
+	// The proof commits to the new block, which tapd checks against its
+	// own chain backend.
+	received, err := node.Wallet.ExportProofFile(
+		ctx, tapsdk.AssetRefFromAssetID(output.IssuanceID),
+		output.ScriptKey, &output.AnchorOutpoint,
+	)
+	require.NoError(t, err)
+	requireSameProofAnswers(
+		t, ctx, h.AliceClient, node.Client, received.RawProofFile,
+	)
+
+	returnEmbeddedReceive(t, ctx, h, node, lnd, minted, received)
 }
