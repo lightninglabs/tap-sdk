@@ -135,10 +135,12 @@ It covers what a wallet needs to hold and move assets:
   script key and requests asset version 1. Its proof courier is the one the
   request names, or `ReceiveConfig.DefaultCourier`;
 - receive the transfers sent to those addresses, and list them with
-  `AddrReceives`.
+  `AddrReceives`;
+- fund a transfer to V2 addresses with `FundTransfer`, and deliver its proofs
+  to the recipients once it confirms, when the host sets `Config.Send`.
 
 Every other call returns `codes.Unimplemented`: minting, universe queries,
-address sends, burns and event streams. The engine
+`SendAsset`, burns and event streams. The engine
 holds no Bitcoin, so `CommitVirtualPsbts` accepts caller-funded anchor
 transactions only, and `customanchor.QueryCapabilities` reports wallet funding
 as unsupported.
@@ -240,6 +242,62 @@ never reach the courier. The engine therefore fetches the proofs of a few
 receives at a time, and a client works on one receive twelve times at most on
 its own, with a delay that doubles from five seconds. `SyncReceives` tries
 such a receive again.
+
+### Sending to an address
+
+A host pays a V2 address with the calls of a caller-funded transfer.
+`SendConfig` enables it, with one port: the dialer of the couriers that
+recipients name in their addresses.
+
+```go
+client, err := embedded.NewClient(&embedded.Config{
+    // ...
+    Send: &embedded.SendConfig{
+        Dial: courier.NewDialer(nil),
+    },
+})
+```
+
+`FundTransfer` selects the outputs to spend and returns the virtual
+transactions, one per issuance the transfer spends. It selects among the
+unspent outputs of the asset whose script key and anchor key the wallet
+holds, largest first, across every issuance of a group. The engine leases no
+output, so a host funds one transfer at a time.
+
+The output of each recipient follows tapd's rules for a V2 address: its
+script key is derived from the script key of the address for the asset, its
+anchor output is under the internal key of the address, and a random alt
+leaf makes two equal payments to one address differ on chain. The surplus
+returns to the wallet in a change output of asset version 1. An asset that a
+spent anchor output holds beside the spent one moves to the anchor output of
+the change in a passive packet.
+
+The host signs every packet with `SignVirtualPsbt`, commits them to one
+anchor transaction it funds with `CommitVirtualPsbtsWithRequest`, and
+publishes with `PublishAndLogTransferWithRequest`. `SendAsset` does all of
+this in one call on a tapd, which pays for the anchor from lnd. The engine
+holds no Bitcoin, so that call stays unimplemented.
+
+A mailbox takes a message only with the proof that its output confirmed, so
+the engine delivers each output that pays an address once the anchor
+transaction confirms, to the courier the address names:
+
+1. It stores every proof of the output's proof file in the universe of the
+   asset, and for a grouped asset also in the universe of the group.
+2. It posts the encrypted announcement of the output to the mailbox of the
+   address.
+
+The announcement comes last, because a recipient fetches the proofs when it
+reads it. The engine records each delivery with the transfer, and
+`ListTransfers` reports the proof delivery status of the output as pending
+until the courier took the proofs and the announcement. A delivery that
+fails is repeated after 30 seconds, and the wait doubles up to 10 minutes.
+`ResumeTransfers` continues the deliveries an earlier run left unfinished.
+Repeating a delivery is safe: a universe takes a proof it holds, and a
+mailbox keeps one message per output.
+
+The recipient chooses the courier, so `SendConfig.Dial` decides which hosts
+the wallet contacts. `courier.NewDialer` dials any host an address names.
 
 `embedded.NewMemoryStore` is a store for tests. The package builds for js/wasm,
 and `make unit-wasm` runs its tests there.
