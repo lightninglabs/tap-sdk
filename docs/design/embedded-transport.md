@@ -35,7 +35,16 @@ with three more ports:
 | `CourierDialer` | reach the proof courier an address names |
 
 Without it the address calls return `codes.Unimplemented`, and the engine
-contacts no courier.
+reads from no courier.
+
+A host that pays Taproot Asset addresses sets `SendConfig`, with one port:
+
+| Port | The engine uses it to |
+|------|------------------------|
+| `CourierDialer` | reach the proof courier the address of a recipient names |
+
+Without it the engine refuses to publish a transfer that pays an address,
+and writes to no courier.
 
 `Signer` has the shape of lnd's `input.Signer` plus a context, so the engine
 never holds a private key: a host can sign with a local key ring through
@@ -84,9 +93,24 @@ the calls.
   the chain returns to detected with its proofs not owned, and its proofs
   are given the new block once the transaction confirms again.
 
+- The engine pays version 2 addresses with caller-funded transfers.
+  `FundTransfer` selects the outputs to spend, across every issuance of a
+  group, and builds one virtual transaction per issuance with the outputs
+  tapd's `prepareV2Outputs` builds. The client answers that call itself,
+  because the response of tapd's `FundVirtualPsbt` holds one virtual
+  transaction. After the anchor transaction confirms, the
+  engine stores the proofs in the universe of the recipient's courier and
+  then posts the announcement that `proof.EncryptSendFragment` encrypts to
+  the recipient's mailbox, in the order tapd uses.
+- A delivery is recorded in the payload of its transfer, so the store needs
+  no new table, and the engine resumes it after a restart. The recipient
+  names the courier, so the dialer the host supplies decides which hosts the
+  wallet contacts.
+
 ## Non-Goals
 
-- Minting, universe serving and syncing, address sends, burns, events, RFQ
-  and channels.
+- Minting, universe serving and syncing, burns, events, RFQ and channels.
+- `SendAsset`, which funds the anchor transaction of an address send in the
+  backend.
 - Funding anchor transactions from an engine-owned Bitcoin wallet.
 - Recovering proofs from a seed. A store backup is the host's concern.
