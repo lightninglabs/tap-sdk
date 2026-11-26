@@ -137,6 +137,36 @@ type ProofKey struct {
 	Outpoint wire.OutPoint
 }
 
+// AnchorProof shows a courier that the sender of a mailbox message created a
+// confirmed Taproot output. A courier stores one message per output.
+type AnchorProof struct {
+	// Tx is the confirmed transaction.
+	Tx *wire.MsgTx
+
+	// BlockHeader is the header of the block that confirms Tx.
+	BlockHeader wire.BlockHeader
+
+	// BlockHeight is the height of that block.
+	BlockHeight uint32
+
+	// MerkleNodes are the hashes that lead from Tx to the merkle root of
+	// the block, lowest level first.
+	MerkleNodes []chainhash.Hash
+
+	// MerkleBits tells for each of MerkleNodes whether it is the right
+	// sibling.
+	MerkleBits []bool
+
+	// Outpoint is the output of Tx the message is about.
+	Outpoint wire.OutPoint
+
+	// InternalKey is the compressed Taproot internal key of the output.
+	InternalKey [33]byte
+
+	// MerkleRoot is the Taproot merkle root the output commits to.
+	MerkleRoot []byte
+}
+
 // MailboxMessage is one message of a courier's mailbox.
 type MailboxMessage struct {
 	// ID is the courier's ID of the message.
@@ -172,6 +202,19 @@ type Courier interface {
 	// answers the courier's challenge. The stream ends with ctx.
 	ReceiveMessages(ctx context.Context, receiver [33]byte,
 		startBlock uint32, sign ChallengeSigner) (MessageStream, error)
+
+	// InsertProof stores an encoded proof at a universe leaf. It returns
+	// ErrProofRefused when the universe answers that it does not take the
+	// proof, and another error when a later call may succeed.
+	InsertProof(ctx context.Context, key ProofKey, proof []byte) error
+
+	// SendMessage stores an encrypted message in the mailbox of a
+	// receiver. anchor proves the output the message is about. A courier
+	// keeps one message per output: it answers a second message about an
+	// output to the same receiver as it answered the first, and stores
+	// the first only.
+	SendMessage(ctx context.Context, receiver [33]byte, payload []byte,
+		anchor *AnchorProof) error
 
 	// Close releases the connection to the courier.
 	Close() error
