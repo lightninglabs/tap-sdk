@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/customanchor"
@@ -22,6 +23,10 @@ type Client struct {
 	*tapgrpc.Client
 
 	engine *engine
+
+	// rpcTimeout bounds a call the client answers without the gRPC
+	// client.
+	rpcTimeout time.Duration
 }
 
 // A compile-time check that Client is a full tap-sdk client that reports
@@ -67,8 +72,9 @@ func NewClient(cfg *Config) (*Client, error) {
 	}
 
 	return &Client{
-		Client: tapgrpc.NewClientFromConn(conn, rpcTimeout),
-		engine: e,
+		Client:     tapgrpc.NewClientFromConn(conn, rpcTimeout),
+		engine:     e,
+		rpcTimeout: rpcTimeout,
 	}, nil
 }
 
