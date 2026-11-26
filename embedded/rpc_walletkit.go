@@ -482,6 +482,14 @@ func (s *walletKitServer) PublishAndLogTransfer(ctx context.Context,
 			err)
 	}
 
+	// The recipient of an address learns of a transfer from the proofs
+	// and the announcement its sender hands to a courier.
+	if paysAddress(activePackets) {
+		return nil, status.Error(codes.Unimplemented, "the embedded "+
+			"backend delivers no proofs to the recipient of an "+
+			"address")
+	}
+
 	e := s.engine
 	allPackets := append([]*tappsbt.VPacket{}, activePackets...)
 	allPackets = append(allPackets, passivePackets...)

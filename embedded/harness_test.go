@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -484,6 +485,19 @@ func (h *testHarness) mint(scriptKey *tapsdk.ScriptKey,
 
 	h.t.Helper()
 
+	return h.mintTranche(
+		scriptKey, internalKey, amount, tag, tag, groupPriv,
+	)
+}
+
+// mintTranche is mint for a later issuance of a group, whose first issuance
+// was under anchorTag.
+func (h *testHarness) mintTranche(scriptKey *tapsdk.ScriptKey,
+	internalKey *tapsdk.InternalKey, amount uint64, tag, anchorTag string,
+	groupPriv *btcec.PrivateKey) *mintedAsset {
+
+	h.t.Helper()
+
 	scriptPubKey, err := btcec.ParsePubKey(scriptKey.PubKey[:])
 	require.NoError(h.t, err)
 	anchorKey, err := btcec.ParsePubKey(internalKey.PubKey[:])
@@ -500,14 +514,14 @@ func (h *testHarness) mint(scriptKey *tapsdk.ScriptKey,
 		)
 		require.NoError(h.t, err)
 		groupKey, _ = asset.RandGroupKeyWithSigner(
-			h.t, groupPriv, genesis, ungrouped,
+			h.t, groupPriv, testGenesis(anchorTag), ungrouped,
 		)
 
 		// The issuance proof verifies as it is created.
 		h.client.TrustGroupKey(sdkPubKey(h.t, &groupKey.GroupPubKey))
 	}
 	newAsset, err := asset.New(
-		genesis, amount, 0, 0, asset.NewScriptKey(scriptPubKey),
+		genesis, amount, 0, 0, asset.ScriptKey{PubKey: scriptPubKey},
 		groupKey,
 	)
 	require.NoError(h.t, err)
@@ -531,6 +545,14 @@ func (h *testHarness) mint(scriptKey *tapsdk.ScriptKey,
 
 	vCtx := h.client.engine.verifierCtx(h.t.Context())
 	vCtx.GroupAnchorVerifier = proof.MockGroupAnchorVerifier
+	if tag != anchorTag {
+		// Only the first issuance of a group reveals the group key.
+		vCtx.GroupAnchorVerifier = func(*asset.Genesis,
+			*asset.GroupKey) error {
+
+			return errors.New("not the first issuance")
+		}
+	}
 	proofs, err := proof.NewMintingBlobs(&proof.MintParams{
 		BaseProofParams: proof.BaseProofParams{
 			Block:            block,
