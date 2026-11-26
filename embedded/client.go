@@ -80,8 +80,10 @@ func NewClient(cfg *Config) (*Client, error) {
 
 // ResumeTransfers follows the transfers an earlier run left unconfirmed or
 // not yet final. It broadcasts a pending anchor transaction again and writes
-// the final proofs of a transfer once it confirms. A transfer published
-// through this client is followed without this call.
+// the final proofs of a transfer once it confirms. It also delivers the proofs
+// of the confirmed transfers to addresses that an earlier run did not hand to
+// the couriers of their recipients. A transfer published through this client
+// is followed and delivered without this call.
 func (c *Client) ResumeTransfers(ctx context.Context) error {
 	return c.engine.resumeTransfers(ctx)
 }

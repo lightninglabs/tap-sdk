@@ -13,6 +13,10 @@
 // creates, decodes and lists version 2 addresses, and receives and lists the
 // transfers sent to them: it reads the auth mailbox of each address on the
 // address's proof courier, and fetches and verifies the proofs of each
-// transfer a sender announces there. Minting, universe queries, address sends
-// and event streams return codes.Unimplemented.
+// transfer a sender announces there. With a SendConfig it pays version 2
+// addresses: it selects the outputs to spend, and once the caller-funded
+// anchor transaction confirms it stores the proofs in the universe of the
+// recipient's courier and announces the transfer in the recipient's mailbox.
+// Minting, universe queries, SendAsset and event streams return
+// codes.Unimplemented.
 package embedded

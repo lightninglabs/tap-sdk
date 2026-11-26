@@ -31,12 +31,21 @@ import (
 
 const (
 	// transferPayloadVersion is the version of the transfer payload
-	// encoding.
-	transferPayloadVersion = 0
+	// encoding that ends with the deliveries of the transfer.
+	transferPayloadVersion = 1
+
+	// transferPayloadNoDeliveries is the version of the encoding that
+	// ends before the deliveries. A transfer without deliveries is
+	// written in it.
+	transferPayloadNoDeliveries = 0
 
 	// payloadFlagSkipBroadcast marks a transfer whose anchor transaction
 	// the caller broadcasts.
 	payloadFlagSkipBroadcast = 1 << 0
+
+	// payloadFlagDeliveryPending marks a transfer with a delivery that is
+	// not done.
+	payloadFlagDeliveryPending = 1 << 1
 
 	// maxPayloadField bounds one length-prefixed field of a payload.
 	maxPayloadField = 512 * 1024 * 1024
@@ -55,6 +64,9 @@ type shipment struct {
 	// inputProofs are the caller-supplied proof files of inputs, keyed by
 	// the input each file ends in.
 	inputProofs map[asset.PrevID]*inputProof
+
+	// deliveries are the anchor outputs that pay an address.
+	deliveries []delivery
 }
 
 // inputProof is a caller-supplied proof file of a transfer input.
@@ -93,6 +105,21 @@ type transferPayload struct {
 	// passiveSuffixes are the encoded proof suffixes of the passive
 	// assets the transfer re-anchors.
 	passiveSuffixes [][]byte
+
+	// deliveries are the anchor outputs of the transfer that pay an
+	// address.
+	deliveries []delivery
+}
+
+// deliveryPending reports whether a delivery of the transfer is not done.
+func (p *transferPayload) deliveryPending() bool {
+	for idx := range p.deliveries {
+		if !p.deliveries[idx].done {
+			return true
+		}
+	}
+
+	return false
 }
 
 // encode serializes the payload.
@@ -106,9 +133,17 @@ func (p *transferPayload) encode() ([]byte, error) {
 	if p.skipBroadcast {
 		flags |= payloadFlagSkipBroadcast
 	}
+	if p.deliveryPending() {
+		flags |= payloadFlagDeliveryPending
+	}
+
+	version := byte(transferPayloadNoDeliveries)
+	if len(p.deliveries) > 0 {
+		version = transferPayloadVersion
+	}
 
 	var buf bytes.Buffer
-	buf.WriteByte(transferPayloadVersion)
+	buf.WriteByte(version)
 	buf.WriteByte(flags)
 	writePayloadField(&buf, transferBytes)
 
@@ -117,6 +152,15 @@ func (p *transferPayload) encode() ([]byte, error) {
 	buf.Write(count[:])
 	for _, suffix := range p.passiveSuffixes {
 		writePayloadField(&buf, suffix)
+	}
+	if len(p.deliveries) == 0 {
+		return buf.Bytes(), nil
+	}
+
+	binary.BigEndian.PutUint32(count[:], uint32(len(p.deliveries)))
+	buf.Write(count[:])
+	for idx := range p.deliveries {
+		p.deliveries[idx].encode(&buf)
 	}
 
 	return buf.Bytes(), nil
@@ -159,7 +203,7 @@ func decodeTransferPayload(encoded []byte) (*transferPayload, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decode transfer payload: %w", err)
 	}
-	if version != transferPayloadVersion {
+	if version > transferPayloadVersion {
 		return nil, fmt.Errorf("unknown transfer payload version %d",
 			version)
 	}
@@ -200,6 +244,26 @@ func decodeTransferPayload(encoded []byte) (*transferPayload, error) {
 		payload.passiveSuffixes = append(
 			payload.passiveSuffixes, suffix,
 		)
+	}
+	if version == transferPayloadNoDeliveries {
+		return payload, nil
+	}
+
+	if _, err := io.ReadFull(r, count[:]); err != nil {
+		return nil, fmt.Errorf("decode transfer payload: %w", err)
+	}
+	numDeliveries := binary.BigEndian.Uint32(count[:])
+	if int64(numDeliveries) > int64(r.Len()) {
+		return nil, fmt.Errorf("transfer payload claims %d "+
+			"deliveries", numDeliveries)
+	}
+	for range numDeliveries {
+		decoded, err := decodeDelivery(r)
+		if err != nil {
+			return nil, fmt.Errorf("decode transfer payload: %w",
+				err)
+		}
+		payload.deliveries = append(payload.deliveries, *decoded)
 	}
 
 	return payload, nil
@@ -338,6 +402,7 @@ func (e *engine) recordTransfer(ctx context.Context,
 	payload := &transferPayload{
 		transfer:      rpcTransfer,
 		skipBroadcast: s.skipBroadcast,
+		deliveries:    s.deliveries,
 	}
 	for _, vPkt := range s.passivePackets {
 		for _, vOut := range vPkt.Outputs {
@@ -826,11 +891,12 @@ func (e *engine) marshalShipment(ctx context.Context, s *shipment,
 				SplitCommitRootHash: splitCommitRoot,
 				OutputType:          rpcOutType,
 				AssetVersion:        assetVersion,
-				ProofDeliveryStatus: rpcutils.
-					ProofDeliveryStatusNotApplicable,
-				AssetId:   outAssetID[:],
-				GroupKey:  groupKeyBytes(vOut.Asset),
-				AssetType: taprpc.AssetType(vOut.Asset.Type),
+				ProofDeliveryStatus: deliveryStatus(vOut),
+				AssetId:             outAssetID[:],
+				GroupKey:            groupKeyBytes(vOut.Asset),
+				AssetType: taprpc.AssetType(
+					vOut.Asset.Type,
+				),
 			})
 		}
 	}
@@ -1050,7 +1116,18 @@ func (e *engine) confirmTransfer(ctx context.Context, txid chainhash.Hash,
 	transfer.BlockHeight = conf.Height
 	transfer.Payload = encoded
 
-	return e.store.UpdateTransfer(ctx, *transfer, putProofs, nil)
+	err = e.store.UpdateTransfer(ctx, *transfer, putProofs, nil)
+	if err != nil {
+		return err
+	}
+
+	// The recipient of an address fetches the proofs that were just
+	// written.
+	if payload.deliveryPending() && e.send != nil {
+		e.send.deliver(txid)
+	}
+
+	return nil
 }
 
 // unconfirmTransfer returns a transfer whose confirming block left the chain

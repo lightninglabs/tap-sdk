@@ -384,6 +384,9 @@ type testHarness struct {
 	// addresses enables addresses on the next restart.
 	addresses *ReceiveConfig
 
+	// sending enables transfers to addresses on the next restart.
+	sending *SendConfig
+
 	// courier is the proof courier of a wallet with addresses.
 	courier *memCourier
 
@@ -436,6 +439,7 @@ func (h *testHarness) restart() {
 		Signer:  NewKeyRingSigner(h.keys),
 		Chain:   h.chain,
 		Receive: h.addresses,
+		Send:    h.sending,
 	})
 	require.NoError(h.t, err)
 	require.NoError(h.t, client.ResumeTransfers(h.t.Context()))

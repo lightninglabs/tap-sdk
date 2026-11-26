@@ -25,14 +25,28 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// newSendHarness returns a wallet that sends and a wallet with addresses, on
-// one chain.
+// newSendHarness returns two wallets on one chain that create addresses and
+// pay addresses, with one proof courier.
 func newSendHarness(t *testing.T) (*testHarness, *testHarness) {
 	t.Helper()
 
 	recipient := newAddressHarness(t, testCourier)
+	recipient.courier.chain = recipient.chain
+	recipient.sending = &SendConfig{Dial: recipient.courier.dial}
+	recipient.restart()
 
-	return recipient.peer(2), recipient
+	sender := recipient.peer(2)
+	sender.courier = recipient.courier
+	sender.addresses = &ReceiveConfig{
+		Store:          sender.store,
+		Keys:           NewKeyRingReceiveKeys(sender.keys),
+		Dial:           sender.courier.dial,
+		DefaultCourier: recipient.addresses.DefaultCourier,
+	}
+	sender.sending = &SendConfig{Dial: sender.courier.dial}
+	sender.restart()
+
+	return sender, recipient
 }
 
 // fundSend funds a transfer of amount units to an address and returns its
@@ -262,16 +276,7 @@ func TestFundAddressSend(t *testing.T) {
 				)
 			}
 
-			// The funded packet signs and commits. The engine hands
-			// no proof to a recipient, so it refuses to publish.
-			committed := sender.commitSend(funded, 1)
-			_, err = sender.client.PublishAndLogTransferWithRequest(
-				ctx, committed.request,
-			)
-			require.Equal(t, codes.Unimplemented, status.Code(err))
-			require.EqualValues(
-				t, receivedUnits, sender.ownedUnits(),
-			)
+			sender.commitSend(funded, 1)
 		})
 	}
 }

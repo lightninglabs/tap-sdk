@@ -265,6 +265,15 @@ func (c *ReceiveConfig) validate() error {
 	return nil
 }
 
+// SendConfig enables transfers to Taproot Asset addresses.
+type SendConfig struct {
+	// Dial connects to the proof courier the address of a recipient
+	// names, where the engine stores the proofs and the announcement of a
+	// transfer. The recipient chooses that courier, so the dialer decides
+	// which hosts the wallet contacts.
+	Dial CourierDialer
+}
+
 // Config configures the embedded engine.
 type Config struct {
 	// Network is the Bitcoin network the wallet runs on.
@@ -294,8 +303,13 @@ type Config struct {
 	Logger Logger
 
 	// Receive enables Taproot Asset addresses. Nil leaves the address
-	// calls unimplemented, and the client contacts no courier.
+	// calls unimplemented, and the client reads from no courier.
 	Receive *ReceiveConfig
+
+	// Send enables transfers to Taproot Asset addresses. Nil makes the
+	// client refuse a transfer that pays an address, and it writes to no
+	// courier.
+	Send *SendConfig
 }
 
 // validate checks that the configuration is complete.
@@ -321,6 +335,9 @@ func (c *Config) validate() error {
 		if err := c.Receive.validate(); err != nil {
 			return fmt.Errorf("receive: %w", err)
 		}
+	}
+	if c.Send != nil && c.Send.Dial == nil {
+		return fmt.Errorf("send: courier dialer is required")
 	}
 
 	return nil

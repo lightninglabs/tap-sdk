@@ -15,7 +15,8 @@ import (
 var retryInterval = 30 * time.Second
 
 // resumeTransfers starts following every recorded transfer that is not
-// final.
+// final, and delivering the proofs of every confirmed transfer whose
+// recipients do not have them.
 func (e *engine) resumeTransfers(ctx context.Context) error {
 	transfers, err := e.store.ListTransfers(ctx, nil)
 	if err != nil {
@@ -23,10 +24,17 @@ func (e *engine) resumeTransfers(ctx context.Context) error {
 	}
 
 	for idx := range transfers {
-		if transfers[idx].State == TransferFinal {
-			continue
+		transfer := &transfers[idx]
+		if transfer.State != TransferFinal {
+			e.track(transfer.AnchorTxid, true)
 		}
-		e.track(transfers[idx].AnchorTxid, true)
+
+		// A pending transfer is delivered once it confirms.
+		if e.send != nil && transfer.State != TransferPending &&
+			deliveryPending(transfer.Payload) {
+
+			e.send.deliver(transfer.AnchorTxid)
+		}
 	}
 
 	return nil
@@ -64,8 +72,8 @@ func (e *engine) track(txid chainhash.Hash, rebroadcast bool) {
 	})
 }
 
-// stopTracking cancels every tracker and the receive flow, and waits for
-// them to return.
+// stopTracking cancels every tracker, the deliveries and the receive flow,
+// and waits for them to return.
 func (e *engine) stopTracking() {
 	e.stopOnce.Do(func() {
 		e.trackMu.Lock()
@@ -75,6 +83,9 @@ func (e *engine) stopTracking() {
 		}
 		e.trackMu.Unlock()
 
+		if e.send != nil {
+			e.send.stop()
+		}
 		if e.receive != nil {
 			e.receive.stop()
 		}

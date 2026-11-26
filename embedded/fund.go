@@ -745,17 +745,3 @@ func passivePacket(h *holding, prevID asset.PrevID, anchorIn *tappsbt.VInput,
 
 	return vPkt
 }
-
-// paysAddress reports whether an output of the packets pays a Taproot Asset
-// address.
-func paysAddress(packets []*tappsbt.VPacket) bool {
-	for _, vPkt := range packets {
-		for _, vOut := range vPkt.Outputs {
-			if vOut.Address != nil {
-				return true
-			}
-		}
-	}
-
-	return false
-}
