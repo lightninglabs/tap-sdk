@@ -4,6 +4,7 @@
 package courier
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/lightninglabs/tap-sdk/embedded"
+	"github.com/lightninglabs/taproot-assets/taprpc"
 	mboxrpc "github.com/lightninglabs/taproot-assets/taprpc/authmailboxrpc"
 	unirpc "github.com/lightninglabs/taproot-assets/taprpc/universerpc"
 	"google.golang.org/grpc"
@@ -38,6 +40,10 @@ const (
 	// noProofMsg is how a universe reports a leaf it does not hold when
 	// it does not answer with the NotFound code.
 	noProofMsg = "no universe proof found"
+
+	// rateLimitMsg starts the message of a universe that asks to try
+	// later.
+	rateLimitMsg = "rate limiter: "
 )
 
 // keepaliveParams makes a connection that died silently fail its streams
@@ -117,27 +123,7 @@ func newClient(conn *grpc.ClientConn) *client {
 func (c *client) QueryProof(ctx context.Context,
 	key embedded.ProofKey) ([]byte, error) {
 
-	universeID := &unirpc.ID{
-		Id: &unirpc.ID_AssetId{AssetId: key.AssetID[:]},
-	}
-	if key.GroupKey != nil {
-		universeID.Id = &unirpc.ID_GroupKey{GroupKey: key.GroupKey[:]}
-	}
-
-	resp, err := c.universe.QueryProof(ctx, &unirpc.UniverseKey{
-		Id: universeID,
-		LeafKey: &unirpc.AssetKey{
-			Outpoint: &unirpc.AssetKey_Op{
-				Op: &unirpc.Outpoint{
-					HashStr: key.Outpoint.Hash.String(),
-					Index:   int32(key.Outpoint.Index),
-				},
-			},
-			ScriptKey: &unirpc.AssetKey_ScriptKeyBytes{
-				ScriptKeyBytes: key.ScriptKey[:],
-			},
-		},
-	})
+	resp, err := c.universe.QueryProof(ctx, universeKey(key))
 	switch {
 	case isNoProof(err):
 		return nil, fmt.Errorf("%w: %s", embedded.ErrNotFound,
@@ -155,6 +141,31 @@ func (c *client) QueryProof(ctx context.Context,
 	return leaf.Proof, nil
 }
 
+// universeKey names a universe leaf as the universe service reads it.
+func universeKey(key embedded.ProofKey) *unirpc.UniverseKey {
+	universeID := &unirpc.ID{
+		Id: &unirpc.ID_AssetId{AssetId: key.AssetID[:]},
+	}
+	if key.GroupKey != nil {
+		universeID.Id = &unirpc.ID_GroupKey{GroupKey: key.GroupKey[:]}
+	}
+
+	return &unirpc.UniverseKey{
+		Id: universeID,
+		LeafKey: &unirpc.AssetKey{
+			Outpoint: &unirpc.AssetKey_Op{
+				Op: &unirpc.Outpoint{
+					HashStr: key.Outpoint.Hash.String(),
+					Index:   int32(key.Outpoint.Index),
+				},
+			},
+			ScriptKey: &unirpc.AssetKey_ScriptKeyBytes{
+				ScriptKeyBytes: key.ScriptKey[:],
+			},
+		},
+	}
+}
+
 // isNoProof reports whether a universe answered that it holds no proof at a
 // leaf.
 func isNoProof(err error) bool {
@@ -170,6 +181,94 @@ func isNoProof(err error) bool {
 	default:
 		return false
 	}
+}
+
+// InsertProof stores an encoded proof at a universe leaf. A universe reads
+// the asset of a leaf from the proof.
+func (c *client) InsertProof(ctx context.Context, key embedded.ProofKey,
+	proof []byte) error {
+
+	_, err := c.universe.InsertProof(ctx, &unirpc.AssetProof{
+		Key:       universeKey(key),
+		AssetLeaf: &unirpc.AssetLeaf{Proof: proof},
+	})
+	switch {
+	case err == nil:
+		return nil
+
+	case isRetryable(err):
+		return err
+
+	default:
+		return fmt.Errorf("%w: %s", embedded.ErrProofRefused,
+			status.Convert(err).Message())
+	}
+}
+
+// isRetryable reports whether a universe failed to take a proof for a reason
+// that passes, as opposed to refusing the proof. A universe reports its rate
+// limit with the Unknown code.
+func isRetryable(err error) bool {
+	switch status.Code(err) {
+	case codes.Unavailable, codes.DeadlineExceeded,
+		codes.ResourceExhausted, codes.Canceled:
+
+		return true
+
+	case codes.Unknown:
+		return strings.HasPrefix(
+			status.Convert(err).Message(), rateLimitMsg,
+		)
+
+	default:
+		return false
+	}
+}
+
+// SendMessage stores an encrypted message in the mailbox of a receiver, with
+// the proof of the output the message is about.
+func (c *client) SendMessage(ctx context.Context, receiver [33]byte,
+	payload []byte, anchor *embedded.AnchorProof) error {
+
+	if anchor == nil || anchor.Tx == nil {
+		return errors.New("anchor proof is required")
+	}
+
+	var rawTx, rawHeader bytes.Buffer
+	if err := anchor.Tx.Serialize(&rawTx); err != nil {
+		return fmt.Errorf("serialize transaction: %w", err)
+	}
+	if err := anchor.BlockHeader.Serialize(&rawHeader); err != nil {
+		return fmt.Errorf("serialize block header: %w", err)
+	}
+	siblings := make([][]byte, len(anchor.MerkleNodes))
+	for idx := range anchor.MerkleNodes {
+		siblings[idx] = anchor.MerkleNodes[idx][:]
+	}
+
+	_, err := c.mailbox.SendMessage(ctx, &mboxrpc.SendMessageRequest{
+		ReceiverId:       receiver[:],
+		EncryptedPayload: payload,
+		Proof: &mboxrpc.SendMessageRequest_TxProof{
+			TxProof: &mboxrpc.BitcoinMerkleInclusionProof{
+				RawTxData:          rawTx.Bytes(),
+				RawBlockHeaderData: rawHeader.Bytes(),
+				BlockHeight:        anchor.BlockHeight,
+				MerkleProof: &mboxrpc.MerkleProof{
+					SiblingHashes: siblings,
+					Bits:          anchor.MerkleBits,
+				},
+				ClaimedOutpoint: &taprpc.OutPoint{
+					Txid:        anchor.Outpoint.Hash[:],
+					OutputIndex: anchor.Outpoint.Index,
+				},
+				InternalKey: anchor.InternalKey[:],
+				MerkleRoot:  anchor.MerkleRoot,
+			},
+		},
+	})
+
+	return err
 }
 
 // ReceiveMessages opens the mailbox stream of a receiver and authenticates

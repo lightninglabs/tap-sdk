@@ -64,6 +64,24 @@ type memCourier struct {
 	// connections that are not closed.
 	dialed []string
 	open   int
+
+	// insertErr fails a proof insert when it returns an error.
+	insertErr func(key ProofKey) error
+
+	// sendErr fails every message a sender posts.
+	sendErr error
+
+	// uploads lists the leaves senders inserted and the outputs they
+	// announced, in the order of the calls.
+	uploads []string
+
+	// announced are the receivers of the posted messages by the output
+	// each message is about.
+	announced map[wire.OutPoint][33]byte
+
+	// chain is the chain the anchor proof of a posted message is checked
+	// against.
+	chain *testChain
 }
 
 // newMemCourier returns an empty courier.
@@ -72,6 +90,7 @@ func newMemCourier() *memCourier {
 		leaves:      make(map[string][]byte),
 		mailboxes:   make(map[[33]byte][]MailboxMessage),
 		startBlocks: make(map[[33]byte]uint32),
+		announced:   make(map[wire.OutPoint][33]byte),
 	}
 }
 
@@ -264,6 +283,106 @@ func (c *memCourierConn) ReceiveMessages(ctx context.Context,
 	courier.streams = append(courier.streams, stream)
 
 	return stream, nil
+}
+
+// InsertProof stores a proof at a universe leaf, as a universe does: it reads
+// the asset of the leaf from the proof.
+func (c *memCourierConn) InsertProof(_ context.Context, key ProofKey,
+	blob []byte) error {
+
+	courier := c.courier
+
+	courier.mu.Lock()
+	defer courier.mu.Unlock()
+
+	if courier.insertErr != nil {
+		if err := courier.insertErr(key); err != nil {
+			return err
+		}
+	}
+	if proofAssetID(blob) != key.AssetID {
+		return fmt.Errorf("%w: proof is of another asset",
+			ErrProofRefused)
+	}
+
+	courier.leaves[leafName(key)] = blob
+	courier.uploads = append(courier.uploads, leafName(key))
+
+	return nil
+}
+
+// SendMessage stores a message for a receiver, as a mailbox does: the anchor
+// proof must show a confirmed Taproot output, and one message is stored per
+// output.
+func (c *memCourierConn) SendMessage(ctx context.Context, receiver [33]byte,
+	payload []byte, anchor *AnchorProof) error {
+
+	courier := c.courier
+
+	receiverKey, err := btcec.ParsePubKey(receiver[:])
+	if err != nil {
+		return err
+	}
+	internalKey, err := btcec.ParsePubKey(anchor.InternalKey[:])
+	if err != nil {
+		return err
+	}
+	txProof := proof.TxProof{
+		MsgTx:       *anchor.Tx,
+		BlockHeader: anchor.BlockHeader,
+		BlockHeight: anchor.BlockHeight,
+		MerkleProof: proof.TxMerkleProof{
+			Nodes: anchor.MerkleNodes,
+			Bits:  anchor.MerkleBits,
+		},
+		ClaimedOutPoint: anchor.Outpoint,
+		InternalKey:     *internalKey,
+		MerkleRoot:      anchor.MerkleRoot,
+	}
+	err = txProof.Verify(func(header wire.BlockHeader,
+		height uint32) error {
+
+		known, err := courier.chain.BlockHeader(ctx, height)
+		if err != nil {
+			return err
+		}
+		if known.BlockHash() != header.BlockHash() {
+			return errors.New("block is not on the chain")
+		}
+
+		return nil
+	}, proof.DefaultMerkleVerifier)
+	if err != nil {
+		return fmt.Errorf("error validating proof: %w", err)
+	}
+
+	courier.mu.Lock()
+	if courier.sendErr != nil {
+		courier.mu.Unlock()
+
+		return courier.sendErr
+	}
+	known, ok := courier.announced[anchor.Outpoint]
+	if !ok {
+		courier.announced[anchor.Outpoint] = receiver
+		courier.uploads = append(
+			courier.uploads, "message/"+anchor.Outpoint.String(),
+		)
+	}
+	courier.mu.Unlock()
+
+	switch {
+	case !ok:
+		courier.post(receiverKey, payload)
+
+		return nil
+
+	case known == receiver:
+		return nil
+
+	default:
+		return errors.New("outpoint in proof already in use")
+	}
 }
 
 // Close ends the streams of the connection.

@@ -21,6 +21,10 @@ var (
 	// ErrAddressExists is returned by AddressStore.InsertAddress when an
 	// address with the same script key is already recorded.
 	ErrAddressExists = errors.New("address already exists")
+
+	// ErrProofRefused is returned by Courier.InsertProof when the universe
+	// of the courier answers that it does not take a proof.
+	ErrProofRefused = errors.New("proof refused")
 )
 
 // KeyRecord is a wallet key and its derivation path.

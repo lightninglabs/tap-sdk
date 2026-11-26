@@ -1,6 +1,7 @@
 package courier
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
@@ -42,6 +43,14 @@ type testServer struct {
 	// queried is the key of the last QueryProof.
 	queried *unirpc.UniverseKey
 
+	// inserted is the last InsertProof, which insertErr fails.
+	inserted  *unirpc.AssetProof
+	insertErr error
+
+	// sent is the last SendMessage, which sendErr fails.
+	sent    *mboxrpc.SendMessageRequest
+	sendErr error
+
 	// init is the first message of the last mailbox stream.
 	init *mboxrpc.InitReceive
 
@@ -68,6 +77,37 @@ func (s *testServer) QueryProof(_ context.Context,
 	}
 
 	return s.proof, nil
+}
+
+// InsertProof records the proof and returns the configured answer.
+func (s *testServer) InsertProof(_ context.Context,
+	req *unirpc.AssetProof) (*unirpc.AssetProofResponse, error) {
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.inserted = req
+	if s.insertErr != nil {
+		return nil, s.insertErr
+	}
+
+	return &unirpc.AssetProofResponse{AssetLeaf: req.AssetLeaf}, nil
+}
+
+// SendMessage records the message and returns the configured answer.
+func (s *testServer) SendMessage(_ context.Context,
+	req *mboxrpc.SendMessageRequest) (*mboxrpc.SendMessageResponse,
+	error) {
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.sent = req
+	if s.sendErr != nil {
+		return nil, s.sendErr
+	}
+
+	return &mboxrpc.SendMessageResponse{MessageId: 1}, nil
 }
 
 // ReceiveMessages runs the mailbox handshake and delivers the configured
@@ -480,4 +520,192 @@ func TestReceiveMessagesHandshakeFailure(t *testing.T) {
 			require.Nil(t, stream)
 		})
 	}
+}
+
+// TestInsertProof stores a proof at a leaf of an asset's universe and of a
+// group's universe, and tells a universe that refuses a proof from one that
+// may take it later.
+func TestInsertProof(t *testing.T) {
+	var (
+		ctx      = t.Context()
+		groupKey = [33]byte{2, 9}
+		key      = embedded.ProofKey{
+			AssetID:   [32]byte{1},
+			ScriptKey: [33]byte{2, 3},
+			Outpoint: wire.OutPoint{
+				Hash:  chainhash.Hash{4},
+				Index: 5,
+			},
+		}
+	)
+	groupLeaf := key
+	groupLeaf.GroupKey = &groupKey
+
+	tests := []struct {
+		name      string
+		key       embedded.ProofKey
+		insertErr error
+
+		wantID  *unirpc.ID
+		refused bool
+		errText string
+	}{{
+		name: "asset universe",
+		key:  key,
+		wantID: &unirpc.ID{
+			Id: &unirpc.ID_AssetId{AssetId: key.AssetID[:]},
+		},
+	}, {
+		name: "group universe",
+		key:  groupLeaf,
+		wantID: &unirpc.ID{
+			Id: &unirpc.ID_GroupKey{GroupKey: groupKey[:]},
+		},
+	}, {
+		name:      "inserts disabled",
+		key:       key,
+		insertErr: errors.New("proof insert disabled for universe"),
+		refused:   true,
+		errText:   "proof insert disabled for universe",
+	}, {
+		name: "invalid proof",
+		key:  key,
+		insertErr: status.Error(
+			codes.InvalidArgument, "unmarshal asset leaf",
+		),
+		refused: true,
+		errText: "unmarshal asset leaf",
+	}, {
+		name:      "rate limit",
+		key:       key,
+		insertErr: errors.New("rate limiter: context canceled"),
+		errText:   "rate limiter",
+	}, {
+		name:      "unavailable",
+		key:       key,
+		insertErr: status.Error(codes.Unavailable, "restarting"),
+		errText:   "restarting",
+	}, {
+		name: "resource exhausted",
+		key:  key,
+		insertErr: status.Error(
+			codes.ResourceExhausted, "too many requests",
+		),
+		errText: "too many requests",
+	}}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server, client := newTestClient(t)
+			server.insertErr = tc.insertErr
+
+			err := client.InsertProof(ctx, tc.key, []byte("proof"))
+			if tc.errText != "" {
+				require.ErrorContains(t, err, tc.errText)
+
+				refused := errors.Is(
+					err, embedded.ErrProofRefused,
+				)
+				require.Equal(t, tc.refused, refused)
+
+				return
+			}
+			require.NoError(t, err)
+
+			server.mu.Lock()
+			defer server.mu.Unlock()
+
+			inserted := server.inserted
+			require.Equal(t, tc.wantID.Id, inserted.Key.Id.Id)
+			require.Equal(
+				t, tc.key.ScriptKey[:],
+				inserted.Key.LeafKey.GetScriptKeyBytes(),
+			)
+			require.Equal(
+				t, tc.key.Outpoint.Hash.String(),
+				inserted.Key.LeafKey.GetOp().HashStr,
+			)
+			require.EqualValues(
+				t, 5, inserted.Key.LeafKey.GetOp().Index,
+			)
+			require.Equal(
+				t, []byte("proof"), inserted.AssetLeaf.Proof,
+			)
+		})
+	}
+}
+
+// TestSendMessage posts a message with the proof of the output it is about,
+// and returns the failure of a mailbox.
+func TestSendMessage(t *testing.T) {
+	ctx := t.Context()
+	server, client := newTestClient(t)
+
+	tx := wire.NewMsgTx(2)
+	tx.AddTxIn(&wire.TxIn{
+		PreviousOutPoint: wire.OutPoint{Hash: chainhash.Hash{1}},
+	})
+	tx.AddTxOut(&wire.TxOut{Value: 1_000, PkScript: []byte{0x51}})
+
+	receiver, _ := testReceiver(t)
+	anchor := &embedded.AnchorProof{
+		Tx: tx,
+		BlockHeader: wire.BlockHeader{
+			Version:    2,
+			MerkleRoot: chainhash.Hash{6},
+		},
+		BlockHeight: 144,
+		MerkleNodes: []chainhash.Hash{{7}, {8}},
+		MerkleBits:  []bool{true, false},
+		Outpoint:    wire.OutPoint{Hash: tx.TxHash(), Index: 0},
+		InternalKey: [33]byte{2, 5},
+		MerkleRoot:  []byte{9},
+	}
+
+	err := client.SendMessage(ctx, receiver, []byte("payload"), anchor)
+	require.NoError(t, err)
+
+	server.mu.Lock()
+	sent := server.sent
+	server.mu.Unlock()
+
+	require.Equal(t, receiver[:], sent.ReceiverId)
+	require.Equal(t, []byte("payload"), sent.EncryptedPayload)
+
+	txProof := sent.GetTxProof()
+	require.NotNil(t, txProof)
+
+	var sentTx wire.MsgTx
+	require.NoError(
+		t, sentTx.Deserialize(bytes.NewReader(txProof.RawTxData)),
+	)
+	require.Equal(t, tx.TxHash(), sentTx.TxHash())
+
+	var sentHeader wire.BlockHeader
+	require.NoError(t, sentHeader.Deserialize(
+		bytes.NewReader(txProof.RawBlockHeaderData),
+	))
+	require.Equal(t, anchor.BlockHeader.BlockHash(), sentHeader.BlockHash())
+
+	require.EqualValues(t, 144, txProof.BlockHeight)
+	require.Equal(t, [][]byte{
+		anchor.MerkleNodes[0][:], anchor.MerkleNodes[1][:],
+	}, txProof.MerkleProof.SiblingHashes)
+	require.Equal(t, anchor.MerkleBits, txProof.MerkleProof.Bits)
+	require.Equal(
+		t, anchor.Outpoint.Hash[:], txProof.ClaimedOutpoint.Txid,
+	)
+	require.Zero(t, txProof.ClaimedOutpoint.OutputIndex)
+	require.Equal(t, anchor.InternalKey[:], txProof.InternalKey)
+	require.Equal(t, anchor.MerkleRoot, txProof.MerkleRoot)
+
+	server.mu.Lock()
+	server.sendErr = status.Error(codes.Unknown, "error validating proof")
+	server.mu.Unlock()
+
+	err = client.SendMessage(ctx, receiver, []byte("payload"), anchor)
+	require.ErrorContains(t, err, "error validating proof")
+
+	err = client.SendMessage(ctx, receiver, []byte("payload"), nil)
+	require.ErrorContains(t, err, "anchor proof is required")
 }
