@@ -33,6 +33,9 @@ type engine struct {
 	addrs   AddressStore
 	receive *receiver
 
+	// send is nil when the host enabled no transfers to addresses.
+	send *sender
+
 	// keyMu serializes key derivation with the store insert that makes
 	// the key known.
 	keyMu sync.Mutex
@@ -91,6 +94,9 @@ func newEngine(cfg *Config) (*engine, error) {
 	if cfg.Receive != nil {
 		e.addrs = cfg.Receive.Store
 		e.receive = newReceiver(e, cfg.Receive)
+	}
+	if cfg.Send != nil {
+		e.send = newSender(e, cfg.Send)
 	}
 
 	return e, nil

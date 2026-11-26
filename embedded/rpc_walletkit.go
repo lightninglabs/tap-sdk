@@ -484,13 +484,16 @@ func (s *walletKitServer) PublishAndLogTransfer(ctx context.Context,
 
 	// The recipient of an address learns of a transfer from the proofs
 	// and the announcement its sender hands to a courier.
-	if paysAddress(activePackets) {
+	e := s.engine
+	deliveries, err := addressDeliveries(activePackets)
+	if err != nil {
+		return nil, invalidTransfer(err)
+	}
+	if len(deliveries) > 0 && e.send == nil {
 		return nil, status.Error(codes.Unimplemented, "the embedded "+
-			"backend delivers no proofs to the recipient of an "+
-			"address")
+			"backend pays an address only with a SendConfig")
 	}
 
-	e := s.engine
 	allPackets := append([]*tappsbt.VPacket{}, activePackets...)
 	allPackets = append(allPackets, passivePackets...)
 	err = e.validateInputAssets(ctx, pkt, allPackets)
@@ -540,6 +543,7 @@ func (s *walletKitServer) PublishAndLogTransfer(ctx context.Context,
 		label:          label,
 		skipBroadcast:  req.SkipAnchorTxBroadcast,
 		inputProofs:    inputProofs,
+		deliveries:     deliveries,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("error requesting delivery: %w", err)
