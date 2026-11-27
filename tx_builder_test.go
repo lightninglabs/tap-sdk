@@ -1,6 +1,7 @@
 package tapsdk
 
 import (
+	"bytes"
 	"context"
 	"reflect"
 	"testing"
@@ -681,4 +682,155 @@ func TestTxBuilderLegacyCommitDoesNotParsePackets(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int32(-1), response.ChangeOutputIndex)
 	mockWalletKit.AssertExpectations(t)
+}
+
+// TestTxBuilderCallerFundedAnchor exercises the caller-funded address-send
+// flow: every active and passive virtual PSBT is signed, the anchor funder
+// adds Bitcoin inputs to the prepared template and commits with SkipFunding,
+// the anchor signer signs the caller's inputs, and PublishAndLogTransfer
+// receives SignAnchorInputs and Label.
+func TestTxBuilderCallerFundedAnchor(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	mockWalletKit := new(MockWalletKitClient)
+	addr := encodeV2NoAmount(t)
+
+	fundedActive := [][]byte{[]byte("funded_a"), []byte("funded_b")}
+	fundedPassive := [][]byte{[]byte("funded_passive")}
+	signedActive := [][]byte{testVirtualPsbt(t, 1), testVirtualPsbt(t, 2)}
+	signedPassive := [][]byte{testVirtualPsbt(t, 3)}
+	fundedAnchor := []byte("funded_anchor_psbt")
+	committedAnchor := []byte("committed_anchor_psbt")
+	signedAnchor := []byte("signed_anchor_psbt")
+	finalAnchorTx := []byte("final_anchor_tx")
+
+	mockWalletKit.On("FundTransfer", ctx, mock.Anything, mock.Anything).
+		Return(&FundedTransfer{
+			FundedPsbts:       fundedActive,
+			PassiveAssetPsbts: fundedPassive,
+		}, nil)
+	for idx := range fundedActive {
+		mockWalletKit.On("SignVirtualPsbt", ctx, fundedActive[idx]).
+			Return(signedActive[idx], nil)
+	}
+	mockWalletKit.On("SignVirtualPsbt", ctx, fundedPassive[0]).
+		Return(signedPassive[0], nil)
+
+	mockWalletKit.On("CommitVirtualPsbtsWithRequest", ctx,
+		mock.MatchedBy(func(req *CommitVirtualPsbtsRequest) bool {
+			return req != nil &&
+				bytes.Equal(req.AnchorPsbt, fundedAnchor) &&
+				reflect.DeepEqual(
+					req.VirtualPsbts, signedActive,
+				) &&
+				reflect.DeepEqual(
+					req.PassiveAssetPsbts, signedPassive,
+				) &&
+				req.Funding.SkipFunding
+		})).Return(&CommitVirtualPsbtsResponse{
+		AnchorPsbt:        committedAnchor,
+		VirtualPsbts:      signedActive,
+		PassiveAssetPsbts: signedPassive,
+		ChangeOutputIndex: -1,
+	}, nil)
+
+	expectedPacket := &AssetPacket{
+		AnchorTransaction:        finalAnchorTx,
+		VirtualTransactions:      signedActive,
+		PassiveAssetTransactions: signedPassive,
+	}
+	mockWalletKit.On("PublishAndLogTransferWithRequest", ctx,
+		mock.MatchedBy(func(req *PublishAndLogTransferRequest) bool {
+			return req != nil &&
+				bytes.Equal(req.AnchorPsbt, signedAnchor) &&
+				reflect.DeepEqual(
+					req.VirtualPsbts, signedActive,
+				) &&
+				reflect.DeepEqual(
+					req.PassiveAssetPsbts, signedPassive,
+				) &&
+				req.ChangeOutputIndex == -1 &&
+				req.SignAnchorInputs &&
+				req.Label == "caller-funded" &&
+				!req.SkipAnchorTxBroadcast
+		})).Return(expectedPacket, nil)
+
+	var gotTemplate []byte
+	packet, err := newTxBuilder(mockWalletKit).
+		AddRecipient(addr, 120).
+		SetAnchorFunder(func(_ context.Context,
+			template []byte) ([]byte, error) {
+
+			gotTemplate = append([]byte(nil), template...)
+			return fundedAnchor, nil
+		}).
+		SetAnchorSigner(func(_ context.Context,
+			anchorPsbt []byte) ([]byte, error) {
+
+			require.Equal(t, committedAnchor, anchorPsbt)
+			return signedAnchor, nil
+		}).
+		SetSignAnchorInputs(true).
+		SetLabel("caller-funded").
+		Execute(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, gotTemplate)
+	require.Equal(t, expectedPacket, packet)
+
+	mockWalletKit.AssertExpectations(t)
+}
+
+func TestTxBuilderCallerFundedErrors(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	t.Run("empty funded anchor psbt", func(t *testing.T) {
+		t.Parallel()
+
+		mockWalletKit := new(MockWalletKitClient)
+		builder := newTxBuilder(mockWalletKit).
+			SetSignedPsbts(testVirtualPsbt(t, 1)).
+			SetAnchorFunder(func(context.Context, []byte) ([]byte, error) {
+				return nil, nil
+			})
+
+		_, err := builder.Commit(ctx)
+		require.ErrorContains(t, err, "empty anchor PSBT")
+	})
+
+	t.Run("anchor funder requires custom anchor client", func(t *testing.T) {
+		t.Parallel()
+
+		legacy := &legacyOnlyWalletKitClient{
+			WalletKitClient: new(MockWalletKitClient),
+		}
+		builder := newTxBuilder(legacy).
+			SetSignedPsbts([]byte("signed")).
+			SetAnchorFunder(func(context.Context, []byte) ([]byte, error) {
+				return []byte("funded"), nil
+			})
+
+		_, err := builder.Commit(ctx)
+		require.ErrorContains(t, err, "CustomAnchorWalletKitClient")
+	})
+
+	t.Run("sign anchor inputs requires custom anchor client",
+		func(t *testing.T) {
+			t.Parallel()
+
+			legacy := &legacyOnlyWalletKitClient{
+				WalletKitClient: new(MockWalletKitClient),
+			}
+			builder := newTxBuilder(legacy).
+				SetSignedPsbts([]byte("signed")).
+				SetAnchorPsbt([]byte("anchor")).
+				SetSignAnchorInputs(true)
+
+			_, err := builder.Finish(ctx)
+			require.ErrorContains(
+				t, err, "CustomAnchorWalletKitClient",
+			)
+		})
 }

@@ -282,11 +282,24 @@ returns to the wallet in a change output of asset version 1. An asset that a
 spent anchor output holds beside the spent one moves to the anchor output of
 the change in a passive packet.
 
-The host signs every packet with `SignVirtualPsbt`, commits them to one
-anchor transaction it funds with `CommitVirtualPsbtsWithRequest`, and
-publishes with `PublishAndLogTransferWithRequest`. `SendAsset` does all of
-this in one call on a tapd, which pays for the anchor from lnd. The engine
-holds no Bitcoin, so that call stays unimplemented.
+The host can drive the flow with `wallet.NewTxBuilder()`:
+
+```go
+packet, err := wallet.NewTxBuilder().
+    AddRecipient(addr, amount).
+    SetAnchorFunder(fundAnchorTemplate).
+    SetAnchorSigner(signCallerInputs).
+    SetSignAnchorInputs(true).
+    Execute(ctx)
+```
+
+`TxBuilder` calls `FundTransfer`, signs every active and passive virtual
+packet with `SignVirtualPsbt`, hands the anchor PSBT template to
+`SetAnchorFunder`, commits with `SkipFunding` via
+`CommitVirtualPsbtsWithRequest`, hands the committed anchor PSBT to
+`SetAnchorSigner`, and publishes with `PublishAndLogTransferWithRequest`.
+`SendAsset` does all of this in one call on a tapd, which pays for the anchor
+from lnd. The engine holds no Bitcoin, so that call stays unimplemented.
 
 A mailbox takes a message only with the proof that its output confirmed, so
 the engine delivers each output that pays an address once the anchor
