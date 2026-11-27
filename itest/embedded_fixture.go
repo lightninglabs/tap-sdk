@@ -84,6 +84,9 @@ func (h *TestHarness) NewEmbeddedNode(t testing.TB,
 			Dial:           courier.NewDialer(endpoints),
 			DefaultCourier: bobCourier,
 		},
+		Send: &embedded.SendConfig{
+			Dial: courier.NewDialer(endpoints),
+		},
 	})
 	require.NoError(t, err)
 	require.NoError(t, client.ResumeTransfers(context.Background()))

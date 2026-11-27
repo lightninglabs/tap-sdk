@@ -109,6 +109,20 @@ the calls.
   names the courier, so the dialer the host supplies decides which hosts the
   wallet contacts.
 
+- The engine pays version 2 addresses with caller-funded transfers.
+  `FundTransfer` selects the outputs to spend, across every issuance of a
+  group, and builds one virtual transaction per issuance with the outputs
+  tapd's `prepareV2Outputs` builds. The client answers that call itself,
+  because the response of tapd's `FundVirtualPsbt` holds one virtual
+  transaction. After the anchor transaction confirms, the
+  engine stores the proofs in the universe of the recipient's courier and
+  then posts the announcement that `proof.EncryptSendFragment` encrypts to
+  the recipient's mailbox, in the order tapd uses.
+- A delivery is recorded in the payload of its transfer, so the store needs
+  no new table, and the engine resumes it after a restart. The recipient
+  names the courier, so the dialer the host supplies decides which hosts the
+  wallet contacts.
+
 ## Non-Goals
 
 - Minting, universe serving and syncing, burns, events, RFQ and channels.
