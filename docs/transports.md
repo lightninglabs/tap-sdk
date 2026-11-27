@@ -211,11 +211,13 @@ asset output. One that does not is recorded as failed, and the wallet takes
 none of its proofs.
 
 Anyone who knows an address can announce a transfer to it, so the engine
-records each announcement on its own. A wrong announcement of an output fails
-or stays unfinished, and does not keep the sender's announcement from being
-confirmed. An announcement that names no asset beyond those the wallet
-received through other announcements of the same output is recorded as
-failed, so that one transfer is not listed as two confirmed receives.
+records each announcement on its own. A wrong announcement of an output fails,
+stays unfinished or, when it names the outputs of the transfer with another
+block, is confirmed in the block that holds the anchor transaction. It does
+not keep the wallet from receiving the output. An announcement that names no
+asset beyond those the wallet received through other announcements of the
+same output is recorded as failed, so that one transfer is not listed as two
+confirmed receives.
 
 The engine leaves its messages on the courier, and a message it reads again
 maps to the receive it already recorded.
@@ -231,9 +233,17 @@ the block of each confirmed receive with the best chain first. `AddrReceives`
 lists a final receive as completed, and a receive whose block left the chain
 as a detected transaction.
 
+A sender announces a transfer once, with the block that first confirmed it.
+When the best chain holds another block at that height by the time the
+engine reads the announcement, the engine verifies the proof files apart from
+that block, keeps them as not owned and follows the anchor transaction in the
+same way. While the chain source is below that height, the engine waits for
+the block instead.
+
 Only the anchor transaction of the received output is given its new block. A
 proof file whose earlier proofs name a block that also left the chain does
-not verify, and its receive stays detected.
+not verify. Its receive stays detected, or is recorded as failed when the
+engine reads the announcement after the re-org.
 
 A sender needs one confirmed transaction to announce a transfer whose proofs
 never reach the courier. The engine therefore fetches the proofs of a few
