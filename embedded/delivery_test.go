@@ -2,6 +2,7 @@ package embedded
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"slices"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/wire/v2"
 	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/taproot-assets/address"
@@ -866,4 +868,80 @@ func TestSendKeepsPassiveAsset(t *testing.T) {
 	balance, err := sender.wallet.GetBalance(ctx, pair[0].ref)
 	require.NoError(t, err)
 	require.EqualValues(t, receivedUnits-300, balance)
+}
+
+// TestSendWithTxBuilder pays an address through TxBuilder using caller-funded
+// anchor callbacks, signing both active and passive virtual PSBTs.
+func TestSendWithTxBuilder(t *testing.T) {
+	sender, recipient := newSendHarness(t)
+	ctx := t.Context()
+
+	pair := sender.receivePair("txbuilder-spent", "txbuilder-kept")
+	addr, err := recipient.wallet.NewReceiveAddress(ctx, pair[0].ref)
+	require.NoError(t, err)
+
+	funding := newFundingInput(t, 1, 100_000)
+	packet, err := sender.wallet.NewTxBuilder().
+		AddRecipient(addr.Encoded, 300).
+		SetAnchorFunder(func(_ context.Context,
+			template []byte) ([]byte, error) {
+
+			pkt, err := psbt.NewFromRawBytes(
+				bytes.NewReader(template), false,
+			)
+			if err != nil {
+				return nil, err
+			}
+			pkt.UnsignedTx.AddTxIn(
+				wire.NewTxIn(&funding.outpoint, nil, nil),
+			)
+			pkt.Inputs = append(pkt.Inputs, psbt.PInput{
+				WitnessUtxo: funding.txOut,
+			})
+
+			var buf bytes.Buffer
+			if err := pkt.Serialize(&buf); err != nil {
+				return nil, err
+			}
+
+			return buf.Bytes(), nil
+		}).
+		SetAnchorSigner(func(_ context.Context,
+			anchorPsbt []byte) ([]byte, error) {
+
+			pkt, err := psbt.NewFromRawBytes(
+				bytes.NewReader(anchorPsbt), false,
+			)
+			if err != nil {
+				return nil, err
+			}
+			funding.sign(t, pkt)
+
+			var buf bytes.Buffer
+			if err := pkt.Serialize(&buf); err != nil {
+				return nil, err
+			}
+
+			return buf.Bytes(), nil
+		}).
+		SetSignAnchorInputs(true).
+		SetLabel("txbuilder-send").
+		Execute(ctx)
+	require.NoError(t, err)
+	require.Len(t, packet.VirtualTransactions, 1)
+	require.Len(t, packet.PassiveAssetTransactions, 1)
+
+	var anchorTx wire.MsgTx
+	require.NoError(
+		t, anchorTx.Deserialize(
+			bytes.NewReader(packet.AnchorTransaction),
+		),
+	)
+	txid := anchorTx.TxHash()
+	require.Equal(t, "txbuilder-send", sender.transferPayload(txid).transfer.Label)
+
+	sender.chain.mine(t)
+	sender.waitDelivered(txid)
+	recipient.requireReceived(300)
+	require.EqualValues(t, 2*receivedUnits-300, sender.ownedUnits())
 }

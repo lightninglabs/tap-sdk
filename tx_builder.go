@@ -2,14 +2,21 @@ package tapsdk
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/lightninglabs/tap-sdk/internal/anchor"
 )
 
-// AnchorSigner signs and finalizes the BTC anchor PSBT returned by tapd after
-// Commit. The callback should return the PSBT that PublishAndLogTransfer can
-// extract and broadcast.
+// AnchorFunder adds the caller's Bitcoin funding inputs and any Bitcoin change
+// output to the anchor PSBT template before Commit, when the caller funds the
+// anchor transaction instead of the backend. The callback returns the funded
+// PSBT passed to CommitVirtualPsbtsWithRequest with SkipFunding set.
+type AnchorFunder func(ctx context.Context, anchorTemplate []byte) ([]byte, error)
+
+// AnchorSigner signs and finalizes the BTC anchor PSBT returned by the backend
+// after Commit. The callback should return the PSBT that PublishAndLogTransfer
+// can extract and broadcast (or finalize with SignAnchorInputs).
 type AnchorSigner func(ctx context.Context, anchorPsbt []byte) ([]byte, error)
 
 type txBuilderOptions struct {
@@ -57,9 +64,12 @@ type TxBuilder struct {
 	changeOutputIndex int32
 	lockedUTXOs       []Outpoint
 
-	anchorSigner AnchorSigner
-	finished     bool
-	mu           sync.Mutex
+	anchorFunder     AnchorFunder
+	anchorSigner     AnchorSigner
+	signAnchorInputs bool
+	label            string
+	finished         bool
+	mu               sync.Mutex
 }
 
 // newTxBuilder creates a new TxBuilder instance.
@@ -145,6 +155,16 @@ func (b *TxBuilder) SetPassivePsbts(passivePsbts [][]byte) *TxBuilder {
 	return b
 }
 
+// SetAnchorFunder sets the callback that funds the BTC anchor PSBT template
+// before Commit, skipping backend anchor funding.
+func (b *TxBuilder) SetAnchorFunder(funder AnchorFunder) *TxBuilder {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.anchorFunder = funder
+	return b
+}
+
 // SetAnchorSigner sets the callback used to finalize the BTC anchor PSBT
 // between Commit and Finish.
 func (b *TxBuilder) SetAnchorSigner(signer AnchorSigner) *TxBuilder {
@@ -152,6 +172,25 @@ func (b *TxBuilder) SetAnchorSigner(signer AnchorSigner) *TxBuilder {
 	defer b.mu.Unlock()
 
 	b.anchorSigner = signer
+	return b
+}
+
+// SetSignAnchorInputs asks the backend to sign and finalize the asset anchor
+// inputs it owns during PublishAndLogTransfer.
+func (b *TxBuilder) SetSignAnchorInputs(sign bool) *TxBuilder {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.signAnchorInputs = sign
+	return b
+}
+
+// SetLabel sets the transfer label recorded by PublishAndLogTransfer.
+func (b *TxBuilder) SetLabel(label string) *TxBuilder {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.label = label
 	return b
 }
 
@@ -206,7 +245,8 @@ func (b *TxBuilder) Sign(ctx context.Context) ([][]byte, error) {
 	return clone2Dimensional(b.signedPsbts), nil
 }
 
-// sign signs every funded virtual transaction. The caller holds the lock.
+// sign signs every funded and passive virtual transaction. The caller holds
+// the lock.
 func (b *TxBuilder) sign(ctx context.Context) error {
 	signedPsbts := make([][]byte, len(b.fundedPsbts))
 	for idx, fundedPsbt := range b.fundedPsbts {
@@ -217,7 +257,26 @@ func (b *TxBuilder) sign(ctx context.Context) error {
 
 		signedPsbts[idx] = append([]byte(nil), signedPsbt...)
 	}
+
+	var signedPassive [][]byte
+	if len(b.passivePsbts) > 0 {
+		signedPassive = make([][]byte, len(b.passivePsbts))
+		for idx, passivePsbt := range b.passivePsbts {
+			signedPsbt, err := b.walletKit.SignVirtualPsbt(
+				ctx, passivePsbt,
+			)
+			if err != nil {
+				return err
+			}
+
+			signedPassive[idx] = append([]byte(nil), signedPsbt...)
+		}
+	}
+
 	b.signedPsbts = signedPsbts
+	if signedPassive != nil {
+		b.passivePsbts = signedPassive
+	}
 
 	return nil
 }
@@ -349,8 +408,14 @@ func (b *TxBuilder) publishAndLog(ctx context.Context,
 				ChangeOutputIndex:     b.changeOutputIndex,
 				LockedUTXOs:           b.lockedUTXOs,
 				SkipAnchorTxBroadcast: skipBroadcast,
+				Label:                 b.label,
+				SignAnchorInputs:      b.signAnchorInputs,
 			},
 		)
+	}
+	if b.signAnchorInputs {
+		return nil, fmt.Errorf("signing anchor inputs requires a " +
+			"CustomAnchorWalletKitClient")
 	}
 
 	return b.walletKit.PublishAndLogTransfer(
@@ -365,6 +430,11 @@ func (b *TxBuilder) commitVirtualPsbts(ctx context.Context) (
 	virtualPsbts := b.signedPsbts
 	advanced, ok := b.walletKit.(CustomAnchorWalletKitClient)
 	if !ok {
+		if b.anchorFunder != nil {
+			return nil, fmt.Errorf("anchor funder requires a " +
+				"CustomAnchorWalletKitClient")
+		}
+
 		legacy, err := b.walletKit.CommitVirtualPsbts(
 			ctx, virtualPsbts, b.passivePsbts, b.feeRate,
 		)
@@ -385,20 +455,33 @@ func (b *TxBuilder) commitVirtualPsbts(ctx context.Context) (
 		return nil, err
 	}
 
+	funding := AnchorFundingPlan{
+		ChangeOutput: AnchorChangeOutput{
+			Mode: AnchorChangeOutputAdd,
+		},
+		Fee: AnchorFee{
+			Mode:    AnchorFeeSatPerVByte,
+			FeeRate: b.feeRate,
+		},
+	}
+	if b.anchorFunder != nil {
+		anchorPsbt, err = b.anchorFunder(ctx, anchorPsbt)
+		if err != nil {
+			return nil, err
+		}
+		if len(anchorPsbt) == 0 {
+			return nil, fmt.Errorf("anchor funder returned empty " +
+				"anchor PSBT")
+		}
+		funding = AnchorFundingPlan{SkipFunding: true}
+	}
+
 	return advanced.CommitVirtualPsbtsWithRequest(
 		ctx, &CommitVirtualPsbtsRequest{
 			AnchorPsbt:        anchorPsbt,
 			VirtualPsbts:      virtualPsbts,
 			PassiveAssetPsbts: b.passivePsbts,
-			Funding: AnchorFundingPlan{
-				ChangeOutput: AnchorChangeOutput{
-					Mode: AnchorChangeOutputAdd,
-				},
-				Fee: AnchorFee{
-					Mode:    AnchorFeeSatPerVByte,
-					FeeRate: b.feeRate,
-				},
-			},
+			Funding:           funding,
 		},
 	)
 }
