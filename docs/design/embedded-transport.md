@@ -91,7 +91,9 @@ the calls.
   an address can announce one. The engine follows the anchor transaction of
   a confirmed receive as it follows a transfer: a receive whose block leaves
   the chain returns to detected with its proofs not owned, and its proofs
-  are given the new block once the transaction confirms again.
+  are given the new block once the transaction confirms again. A sender
+  announces a transfer once, so a receive whose block left the chain before
+  the engine read the announcement is followed in the same way.
 
 - The engine pays version 2 addresses with caller-funded transfers.
   `FundTransfer` selects the outputs to spend, across every issuance of a
