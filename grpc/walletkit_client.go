@@ -108,7 +108,7 @@ func (m *walletKitClient) FundTransfer(ctx context.Context,
 	}
 
 	return &tapsdk.FundedTransfer{
-		FundedPsbt:        resp.FundedPsbt,
+		FundedPsbts:       [][]byte{resp.FundedPsbt},
 		PassiveAssetPsbts: resp.PassiveAssetPsbts,
 	}, nil
 }
@@ -430,7 +430,7 @@ func (m *walletKitClient) FundInteractivePsbt(ctx context.Context,
 	}
 
 	return &tapsdk.FundedTransfer{
-		FundedPsbt:        resp.FundedPsbt,
+		FundedPsbts:       [][]byte{resp.FundedPsbt},
 		PassiveAssetPsbts: resp.PassiveAssetPsbts,
 	}, nil
 }

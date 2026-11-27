@@ -31,8 +31,8 @@ type InteractiveTxBuilder struct {
 
 	// Internal state
 	vPacketBytes []byte
-	fundedPsbt   []byte
-	signedPsbt   []byte
+	fundedPsbts  [][]byte
+	signedPsbts  [][]byte
 	finished     bool
 
 	mu sync.Mutex
@@ -334,18 +334,23 @@ func (b *InteractiveTxBuilder) fund(ctx context.Context) error {
 		return wrapErr("Fund", err)
 	}
 
-	b.fundedPsbt = append([]byte(nil), resp.FundedPsbt...)
+	b.fundedPsbts = clone2Dimensional(resp.FundedPsbts)
 	return nil
 }
 
-// sign signs the funded PSBT.
+// sign signs the funded PSBTs.
 func (b *InteractiveTxBuilder) sign(ctx context.Context) error {
-	signedPsbt, err := b.walletKit.SignVirtualPsbt(ctx, b.fundedPsbt)
-	if err != nil {
-		return wrapErr("Sign", err)
-	}
+	signedPsbts := make([][]byte, len(b.fundedPsbts))
+	for idx, fundedPsbt := range b.fundedPsbts {
+		signedPsbt, err := b.walletKit.SignVirtualPsbt(ctx, fundedPsbt)
+		if err != nil {
+			return wrapErr("Sign", err)
+		}
 
-	b.signedPsbt = append([]byte(nil), signedPsbt...)
+		signedPsbts[idx] = append([]byte(nil), signedPsbt...)
+	}
+	b.signedPsbts = signedPsbts
+
 	return nil
 }
 
@@ -353,9 +358,7 @@ func (b *InteractiveTxBuilder) sign(ctx context.Context) error {
 func (b *InteractiveTxBuilder) complete(
 	ctx context.Context) (*AssetTransfer, error) {
 
-	result, err := b.walletKit.AnchorVirtualPsbts(
-		ctx, [][]byte{b.signedPsbt},
-	)
+	result, err := b.walletKit.AnchorVirtualPsbts(ctx, b.signedPsbts)
 	if err != nil {
 		return nil, wrapErr("Complete", err)
 	}

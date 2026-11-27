@@ -7,10 +7,13 @@ import (
 	"github.com/btcsuite/btcd/wire/v2"
 )
 
-// FundedTransfer represents the result of funding a virtual transaction.
+// FundedTransfer represents the result of funding a transfer.
 type FundedTransfer struct {
-	// FundedPsbt is the funded virtual transaction PSBT.
-	FundedPsbt []byte
+	// FundedPsbts are the funded virtual transaction PSBTs, one per asset
+	// issuance the transfer spends. A transfer of a grouped asset can
+	// spend several issuances of the group. Every PSBT must be signed,
+	// committed and published together, in one anchor transaction.
+	FundedPsbts [][]byte
 
 	// PassiveAssetPsbts are the PSBTs for passive assets that need to be
 	// re-signed.

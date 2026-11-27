@@ -34,7 +34,7 @@ func TestUTXOLeaseLifecycle(t *testing.T) {
 			nil,
 		)
 		require.NoError(t, err)
-		require.NotEmpty(t, funded.FundedPsbt)
+		require.NotEmpty(t, funded.FundedPsbts)
 
 		leased := h.WaitForLeasedUTXO(
 			t, ctx, minted.Ref, defaultWaitTimeout,
