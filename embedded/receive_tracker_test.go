@@ -558,3 +558,109 @@ func TestReceiveReorgEarlierProof(t *testing.T) {
 	require.ErrorContains(t, err, "is not on the best chain")
 	h.requireReceiveReorged(send)
 }
+
+// replaceSendBlock closes the sender, so that it broadcasts nothing again,
+// and replaces the block of its send, the best one, with another block. The
+// new block holds the anchor transaction only when keepTx is set.
+func (h *testHarness) replaceSendBlock(sender *testHarness,
+	keepTx bool) (*wire.MsgBlock, uint32) {
+
+	h.t.Helper()
+
+	require.NoError(h.t, sender.client.Close())
+	h.chain.reorg(1)
+	if !keepTx {
+		h.chain.mu.Lock()
+		h.chain.mempool = nil
+		h.chain.mu.Unlock()
+	}
+
+	return h.chain.mine(h.t)
+}
+
+// TestReceiveStaleBlock works on an announcement whose block left the chain
+// before the wallet read it. The wallet holds the output once the anchor
+// transaction confirms in another block, with a proof of that block, whether
+// it confirms before or after the wallet reads the announcement.
+func TestReceiveStaleBlock(t *testing.T) {
+	for _, confirmedFirst := range []bool{true, false} {
+		name := "confirmed after"
+		if confirmedFirst {
+			name = "confirmed before"
+		}
+
+		t.Run(name, func(t *testing.T) {
+			fastRetries(t)
+
+			h := newAddressHarness(t, testCourier)
+			sender := h.peer(2)
+			ctx := t.Context()
+
+			minted, addr := h.newReceivingAddress(
+				sender, "stale", nil,
+			)
+			send := sender.payAddress(addr.Encoded, minted, 600)
+			h.courier.deliver(t, send)
+
+			block, height := h.replaceSendBlock(
+				sender, confirmedFirst,
+			)
+			require.NoError(t, h.client.SyncReceives(ctx))
+			if !confirmedFirst {
+				h.requireReceiveReorged(send)
+				block, height = h.chain.mine(
+					t, send.anchorTx(t),
+				)
+			}
+
+			h.waitReceiveState(send, ReceiveConfirmed)
+			h.requireReceivedIn(
+				send, ReceiveConfirmed, block, height,
+			)
+			require.NotEqual(
+				t, send.fragment.BlockHeader.BlockHash(),
+				block.BlockHash(),
+			)
+			require.EqualValues(t, 600, h.ownedUnits())
+
+			h.waitReceiveFinal(send)
+			h.requireReceivedIn(send, ReceiveFinal, block, height)
+		})
+	}
+}
+
+// TestReceiveStaleBlockUnconfirmed works on an announcement whose block left
+// the chain before the wallet read it, and whose anchor transaction does not
+// confirm again. The receive stays detected with its proofs kept as not
+// owned, and a pass over the mailbox leaves it to its tracker.
+func TestReceiveStaleBlockUnconfirmed(t *testing.T) {
+	fastRetries(t)
+
+	h := newAddressHarness(t, testCourier)
+	sender := h.peer(2)
+	ctx := t.Context()
+
+	minted, addr := h.newReceivingAddress(sender, "unconfirmed", nil)
+	send := sender.payAddress(addr.Encoded, minted, 600)
+	h.courier.deliver(t, send)
+
+	h.replaceSendBlock(sender, false)
+	require.NoError(t, h.client.SyncReceives(ctx))
+	h.requireReceiveReorged(send)
+
+	queries, _, _ := h.courier.counts()
+	h.chain.mine(t)
+	require.NoError(t, h.client.SyncReceives(ctx))
+	require.Never(t, func() bool {
+		return h.receiveRecord(send).State != ReceiveDetected
+	}, 200*time.Millisecond, 5*time.Millisecond)
+	h.requireReceiveReorged(send)
+	laterQueries, _, _ := h.courier.counts()
+	require.Equal(t, queries, laterQueries)
+
+	receive := h.client.engine.receive
+	receive.mu.Lock()
+	_, tracked := receive.tracked[send.outpoint]
+	receive.mu.Unlock()
+	require.True(t, tracked)
+}
