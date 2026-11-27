@@ -17,7 +17,7 @@ import (
 const receiveHintMargin = 6
 
 // trackedReceive is a receive the tracker of its anchor output follows: a
-// confirmed one, or one whose confirming block left the chain.
+// confirmed one, or one whose block left the chain.
 type trackedReceive struct {
 	record  ReceiveRecord
 	payload *receivePayload
