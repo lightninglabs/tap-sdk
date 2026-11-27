@@ -33,7 +33,7 @@ func TestTxBuilderEndToEnd(t *testing.T) {
 
 		funded, err := builder.Fund(ctx)
 		require.NoError(t, err)
-		require.NotEmpty(t, funded.FundedPsbt)
+		require.NotEmpty(t, funded.FundedPsbts)
 
 		signed, err := builder.Sign(ctx)
 		require.NoError(t, err)

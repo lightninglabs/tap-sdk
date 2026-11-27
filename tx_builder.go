@@ -49,9 +49,9 @@ type TxBuilder struct {
 	inputs     []PrevID
 	feeRate    FeeRate
 
-	fundedPsbt   []byte
+	fundedPsbts  [][]byte
 	passivePsbts [][]byte
-	signedPsbt   []byte
+	signedPsbts  [][]byte
 	anchorPsbt   []byte
 
 	changeOutputIndex int32
@@ -107,21 +107,23 @@ func (b *TxBuilder) SetFeeRate(feeRate FeeRate) *TxBuilder {
 	return b
 }
 
-// SetFundedPsbt injects an externally funded PSBT into the builder.
-func (b *TxBuilder) SetFundedPsbt(fundedPsbt []byte) *TxBuilder {
+// SetFundedPsbts injects externally funded virtual PSBTs into the builder,
+// one per asset issuance the transfer spends.
+func (b *TxBuilder) SetFundedPsbts(fundedPsbts ...[]byte) *TxBuilder {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	b.fundedPsbt = append([]byte(nil), fundedPsbt...)
+	b.fundedPsbts = clone2Dimensional(fundedPsbts)
 	return b
 }
 
-// SetSignedPsbt injects an externally signed PSBT into the builder.
-func (b *TxBuilder) SetSignedPsbt(signedPsbt []byte) *TxBuilder {
+// SetSignedPsbts injects externally signed virtual PSBTs into the builder,
+// one per asset issuance the transfer spends.
+func (b *TxBuilder) SetSignedPsbts(signedPsbts ...[]byte) *TxBuilder {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	b.signedPsbt = append([]byte(nil), signedPsbt...)
+	b.signedPsbts = clone2Dimensional(signedPsbts)
 	return b
 }
 
@@ -178,31 +180,46 @@ func (b *TxBuilder) Fund(ctx context.Context) (*FundedTransfer,
 		return nil, wrapErr("Fund", err)
 	}
 
-	b.fundedPsbt = append([]byte(nil), resp.FundedPsbt...)
+	b.fundedPsbts = clone2Dimensional(resp.FundedPsbts)
 	b.passivePsbts = clone2Dimensional(resp.PassiveAssetPsbts)
 
 	return resp, nil
 }
 
-// Sign signs the funded transaction and returns the signed PSBT.
-func (b *TxBuilder) Sign(ctx context.Context) ([]byte, error) {
+// Sign signs the funded virtual transactions and returns the signed PSBTs,
+// in the order of the funded ones.
+func (b *TxBuilder) Sign(ctx context.Context) ([][]byte, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	if b.finished {
 		return nil, ErrBuilderFinished
 	}
-	if len(b.fundedPsbt) == 0 {
+	if len(b.fundedPsbts) == 0 {
 		return nil, ErrNotFunded
 	}
 
-	signedPsbt, err := b.walletKit.SignVirtualPsbt(ctx, b.fundedPsbt)
-	if err != nil {
+	if err := b.sign(ctx); err != nil {
 		return nil, wrapErr("Sign", err)
 	}
 
-	b.signedPsbt = append([]byte(nil), signedPsbt...)
-	return b.signedPsbt, nil
+	return clone2Dimensional(b.signedPsbts), nil
+}
+
+// sign signs every funded virtual transaction. The caller holds the lock.
+func (b *TxBuilder) sign(ctx context.Context) error {
+	signedPsbts := make([][]byte, len(b.fundedPsbts))
+	for idx, fundedPsbt := range b.fundedPsbts {
+		signedPsbt, err := b.walletKit.SignVirtualPsbt(ctx, fundedPsbt)
+		if err != nil {
+			return err
+		}
+
+		signedPsbts[idx] = append([]byte(nil), signedPsbt...)
+	}
+	b.signedPsbts = signedPsbts
+
+	return nil
 }
 
 // Commit commits the signed transaction and returns the committed transfer.
@@ -215,7 +232,7 @@ func (b *TxBuilder) Commit(ctx context.Context) (
 	if b.finished {
 		return nil, ErrBuilderFinished
 	}
-	if len(b.signedPsbt) == 0 {
+	if len(b.signedPsbts) == 0 {
 		return nil, ErrNotSigned
 	}
 
@@ -270,7 +287,7 @@ func (b *TxBuilder) Execute(ctx context.Context, opts ...TxBuilderOption) (
 	}
 
 	// Fund if not already funded.
-	if len(b.fundedPsbt) == 0 {
+	if len(b.fundedPsbts) == 0 {
 		if len(b.recipients) == 0 {
 			return nil, ErrNoRecipients
 		}
@@ -287,16 +304,14 @@ func (b *TxBuilder) Execute(ctx context.Context, opts ...TxBuilderOption) (
 			return nil, wrapErr("Fund", err)
 		}
 
-		b.fundedPsbt = append([]byte(nil), resp.FundedPsbt...)
+		b.fundedPsbts = clone2Dimensional(resp.FundedPsbts)
 		b.passivePsbts = clone2Dimensional(resp.PassiveAssetPsbts)
 	}
 
 	// Sign.
-	signedPsbt, err := b.walletKit.SignVirtualPsbt(ctx, b.fundedPsbt)
-	if err != nil {
+	if err := b.sign(ctx); err != nil {
 		return nil, wrapErr("Sign", err)
 	}
-	b.signedPsbt = append([]byte(nil), signedPsbt...)
 
 	// Commit.
 	commitResp, err := b.commitVirtualPsbts(ctx)
@@ -329,7 +344,7 @@ func (b *TxBuilder) publishAndLog(ctx context.Context,
 		return advanced.PublishAndLogTransferWithRequest(
 			ctx, &PublishAndLogTransferRequest{
 				AnchorPsbt:            b.anchorPsbt,
-				VirtualPsbts:          [][]byte{b.signedPsbt},
+				VirtualPsbts:          b.signedPsbts,
 				PassiveAssetPsbts:     b.passivePsbts,
 				ChangeOutputIndex:     b.changeOutputIndex,
 				LockedUTXOs:           b.lockedUTXOs,
@@ -339,7 +354,7 @@ func (b *TxBuilder) publishAndLog(ctx context.Context,
 	}
 
 	return b.walletKit.PublishAndLogTransfer(
-		ctx, b.anchorPsbt, [][]byte{b.signedPsbt}, b.passivePsbts,
+		ctx, b.anchorPsbt, b.signedPsbts, b.passivePsbts,
 		skipBroadcast,
 	)
 }
@@ -347,7 +362,7 @@ func (b *TxBuilder) publishAndLog(ctx context.Context,
 func (b *TxBuilder) commitVirtualPsbts(ctx context.Context) (
 	*CommitVirtualPsbtsResponse, error) {
 
-	virtualPsbts := [][]byte{b.signedPsbt}
+	virtualPsbts := b.signedPsbts
 	advanced, ok := b.walletKit.(CustomAnchorWalletKitClient)
 	if !ok {
 		legacy, err := b.walletKit.CommitVirtualPsbts(
@@ -394,7 +409,7 @@ func (b *TxBuilder) applyCommitResponse(resp *CommitVirtualPsbtsResponse) {
 	b.lockedUTXOs = append([]Outpoint(nil), resp.LockedUTXOs...)
 
 	if len(resp.VirtualPsbts) > 0 {
-		b.signedPsbt = append([]byte(nil), resp.VirtualPsbts[0]...)
+		b.signedPsbts = clone2Dimensional(resp.VirtualPsbts)
 	}
 	if len(resp.PassiveAssetPsbts) > 0 {
 		b.passivePsbts = clone2Dimensional(resp.PassiveAssetPsbts)

@@ -62,7 +62,7 @@ func TestInteractiveTxBuilder_Execute(t *testing.T) {
 	// 1. Fund interactive PSBT (matches any PSBT since we build it internally)
 	mockWalletKit.On("FundInteractivePsbt", ctx, mock.Anything).Return(
 		&FundedTransfer{
-			FundedPsbt: fundedPsbt,
+			FundedPsbts: [][]byte{fundedPsbt},
 		}, nil)
 
 	// 2. Sign
@@ -177,7 +177,7 @@ func TestInteractiveTxBuilder_GroupRefResolvesSpendableIssuance(
 			capturedPsbt = append([]byte(nil), psbtBytes...)
 		},
 	).Return(&FundedTransfer{
-		FundedPsbt: fundedPsbt,
+		FundedPsbts: [][]byte{fundedPsbt},
 	}, nil)
 	mockWalletKit.On("SignVirtualPsbt", ctx, fundedPsbt).Return(
 		signedPsbt, nil)
@@ -259,7 +259,7 @@ func TestInteractiveTxBuilder_WithAltLeaves(t *testing.T) {
 			capturedPsbt = append([]byte(nil), psbtBytes...)
 		},
 	).Return(&FundedTransfer{
-		FundedPsbt: fundedPsbt,
+		FundedPsbts: [][]byte{fundedPsbt},
 	}, nil)
 
 	// 2. Sign
@@ -364,7 +364,7 @@ func TestInteractiveTxBuilder_AssetVersion(t *testing.T) {
 				psbtBytes := args.Get(1).([]byte)
 				capturedPsbt = append([]byte(nil), psbtBytes...)
 			}).Return(&FundedTransfer{
-				FundedPsbt: fundedPsbt,
+				FundedPsbts: [][]byte{fundedPsbt},
 			}, nil)
 			mockWalletKit.On(
 				"SignVirtualPsbt", ctx, fundedPsbt,
@@ -546,7 +546,7 @@ func TestInteractiveTxBuilder_AlreadyFinished(t *testing.T) {
 	}
 
 	mockWalletKit.On("FundInteractivePsbt", ctx, mock.Anything).Return(
-		&FundedTransfer{FundedPsbt: fundedPsbt}, nil)
+		&FundedTransfer{FundedPsbts: [][]byte{fundedPsbt}}, nil)
 	mockWalletKit.On("SignVirtualPsbt", ctx, fundedPsbt).Return(
 		signedPsbt, nil)
 	mockWalletKit.On("AnchorVirtualPsbts", ctx, [][]byte{signedPsbt}).Return(
