@@ -86,9 +86,9 @@ type receivePayload struct {
 	// failure is why the receive failed.
 	failure string
 
-	// reorged marks a receive whose confirming block left the chain. Its
-	// proofs are stored as not owned, and the tracker of its anchor output
-	// confirms it again.
+	// reorged marks a receive whose block left the chain, after it was
+	// confirmed or before the wallet worked on it. Its proofs are stored
+	// as not owned, and the tracker of its anchor output confirms it.
 	reorged bool
 }
 
@@ -277,8 +277,8 @@ func (r *receiver) detect(ctx context.Context, addr *receiveAddress,
 // fetches and verifies the proofs and stores them as owned asset outputs. It
 // reports whether the receive needs no further work: it is confirmed or
 // failed, or its block left the chain and the tracker of its output confirms
-// it again. An error leaves the receive detected, for a later call. Concurrent
-// calls for one receive share one run.
+// it. An error leaves the receive detected, for a later call. Concurrent calls
+// for one receive share one run.
 func (r *receiver) advance(ctx context.Context, id receiveID) (bool, error) {
 	done, err, _ := r.runs.Do(id.String(), func() (any, error) {
 		return r.advanceOnce(ctx, id)
@@ -381,9 +381,7 @@ func (r *receiver) advanceOnce(ctx context.Context, id receiveID) (bool,
 		return false, err
 	}
 
-	// The chain source may not have the block yet, or may not have it
-	// any more.
-	err = r.e.verifyHeader(ctx, fragment.BlockHeader, fragment.BlockHeight)
+	stale, err := r.leftChain(ctx, fragment)
 	if err != nil {
 		return false, fmt.Errorf("%w: %w", errReceiveNotReady, err)
 	}
@@ -398,12 +396,30 @@ func (r *receiver) advanceOnce(ctx context.Context, id receiveID) (bool,
 		return false, err
 	}
 
+	// The tracker writes the block that confirms the anchor transaction
+	// into the proofs of a stale block, and verifies them again.
+	verifierCtx := r.e.verifierCtx(ctx)
+	if stale {
+		staleBlock := fragment.BlockHeader.BlockHash()
+		verifierCtx.HeaderVerifier = func(header wire.BlockHeader,
+			height uint32) error {
+
+			if header.BlockHash() == staleBlock &&
+				height == fragment.BlockHeight {
+
+				return nil
+			}
+
+			return r.e.verifyHeader(ctx, header, height)
+		}
+	}
+
 	var (
 		assetProofs = make([]AssetProof, len(outputs))
 		tip         *proof.Proof
 	)
 	for idx, output := range outputs {
-		_, err := files[idx].Verify(ctx, r.e.verifierCtx(ctx))
+		_, err := files[idx].Verify(ctx, verifierCtx)
 		switch {
 		// The proof was not judged.
 		case err != nil && (ctx.Err() != nil || isChainFailure(err)):
@@ -432,7 +448,7 @@ func (r *receiver) advanceOnce(ctx context.Context, id receiveID) (bool,
 		assetProofs[idx] = AssetProof{
 			ProofLocator: proofLocator(tip),
 			ProofFile:    blob.Bytes(),
-			Owned:        true,
+			Owned:        !stale,
 		}
 	}
 
@@ -457,9 +473,13 @@ func (r *receiver) advanceOnce(ctx context.Context, id receiveID) (bool,
 
 	// Every proof is anchored in the output of the fragment.
 	payload.anchorValue = tip.AnchorTx.TxOut[fragment.OutPoint.Index].Value
-	record.State = ReceiveConfirmed
-	record.BlockHash = tip.BlockHeader.BlockHash()
-	record.BlockHeight = tip.BlockHeight
+	if stale {
+		payload.reorged = true
+	} else {
+		record.State = ReceiveConfirmed
+		record.BlockHash = tip.BlockHeader.BlockHash()
+		record.BlockHeight = tip.BlockHeight
+	}
 	record.Payload, err = payload.encode()
 	if err != nil {
 		return false, err
@@ -469,11 +489,40 @@ func (r *receiver) advanceOnce(ctx context.Context, id receiveID) (bool,
 		return false, fmt.Errorf("store received proofs: %w", err)
 	}
 
-	r.e.log.Infof("Receive %v confirmed at height %d", id.outpoint,
-		record.BlockHeight)
+	if stale {
+		r.e.log.Infof("Receive %v waits for its anchor transaction to "+
+			"confirm", id.outpoint)
+	} else {
+		r.e.log.Infof("Receive %v confirmed at height %d", id.outpoint,
+			record.BlockHeight)
+	}
 	r.track(id.outpoint)
 
 	return true, nil
+}
+
+// leftChain reports whether the best chain holds another block at the height
+// of the block a fragment names. Whether the transfer happened then depends
+// on a confirmation of its anchor transaction. It fails while the chain
+// source is below that height, since it may not have the block yet.
+func (r *receiver) leftChain(ctx context.Context,
+	fragment *proof.SendFragment) (bool, error) {
+
+	tip, _, err := r.e.chain.BestBlock(ctx)
+	if err != nil {
+		return false, fmt.Errorf("fetch best block: %w", err)
+	}
+	if tip < fragment.BlockHeight {
+		return false, fmt.Errorf("chain source is at height %d, below "+
+			"block %v", tip, fragment.BlockHeader.BlockHash())
+	}
+
+	err = r.e.verifyHeader(ctx, fragment.BlockHeader, fragment.BlockHeight)
+	if isChainFailure(err) {
+		return false, err
+	}
+
+	return err != nil, nil
 }
 
 // fail records why a receive cannot complete. The wallet stores none of its

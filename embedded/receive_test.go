@@ -541,9 +541,9 @@ func TestReceiveForgedAnnouncement(t *testing.T) {
 		state:   ReceiveFailed,
 		errText: "holds 600 units, not 601",
 	}, {
-		name: "unknown block",
+		name: "block above the tip",
 		forge: func(fragment *proof.SendFragment) {
-			fragment.BlockHeader.Nonce++
+			fragment.BlockHeight += 100
 		},
 		state:   ReceiveDetected,
 		errText: errAnnouncedAgain.Error(),
