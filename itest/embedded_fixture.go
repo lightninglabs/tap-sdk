@@ -37,6 +37,7 @@ type EmbeddedNode struct {
 	Store  *embedded.MemoryStore
 
 	keys *hdKeyRing
+	log  *embeddedLog
 }
 
 // NewEmbeddedNode starts an embedded engine that trusts the given asset
@@ -105,6 +106,7 @@ func (h *TestHarness) NewEmbeddedNode(t testing.TB,
 		Wallet: tapsdk.NewWallet(client, tapsdk.NetworkRegtest),
 		Store:  store,
 		keys:   keys,
+		log:    logger,
 	}
 }
 

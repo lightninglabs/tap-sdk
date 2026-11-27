@@ -6,15 +6,15 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/btcsuite/btcd/chainhash/v2"
+	"github.com/btcsuite/btcd/psbt/v2"
 	"github.com/btcsuite/btcd/wire/v2"
 	tapsdk "github.com/lightninglabs/tap-sdk"
 	"github.com/lightninglabs/tap-sdk/embedded"
-	"github.com/lightninglabs/taproot-assets/tappsbt"
-	"github.com/lightninglabs/taproot-assets/tapsend"
 	"github.com/stretchr/testify/require"
 )
 
@@ -158,10 +158,10 @@ func testEmbeddedAddressSend(t *testing.T, ctx context.Context,
 		require.Equal(t, courier, addr.ProofCourierAddr)
 	}
 
-	txid, funded := sendFromEmbedded(
+	txid, packet := sendFromEmbedded(
 		t, ctx, h, node, lnd, addr.Encoded, sent,
 	)
-	require.Len(t, funded.FundedPsbts, issuances)
+	require.Len(t, packet.VirtualTransactions, issuances)
 	h.MineBlocks(t, defaultMineBlocks)
 	node.WaitForTransferState(t, ctx, txid, embedded.TransferFinal)
 	h.WaitForSync(t, ctx, h.BobClient, defaultSyncTimeout)
@@ -181,88 +181,173 @@ func testEmbeddedAddressSend(t *testing.T, ctx context.Context,
 }
 
 // sendFromEmbedded sends amount units from the engine to a Taproot Asset
-// address and returns the ID of the anchor transaction and the funded
-// transfer. The engine funds and signs the virtual transactions and signs its
-// asset anchors. An output of lnd-alice pays the fee and collects the Bitcoin
-// change.
+// address through TxBuilder and returns the anchor transaction ID and final
+// asset packet. The engine funds and signs the virtual transactions and signs
+// its asset anchors. An output of lnd-alice pays the fee and collects the
+// Bitcoin change.
 func sendFromEmbedded(t *testing.T, ctx context.Context, h *TestHarness,
 	node *EmbeddedNode, lnd *lndWalletKit, addr string,
-	amount uint64) (chainhash.Hash, *tapsdk.FundedTransfer) {
+	amount uint64) (chainhash.Hash, *tapsdk.AssetPacket) {
 
 	t.Helper()
 
-	funded, err := node.Client.FundTransfer(
-		ctx, []tapsdk.Recipient{
-			tapsdk.RecipientWithAmount(addr, amount),
-		}, nil,
+	var fundingIndex int
+	packet, err := node.Wallet.NewTxBuilder().
+		AddRecipient(addr, amount).
+		SetAnchorFunder(func(ctx context.Context,
+			template []byte) ([]byte, error) {
+
+			anchor, err := psbt.NewFromRawBytes(
+				bytes.NewReader(template), false,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			funding := h.fundLndInput(t, ctx, lnd)
+			fundingIndex = len(anchor.Inputs)
+			anchor.UnsignedTx.AddTxIn(
+				wire.NewTxIn(&funding.outpoint, nil, nil),
+			)
+			anchor.Inputs = append(
+				anchor.Inputs, funding.psbtInput(),
+			)
+
+			bitcoinChange := -embeddedITestFeeSat
+			for _, input := range anchor.Inputs {
+				bitcoinChange += input.WitnessUtxo.Value
+			}
+			for _, txOut := range anchor.UnsignedTx.TxOut {
+				bitcoinChange -= txOut.Value
+			}
+			anchor.UnsignedTx.AddTxOut(&wire.TxOut{
+				Value:    bitcoinChange,
+				PkScript: funding.txOut.PkScript,
+			})
+			anchor.Outputs = append(
+				anchor.Outputs, funding.psbtChangeOutput(),
+			)
+
+			var buf bytes.Buffer
+			if err := anchor.Serialize(&buf); err != nil {
+				return nil, err
+			}
+
+			return buf.Bytes(), nil
+		}).
+		SetAnchorSigner(func(ctx context.Context,
+			anchorPsbt []byte) ([]byte, error) {
+
+			signedPsbt, err := lnd.signPsbt(ctx, anchorPsbt)
+			if err != nil {
+				return nil, err
+			}
+
+			return customAnchorFinalizeKeyPath(
+				t, signedPsbt, fundingIndex,
+			), nil
+		}).
+		SetSignAnchorInputs(true).
+		SetLabel(uniqueEventLabel("embedded-send")).
+		Execute(ctx)
+	require.NoError(t, err)
+	require.Empty(t, packet.PassiveAssetTransactions)
+
+	var anchorTx wire.MsgTx
+	require.NoError(
+		t, anchorTx.Deserialize(
+			bytes.NewReader(packet.AnchorTransaction),
+		),
 	)
-	require.NoError(t, err)
-	require.Empty(t, funded.PassiveAssetPsbts)
-
-	signed := make([][]byte, len(funded.FundedPsbts))
-	packets := make([]*tappsbt.VPacket, len(funded.FundedPsbts))
-	for idx, fundedPsbt := range funded.FundedPsbts {
-		signed[idx], err = node.Client.SignVirtualPsbt(ctx, fundedPsbt)
-		require.NoError(t, err)
-		packets[idx], err = tappsbt.Decode(signed[idx])
-		require.NoError(t, err)
-	}
-
-	// The template spends the engine's asset anchors into one output per
-	// asset anchor output of the transfer.
-	anchor, err := tapsend.PrepareAnchoringTemplate(packets)
-	require.NoError(t, err)
-
-	funding := h.fundLndInput(t, ctx, lnd)
-	fundingIndex := len(anchor.Inputs)
-	anchor.UnsignedTx.AddTxIn(wire.NewTxIn(&funding.outpoint, nil, nil))
-	anchor.Inputs = append(anchor.Inputs, funding.psbtInput())
-
-	bitcoinChange := -embeddedITestFeeSat
-	for _, input := range anchor.Inputs {
-		bitcoinChange += input.WitnessUtxo.Value
-	}
-	for _, txOut := range anchor.UnsignedTx.TxOut {
-		bitcoinChange -= txOut.Value
-	}
-	anchor.UnsignedTx.AddTxOut(&wire.TxOut{
-		Value:    bitcoinChange,
-		PkScript: funding.txOut.PkScript,
-	})
-	anchor.Outputs = append(anchor.Outputs, funding.psbtChangeOutput())
-
-	var template bytes.Buffer
-	require.NoError(t, anchor.Serialize(&template))
-
-	committed, err := node.Client.CommitVirtualPsbtsWithRequest(
-		ctx, &tapsdk.CommitVirtualPsbtsRequest{
-			AnchorPsbt:   template.Bytes(),
-			VirtualPsbts: signed,
-			Funding: tapsdk.AnchorFundingPlan{
-				SkipFunding: true,
-			},
-		},
-	)
-	require.NoError(t, err)
-
-	signedPsbt, err := lnd.signPsbt(ctx, committed.AnchorPsbt)
-	require.NoError(t, err)
-	finalPsbt := customAnchorFinalizeKeyPath(t, signedPsbt, fundingIndex)
-	txid := decodeCustomAnchorITestPSBT(t, finalPsbt).UnsignedTx.TxHash()
-
-	_, err = node.Client.PublishAndLogTransferWithRequest(
-		ctx, &tapsdk.PublishAndLogTransferRequest{
-			AnchorPsbt:        finalPsbt,
-			VirtualPsbts:      committed.VirtualPsbts,
-			ChangeOutputIndex: -1,
-			SignAnchorInputs:  true,
-			Label:             uniqueEventLabel("embedded-send"),
-		},
-	)
-	require.NoError(t, err)
+	txid := anchorTx.TxHash()
 	node.WaitForTransferState(t, ctx, txid, embedded.TransferPending)
 
-	return txid, funded
+	return txid, packet
+}
+
+// TestEmbeddedAddressSendReorg has one embedded engine pay another across a
+// re-org of the confirming block: the sender delivers its proofs and
+// announcement to Bob's courier after 1 confirmation, the block is invalidated
+// before the recipient reads its mailbox, and the recipient recovers the
+// transfer in the block that confirms the anchor transaction again.
+func TestEmbeddedAddressSendReorg(t *testing.T) {
+	h, ctx := newFundedHarness(t)
+	lnd := newAliceLndWalletKit(t)
+	h.EnableUniverseBootstrap(t, ctx)
+
+	minted, err := h.CreateFungibleAndConfirm(
+		t, ctx, uniqueEventLabel("embedded-send-reorg"),
+		embeddedITestSupply,
+	)
+	require.NoError(t, err)
+
+	timeout := balanceTimeoutFor(minted.Ref)
+	sender := h.NewEmbeddedNode(t)
+	recipient := h.NewEmbeddedNode(t)
+
+	// Fund the sender from Alice.
+	own, err := sender.Client.NewAddr(ctx, &tapsdk.NewAddressRequest{
+		AssetRef: minted.Ref,
+	})
+	require.NoError(t, err)
+	_, err = h.AliceWallet.Send(
+		ctx, own.Encoded, tapsdk.WithAmount(embeddedITestReceived),
+	)
+	require.NoError(t, err)
+	h.MineBlocks(t, defaultMineBlocks)
+	h.WaitForSync(t, ctx, h.AliceClient, defaultSyncTimeout)
+	sender.WaitForAddressReceive(t, ctx, own, true, timeout)
+
+	// Recipient creates an address but stays offline across the re-org.
+	addr, err := recipient.Client.NewAddr(ctx, &tapsdk.NewAddressRequest{
+		AssetRef: minted.Ref,
+	})
+	require.NoError(t, err)
+
+	txid, _ := sendFromEmbedded(
+		t, ctx, h, sender, lnd, addr.Encoded, embeddedITestSent,
+	)
+	h.MineBlocks(t, 1)
+	h.WaitForSync(t, ctx, h.BobClient, defaultSyncTimeout)
+	sender.WaitForTransferState(t, ctx, txid, embedded.TransferConfirmed)
+
+	// Wait until the sender has uploaded the proofs and mailbox
+	// announcement for the first confirming block.
+	deliveredLog := fmt.Sprintf(
+		"Delivered the proofs of output 0 of transfer %v", txid,
+	)
+	require.Eventually(t, func() bool {
+		return strings.Contains(sender.log.String(), deliveredLog)
+	}, timeout, embeddedChainPollInterval)
+
+	transfers, err := sender.Store.ListTransfers(ctx, &txid)
+	require.NoError(t, err)
+	require.Len(t, transfers, 1)
+	firstBlockHash := transfers[0].BlockHash
+
+	// Invalidate the confirming block before the recipient reads its
+	// mailbox, then confirm the anchor transaction in a new block.
+	require.Equal(t, firstBlockHash, h.invalidateBestBlock(t))
+	h.MineBlocks(t, defaultMineBlocks)
+	sender.WaitForTransferState(t, ctx, txid, embedded.TransferFinal)
+	h.WaitForSync(t, ctx, h.BobClient, defaultSyncTimeout)
+
+	// The recipient wakes up, reads the stale-block announcement, and
+	// follows the anchor transaction to finality in the new block.
+	recipient.WaitForAddressReceive(t, ctx, addr, true, timeout)
+	outpoint := tapsdk.Outpoint{Txid: tapsdk.Hash(txid), Index: 0}
+	final := recipient.WaitForReceiveState(
+		t, ctx, outpoint, embedded.ReceiveFinal,
+	)
+	require.NotEqual(t, firstBlockHash, final.BlockHash)
+
+	recipientBalance, err := recipient.Wallet.GetBalance(ctx, minted.Ref)
+	require.NoError(t, err)
+	require.Equal(t, embeddedITestSent, recipientBalance)
+
+	senderBalance, err := sender.Wallet.GetBalance(ctx, minted.Ref)
+	require.NoError(t, err)
+	require.Equal(t, embeddedITestReceived-embeddedITestSent, senderBalance)
 }
 
 // waitForTapdAddressReceive polls until a tapd lists one completed transfer
